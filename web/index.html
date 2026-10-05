@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>СТРЕЛЫ · поиск объектов</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/" aria-label="СТРЕЛЫ — на главную">СТРЕЛЫ <span aria-hidden="true">➳</span></a>
+  <span class="brand-sub">вторичка и новостройки Краснодара из риелторских чатов</span>
+  <button class="access-btn" id="accessBtn" hidden>Вход для коллег</button>
+</header>
+
+<main class="wrap">
+  <form class="search" id="searchForm" role="search">
+    <label class="visually-hidden" for="q">Поиск</label>
+    <input id="q" name="q" type="search" autocomplete="off"
+           placeholder="ЖК, улица, район или слово из описания">
+    <div class="deal" role="group" aria-label="Тип сделки">
+      <button type="button" data-deal="sale" class="seg on">Продажа</button>
+      <button type="button" data-deal="rent" class="seg">Аренда</button>
+    </div>
+  </form>
+
+  <section class="filters" aria-label="Фильтры">
+    <div class="row" id="types" role="group" aria-label="Тип объекта"></div>
+    <div class="row">
+      <div class="chips" id="rooms" role="group" aria-label="Комнаты">
+        <button type="button" data-room="0" class="chip">Студия</button>
+        <button type="button" data-room="1" class="chip">1</button>
+        <button type="button" data-room="2" class="chip">2</button>
+        <button type="button" data-room="3" class="chip">3</button>
+        <button type="button" data-room="4" class="chip">4+</button>
+      </div>
+      <div class="range">
+        <span class="range-label">Цена, млн</span>
+        <input id="priceMin" inputmode="decimal" placeholder="от" aria-label="Цена от, млн">
+        <input id="priceMax" inputmode="decimal" placeholder="до" aria-label="Цена до, млн">
+      </div>
+      <button type="button" class="more-btn" id="moreBtn" aria-expanded="false">Ещё фильтры</button>
+    </div>
+    <div class="more" id="more" hidden>
+      <div class="field">
+        <span class="range-label">Площадь, м²</span>
+        <input id="areaMin" inputmode="decimal" placeholder="от" aria-label="Площадь от">
+        <input id="areaMax" inputmode="decimal" placeholder="до" aria-label="Площадь до">
+      </div>
+      <div class="field">
+        <span class="range-label">Участок, сот.</span>
+        <input id="landMin" inputmode="decimal" placeholder="от" aria-label="Участок от">
+        <input id="landMax" inputmode="decimal" placeholder="до" aria-label="Участок до">
+      </div>
+      <label class="check"><input type="checkbox" id="notFirst"> Не первый этаж</label>
+      <label class="check"><input type="checkbox" id="notLast"> Не последний</label>
+      <label class="field">
+        <span class="range-label">Присылали</span>
+        <select id="fresh">
+          <option value="">за всё время</option>
+          <option value="3">за 3 дня</option>
+          <option value="7">за неделю</option>
+          <option value="30">за месяц</option>
+        </select>
+      </label>
+      <div class="field wide">
+        <span class="range-label">Районы</span>
+        <div class="chips scroll" id="districts"></div>
+      </div>
+      <div class="field wide">
+        <label class="range-label" for="complexInput">ЖК</label>
+        <input id="complexInput" list="complexList" placeholder="Начните вводить название ЖК">
+        <datalist id="complexList"></datalist>
+        <div class="chips" id="complexChosen"></div>
+      </div>
+      <button type="button" class="reset" id="resetBtn">Сбросить фильтры</button>
+    </div>
+  </section>
+
+  <div class="bar">
+    <p class="count" id="count" aria-live="polite"></p>
+    <div class="bar-right">
+      <label class="visually-hidden" for="sort">Сортировка</label>
+      <select id="sort">
+        <option value="new">Сначала свежие</option>
+        <option value="price_asc">Дешевле</option>
+        <option value="price_desc">Дороже</option>
+        <option value="price_m2">Дешевле за м²</option>
+        <option value="area_desc">Больше площадь</option>
+      </select>
+      <div class="view" role="group" aria-label="Вид">
+        <button type="button" data-view="list" class="seg on">Список</button>
+        <button type="button" data-view="map" class="seg">Карта</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="mapBox" class="map" hidden></div>
+  <ol class="results" id="results"></ol>
+  <div class="more-results"><button type="button" id="loadMore" class="pill" hidden>Показать ещё</button></div>
+</main>
+
+<dialog id="detail" class="detail" aria-labelledby="dTitle">
+  <button class="close" id="closeDetail" aria-label="Закрыть">✕</button>
+  <div id="detailBody"></div>
+</dialog>
+
+<dialog id="accessDlg" class="small-dlg">
+  <form id="accessForm" method="dialog">
+    <h2>Вход для коллег</h2>
+    <p>С кодом видны телефоны агентов и исходные сообщения из чатов.</p>
+    <input id="accessCode" autocomplete="off" placeholder="Код доступа" aria-label="Код доступа">
+    <p class="err" id="accessErr" hidden>Код не подошёл. Проверьте и введите ещё раз.</p>
+    <div class="dlg-actions">
+      <button type="button" class="ghost" id="accessCancel">Отмена</button>
+      <button type="submit" class="pill">Войти</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

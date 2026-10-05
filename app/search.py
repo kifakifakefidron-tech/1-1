@@ -1,0 +1,171 @@
+"""Поиск объектов: фильтры + точный текстовый поиск.
+
+Текстовый поиск ищет слова целиком (с учётом окончаний по началу слова):
+«движение» найдёт «ЖК Движение», но не тысячу случайных участков, как раньше,
+когда искалось «похожее» по всем длинным текстам.
+"""
+from __future__ import annotations
+
+import json
+import re
+import sqlite3
+from dataclasses import dataclass, field
+
+from .textnorm import norm
+
+SORTS = {
+    "new": "l.last_seen DESC, l.id DESC",
+    "price_asc": "l.price IS NULL, l.price ASC, l.id DESC",
+    "price_desc": "l.price IS NULL, l.price DESC, l.id DESC",
+    "price_m2": "l.price_m2 IS NULL, l.price_m2 ASC, l.id DESC",
+    "area_desc": "l.area IS NULL, l.area DESC, l.id DESC",
+}
+
+
+@dataclass
+class Query:
+    q: str = ""
+    types: list[str] = field(default_factory=list)
+    deal: str = "sale"
+    rooms: list[int] = field(default_factory=list)   # 0 студия … 4 = «4 и больше»
+    price_min: int | None = None
+    price_max: int | None = None
+    area_min: float | None = None
+    area_max: float | None = None
+    land_min: float | None = None
+    land_max: float | None = None
+    districts: list[str] = field(default_factory=list)
+    complexes: list[str] = field(default_factory=list)
+    not_first: bool = False
+    not_last: bool = False
+    fresh_days: int | None = None
+    sort: str = "new"
+    page: int = 1
+    size: int = 30
+
+
+def _fts_query(q: str) -> str | None:
+    tokens = [t for t in re.split(r"[^0-9a-zа-я]+", norm(q)) if t]
+    tokens = [t for t in tokens if len(t) >= 2 or t.isdigit()]
+    if not tokens:
+        return None
+    # «жк» само по себе ничего не сужает
+    tokens = [t for t in tokens if t not in ("жк", "ул", "мкр", "р", "н")] or tokens
+    # Окончания: «мозаике» → ищем «мозаик*»
+    def stem(t: str) -> str:
+        if len(t) > 5 and not t.isdigit():
+            t = re.sub(r"(ами|ями|ого|ему|ому|ыми|ими|ах|ях|ой|ей|ом|ем|ам|ям|ую|юю|ая|яя|ые|ие|ый|ий|ов|ев|а|я|у|ю|е|ы|и|о)$", "", t)
+        return t
+    return " AND ".join(f'"{stem(t)}"*' for t in tokens)
+
+
+def _where(qr: Query, now: int) -> tuple[str, list]:
+    w = ["l.is_active = 1", "l.deal = ?"]
+    p: list = [qr.deal]
+    if qr.types:
+        w.append(f"l.type IN ({','.join('?' * len(qr.types))})")
+        p += qr.types
+    if qr.rooms:
+        conds = []
+        exact = [r for r in qr.rooms if r < 4]
+        if exact:
+            conds.append(f"l.rooms IN ({','.join('?' * len(exact))})")
+            p += exact
+        if any(r >= 4 for r in qr.rooms):
+            conds.append("l.rooms >= 4")
+        w.append("(" + " OR ".join(conds) + ")")
+    for col, lo, hi in (("price", qr.price_min, qr.price_max), ("area", qr.area_min, qr.area_max),
+                        ("land", qr.land_min, qr.land_max)):
+        if lo is not None:
+            w.append(f"l.{col} >= ?"); p.append(lo)
+        if hi is not None:
+            w.append(f"l.{col} <= ?"); p.append(hi)
+    if qr.districts:
+        w.append(f"l.district IN ({','.join('?' * len(qr.districts))})"); p += qr.districts
+    if qr.complexes:
+        w.append(f"l.complex IN ({','.join('?' * len(qr.complexes))})"); p += qr.complexes
+    if qr.not_first:
+        w.append("(l.floor IS NULL OR l.floor > 1)")
+    if qr.not_last:
+        w.append("(l.floor IS NULL OR l.floors IS NULL OR l.floor < l.floors)")
+    if qr.fresh_days:
+        w.append("l.last_seen >= ?"); p.append(now - qr.fresh_days * 86400)
+    fts = _fts_query(qr.q) if qr.q else None
+    if fts:
+        w.append("l.id IN (SELECT rowid FROM listings_fts WHERE listings_fts MATCH ?)"); p.append(fts)
+    return " AND ".join(w), p
+
+
+PUBLIC_FIELDS = ("id", "type", "deal", "rooms", "area", "land", "floor", "floors", "price", "price_m2",
+                 "district", "complex", "settlement", "street", "house", "title", "description",
+                 "first_seen", "last_seen", "seen_count", "lat", "lon")
+
+
+def row_to_item(r: sqlite3.Row, with_contacts: bool) -> dict:
+    d = {k: r[k] for k in PUBLIC_FIELDS}
+    if with_contacts:
+        d["phones"] = json.loads(r["phones"] or "[]")
+        d["fragment"] = r["fragment"]
+    return d
+
+
+def search(conn: sqlite3.Connection, qr: Query, now: int, with_contacts: bool) -> dict:
+    where, params = _where(qr, now)
+    total = conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {where}", params).fetchone()[0]
+    size = max(1, min(qr.size, 100))
+    page = max(1, qr.page)
+    order = SORTS.get(qr.sort, SORTS["new"])
+    rows = conn.execute(
+        f"SELECT l.* FROM listings l WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
+        params + [size, (page - 1) * size],
+    ).fetchall()
+    return {
+        "total": total,
+        "page": page,
+        "pages": (total + size - 1) // size,
+        "items": [row_to_item(r, with_contacts) for r in rows],
+    }
+
+
+def map_points(conn: sqlite3.Connection, qr: Query, now: int) -> list[dict]:
+    where, params = _where(qr, now)
+    rows = conn.execute(
+        f"SELECT l.id, l.lat, l.lon, l.price, l.title FROM listings l WHERE {where} AND l.lat IS NOT NULL LIMIT 5000",
+        params,
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def facets(conn: sqlite3.Connection, qr: Query, now: int) -> dict:
+    """Счётчики для фильтров: районы и ЖК с учётом остальных фильтров."""
+    base = Query(**{**qr.__dict__, "districts": [], "complexes": []})
+    where, params = _where(base, now)
+    districts = conn.execute(
+        f"SELECT l.district AS name, COUNT(*) AS n FROM listings l WHERE {where} AND l.district IS NOT NULL GROUP BY 1 ORDER BY n DESC",
+        params).fetchall()
+    complexes = conn.execute(
+        f"SELECT l.complex AS name, COUNT(*) AS n FROM listings l WHERE {where} AND l.complex IS NOT NULL GROUP BY 1 ORDER BY n DESC LIMIT 300",
+        params).fetchall()
+    return {"districts": [dict(r) for r in districts], "complexes": [dict(r) for r in complexes]}
+
+
+def listing_detail(conn: sqlite3.Connection, listing_id: int, with_contacts: bool) -> dict | None:
+    r = conn.execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    if r is None:
+        return None
+    d = row_to_item(r, with_contacts)
+    ev = conn.execute(
+        """SELECT e.ts, e.price, e.match, m.chat_name, m.sender_name, m.source
+           FROM listing_events e LEFT JOIN messages m ON m.id = e.message_id
+           WHERE e.listing_id = ? ORDER BY e.ts DESC LIMIT 50""", (listing_id,)).fetchall()
+    history = []
+    for e in ev:
+        h = {"ts": e["ts"], "price": e["price"], "match": e["match"]}
+        if with_contacts:
+            h.update(chat=e["chat_name"], sender=e["sender_name"], source=e["source"])
+        history.append(h)
+    d["history"] = history
+    d["chats"] = conn.execute(
+        """SELECT COUNT(DISTINCT m.chat_id) FROM listing_events e JOIN messages m ON m.id = e.message_id
+           WHERE e.listing_id = ?""", (listing_id,)).fetchone()[0]
+    return d
