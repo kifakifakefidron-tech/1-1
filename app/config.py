@@ -28,14 +28,22 @@ def _bool(name: str, default: bool) -> bool:
 DB_PATH = os.getenv("DB_PATH", str(Path(__file__).resolve().parent.parent / "data" / "strely.db"))
 
 # DeepSeek
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 DEEPSEEK_URL = os.getenv("DEEPSEEK_URL", "https://api.deepseek.com/chat/completions")
 
 # Wappi: токен и список профилей «тип:id» через запятую, например
 #   WAPPI_PROFILES=wa:a1b2c3d4-...,tg:e5f6...,max:0a1b...
-WAPPI_TOKEN = os.getenv("WAPPI_TOKEN", "")
+WAPPI_TOKEN = os.getenv("WAPPI_TOKEN", "").strip()
 WAPPI_PROFILES = [p.strip() for p in os.getenv("WAPPI_PROFILES", "").split(",") if p.strip()]
+# Проще: по строке на тип аккаунта — WAPPI_PROFILE_WA / _TG / _MAX = только ID профиля.
+# Случайно вставленную приставку «wa:»/«tg:»/«max:» убираем.
+for _s in ("wa", "tg", "max"):
+    _v = os.getenv(f"WAPPI_PROFILE_{_s.upper()}", "").strip()
+    while _v.lower().startswith(("wa:", "tg:", "max:")):
+        _v = _v.split(":", 1)[1].strip()
+    if _v and f"{_s}:{_v}" not in WAPPI_PROFILES:
+        WAPPI_PROFILES.append(f"{_s}:{_v}")
 # Свой токен на каждый тип аккаунта (WAPPI_TOKEN_WA / _TG / _MAX); если не задан — общий WAPPI_TOKEN
 WAPPI_TOKENS = {s: os.getenv(f"WAPPI_TOKEN_{s.upper()}", "").strip() or WAPPI_TOKEN for s in ("wa", "tg", "max")}
 WAPPI_POLL_SECONDS = int(os.getenv("WAPPI_POLL_SECONDS", "90"))

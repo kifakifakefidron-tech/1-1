@@ -54,7 +54,11 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
 - `app/dedupe.py` — склейка дублей
 - `app/ingest.py` — сохранить сообщение → разобрать → создать/обновить объект; заголовок, индекс
 - `app/search.py` — фильтры, сортировки, фасеты, точки карты, карточка с историей
-- `app/wappi.py` — опрос Wappi `/{api|tapi|maxapi}/sync/messages/all/get`
+- `app/wappi.py` — опрос Wappi. WhatsApp: `/api/sync/messages/all/get`. У Telegram и MAX
+  такого метода НЕТ (по докам wappi.pro): `{tapi|maxapi}/sync/chats/get` → группы с
+  last_timestamp новее курсора → `.../messages/get?chat_id=…&mark_all=false`. MAX отдаёт
+  время в миллисекундах. `/tapi/sync/chats/get` в доках не найден явно — проверить по журналу.
+  Настройки: WAPPI_TOKEN_{WA,TG,MAX} + WAPPI_PROFILE_{WA,TG,MAX} (только ID).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
