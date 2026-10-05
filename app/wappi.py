@@ -25,9 +25,9 @@ MAX_PAGES = 50
 _shown_fields: set[str] = set()
 
 
-def _get(path: str, params: dict) -> dict | list:
+def _get(path: str, params: dict, token: str) -> dict | list:
     url = f"{BASE}{path}?{urllib.parse.urlencode(params)}"
-    req = urllib.request.Request(url, headers={"Authorization": config.WAPPI_TOKEN, "Accept": "application/json"})
+    req = urllib.request.Request(url, headers={"Authorization": token, "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=60) as resp:
         return json.loads(resp.read())
 
@@ -74,6 +74,10 @@ def poll_profile(conn: sqlite3.Connection, profile: str) -> int:
     if source not in PREFIX or not profile_id:
         log.error("Неверный профиль Wappi «%s», ожидается wa:<id>, tg:<id> или max:<id>", profile)
         return 0
+    token = config.WAPPI_TOKENS.get(source)
+    if not token:
+        log.error("Нет токена Wappi для «%s»: задайте WAPPI_TOKEN_%s в .env", profile, source.upper())
+        return 0
     state_key = f"wappi_cursor:{profile}"
     cursor = int(db.get_state(conn, state_key) or 0)
     if not cursor:
@@ -84,7 +88,7 @@ def poll_profile(conn: sqlite3.Connection, profile: str) -> int:
     for page in range(MAX_PAGES):
         params = {"profile_id": profile_id, "limit": PAGE, "offset": page * PAGE, "date": since, "order": "asc"}
         try:
-            batch = _messages(_get(f"{PREFIX[source]}/messages/all/get", params))
+            batch = _messages(_get(f"{PREFIX[source]}/messages/all/get", params, token))
         except urllib.error.HTTPError as e:
             log.error("Wappi %s: HTTP %s %s", profile, e.code, e.read()[:300])
             break
@@ -124,6 +128,6 @@ def poll_profile(conn: sqlite3.Connection, profile: str) -> int:
 
 
 def poll_all(conn: sqlite3.Connection) -> int:
-    if not config.WAPPI_TOKEN or not config.WAPPI_PROFILES:
+    if not config.WAPPI_PROFILES or not any(config.WAPPI_TOKENS.values()):
         return 0
     return sum(poll_profile(conn, p) for p in config.WAPPI_PROFILES)

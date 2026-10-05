@@ -23,7 +23,7 @@ def tick(conn) -> dict:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     conn = db.connect()
-    if not config.WAPPI_TOKEN or not config.WAPPI_PROFILES:
+    if not config.WAPPI_PROFILES or not any(config.WAPPI_TOKENS.values()):
         log.warning("WAPPI_TOKEN / WAPPI_PROFILES не заданы — новые сообщения забираться не будут")
     if not llm.available():
         log.warning("DEEPSEEK_API_KEY не задан — разбор только правилами (хуже для сложных постов)")

@@ -36,6 +36,8 @@ DEEPSEEK_URL = os.getenv("DEEPSEEK_URL", "https://api.deepseek.com/chat/completi
 #   WAPPI_PROFILES=wa:a1b2c3d4-...,tg:e5f6...,max:0a1b...
 WAPPI_TOKEN = os.getenv("WAPPI_TOKEN", "")
 WAPPI_PROFILES = [p.strip() for p in os.getenv("WAPPI_PROFILES", "").split(",") if p.strip()]
+# Свой токен на каждый тип аккаунта (WAPPI_TOKEN_WA / _TG / _MAX); если не задан — общий WAPPI_TOKEN
+WAPPI_TOKENS = {s: os.getenv(f"WAPPI_TOKEN_{s.upper()}", "").strip() or WAPPI_TOKEN for s in ("wa", "tg", "max")}
 WAPPI_POLL_SECONDS = int(os.getenv("WAPPI_POLL_SECONDS", "90"))
 # При первом запуске забрать сообщения за столько часов назад
 WAPPI_BACKFILL_HOURS = int(os.getenv("WAPPI_BACKFILL_HOURS", "48"))
