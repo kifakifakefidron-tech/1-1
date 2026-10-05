@@ -1,23 +1,24 @@
-/* СТРЕЛЫ · поиск объектов. Бежевый + чёрный, Oswald для заголовков и цен,
-   Golos Text для текста, кнопки-«таблетки», минимум украшений. */
+/* 1+1 · поиск объектов. Светло-жёлтый #F3E8BC по бирюзовому #035352,
+   Oswald для заголовков и цен, Golos Text для текста, кнопки-«таблетки». */
 
 :root {
-  --bg: #f3ede3;
-  --paper: #fbf8f2;
-  --ink: #111;
-  --ink-2: #4a463f;
-  --ink-3: #8a8378;
-  --line: #e2d9ca;
-  --line-2: #cfc4b2;
-  --accent: #111;
-  --on-accent: #f3ede3;
-  --chip: #ebe3d5;
-  --focus: #b07a2a;
-  --err: #a3341f;
+  --bg: #035352;
+  --paper: #0a5e5c;
+  --ink: #f3e8bc;
+  --ink-2: rgba(243, 232, 188, .82);
+  --ink-3: rgba(243, 232, 188, .6);
+  --line: rgba(243, 232, 188, .16);
+  --line-2: rgba(243, 232, 188, .32);
+  --accent: #f3e8bc;
+  --on-accent: #035352;
+  --chip: rgba(243, 232, 188, .1);
+  --focus: #ffd86b;
+  --err: #ffb4a0;
+  --hover: #fff6d6;
   --radius: 999px;
   --head: "Oswald", "Arial Narrow", sans-serif;
   --body: "Golos Text", system-ui, -apple-system, "Segoe UI", sans-serif;
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -47,7 +48,7 @@ button { cursor: pointer; }
   font: 600 28px/1 var(--head); letter-spacing: .04em;
   color: var(--ink); text-decoration: none;
 }
-.brand span { font-weight: 500; margin-left: 2px; }
+.brand span { font-weight: 500; margin: 0 1px; opacity: .7; }
 .brand-sub { color: var(--ink-3); font-size: 14px; flex: 1 1 240px; }
 .access-btn {
   border: 1px solid var(--ink); background: transparent;
@@ -88,7 +89,7 @@ button { cursor: pointer; }
 .chip:hover { border-color: var(--ink); }
 .chip.on { background: var(--ink); border-color: var(--ink); color: var(--on-accent); }
 .chip .n { color: var(--ink-3); margin-left: 4px; font-size: 12px; }
-.chip.on .n { color: #bdb4a5; }
+.chip.on .n { color: rgba(3, 83, 82, .65); }
 .chip.x::after { content: " ✕"; font-size: 11px; }
 
 .range, .field { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -153,7 +154,8 @@ button { cursor: pointer; }
   border: 0; background: var(--ink); color: var(--on-accent); border-radius: var(--radius);
   padding: 12px 26px; font-weight: 500;
 }
-.pill:hover { background: #2a2824; }
+.pill:hover { background: var(--hover); }
+.pill.light:hover { background: var(--chip); }
 .pill.light { background: transparent; color: var(--ink); border: 1px solid var(--ink); }
 .ghost { border: 0; background: transparent; padding: 12px 18px; color: var(--ink-2); }
 
@@ -162,16 +164,16 @@ button { cursor: pointer; }
   height: clamp(360px, 68vh, 620px); border-radius: 20px; overflow: hidden;
   border: 1px solid var(--line-2); margin-top: 14px; background: var(--chip);
 }
-.map-pop { font: 14px/1.4 var(--body); }
+.map-pop { font: 14px/1.4 var(--body); color: #12302f; }
 .map-pop b { font: 600 17px var(--head); display: block; }
 .map-pop button {
-  margin-top: 6px; border: 0; background: var(--ink); color: var(--on-accent);
+  margin-top: 6px; border: 0; background: #035352; color: #f3e8bc;
   border-radius: var(--radius); padding: 5px 12px; font-size: 13px;
 }
-.marker-cluster div { background: var(--ink) !important; color: var(--on-accent); font: 600 13px var(--head); }
-.marker-cluster { background: rgba(17, 17, 17, .25) !important; }
+.marker-cluster div { background: #035352 !important; color: #f3e8bc; font: 600 13px var(--head); }
+.marker-cluster { background: rgba(3, 83, 82, .3) !important; }
 .pin {
-  background: var(--ink); color: var(--on-accent); border-radius: var(--radius);
+  background: #035352; color: #f3e8bc; border-radius: var(--radius);
   font: 500 12px/22px var(--head); padding: 0 8px; white-space: nowrap; text-align: center;
   box-shadow: 0 1px 4px rgba(0,0,0,.3);
 }
@@ -181,7 +183,7 @@ dialog {
   border: 0; padding: 0; color: var(--ink); background: var(--paper);
   border-radius: 24px; box-shadow: 0 20px 60px rgba(0,0,0,.25);
 }
-dialog::backdrop { background: rgba(20, 18, 14, .45); }
+dialog::backdrop { background: rgba(0, 20, 20, .6); }
 .detail { width: min(720px, calc(100vw - 24px)); max-height: calc(100vh - 32px); }
 .detail .close {
   position: sticky; top: 12px; float: right; margin: 12px 12px 0 0; z-index: 1;

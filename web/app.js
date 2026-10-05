@@ -1,4 +1,4 @@
-/* СТРЕЛЫ · поиск объектов — страница поиска.
+/* 1+1 · поиск объектов — страница поиска.
    Фильтры → /api/listings, /api/facets, /api/map; карточка → /api/listings/{id};
    вход для коллег → /api/login. Состояние фильтров хранится в адресе страницы,
    поэтому ссылкой на поиск можно поделиться. */
@@ -209,7 +209,7 @@
       : "Ничего не нашлось";
     const html = data.items.map(itemHTML).join("");
     if (append) $("results").insertAdjacentHTML("beforeend", html);
-    else $("results").innerHTML = html || `<li class="empty"><b>Ничего не нашлось ➳</b>Попробуйте убрать часть фильтров или изменить запрос.</li>`;
+    else $("results").innerHTML = html || `<li class="empty"><b>Ничего не нашлось</b>Попробуйте убрать часть фильтров или изменить запрос.</li>`;
     $("loadMore").hidden = state.view !== "list" || data.page >= data.pages;
   }
 
@@ -295,7 +295,7 @@
         return `<a class="pill" href="tel:${esc(p)}">${esc(p)}</a><a class="pill light" href="https://wa.me/${digits}" target="_blank" rel="noopener">WhatsApp</a>`;
       }).join("");
     } else if (meta.public_contact) {
-      contact = `<a class="pill" href="${esc(meta.public_contact)}" target="_blank" rel="noopener">${esc(meta.public_contact_label || "Узнать подробности")} ➳</a>`;
+      contact = `<a class="pill" href="${esc(meta.public_contact)}" target="_blank" rel="noopener">${esc(meta.public_contact_label || "Узнать подробности")} →</a>`;
     }
 
     const hist = (o.history || []).map((h) => {

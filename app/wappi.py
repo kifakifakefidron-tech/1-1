@@ -22,6 +22,7 @@ BASE = "https://wappi.pro"
 PREFIX = {"wa": "/api/sync", "tg": "/tapi/sync", "max": "/maxapi/sync"}
 PAGE = 400
 MAX_PAGES = 50
+_shown_fields: set[str] = set()
 
 
 def _get(path: str, params: dict) -> dict | list:
@@ -79,7 +80,7 @@ def poll_profile(conn: sqlite3.Connection, profile: str) -> int:
         cursor = int(time.time()) - config.WAPPI_BACKFILL_HOURS * 3600
     since = datetime.fromtimestamp(cursor - 300, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
-    added, newest = 0, cursor
+    added, received, newest = 0, 0, cursor
     for page in range(MAX_PAGES):
         params = {"profile_id": profile_id, "limit": PAGE, "offset": page * PAGE, "date": since, "order": "asc"}
         try:
@@ -90,6 +91,10 @@ def poll_profile(conn: sqlite3.Connection, profile: str) -> int:
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
             log.error("Wappi %s: %s", profile, e)
             break
+        if batch and profile not in _shown_fields:  # один раз после запуска — для проверки формата
+            _shown_fields.add(profile)
+            log.info("Wappi %s: пример полей сообщения: %s", profile, sorted(batch[0].keys()))
+        received += len(batch)
         for m in batch:
             if m.get("fromMe") and not config.WAPPI_INCLUDE_FROM_ME:
                 continue
@@ -114,6 +119,7 @@ def poll_profile(conn: sqlite3.Connection, profile: str) -> int:
             break
     if newest > cursor:
         db.set_state(conn, state_key, str(newest))
+    log.info("Wappi %s: получено %d, новых объявлений-кандидатов %d", profile, received, added)
     return added
 
 

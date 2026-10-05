@@ -53,7 +53,7 @@ STALE_DAYS = int(os.getenv("STALE_DAYS", "45"))
 ACCESS_CODE = os.getenv("ACCESS_CODE", "")
 PUBLIC_CONTACT = os.getenv("PUBLIC_CONTACT", "")
 PUBLIC_CONTACT_LABEL = os.getenv("PUBLIC_CONTACT_LABEL", "Узнать подробности")
-SITE_TITLE = os.getenv("SITE_TITLE", "СТРЕЛЫ · поиск объектов")
+SITE_TITLE = os.getenv("SITE_TITLE", "1+1 · поиск объектов")
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me")
 
 # Геокодер для карты: nominatim (бесплатно, 1 запрос/сек) или off

@@ -21,7 +21,7 @@ def client(tmp_path, monkeypatch):
 
 
 def test_page_and_static(client):
-    assert "СТРЕЛЫ" in client.get("/").text
+    assert "1+1" in client.get("/").text
     assert client.get("/static/app.js").status_code == 200
     assert client.get("/static/style.css").status_code == 200
 

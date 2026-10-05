@@ -69,7 +69,8 @@ def query_from(request: Request) -> search.Query:
 
 # ─── обработчики ───────────────────────────────────────────────────────────
 async def index(request: Request):
-    return FileResponse(WEB / "index.html")
+    # no-cache: после обновления сайта браузер сразу берёт новую страницу (и новые ?v= у стилей/скриптов)
+    return FileResponse(WEB / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 async def api_meta(request: Request):
