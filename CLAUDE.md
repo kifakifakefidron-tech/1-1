@@ -66,8 +66,9 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
 Телефоны агентов вырезаются из публичного описания (`parser.strip_phones`) —
 покупатели видят только контакт СТРЕЛ.
 
-Заметка про Windows-машину пользователя: Python там «упакованный» и не видит длинные
-пути в AppData\Roaming — для запуска копировать проект в короткую папку (%TEMP%\strely).
+Репозиторий: https://github.com/kifakifakefidron-tech/1-1 (ветка main).
+Рабочая папка на компьютере пользователя: `C:\Users\kifak\strely-search`.
+Python на Windows-машине запускается как `py` (а не `python`); git — Git for Windows.
 
 ## Что осталось (по порядку)
 1. Первый деплой по README (проверить сборку образа, права на ./data, nginx).
