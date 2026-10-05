@@ -59,6 +59,11 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   last_timestamp новее курсора → `.../messages/get?chat_id=…&mark_all=false`. MAX отдаёт
   время в миллисекундах. `/tapi/sync/chats/get` в доках не найден явно — проверить по журналу.
   Настройки: WAPPI_TOKEN_{WA,TG,MAX} + WAPPI_PROFILE_{WA,TG,MAX} (только ID).
+  Проверено на реальном токене 06.10.2026: WA и TG работают (`/tapi/sync/chats/get` есть).
+  Wappi НЕ соблюдает параметр date — отдал ~18 000 сообщений истории. Поэтому
+  order=desc и остановка на курсоре (`_fresh`). Очередь разбирается от новых к старым,
+  не дольше 60 с за цикл; старше STALE_DAYS — status='skipped'.
+  В сообщениях WA нет названия группы (chat name пуст) — можно брать из /api/sync/chats/get.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

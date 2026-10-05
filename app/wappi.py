@@ -138,25 +138,34 @@ def _show_fields(profile: str, what: str, obj: dict) -> None:
         log.info("Wappi %s: пример полей (%s): %s", profile, what, sorted(obj.keys()))
 
 
+def _fresh(m: dict, cursor: int) -> bool:
+    ts = _ts(m.get("time") or m.get("timestamp"))
+    return ts is None or ts >= cursor - 300
+
+
 def _poll_all_messages(conn, profile, source, profile_id, token, cursor) -> tuple[int, int, int]:
-    """WhatsApp: все сообщения всех чатов одним запросом (постранично)."""
+    """WhatsApp: все сообщения всех чатов одним запросом (постранично).
+
+    Wappi фильтр по дате не соблюдает и отдаёт всю историю, поэтому идём от новых
+    к старым и останавливаемся, как только дошли до уже забранного (курсор)."""
     added = received = 0
     newest = cursor
     for page in range(MAX_PAGES):
         params = {"profile_id": profile_id, "limit": PAGE, "offset": page * PAGE,
-                  "date": _since(cursor), "order": "asc"}
+                  "date": _since(cursor), "order": "desc"}
         payload = _call(profile, f"{PREFIX[source]}/messages/all/get", params, token)
         if payload is None:
             break
         batch = _list(payload, ("messages", "data", "result"))
         if batch:
             _show_fields(profile, "сообщение", batch[0])
-        received += len(batch)
-        for m in batch:
+        fresh = [m for m in batch if _fresh(m, cursor)]
+        received += len(fresh)
+        for m in fresh:
             ok, ts = _store(conn, source, profile_id, m)
             added += ok
             newest = max(newest, ts or 0)
-        if len(batch) < PAGE:
+        if len(batch) < PAGE or len(fresh) < len(batch):
             break
     return added, received, newest
 
@@ -193,19 +202,20 @@ def _poll_by_chats(conn, profile, source, profile_id, token, cursor) -> tuple[in
             continue
         for page in range(MAX_PAGES):
             params = {"profile_id": profile_id, "chat_id": chat_id, "limit": CHAT_PAGE,
-                      "offset": page * CHAT_PAGE, "date": _since(cursor), "order": "asc", "mark_all": "false"}
+                      "offset": page * CHAT_PAGE, "date": _since(cursor), "order": "desc", "mark_all": "false"}
             payload = _call(profile, f"{PREFIX[source]}/messages/get", params, token)
             if payload is None:
                 break
             batch = _list(payload, ("messages", "data", "result"))
             if batch:
                 _show_fields(profile, "сообщение", batch[0])
-            received += len(batch)
-            for m in batch:
+            fresh = [m for m in batch if _fresh(m, cursor)]
+            received += len(fresh)
+            for m in fresh:
                 ok, ts = _store(conn, source, profile_id, m, chat_id=chat_id, chat_name=chat_name, group=True)
                 added += ok
                 newest = max(newest, ts or 0)
-            if len(batch) < CHAT_PAGE:
+            if len(batch) < CHAT_PAGE or len(fresh) < len(batch):
                 break
         time.sleep(0.2)  # бережно к Wappi
     return added, received, newest

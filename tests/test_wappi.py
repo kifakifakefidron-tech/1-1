@@ -25,6 +25,37 @@ def test_each_profile_uses_its_own_token(conn, monkeypatch):
                      ("/tapi/sync/chats/get", "p2", "token-tg")]
 
 
+def test_whatsapp_stops_at_old_history(conn, monkeypatch):
+    """Wappi отдаёт всю историю, не глядя на дату — берём только свежее и дальше не листаем."""
+    monkeypatch.setattr(config, "WAPPI_TOKENS", {"wa": "t", "tg": "", "max": ""})
+    monkeypatch.setattr(config, "WAPPI_PROFILES", ["wa:p1"])
+    monkeypatch.setattr(wappi, "PAGE", 2)
+    pages = []
+
+    def fake_get(path, params, token):
+        pages.append(params["offset"])
+        assert params["order"] == "desc"
+        return {"messages": [
+            {"id": "new", "chatId": "1@g.us", "time": NOW - 60, "body": AD},
+            {"id": "old", "chatId": "1@g.us", "time": NOW - 90 * 86400, "body": AD + " старое"},
+        ]}
+
+    monkeypatch.setattr(wappi, "_get", fake_get)
+    assert wappi.poll_all(conn) == 1
+    assert pages == [0]  # до второй страницы не дошли
+    assert [r["msg_id"] for r in conn.execute("SELECT msg_id FROM messages")] == ["new"]
+
+
+def test_queue_newest_first_and_too_old_skipped(conn):
+    from app import ingest
+    old = ingest.add_message(conn, source="wa", text=AD, ts=NOW - 60 * 86400, msg_id="a")
+    mid = ingest.add_message(conn, source="wa", text=AD.replace("7/16", "3/16"), ts=NOW - 7200, msg_id="b")
+    new = ingest.add_message(conn, source="wa", text=AD.replace("7/16", "9/16"), ts=NOW - 60, msg_id="c")
+    assert ingest.process_pending(conn, limit=1, use_llm=False, now=NOW) == 1
+    status = {r["id"]: r["status"] for r in conn.execute("SELECT id, status FROM messages")}
+    assert status == {old: "skipped", mid: "new", new: "done"}
+
+
 def test_private_chats_are_skipped(conn, monkeypatch):
     monkeypatch.setattr(config, "WAPPI_TOKENS", {"wa": "t", "tg": "", "max": ""})
     monkeypatch.setattr(config, "WAPPI_PROFILES", ["wa:p1"])

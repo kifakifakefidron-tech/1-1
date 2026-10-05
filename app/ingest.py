@@ -197,11 +197,25 @@ def process_message(conn: sqlite3.Connection, message_id: int, use_llm: bool | N
     return {"status": "done", "kind": kind, "results": results}
 
 
-def process_pending(conn: sqlite3.Connection, limit: int = 200, use_llm: bool | None = None) -> int:
-    ids = [r["id"] for r in conn.execute("SELECT id FROM messages WHERE status='new' ORDER BY ts LIMIT ?", (limit,))]
+def process_pending(conn: sqlite3.Connection, limit: int = 200, use_llm: bool | None = None,
+                    budget_s: float | None = None, now: int | None = None) -> int:
+    """Разобрать очередь: сначала самые свежие сообщения. budget_s — не дольше стольких
+    секунд за раз, чтобы большая очередь (первый запуск) не задерживала новые сообщения."""
+    now = int(now or time.time())
+    # Старше STALE_DAYS — объект всё равно сразу ушёл бы в архив; не тратим нейросеть
+    conn.execute("UPDATE messages SET status='skipped' WHERE status='new' AND ts < ?",
+                 (now - config.STALE_DAYS * 86400,))
+    conn.commit()
+    started = time.monotonic()
+    ids = [r["id"] for r in conn.execute(
+        "SELECT id FROM messages WHERE status='new' ORDER BY ts DESC, id DESC LIMIT ?", (limit,))]
+    done = 0
     for i in ids:
         process_message(conn, i, use_llm=use_llm)
-    return len(ids)
+        done += 1
+        if budget_s is not None and time.monotonic() - started > budget_s:
+            break
+    return done
 
 
 def archive_stale(conn: sqlite3.Connection, now: int | None = None) -> int:
