@@ -1,0 +1,5 @@
+# Caddy сам получает и продлевает HTTPS-сертификат для адреса из SITE_DOMAIN (.env)
+{$SITE_DOMAIN} {
+	encode gzip
+	reverse_proxy web:8090
+}

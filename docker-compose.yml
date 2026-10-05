@@ -1,9 +1,25 @@
-# Два сервиса на одном образе и одной базе (папка ./data на сервере):
-#   web    — сайт и API, слушает только 127.0.0.1:8090 (наружу его отдаёт nginx)
+# Три сервиса на отдельном сервере:
+#   caddy  — принимает посетителей на 80/443 и сам получает HTTPS-сертификат
+#   web    — сайт и API (снаружи недоступен, только через caddy)
 #   worker — каждые 1–2 минуты забирает сообщения из Wappi и разбирает их
-name: strely
+# База — один файл в папке ./data на сервере.
+name: oneplusone
 
 services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
   web:
     build: .
     restart: unless-stopped
@@ -11,7 +27,7 @@ services:
     volumes:
       - ./data:/app/data
     ports:
-      - "127.0.0.1:8090:8090"
+      - "127.0.0.1:8090:8090"   # только для проверки с самого сервера
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/api/meta', timeout=5)"]
       interval: 60s
@@ -25,3 +41,7 @@ services:
     command: ["python", "-m", "app.worker"]
     volumes:
       - ./data:/app/data
+
+volumes:
+  caddy_data:
+  caddy_config:
