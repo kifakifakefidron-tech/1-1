@@ -33,6 +33,8 @@ class ParsedObject:
     description: str
     fragment: str
     phones: list[str] = field(default_factory=list)
+    room_kind: str | None = None      # studio | classic | euro | mini
+    article: str | None = None        # «Артикул: 337» — объект есть на сайте СТРЕЛ
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -114,12 +116,16 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
     if price is None or price < 1000:
         price = r.price
 
+    # Комнаты: тип планировки (студия/мини/евро/обычная) по тексту надёжнее нейросети
+    rk = rules.extract_room_kind(fragment)
+    room_kind = rk[0] if rk else None
     rooms = obj.get("rooms")
-    rooms = _int(rooms) if rooms is not None else r.rooms
+    rooms = rk[1] if rk else (_int(rooms) if rooms is not None else r.rooms)
     if rooms is not None:
         rooms = max(0, min(rooms, 5))
+        room_kind = room_kind or ("studio" if rooms == 0 else "classic")
     if otype in ("land", "commercial"):
-        rooms = None
+        rooms = room_kind = None
 
     floor = r.floor or _int(obj.get("floor"))
     floors = r.floors or _int(obj.get("floors"))
@@ -167,6 +173,7 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
         price=price, district=district, complex=complex_rec.name if complex_rec else None,
         settlement=settlement, street=street, house=house,
         description=description, fragment=fragment.strip(), phones=phones,
+        room_kind=room_kind, article=rules.extract_article(fragment),
     )
 
 

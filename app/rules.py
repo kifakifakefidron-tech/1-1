@@ -71,7 +71,18 @@ _KEYCAP_RE = re.compile("(\\d)️?⃣")
 def normalize_digits(text: str) -> str:
     """«4⃣9⃣0⃣0⃣» → «4900» (цифры-эмодзи), «5. 600 т р» → «5600 т р»."""
     text = _KEYCAP_RE.sub(r"\1", text or "")
+    # «5700🔑🍋» → «5700🍋»: значки между ценой и «лимоном»/«мешком»
+    text = re.sub(r"(\d)[ \t]*(?:[^\w\s.,:;()\-+/🍋💰🪙]️?[ \t]*){1,3}(?=[🍋💰])", r"\1", text)
     return re.sub(r"(\d)[.,]\s(\d{3})(?=\s*(?:т\.?\s?р|тыс|000|₽|руб))", r"\1\2", text, flags=re.IGNORECASE)
+
+
+_ARTICLE_RE = re.compile(r"артикул\w*\s*[:№#\-]?\s*(\d{1,7})", re.IGNORECASE)
+
+
+def extract_article(text: str) -> str | None:
+    """«Артикул: 337» — номер объекта на сайте СТРЕЛ."""
+    m = _ARTICLE_RE.search(text or "")
+    return m.group(1) if m else None
 
 
 _PRICE_LABEL_BEFORE = re.compile(r"(?:цен[аы]|стоимост\w*|💰|🪙)\s*[:\-–—]?\s*$", re.IGNORECASE)
@@ -189,10 +200,50 @@ _FLOOR3_RE = re.compile(r"этаж(?!н|ей|ност)\w*\.?[ \t]*[:\-]?[ \t]*(?
                         re.IGNORECASE)
 
 
-def extract_rooms(text: str) -> int | None:
+_MINI_RE = re.compile(r"\bмини\s*-?\s*(?P<n>[1-4])(?!\d)")
+_EURO_KIND_RE = re.compile(r"\bевро\s*-?\s*(?P<n>[1-6])(?!\d)|\b(?P<n2>[1-6])\s*-?\s*евро|\bе(?P<n3>[1-6])\s*(?:кв|к\b|ккв|-?ка\b)")
+
+
+def extract_room_kind(text: str) -> tuple[str, int] | None:
+    """Тип планировки: («studio», 0) / («mini», 2) / («euro», 2) / («classic», 2)."""
     t = norm(text)
+    m = _MINI_RE.search(t)
+    if m:
+        return "mini", int(m.group("n"))
+    m = _EURO_KIND_RE.search(t)
+    if m:
+        return "euro", int(m.group("n") or m.group("n2") or m.group("n3"))
     if re.search(r"\bстуди", t):
+        return "studio", 0
+    n = _classic_rooms(t)
+    return ("classic", n) if n is not None else None
+
+
+def rooms_mask(kind: str | None, n: int | None) -> int:
+    """Какие кнопки «Комнаты» показывают объект (бит 0 — студии, 1..3, 4 — «4+»).
+
+    Студии = студии и мини-1; «1» = мини-1, 1-к, евро-2, мини-2; «2» = мини-2, 2-к, евро-3, мини-3…"""
+    if n is None:
         return 0
+
+    def bit(k: int) -> int:
+        return 1 << max(0, min(k, 4))
+
+    if kind == "studio" or n == 0:
+        return bit(0)
+    if kind == "euro":
+        return bit(n - 1)
+    if kind == "mini":
+        return bit(n - 1) | bit(n)
+    return bit(n)
+
+
+def extract_rooms(text: str) -> int | None:
+    rk = extract_room_kind(text)
+    return rk[1] if rk else None
+
+
+def _classic_rooms(t: str) -> int | None:
     m = _EURO_RE.search(t)
     if m:
         return int(m.group("n") or m.group("n2"))

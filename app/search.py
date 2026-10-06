@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from . import geo
 from .textnorm import norm, words
 
+FEED_FIRST = "l.source = 'feed' DESC, "
 SORTS = {
     "new": "l.last_seen DESC, l.id DESC",
     "price_asc": "l.price IS NULL, l.price ASC, l.id DESC",
@@ -70,6 +71,13 @@ def interpret(q: str) -> tuple[str | None, list[int]]:
         if re.search(rx, w):
             rooms.append(n)
             w = re.sub(rx, " ", w)
+    for m in re.finditer(r"\bмини\s*-?\s*([1-4])\b", w):
+        n = int(m.group(1))
+        rooms += [n - 1, n]
+    w = re.sub(r"\bмини\s*-?\s*([1-4])\b", " ", w)
+    for m in re.finditer(r"\bевро\s*-?\s*([2-6])\b|\b([2-6])\s*-?\s*евро\b", w):
+        rooms.append(int(m.group(1) or m.group(2)) - 1)
+    w = re.sub(r"\bевро\s*-?\s*([2-6])\b|\b([2-6])\s*-?\s*евро\b", " ", w)
     for m in _ROOM_NUM.finditer(w):
         rooms.append(int(m.group(1) or m.group(2)))
     w = _ROOM_NUM.sub(" ", w)
@@ -103,14 +111,11 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
         w.append(f"l.type IN ({','.join('?' * len(qr.types))})")
         p += qr.types
     if qr.rooms:
-        conds = []
-        exact = [r for r in qr.rooms if r < 4]
-        if exact:
-            conds.append(f"l.rooms IN ({','.join('?' * len(exact))})")
-            p += exact
-        if any(r >= 4 for r in qr.rooms):
-            conds.append("l.rooms >= 4")
-        w.append("(" + " OR ".join(conds) + ")")
+        mask = 0
+        for r in qr.rooms:
+            mask |= 1 << max(0, min(r, 4))
+        w.append("(l.rooms_mask & ?) != 0")
+        p.append(mask)
     for col, lo, hi in (("price", qr.price_min, qr.price_max), ("area", qr.area_min, qr.area_max),
                         ("land", qr.land_min, qr.land_max)):
         if lo is not None:
@@ -134,7 +139,7 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
 
 PUBLIC_FIELDS = ("id", "type", "deal", "rooms", "area", "land", "floor", "floors", "price", "price_m2",
                  "district", "complex", "settlement", "street", "house", "title", "description",
-                 "first_seen", "last_seen", "seen_count", "lat", "lon", "source", "url")
+                 "first_seen", "last_seen", "seen_count", "lat", "lon", "source", "url", "room_kind", "article")
 
 
 def mask_phone(p: str) -> str:
@@ -160,7 +165,7 @@ def search(conn: sqlite3.Connection, qr: Query, now: int, with_contacts: bool) -
     total = conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {where}", params).fetchone()[0]
     size = max(1, min(qr.size, 100))
     page = max(1, qr.page)
-    order = SORTS.get(qr.sort, SORTS["new"])
+    order = FEED_FIRST + SORTS.get(qr.sort, SORTS["new"])
     rows = conn.execute(
         f"SELECT l.* FROM listings l WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
         params + [size, (page - 1) * size],

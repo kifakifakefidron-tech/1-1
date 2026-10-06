@@ -56,6 +56,18 @@
     if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
     return many;
   }
+  function headline(o) {
+    if (o.complex) return `ЖК ${o.complex}`;
+    if (o.district) return o.district;
+    if (o.street) return `ул. ${o.street}${o.house ? ", " + o.house : ""}`;
+    return o.settlement || "";
+  }
+  // Адрес под параметрами — без того, что уже стоит в заголовке
+  function address(o) {
+    const head = headline(o);
+    const street = o.street ? `ул. ${o.street}${o.house ? ", " + o.house : ""}` : "";
+    return [o.district, o.settlement, street].filter((x) => x && x !== head).join(" · ");
+  }
   function place(o) {
     const street = o.street ? `ул. ${o.street}${o.house ? ", " + o.house : ""}` : "";
     return [o.complex && `ЖК ${o.complex}`, o.district, o.settlement, street].filter(Boolean).join(" · ");
@@ -198,22 +210,22 @@
 
   // ─── результаты ─────────────────────────────────────────────────────────
   function itemHTML(o) {
-    const where = place(o);
     const tag = o.type === "new" ? `<span class="tag">новостройка</span>` : "";
     const m2 = o.price_m2 && o.deal !== "rent" ? `<div class="price-m2">${num(o.price_m2)} ₽/м²</div>` : "";
-    const seen = o.seen_count > 1 ? ` · присылали ${o.seen_count} ${plural(o.seen_count, "раз", "раза", "раз")}` : "";
     const photo = o.photos && o.photos[0]
       ? `<div class="item-photo"><img src="${esc(o.photos[0])}" alt="" loading="lazy"></div>` : "";
     const fav = me() && me().favorites.includes(o.id);
     const strely = o.source === "feed" ? `<span class="tag tag-strely">СТРЕЛЫ</span>` : "";
+    const addr = address(o);
     return `<li class="item${photo ? " has-photo" : ""}" tabindex="0" data-id="${o.id}">
       ${photo}
       <button type="button" class="fav-btn${fav ? " on" : ""}" data-fav="${o.id}" aria-label="${fav ? "Убрать из избранного" : "В избранное"}">${fav ? "♥" : "♡"}</button>
+      ${headline(o) || strely ? `<h3 class="item-head">${esc(headline(o))}${strely}</h3>` : ""}
       <div class="item-price"><div class="price">${esc(fmtPrice(o.price, o.deal))}</div>${m2}</div>
-      <h3 class="item-title">${esc(o.title)}${tag}${strely}</h3>
-      ${where ? `<div class="item-place">${esc(where)}</div>` : ""}
+      <div class="item-title">${esc(o.title)}${tag}</div>
+      ${addr ? `<div class="item-place">${esc(addr)}</div>` : ""}
       ${o.description ? `<p class="item-desc">${esc(o.description)}</p>` : ""}
-      <div class="item-meta">${esc(fmtAgo(o.last_seen))}${esc(seen)}</div>
+      <div class="item-meta">${esc(fmtAgo(o.last_seen))}</div>
     </li>`;
   }
 
@@ -330,13 +342,14 @@
         <span class="who">${esc(who || MATCH[h.match] || "")}</span></li>`;
     }).join("");
 
-    const chats = o.chats > 1 ? `Объект присылали в ${o.chats} ${plural(o.chats, "чат", "чата", "чатов")}. ` : "";
+    const chats = (o.seen_count > 1 ? `Присылали ${o.seen_count} ${plural(o.seen_count, "раз", "раза", "раз")}` : "")
+      + (o.chats > 1 ? ` в ${o.chats} ${plural(o.chats, "чат", "чата", "чатов")}` : "") + (o.seen_count > 1 ? ". " : "");
     const fav = !!o.favorite;
     return `
       ${gallery}
       <button type="button" class="fav-btn d-fav${fav ? " on" : ""}" data-fav="${o.id}">${fav ? "♥ В избранном" : "♡ В избранное"}</button>
-      <h2 class="d-title" id="dTitle">${esc(o.title)}</h2>
-      <p class="d-place">${esc(place(o))}</p>
+      <h2 class="d-title" id="dTitle">${esc(headline(o) || o.title)}</h2>
+      <p class="d-place">${esc([headline(o) ? o.title : "", address(o)].filter(Boolean).join(" · "))}</p>
       <p class="d-price">${esc(fmtPrice(o.price, o.deal))}</p>
       <p class="d-price-m2">${o.price_m2 && o.deal !== "rent" ? esc(num(o.price_m2)) + " ₽/м²" : "&nbsp;"}</p>
       <dl class="d-facts">${facts}</dl>

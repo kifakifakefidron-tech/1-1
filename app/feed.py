@@ -17,13 +17,15 @@ import xml.etree.ElementTree as ET
 
 from . import config, db, geo, parser, rules
 from .ingest import _price_m2, _reindex, make_search_text, make_title
+from .rules import rooms_mask
 
 log = logging.getLogger(__name__)
 
-# «♟Е2 КВ♟» → (тип, комнаты)
+# «♟Е2 КВ♟» → (тип, комнаты, планировка)
 _VENDOR = [
-    (r"СТУДИ", ("flat", 0)), (r"ДОМ", ("house", None)), (r"УЧАСТ", ("land", None)),
-    (r"КОММЕРЦ", ("commercial", None)), (r"(?:Е|МИНИ)?\s*(\d)\s*К?\s*КВ", ("flat", "n")),
+    (r"СТУДИ", ("flat", 0, "studio")), (r"ДОМ", ("house", None, None)), (r"УЧАСТ", ("land", None, None)),
+    (r"КОММЕРЦ", ("commercial", None, None)), (r"МИНИ\s*(\d)", ("flat", "n", "mini")),
+    (r"(?<![А-ЯЁ])Е\s*(\d)", ("flat", "n", "euro")), (r"(\d)\s*К?\s*КВ", ("flat", "n", "classic")),
 ]
 
 
@@ -33,13 +35,13 @@ def _text(desc: str | None) -> str:
     return "\n".join(ln.strip() for ln in t.splitlines() if ln.strip())
 
 
-def _vendor(v: str | None) -> tuple[str | None, int | None]:
+def _vendor(v: str | None) -> tuple[str | None, int | None, str | None]:
     v = (v or "").upper()
-    for rx, (t, rooms) in _VENDOR:
+    for rx, (t, rooms, kind) in _VENDOR:
         m = re.search(rx, v)
         if m:
-            return t, (int(m.group(1)) if rooms == "n" else rooms)
-    return None, None
+            return t, (int(m.group(1)) if rooms == "n" else rooms), kind
+    return None, None, None
 
 
 def placeholder_pictures(offers: list[ET.Element]) -> set[str]:
@@ -55,12 +57,13 @@ def parse_offer(o: ET.Element, skip_pictures: set[str] | frozenset = frozenset()
         return None
     params = {p.get("name"): (p.text or "").strip() for p in o.findall("param")}
     po = parser._build(None, text, text, None)
-    otype, rooms = _vendor(o.findtext("vendor"))
+    otype, rooms, kind = _vendor(o.findtext("vendor"))
     otype = otype or po.type or "flat"
     if otype in ("flat", "new", "room"):
-        rooms = rooms if rooms is not None else po.rooms
+        if rooms is None:
+            rooms, kind = po.rooms, po.room_kind
     else:
-        rooms = None
+        rooms = kind = None
     try:
         price = float(o.findtext("price") or 0)
     except ValueError:
@@ -74,7 +77,8 @@ def parse_offer(o: ET.Element, skip_pictures: set[str] | frozenset = frozenset()
     if m:
         lat, lon = float(m.group(1)), float(m.group(2))
     d = po.to_dict()
-    d.update(type=otype, rooms=rooms, price=price, complex=complex_name, deal="sale",
+    d.update(type=otype, rooms=rooms, room_kind=kind, price=price, complex=complex_name, deal="sale",
+             article=(o.findtext("vendorCode") or "").strip() or rules.extract_article(text),
              description=parser.strip_phones(text), fragment=text, phones=[])
     if not d["district"] and complex_name:
         rec = geo.resolve_complex(complex_name)
@@ -109,13 +113,14 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
                 _price_m2(d["price"], d["area"]), d["district"], d["complex"], d["settlement"], d["street"],
                 d["house"], d["title"], d["description"], d["fragment"], d["search_text"],
                 json.dumps(d["photos"], ensure_ascii=False), d["url"], d["lat"], d["lon"],
-                "ok" if d["lat"] else "pending")
+                "ok" if d["lat"] else "pending", d["room_kind"], rooms_mask(d["room_kind"], d["rooms"]), d["article"])
         if row:
             lid = row["id"]
             conn.execute(
                 """UPDATE listings SET type=?, deal=?, rooms=?, area=?, land=?, floor=?, floors=?, price=?, price_m2=?,
                        district=?, complex=?, settlement=?, street=?, house=?, title=?, description=?, fragment=?,
-                       search_text=?, photos=?, url=?, lat=?, lon=?, geo_status=?, is_active=1,
+                       search_text=?, photos=?, url=?, lat=?, lon=?, geo_status=?, room_kind=?, rooms_mask=?,
+                       article=?, is_active=1,
                        last_seen=CASE WHEN price_changed THEN ? ELSE last_seen END
                    WHERE id=?""".replace("price_changed", "1" if row["price"] != d["price"] else "0"),
                 vals + (now, lid))
@@ -124,8 +129,9 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
             cur = conn.execute(
                 """INSERT INTO listings (type, deal, rooms, area, land, floor, floors, price, price_m2, district,
                        complex, settlement, street, house, title, description, fragment, search_text, photos, url,
-                       lat, lon, geo_status, phones, first_seen, last_seen, seen_count, is_active, source, ext_id)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'[]',?,?,1,1,'feed',?)""",
+                       lat, lon, geo_status, room_kind, rooms_mask, article, phones, first_seen, last_seen,
+                       seen_count, is_active, source, ext_id)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'[]',?,?,1,1,'feed',?)""",
                 vals + (now, now, d["ext_id"]))
             lid = cur.lastrowid
             added += 1
@@ -136,9 +142,13 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
         if r["ext_id"] not in seen:
             conn.execute("UPDATE listings SET is_active=0 WHERE id=?", (r["id"],))
             gone += 1
+    # Объявления из чатов с артикулом, который есть в фиде, — это объекты СТРЕЛ: копии скрываем
+    dupes = conn.execute(
+        """UPDATE listings SET is_active = 0 WHERE source = 'chat' AND is_active = 1 AND article IN
+               (SELECT article FROM listings WHERE source = 'feed' AND is_active = 1 AND article IS NOT NULL)""").rowcount
     conn.commit()
     db.set_state(conn, "feed_synced", str(now))
-    return {"offers": len(offers), "added": added, "updated": updated, "hidden": gone}
+    return {"offers": len(offers), "added": added, "updated": updated, "hidden": gone, "chat_copies_hidden": dupes}
 
 
 def maybe_sync(conn: sqlite3.Connection) -> dict | None:

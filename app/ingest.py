@@ -8,7 +8,7 @@ import sqlite3
 import time
 
 from . import config, dedupe, parser
-from .rules import TYPE_LABELS
+from .rules import TYPE_LABELS, rooms_mask
 from .textnorm import norm, words
 
 log = logging.getLogger(__name__)
@@ -29,7 +29,15 @@ def make_title(o: dict) -> str:
     rooms = o.get("rooms")
     parts: list[str] = []
     if t in ("flat", "new"):
-        head = "Студия" if rooms == 0 else (f"{rooms}-к квартира" if rooms else "Квартира")
+        kind = o.get("room_kind")
+        if rooms == 0 or kind == "studio":
+            head = "Студия"
+        elif kind == "euro" and rooms:
+            head = f"Евро-{rooms}"
+        elif kind == "mini" and rooms:
+            head = f"Мини-{rooms}"
+        else:
+            head = f"{rooms}-к квартира" if rooms else "Квартира"
         if t == "new":
             head += " (новостройка)"
         parts.append(head)
@@ -74,8 +82,16 @@ def _price_m2(price, area) -> int | None:
 def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: int | None, ts: int) -> tuple[int, str]:
     """Создаёт новый объект или обновляет найденный дубль. Возвращает (id, как сопоставили)."""
     fh = dedupe.fragment_hash(o.fragment)
-    match, why = dedupe.find_match(conn, o, fh, ts)
     d = o.to_dict()
+    if d.get("article"):
+        own = conn.execute("SELECT id FROM listings WHERE source = 'feed' AND article = ? AND is_active = 1",
+                           (d["article"],)).fetchone()
+        if own is not None:
+            conn.execute(
+                "INSERT INTO listing_events (listing_id, message_id, ts, price, phones, fragment_hash, match) "
+                "VALUES (?,?,?,?,?,?,'strely')", (own["id"], message_id, ts, d["price"], json.dumps(d["phones"]), fh))
+            return own["id"], "strely"
+    match, why = dedupe.find_match(conn, o, fh, ts)
 
     if match is None:
         d["title"] = make_title(d)
@@ -83,12 +99,12 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         cur = conn.execute(
             """INSERT INTO listings (type, deal, rooms, area, land, floor, floors, price, price_m2,
                    district, complex, settlement, street, house, title, description, fragment, phones,
-                   first_seen, last_seen, seen_count, is_active, search_text)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,1,?)""",
+                   first_seen, last_seen, seen_count, is_active, search_text, room_kind, rooms_mask, article)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,1,?,?,?,?)""",
             (d["type"], d["deal"], d["rooms"], d["area"], d["land"], d["floor"], d["floors"], d["price"],
              _price_m2(d["price"], d["area"]), d["district"], d["complex"], d["settlement"], d["street"],
              d["house"], d["title"], d["description"], d["fragment"], json.dumps(d["phones"], ensure_ascii=False),
-             ts, ts, d["search_text"]),
+             ts, ts, d["search_text"], d["room_kind"], rooms_mask(d["room_kind"], d["rooms"]), d["article"]),
         )
         lid = cur.lastrowid
         why = "new"
@@ -98,7 +114,8 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         # Заполняем пропуски, обновляем цену на более свежую. Описание
         # не затираем коротким — берём более содержательное.
         merged = dict(cur_d)
-        for k in ("rooms", "area", "land", "floor", "floors", "district", "complex", "settlement", "street", "house"):
+        for k in ("rooms", "room_kind", "area", "land", "floor", "floors", "district", "complex", "settlement",
+                  "street", "house", "article"):
             if merged.get(k) in (None, "") and d.get(k) not in (None, ""):
                 merged[k] = d[k]
         if ts >= cur_d["last_seen"] and d["price"]:
@@ -120,12 +137,14 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
             """UPDATE listings SET rooms=?, area=?, land=?, floor=?, floors=?, price=?, price_m2=?, district=?,
                    complex=?, settlement=?, street=?, house=?, title=?, description=?, fragment=?, phones=?,
                    last_seen=MAX(last_seen, ?), first_seen=MIN(first_seen, ?), seen_count=seen_count+1,
-                   is_active=1, search_text=?, geo_status=CASE WHEN ? THEN 'pending' ELSE geo_status END
+                   is_active=1, search_text=?, geo_status=CASE WHEN ? THEN 'pending' ELSE geo_status END,
+                   room_kind=?, rooms_mask=?, article=?
                WHERE id=?""",
             (merged["rooms"], merged["area"], merged["land"], merged["floor"], merged["floors"], merged["price"],
              _price_m2(merged["price"], merged["area"]), merged["district"], merged["complex"], merged["settlement"],
              merged["street"], merged["house"], merged["title"], merged["description"], merged["fragment"],
-             merged["phones"], ts, ts, merged["search_text"], geo_reset, lid),
+             merged["phones"], ts, ts, merged["search_text"], geo_reset,
+             merged.get("room_kind"), rooms_mask(merged.get("room_kind"), merged["rooms"]), merged.get("article"), lid),
         )
         d["search_text"] = merged["search_text"]
     _reindex(conn, lid, d["search_text"])

@@ -149,6 +149,9 @@ MIGRATIONS = [
     ("listings", "ext_id", "TEXT"),                           # id объекта в фиде
     ("listings", "photos", "TEXT NOT NULL DEFAULT '[]'"),
     ("listings", "url", "TEXT"),
+    ("listings", "article", "TEXT"),                          # артикул СТРЕЛ («Артикул: 337»)
+    ("listings", "room_kind", "TEXT"),                        # studio | classic | euro | mini
+    ("listings", "rooms_mask", "INTEGER NOT NULL DEFAULT 0"), # для фильтра «Комнаты» (rules.rooms_mask)
 ]
 
 _local = threading.local()
