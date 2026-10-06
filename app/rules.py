@@ -39,7 +39,7 @@ class Fields:
 
 
 # ─── цена ──────────────────────────────────────────────────────────────────
-_NUM = r"\d{1,3}(?:[   .,']\d{3})+|\d+(?:[.,]\d+)?"
+_NUM = r"\d{1,3}(?:[   .,']\d{3})+(?![\d])|\d+(?:[.,]\d+)?"
 _PRICE_RE = re.compile(
     rf"(?P<num>{_NUM})\s*(?P<unit>млн\.?|миллион\w*|лям\w*|лимон\w*|🍋|млрд|т\.?\s?р\.?|тыс\.?\s?(?:руб\w*|р\.?)?|тысяч\w*|к\b)?\s*(?P<cur>₽|руб\w*|р\.?(?=\s|$|[,;!)*])|rub)?",
     re.IGNORECASE,
@@ -64,12 +64,23 @@ _NOT_PRICE_BEFORE = re.compile(
     r"[^\n\d]{0,12}$",
     re.IGNORECASE,
 )
+# Слова перед числом в той же строке: «это цена» / «это не цена объекта»
+_PRICE_WORD_LINE = re.compile(r"цен[аеуы]|стоимост\w*|💰|🪙|прода\w*\s+за|за\s*$", re.IGNORECASE)
+_NOT_PRICE_WORD = re.compile(
+    r"обрем\w*|обремен\w*|дкп|договор\w*|разбивк\w*|задат\w*|аванс\w*|комисс\w*|кэшб\w*|взнос\w*|доплат\w*|"
+    r"остат\w*|долг\w*|ипотек\w*|маткап\w*|мат\.?\s*кап\w*|сертификат\w*|налог\w*|коммунал\w*|залог\w*|депозит\w*|"
+    r"кредит\w*|рассрочк\w*|первоначал\w*|пв\b|ку\b",
+    re.IGNORECASE,
+)
 _KEYCAP_RE = re.compile("(\\d)️?⃣")
 
 
 def normalize_digits(text: str) -> str:
     """«4⃣9⃣0⃣0⃣» → «4900» (цифры-эмодзи), «5. 600 т р» → «5600 т р»."""
     text = _KEYCAP_RE.sub(r"\1", text or "")
+    text = re.sub(r"\*+", "", text)
+    # «5  500 000» (двойной пробел) → «5 500 000»
+    text = re.sub(r"(\d)[   ]{2,}(?=\d{3}\b)", r"\1 ", text)
     # «5700🔑🍋» → «5700🍋»: значки между ценой и «лимоном»/«мешком»
     text = re.sub(r"(\d)[ \t]*(?:[^\w\s.,:;()\-+/🍋💰🪙]️?[ \t]*){1,3}(?=[🍋💰])", r"\1", text)
     return re.sub(r"(\d)[.,]\s(\d{3})(?=\s*(?:т\.?\s?р|тыс|000|₽|руб))", r"\1\2", text, flags=re.IGNORECASE)
@@ -105,12 +116,21 @@ def extract_price(text: str, deal: str = "sale", strict: bool = False) -> int | 
         before = text[max(0, m.start() - 3): m.start()]
         if re.search(r"[+\d]$", before):  # кусок телефона/даты
             continue
-        # «Цена 3200», «5600 💰» — подписано как цена
-        labelled = bool(_PRICE_LABEL_BEFORE.search(text[max(0, m.start() - 16): m.start()])
-                        or re.match(r"\s*(?:т\.?\s?р\.?\s*)?💰", text[m.end(): m.end() + 8]))
-        # «Обрем 6 000 т.р.», «в дкп 1350», «задаток 100 т.р.» — это не цена объекта
-        if not labelled and _NOT_PRICE_BEFORE.search(text[max(0, m.start() - 22): m.start()]):
+        # Что написано в строке перед числом: последнее ключевое слово решает.
+        # «Обрем: Альфа-банк 2800 млн», «📄 ДКП — 6.5 млн», «Разбивка 6100» — не цена объекта;
+        # «Цена: 4650.000», «💰 7500», «ЦЕНА — 8,4 млн» — цена.
+        prefix = text[text.rfind("\n", 0, m.start()) + 1: m.start()]
+        prefix = re.split(r"[.!;|](?:\s|$)", prefix)[-1]  # только текущее предложение: «Ипотека возможна. 7 500 000»
+        pos = max((x.end() for x in _PRICE_WORD_LINE.finditer(prefix)), default=-1)
+        neg = max((x.end() for x in _NOT_PRICE_WORD.finditer(prefix)), default=-1)
+        end = max(m.end("num"), m.end("unit"), m.end("cur"))  # без пробелов/переноса после числа
+        after_bag = bool(re.match(r"[ \t]*(?:т\.?[ \t]?р\.?[ \t]*)?💰", text[end: end + 8]))  # та же строка
+        if neg > pos and not after_bag:
             continue
+        if re.match(r"[ \t]*(?:т\.?[ \t]?р\.?|тыс\.?|млн\.?|₽|руб\w*)?[ \t,]*(?:в\s+дкп|в\s+договор|обрем|разбивк|задат)",
+                    text[end: end + 30], re.IGNORECASE):
+            continue
+        labelled = pos > neg or after_bag
         if unit.startswith(("млн", "миллион", "лям", "лимон", "🍋")):
             # «7,8🍋» = 7,8 млн; «11000 🍋» = 11 млн (в тысячах); «7 800 000🍋» — уже рубли
             value = num * 1_000_000 if num < 1000 else num * 1000 if num < 100_000 else num
@@ -134,7 +154,8 @@ def extract_price(text: str, deal: str = "sale", strict: bool = False) -> int | 
         word = bool(_PRICE_WORD.search(ctx))
         if strict and not (unit or cur or labelled or word):
             continue
-        score = (3 if unit or cur else 0) + (2 if word or labelled else 0) + (1 if " " in m.group("num") else 0)
+        # Подписанная цена («Цена: …», 💰) важнее всего остального в тексте
+        score = (5 if labelled else 0) + (3 if unit or cur else 0) + (1 if word else 0) + (1 if " " in m.group("num") else 0)
         if score == 0:
             continue
         if best is None or score > best[0]:
@@ -331,22 +352,40 @@ def extract_street(text: str) -> tuple[str | None, str | None]:
 
 
 # ─── тип, сделка, запрос ───────────────────────────────────────────────────
-def detect_type(text: str) -> str | None:
-    t = norm(text)
+_HEAD_TYPES = [
+    ("flat", r"\b(?:квартир|студи|однушк|двушк|тр[её]шк|евро\s*-?\d|мини\s*-?\d|\d\s*-?\s*к\.?\s*кв|\d\s*-?\s*к\b|е\d\s*кв)"),
+    ("house", r"\b(?:дом|домовлад\w*|коттедж\w*|таунхаус\w*|дуплекс\w*|полдома|пол дома|дача|дачу)\b"),
+    ("land", r"\b(?:участ\w*|земл\w*|земельн\w*|ижс|снт|лпх)\b"),
+    ("commercial", r"\b(?:офис|помещени|псн|склад|магазин|торгов|коммерц|арендный бизнес|готовый бизнес|кафе|автомойк|салон красоты|здание)"),
+    ("room", r"\b(?:комнат[ау]\b|гостинк|койко)"),
+]
+
+
+def _type_by_words(t: str) -> str | None:
     if re.search(r"\b(?:офис|помещени|псн|склад|магазин|торгов|коммерц|арендный бизнес|готовый бизнес|кафе|автомойк|салон красоты|здание)", t):
         return "commercial"
-    has_house = re.search(r"\b(?:дом|домовлад|коттедж|таунхаус|дуплекс|полдома|пол дома|дача|дачу)\b", t)
-    if has_house:
+    if re.search(r"\b(?:дом|домовлад|коттедж|таунхаус|дуплекс|полдома|пол дома|дача|дачу)\b", t):
         return "house"
     if re.search(r"\b(?:участ|зем(?:ля|ельн)|ижс|снт|лпх|сот(?:ок|ки|\.|\b))", t):
         return "land"
     if re.search(r"\b(?:комнат[ау]\b|гостинк|койко)", t) and not re.search(r"\d\s*-?\s*комнат", t):
         return "room"
-    if re.search(r"\b(?:новострой|от застройщик|переуступк|дду\b|котлован|сдача\s+(?:в\s+)?\d|сдан в|черновая|предчистов)", t):
-        return "new"
-    if re.search(r"\b(?:квартир|студи|кв\b|однушк|двушк|трешк|евро\s*-?\d|\d\s*-?\s*к\b|\d\s*-?\s*комн)", t):
-        return "flat"
+    if re.search(r"\b(?:квартир|студи|кв\b|однушк|двушк|трешк|евро\s*-?\d|мини\s*-?\d|\d\s*-?\s*к\b|\d\s*-?\s*комн|"
+                 r"новострой|от застройщик|переуступк|дду\b|котлован|черновая|предчистов)", t):
+        return "flat"  # новостройка — тоже квартира
     return None
+
+
+def detect_type(text: str) -> str | None:
+    """Тип объекта. Сначала смотрим первые строки — там пишут, ЧТО продаётся
+    («ЕВРО 3-к КВАРТИРА», «ДОМ В КП…»); слова дальше по тексту («дом кирпичный»,
+    «технические помещения») тип не перебивают."""
+    lines = [ln for ln in (text or "").splitlines() if re.search(r"\w", ln)]
+    head = norm(" ".join(lines[:3]))[:200]
+    for kind, rx in _HEAD_TYPES:
+        if re.search(rx, head):
+            return kind
+    return _type_by_words(norm(text))
 
 
 def detect_deal(text: str) -> str:
@@ -376,6 +415,9 @@ def extract(text: str) -> Fields:
     f.street, f.house = extract_street(text)
     f.phones = extract_phones(text)
     if f.type is None and f.rooms is not None:
+        f.type = "flat"
+    # «ЖК Золотая Линия, 35,1 м², 4/4 эт.» — без слова «квартира», но это квартира
+    if f.type is None and f.area and (f.floor or re.search(r"\bж/?к\b", norm(text))):
         f.type = "flat"
     if f.type == "land" and f.area and not f.land and f.area <= 100 and re.search(r"сот", text, re.I):
         f.land, f.area = f.area, None

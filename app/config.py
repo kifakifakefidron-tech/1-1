@@ -94,7 +94,7 @@ SITE_URL = os.getenv("SITE_URL", "").strip() or (
 TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "7"))           # бесплатно после подтверждения номера (раз на номер)
 SUB_PRICE = int(os.getenv("SUB_PRICE", "49"))            # ₽ за период
 SUB_DAYS = int(os.getenv("SUB_DAYS", "7"))               # период подписки, дней
-PHONE_VIEWS_PER_DAY = int(os.getenv("PHONE_VIEWS_PER_DAY", "60"))  # защита от выкачивания номеров
+PHONE_VIEWS_PER_DAY = int(os.getenv("PHONE_VIEWS_PER_DAY", "0"))  # 0 = без лимита (пока выключен)  # защита от выкачивания номеров
 PROMO_LOGIN_DAYS = int(os.getenv("PROMO_LOGIN_DAYS", "30"))  # доступ после входа по коду коллег
 ADMIN_EMAILS = {e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()}
 # Ник бота (без @) — для ссылки «Войти через Telegram»; если пусто, узнаём у Telegram сами

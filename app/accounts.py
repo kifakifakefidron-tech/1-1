@@ -179,7 +179,7 @@ def me(conn: sqlite3.Connection, user: sqlite3.Row | None) -> dict | None:
         "access": has_access(user, now), "access_until": access_until(user),
         "trial_until": user["trial_until"], "paid_until": user["paid_until"], "trial_used": used_trial,
         "favorites": fav, "views_today": views_today(conn, user["id"]),
-        "views_limit": None if user["is_admin"] else config.PHONE_VIEWS_PER_DAY,
+        "views_limit": None if user["is_admin"] or config.PHONE_VIEWS_PER_DAY <= 0 else config.PHONE_VIEWS_PER_DAY,
     }
 
 
@@ -210,7 +210,7 @@ def open_phones(conn: sqlite3.Connection, user: sqlite3.Row | None, listing_id: 
     if not phones:
         return [], None
     uid = user["id"] if user is not None else None
-    if user is not None and not user["is_admin"]:
+    if user is not None and not user["is_admin"] and config.PHONE_VIEWS_PER_DAY > 0:
         since = int(time.time()) - DAY
         seen = conn.execute("SELECT 1 FROM phone_views WHERE user_id = ? AND listing_id = ? AND ts >= ?",
                             (uid, listing_id, since)).fetchone()
