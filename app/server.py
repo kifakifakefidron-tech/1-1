@@ -648,6 +648,10 @@ def api_notices(request: Request, body: dict | None = None):
     if request.method == "POST":
         notices.mark_read(conn, user["id"], _num((body or {}).get("id"), int))
         return JSONResponse({"ok": True, "unread": notices.unread(conn, user["id"])})
+    try:
+        hooks.check_user(conn, user["id"])   # не ждём фоновой проверки
+    except sqlite3.OperationalError:
+        log.warning("уведомления: база занята, покажу то, что есть")
     favs = conn.execute("""SELECT COUNT(*), SUM(l.is_active) FROM favorites f JOIN listings l ON l.id = f.listing_id
                            WHERE f.user_id = ?""", (user["id"],)).fetchone()
     own = conn.execute("SELECT COUNT(*) FROM listings WHERE owner_user_id = ? AND is_active = 1", (user["id"],)).fetchone()[0]

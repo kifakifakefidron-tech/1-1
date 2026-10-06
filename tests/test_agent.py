@@ -170,3 +170,20 @@ def test_admin_reverts_edit(env, monkeypatch):
     eid = next(e["id"] for e in edits if e["field"] == "price")
     assert c.post("/api/admin/edits", json={"id": eid}).json()["ok"]
     assert conn.execute("SELECT price FROM listings WHERE id = ?", (lid,)).fetchone()[0] == 7_500_000
+
+
+def test_own_actuality_notice_backfilled(env):
+    from app import notices
+    c, conn, _ = env
+    u = _login(c, conn)
+    _verify(c, conn)
+    lid = c.post("/api/agent/listings", json={"type": "land", "price": "900000", "land": "6", "district": "ФМР"}).json()["id"]
+    # письмо «актуален?» ушло старой версией — уведомления на сайте нет
+    conn.execute("UPDATE listings SET expires_at = ?, confirm_sent = ? WHERE id = ?",
+                 (int(time.time()) + 86400, int(time.time()) - 10, lid))
+    conn.commit()
+    agent.expire_own(conn)
+    own = [n for n in notices.items(conn, u["id"]) if n["kind"] == "own"]
+    assert len(own) == 1 and len(own[0]["actions"]) == 2
+    agent.expire_own(conn)
+    assert len([n for n in notices.items(conn, u["id"]) if n["kind"] == "own"]) == 1   # без повторов

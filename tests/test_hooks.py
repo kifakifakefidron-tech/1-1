@@ -41,7 +41,7 @@ def test_saved_search_sends_new_objects_once(env):
     r = c.post("/api/saved", json={"query": "deal=sale&rooms=2&page=3&view=map"})
     assert r.status_code == 200 and r.json()["saved"]["title"] == "Продажа · 2 комн."
     assert c.post("/api/saved", json={"query": "rooms=2&deal=sale"}).status_code == 400   # уже следим
-    conn.execute("UPDATE saved_searches SET checked_at = ?", (NOW - 100,))
+    conn.execute("UPDATE saved_searches SET checked_at = ?, notice_checked_at = ?", (NOW - 100, NOW - 100))
     conn.commit()
     _add(conn, "2-к квартира 50 м², 3/9 эт., ЖК Мозаика. 6 млн руб. 89180000001", ts=NOW)
     _add(conn, "1-к квартира 35 м², 3/9 эт. 4 млн руб. 89180000002", ts=NOW)
@@ -114,7 +114,7 @@ def test_notices_page_feed(env):
     lid = _add(conn, "2-к квартира 50 м², 3/9 эт., ФМР. 6 млн руб. 89180000001", ts=NOW - 100)
     c.post(f"/api/favorites/{lid}")
     c.post("/api/saved", json={"query": "deal=sale&rooms=1", "page": "?rooms=1&view=map&open=5"})
-    conn.execute("UPDATE saved_searches SET checked_at = ?", (NOW - 100,))
+    conn.execute("UPDATE saved_searches SET checked_at = ?, notice_checked_at = ?", (NOW - 100, NOW - 100))
     conn.commit()
     _add(conn, "1-к квартира 35 м², 3/9 эт., ФМР. 4 млн руб. 89180000002", ts=NOW)
     conn.execute("UPDATE listings SET price = 6500000 WHERE id = ?", (lid,))   # цена выросла
@@ -136,3 +136,27 @@ def test_notices_page_feed(env):
     assert notices.check_subscriptions(conn, lambda ts: "завтра") == 1
     assert notices.check_subscriptions(conn, lambda ts: "завтра") == 0
     assert "notifications" in c.get("/notifications").text or c.get("/notifications").status_code == 200
+
+
+def test_site_notice_even_if_email_already_sent(env):
+    """Письмо ушло (например, старой версией сайта) — уведомление на сайте всё равно появляется."""
+    from app import notices
+    c, conn = env
+    u = _login(c, conn)
+    c.post("/api/saved", json={"query": "deal=sale&rooms=2", "page": "?rooms=2"})
+    lid = _add(conn, "2-к квартира 50 м², 3/9 эт., ФМР. 6 млн руб. 89180000001", ts=NOW - 50)
+    c.post(f"/api/favorites/{lid}")
+    # «старая версия»: письмо уже отправлено, отметки почты сдвинуты
+    conn.execute("UPDATE saved_searches SET sent_at = ?, checked_at = ?, notice_checked_at = NULL, created = ?",
+                 (NOW, NOW, NOW - 100))
+    conn.execute("UPDATE listings SET price = 5500000 WHERE id = ?", (lid,))
+    conn.execute("UPDATE favorites SET notified_price = 5500000")
+    conn.commit()
+    mails = []
+    hooks.run(conn, lambda *a: mails.append(a) or True, every_s=0)
+    kinds = sorted(n["kind"] for n in notices.items(conn, u["id"]))
+    assert kinds == ["price", "search"] and mails == []      # на сайте есть, повторных писем нет
+    # открыл «Уведомления» — новые появляются сразу, без ожидания фоновой проверки
+    _add(conn, "2-к квартира 60 м², 5/9 эт., ЮМР. 7 млн руб. 89180000009", ts=int(time.time()) + 5)
+    titles = [n["title"] for n in c.get("/api/notices").json()["items"]]
+    assert titles.count("Новые объекты по поиску: 1") == 2

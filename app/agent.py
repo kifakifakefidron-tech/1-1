@@ -301,6 +301,17 @@ def expire_own(conn: sqlite3.Connection, send_mail=None) -> dict:
                       f"Уже продан или неактуален — снять сейчас:\n{no}")
             sent += 1
         conn.execute("UPDATE listings SET confirm_sent = ? WHERE id = ?", (now, r["id"]))
+    # Письмо уже ушло (например, старой версией сайта), а уведомления на сайте нет — добавляем
+    for r in conn.execute("""SELECT l.id, l.title, l.owner_user_id FROM listings l WHERE l.source = 'own' AND l.is_active = 1
+                             AND l.confirm_sent IS NOT NULL AND l.expires_at >= ? AND NOT EXISTS (
+                                 SELECT 1 FROM notices n WHERE n.kind = 'own' AND n.listing_id = l.id AND n.ts >= l.confirm_sent - 60)""",
+                          (now,)).fetchall():
+        yes = f"{config.SITE_URL}/agent/confirm?l={r['id']}&a=yes&t={confirm_token(r['id'], 'yes')}"
+        no = f"{config.SITE_URL}/agent/confirm?l={r['id']}&a=no&t={confirm_token(r['id'], 'no')}"
+        notices.add(conn, r["owner_user_id"], "own", "Ваш объект ещё актуален?",
+                    f"«{r['title']}» скоро будет снят с сайта, если не подтвердить.", listing_id=r["id"],
+                    url=f"/?open={r['id']}", actions=[{"label": f"Да, продлить на {config.OWN_LISTING_DAYS} дней", "url": yes},
+                                                      {"label": "Нет, снять", "url": no}])
     gone = conn.execute("SELECT id, title, owner_user_id FROM listings WHERE source = 'own' AND is_active = 1 "
                         "AND expires_at < ?", (now,)).fetchall()
     for r in gone:

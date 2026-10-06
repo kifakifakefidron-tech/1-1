@@ -101,6 +101,9 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
 - `app/notices.py` + `web/notify.*` — уведомления на сайте (/notifications, таблица notices, колокольчик в шапке,
   me().unread). Создаёт worker через hooks.run (раз в 15 мин): search, price (вверх/вниз), gone, sub (доступ
   кончается ≤2 дня / кончился, users.sub_notified), own (agent.expire_own — кнопки «Да/Нет»). Письма — дубль важного.
+  Сайт и почта — РАЗДЕЛЬНЫЕ отметки «уже сообщили»: поиск — notice_checked_at (сайт) / checked_at+sent_at (почта);
+  избранное — site_price (сайт) / notified_price (почта); свои объекты — уведомление досоздаётся, если письмо уже ушло.
+  Открытие /notifications сразу проверяет подписки и избранное этого человека (hooks.check_user).
   Подписка на поиск хранит page_query (адрес страницы) — ссылки «Показать» ведут на те же фильтры + fresh=new1.
   Тост — popover (верхний слой, поверх dialog). Ссылки ?login=1 / ?fav=1 / ?cabinet=1 / ?agent=1 открывают разделы.
 - `app/geocode.py` — Nominatim
