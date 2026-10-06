@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import re
+import threading
 import time
 from collections import defaultdict, deque
 from pathlib import Path
@@ -118,6 +119,8 @@ def threaded(fn):
         t0 = time.perf_counter()
         body = await _body(request) if request.method in ("POST", "PUT", "DELETE", "PATCH") else None
         resp = await run_in_threadpool(fn, request, body)
+        if request.method != "GET" and resp.status_code < 400 and request.url.path.startswith(("/api/agent", "/api/admin")):
+            await run_in_threadpool(_bump_cache)
         resp.headers["Server-Timing"] = f"app;dur={(time.perf_counter() - t0) * 1000:.0f}"
         return resp
     endpoint.__name__ = fn.__name__
@@ -217,12 +220,46 @@ def api_meta(request: Request, body: dict | None = None):
     })
 
 
+# Короткий кэш одинаковых запросов (поиск, фильтры, карта одинаковы для всех посетителей):
+# при наплыве людей одни и те же популярные выдачи не считаются заново каждый раз
+_cache: dict[str, tuple[float, bytes]] = {}
+_cache_lock = threading.Lock()
+CACHE_S = 15
+
+
+def _cached(request: Request, compute) -> Response:
+    # cache_ver меняется при правках агентов/админа — второй процесс сайта тоже сразу видит новое
+    key = f"{db.get_state(db.get(), 'cache_ver', '0')}:{request.url.path}?{request.url.query}"
+    now = time.time()
+    hit = _cache.get(key)
+    if hit and now - hit[0] < CACHE_S:
+        return Response(hit[1], media_type="application/json")
+    body = json.dumps(compute(), ensure_ascii=False).encode()
+    with _cache_lock:
+        if len(_cache) > 2000:
+            for k in [k for k, (t, _) in _cache.items() if now - t >= CACHE_S] or list(_cache)[:1000]:
+                _cache.pop(k, None)
+        _cache[key] = (now, body)
+    return Response(body, media_type="application/json")
+
+
+def _bump_cache() -> None:
+    try:
+        db.set_state(db.get(), "cache_ver", str(time.time()))
+    except Exception:  # noqa: BLE001 — база занята: кэш и так обновится через CACHE_S
+        pass
+
+
 def api_listings(request: Request, body: dict | None = None):
     # В списке телефонов нет никогда — только в карточке, по одному объекту
-    now = int(time.time())
-    res = search.search(db.get(), query_from(request), now, False)
-    res["now"] = now  # от этого момента страница считает «новые объекты»
-    return JSONResponse(res)
+    def compute():
+        now = int(time.time())
+        res = search.search(db.get(), query_from(request), now, False)
+        res["now"] = now  # от этого момента страница считает «новые объекты»
+        return res
+    if request.query_params.get("since"):
+        return JSONResponse(compute())
+    return _cached(request, compute)
 
 
 def api_listing(request: Request, body: dict | None = None):
@@ -255,11 +292,11 @@ def _raw_phones(conn, lid: int) -> list[str]:
 
 
 def api_facets(request: Request, body: dict | None = None):
-    return JSONResponse(search.facets(db.get(), query_from(request), int(time.time())))
+    return _cached(request, lambda: search.facets(db.get(), query_from(request), int(time.time())))
 
 
 def api_map(request: Request, body: dict | None = None):
-    return JSONResponse(search.map_points(db.get(), query_from(request), int(time.time())))
+    return _cached(request, lambda: search.map_points(db.get(), query_from(request), int(time.time())))
 
 
 def api_stats(request: Request, body: dict | None = None):

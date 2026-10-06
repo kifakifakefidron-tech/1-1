@@ -257,3 +257,12 @@ def district_by_street(street: str | None) -> str | None:
 
 def all_district_names() -> list[str]:
     return [d for d, _ in DISTRICTS]
+
+
+def complex_key(name: str | None) -> str | None:
+    """Ключ ЖК для фильтра: «ЖК Самолёт-2», «самолет 2» и «Самолет 2» — один и тот же ЖК."""
+    if not name:
+        return None
+    w = re.sub(rf"^{_JK_MARKER}\s+", "", words(name))
+    rec = resolve_complex(w)
+    return words(rec.name) if rec else w

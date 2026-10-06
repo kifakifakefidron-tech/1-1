@@ -72,3 +72,22 @@ def test_info_pages(client):
     for path, word in (("/how", "Как работает 1+1"), ("/privacy", "152-ФЗ"), ("/terms", "Пользовательское соглашение")):
         r = client.get(path)
         assert r.status_code == 200 and word in r.text and "{{" not in r.text
+
+
+def test_map_reports_points_and_missing(tmp_path, monkeypatch):
+    from app import db, geocode, ingest, search
+    conn = db.connect(":memory:")
+    for i, t in enumerate(["2-к квартира 50 м², 3/9 эт., ул. Красная 10. 6 млн. 89180000001",
+                           "Студия 25 м², 3/9 эт., ФМР. 3 млн. 89180000002",
+                           "1-к квартира 38 м², 2/5 эт. 4 млн. 89180000003"]):
+        ingest.process_message(conn, ingest.add_message(conn, source="manual", text=t, msg_id=str(i)), use_llm=False)
+    monkeypatch.setattr(geocode.config, "GEOCODER", "nominatim")
+    asked = []
+    def fake(c, q):
+        asked.append(q)
+        return (45.0, 39.0) if "Красная 10" in q or q.startswith("микрорайон ФМР") else None
+    monkeypatch.setattr(geocode, "lookup", fake)
+    geocode.run(conn)
+    res = search.map_points(conn, search.Query(), 0)
+    assert res["total"] == 3 and len(res["points"]) == 2
+    assert sorted(p["approx"] for p in res["points"]) == [0, 1]   # ФМР — примерная точка по району

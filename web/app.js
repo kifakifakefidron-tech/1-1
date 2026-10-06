@@ -288,12 +288,11 @@
     const photo = o.photos && o.photos[0]
       ? `<div class="item-photo"><img src="${esc(o.photos[0])}" alt="" loading="lazy"></div>` : "";
     const fav = me() && me().favorites.includes(o.id);
-    const strely = o.source === "feed" ? `<span class="tag tag-strely">Партнёр</span>` : "";
     const addr = address(o);
     return `<li class="item${photo ? " has-photo" : ""}" tabindex="0" data-id="${o.id}">
       ${photo}
       <button type="button" class="fav-btn${fav ? " on" : ""}" data-fav="${o.id}" aria-label="${fav ? "Убрать из избранного" : "В избранное"}">${HEART}</button>
-      ${headline(o) || strely ? `<h3 class="item-head">${esc(headline(o))}${strely}</h3>` : ""}
+      ${headline(o) ? `<h3 class="item-head">${esc(headline(o))}</h3>` : ""}
       <div class="item-price"><div class="price">${esc(fmtPrice(o.price, o.deal))}</div>${m2}</div>
       <div class="item-title">${esc(o.title)}${tag}</div>
       ${addr ? `<div class="item-place">${esc(addr)}</div>` : ""}
@@ -379,9 +378,10 @@
     return `<div class="map-card" data-pid="${p.id}">
       ${p.photo ? `<img src="${esc(p.photo)}" alt="" loading="lazy">` : ""}
       <div class="mc-body">
-        ${head ? `<div class="mc-head">${esc(head)}${p.source === "feed" ? ` <span class="tag tag-strely">Партнёр</span>` : ""}</div>` : ""}
+        ${head ? `<div class="mc-head">${esc(head)}</div>` : ""}
         <div class="mc-price">${esc(fmtPrice(p.price, state.deal))}</div>
         <div class="mc-title">${esc(p.title)}</div>
+        ${p.approx ? `<div class="mc-approx">Точка примерная — точного адреса в объявлении нет</div>` : ""}
         <div class="mc-extra">${extra ?? `<div class="skel"><i></i><i></i></div>`}</div>
         <span class="mc-more" data-open="${p.id}">Подробнее →</span>
       </div></div>`;
@@ -412,14 +412,21 @@
     ensureMap();
     if (!map) return;
     const seq = reqSeq;
-    let pts;
-    try { pts = await getJSON(`/api/map?${apiParams()}`); } catch { return; }
+    let res;
+    try { res = await getJSON(`/api/map?${apiParams()}`); } catch { return; }
     if (seq !== reqSeq) return;
+    const pts = res.points;
+    // Сколько найденных объектов на карте — чтобы было видно, что ничего не потерялось
+    const off = res.total - pts.length;
+    $("mapNote").textContent = off > 0
+      ? `На карте ${num(pts.length)} из ${num(res.total)}. ${res.pending ? `Ещё ${num(res.pending)} — ищем адрес на карте` : `${num(off)} — без адреса в объявлении`}, они есть в списке.`
+      : `На карте все ${num(res.total)} ${plural(res.total, "объект", "объекта", "объектов")}.`;
+    $("mapNote").hidden = !res.total;
     cluster.clearLayers();
     const markers = pts.map((p) => {
       const icon = L.divIcon({
         className: "pin-wrap", iconSize: null,
-        html: `<div class="pin${p.source === "feed" ? " partner" : ""}">${esc(fmtShortPrice(p.price, state.deal))}</div>`,
+        html: `<div class="pin${p.approx ? " approx" : ""}">${esc(fmtShortPrice(p.price, state.deal))}</div>`,
       });
       const mk = L.marker([p.lat, p.lon], { icon, riseOnHover: true })
         .bindPopup(popupHTML(p), { closeButton: false, className: "map-pop", offset: [0, -30], maxWidth: 280, minWidth: 250 });
@@ -434,6 +441,7 @@
   function applyView() {
     const isMap = state.view === "map";
     $("mapBox").hidden = !isMap;
+    if (!isMap) $("mapNote").hidden = true;
     $("results").hidden = isMap;
     if (isMap) $("loadMore").hidden = true;
   }

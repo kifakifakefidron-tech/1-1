@@ -130,3 +130,9 @@ VERIFY_CHANNELS = [c.strip() for c in os.getenv("VERIFY_CHANNELS", "max,wa").spl
 OWN_LISTING_DAYS = int(os.getenv("OWN_LISTING_DAYS", "30"))  # сколько живёт свой объект без подтверждения
 PHOTOS_DIR = os.getenv("PHOTOS_DIR", str(Path(DB_PATH).parent / "photos"))
 MAX_PHOTOS = int(os.getenv("MAX_PHOTOS", "12"))
+
+# Пока только Краснодар: чаты и населённые пункты с этими словами не берём (начало слова, через запятую)
+BLOCKED_PLACES = [x.strip() for x in os.getenv("BLOCKED_PLACES",
+    "сочи,адлер,сириус,туапсе,анап,геленджик,новороссийск,лазаревск,хоста,дагомыс,красная поляна,"
+    "абхаз,крым,ялт,севастопол,джубг,архипо,кабардинк,витязев,ейск,темрюк,тамань,ростов,москв,питер,"
+    "санкт-петербург,ставропол").split(",") if x.strip()]

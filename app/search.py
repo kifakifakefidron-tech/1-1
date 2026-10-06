@@ -126,7 +126,8 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
     if qr.districts:
         w.append(f"l.district IN ({','.join('?' * len(qr.districts))})"); p += qr.districts
     if qr.complexes:
-        w.append(f"l.complex IN ({','.join('?' * len(qr.complexes))})"); p += qr.complexes
+        keys = sorted({geo.complex_key(c) for c in qr.complexes if geo.complex_key(c)})
+        w.append(f"cxkey(l.complex) IN ({','.join('?' * len(keys))})"); p += keys
     if qr.not_first:
         w.append("(l.floor IS NULL OR l.floor > 1)")
     if qr.not_last:
@@ -169,14 +170,10 @@ def search(conn: sqlite3.Connection, qr: Query, now: int, with_contacts: bool) -
     total = conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {where}", params).fetchone()[0]
     size = max(1, min(qr.size, 100))
     page = max(1, qr.page)
-    # Объекты партнёра (фид СТРЕЛ) — через один с остальными: партнёр, чат, партнёр, чат…
-    # Внутри каждой группы — выбранная сортировка; когда одна группа кончилась, идёт другая.
+    # Объекты СТРЕЛ сортируются вместе со всеми, без вывода вперёд (решение 07.10)
     order = SORTS.get(qr.sort, SORTS["new"])
     rows = conn.execute(
-        f"""SELECT * FROM (
-                SELECT l.*, ROW_NUMBER() OVER (PARTITION BY l.source = 'feed' ORDER BY {order}) AS rn
-                FROM listings l WHERE {where})
-            ORDER BY rn * 2 + (source != 'feed'), id DESC LIMIT ? OFFSET ?""",
+        f"SELECT * FROM listings l WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
         params + [size, (page - 1) * size],
     ).fetchall()
     return {
@@ -187,15 +184,18 @@ def search(conn: sqlite3.Connection, qr: Query, now: int, with_contacts: bool) -
     }
 
 
-def map_points(conn: sqlite3.Connection, qr: Query, now: int) -> list[dict]:
+def map_points(conn: sqlite3.Connection, qr: Query, now: int) -> dict:
+    """Точки для карты по тем же фильтрам + сколько объектов без точки (чтобы было видно, что не потеряны)."""
     where, params = _where(qr, now)
     rows = conn.execute(
         f"""SELECT l.id, l.lat, l.lon, l.price, l.title, l.source, l.complex, l.district, l.street,
-                   json_extract(l.photos, '$[0]') AS photo
-            FROM listings l WHERE {where} AND l.lat IS NOT NULL LIMIT 5000""",
+                   l.geo_status = 'approx' AS approx, json_extract(l.photos, '$[0]') AS photo
+            FROM listings l WHERE {where} AND l.lat IS NOT NULL LIMIT 20000""",
         params,
     ).fetchall()
-    return [dict(r) for r in rows]
+    total, pending = conn.execute(
+        f"SELECT COUNT(*), SUM(l.lat IS NULL AND l.geo_status = 'pending') FROM listings l WHERE {where}", params).fetchone()
+    return {"points": [dict(r) for r in rows], "total": total, "pending": pending or 0}
 
 
 def facets(conn: sqlite3.Connection, qr: Query, now: int) -> dict:
@@ -205,8 +205,13 @@ def facets(conn: sqlite3.Connection, qr: Query, now: int) -> dict:
     districts = conn.execute(
         f"SELECT l.district AS name, COUNT(*) AS n FROM listings l WHERE {where} AND l.district IS NOT NULL GROUP BY 1 ORDER BY n DESC",
         params).fetchall()
+    # Разные написания одного ЖК — одна строка в фильтре (самое частое написание)
     complexes = conn.execute(
-        f"SELECT l.complex AS name, COUNT(*) AS n FROM listings l WHERE {where} AND l.complex IS NOT NULL GROUP BY 1 ORDER BY n DESC LIMIT 300",
+        f"""SELECT name, n FROM (
+                SELECT cxkey(l.complex) AS k, l.complex AS name, SUM(COUNT(*)) OVER (PARTITION BY cxkey(l.complex)) AS n,
+                       ROW_NUMBER() OVER (PARTITION BY cxkey(l.complex) ORDER BY COUNT(*) DESC) AS rn
+                FROM listings l WHERE {where} AND l.complex IS NOT NULL GROUP BY k, l.complex)
+            WHERE rn = 1 ORDER BY n DESC LIMIT 300""",
         params).fetchall()
     return {"districts": [dict(r) for r in districts], "complexes": [dict(r) for r in complexes]}
 

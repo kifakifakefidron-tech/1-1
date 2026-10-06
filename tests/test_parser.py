@@ -159,3 +159,26 @@ def test_phones_not_sent_to_llm(monkeypatch):
     _, [o] = parser.parse("1-к 38 м², 5/9 эт. 4,5 млн руб. Тел 8 918 111-22-33", use_llm=True)
     assert "111-22-33" not in seen["text"] and "[телефон]" in seen["text"]
     assert o.phones == ["+79181112233"]
+
+
+def test_complex_filter_matches_spelling_variants(conn):
+    from app import search
+    from app.ingest import save_object
+    from app.parser import parse
+    from .conftest import NOW
+    for i, cx in enumerate(["ЖК Самолёт-2", "самолет 2", "Самолет 2"]):
+        for o in parse(f"1-к квартира 40 м², {i + 2}/9 эт. {cx}. {4 + i} млн руб. 8918000000{i}", use_llm=False)[1]:
+            o.complex = cx
+            save_object(conn, o, None, NOW - i)
+    f = search.facets(conn, search.Query(), NOW)["complexes"]
+    assert len(f) == 1 and f[0]["n"] == 3
+    assert search.search(conn, search.Query(complexes=["самолет 2"]), NOW, False)["total"] == 3
+
+
+def test_rooms_ordinal_forms():
+    from app import rules
+    assert rules.extract_rooms('ЖК "Мирный" 1-я квартира, 6/6 этаж 33.40 кв. м.') == 1
+    assert rules.extract_rooms("15/22 этаж 1-ая кв. 30.50 кв.м") == 1
+    assert rules.extract_rooms("3-ех комн.кв") == 3
+    assert rules.extract_rooms("Продам 2 квартиры") is None
+    assert rules.extract_rooms("этаж 5 квартира 40м") is None

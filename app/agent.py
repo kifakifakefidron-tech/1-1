@@ -185,6 +185,10 @@ def edit_listing(conn: sqlite3.Connection, user: sqlite3.Row, listing_id: int, d
     now = int(time.time())
     if changes:
         merged = {**dict(row), **changes}
+        if "rooms" in changes:   # для кнопок «Комнаты»: агент указывает обычное число комнат (0 — студия)
+            merged["room_kind"] = changes["room_kind"] = "studio" if merged["rooms"] == 0 else (
+                merged["room_kind"] if merged["room_kind"] not in (None, "studio") else "classic")
+            changes["rooms_mask"] = rules.rooms_mask(merged["room_kind"], merged["rooms"])
         merged["title"] = make_title(merged)
         merged["search_text"] = make_search_text(merged)
         sets = ", ".join(f"{k} = ?" for k in changes)
@@ -193,6 +197,8 @@ def edit_listing(conn: sqlite3.Connection, user: sqlite3.Row, listing_id: int, d
                      [*changes.values(), merged["title"], merged["search_text"],
                       _price_m2(merged["price"], merged["area"]), user["id"], now, listing_id])
         _reindex(conn, listing_id, merged["search_text"])
+        if changes.keys() & {"street", "house", "complex", "district"}:   # адрес поменялся — точку на карте ищем заново
+            conn.execute("UPDATE listings SET geo_status = 'pending' WHERE id = ?", (listing_id,))
         for k, v in changes.items():
             _log(conn, listing_id, user["id"], k, row[k], v)
     if status in ("sold", "active"):

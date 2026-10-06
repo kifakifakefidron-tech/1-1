@@ -143,6 +143,11 @@ CREATE TABLE IF NOT EXISTS payments (
     id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, amount INTEGER NOT NULL, days INTEGER NOT NULL,
     provider_id TEXT UNIQUE, status TEXT NOT NULL DEFAULT 'pending', created INTEGER NOT NULL, paid INTEGER
 );
+-- Названия чатов (WhatsApp не присылает их в сообщениях); foreign_place — чат другого города
+CREATE TABLE IF NOT EXISTS chats (
+    source TEXT NOT NULL, chat_id TEXT NOT NULL, name TEXT, foreign_place INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (source, chat_id)
+);
 -- ─── кабинет агента ───────────────────────────────────────────────────────
 -- Номер подтверждён: агент прислал код со своего номера на наш (MAX/WhatsApp через Wappi)
 CREATE TABLE IF NOT EXISTS agent_phones (
@@ -201,6 +206,8 @@ def connect(path: str | None = None) -> sqlite3.Connection:
         Path(p).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(p, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    from . import geo  # noqa: PLC0415 — ключ ЖК для фильтра (разные написания одного ЖК)
+    conn.create_function("cxkey", 1, geo.complex_key, deterministic=True)
     conn.executescript(SCHEMA)
     _migrate(conn)
     return conn

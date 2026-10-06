@@ -26,15 +26,30 @@ def _km(a, b) -> float:
     return 6371 * 2 * math.asin(math.sqrt(h))
 
 
-def build_query(row: sqlite3.Row) -> str | None:
-    if row["street"]:
-        place = row["settlement"] or "Краснодар"
-        return f"{place}, {row['street']} {row['house'] or ''}".strip()
+def candidates(row: sqlite3.Row) -> list[tuple[str, str]]:
+    """Запросы к геокодеру от точного к примерному: (запрос, 'ok' | 'approx').
+    Если дом не нашёлся — берём улицу, ЖК, посёлок, а в крайнем случае центр района:
+    лучше примерная точка на карте, чем объект, которого на карте нет совсем."""
+    out: list[tuple[str, str]] = []
+    place = row["settlement"] or "Краснодар"
+    if row["street"] and row["house"]:
+        out.append((f"{place}, {row['street']} {row['house']}", "ok"))
     if row["complex"]:
-        return f"ЖК {row['complex']}, Краснодар"
+        out.append((f"ЖК {row['complex']}, Краснодар", "ok"))
+    if row["street"]:
+        out.append((f"{place}, {row['street']}", "approx"))
     if row["settlement"]:
-        return f"{row['settlement']}, Краснодарский край"
-    return None
+        out.append((f"{row['settlement']}, Краснодарский край", "approx"))
+    if row["district"]:
+        d = row["district"]
+        out.append((f"микрорайон {d}, Краснодар", "approx"))
+        out.append((f"{d}, Краснодар", "approx"))
+    return out
+
+
+def build_query(row: sqlite3.Row) -> str | None:
+    c = candidates(row)
+    return c[0][0] if c else None
 
 
 def lookup(conn: sqlite3.Connection, query: str) -> tuple[float, float] | None:
@@ -65,16 +80,25 @@ def lookup(conn: sqlite3.Connection, query: str) -> tuple[float, float] | None:
 def run(conn: sqlite3.Connection, limit: int = 30) -> int:
     if config.GEOCODER != "nominatim":
         return 0
+    # Один раз после обновления: объекты, для которых раньше не нашли точку, пробуем ещё раз — уже с запасными вариантами
+    if not conn.execute("SELECT 1 FROM state WHERE key = 'geo_v2'").fetchone():
+        conn.execute("UPDATE listings SET geo_status = 'pending' WHERE geo_status IN ('none', 'skip') AND is_active = 1")
+        conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('geo_v2', '1')")
+        conn.commit()
     rows = conn.execute(
         "SELECT * FROM listings WHERE geo_status = 'pending' AND is_active = 1 ORDER BY last_seen DESC LIMIT ?",
         (limit,)).fetchall()
     done = 0
     for r in rows:
-        q = build_query(r)
-        coords = lookup(conn, q) if q else None
+        coords, status = None, "skip"
+        for q, quality in candidates(r):
+            coords = lookup(conn, q)
+            if coords:
+                status = quality
+                break
+            status = "none"
         conn.execute("UPDATE listings SET lat=?, lon=?, geo_status=? WHERE id=?",
-                     (coords[0] if coords else None, coords[1] if coords else None,
-                      "ok" if coords else ("none" if q else "skip"), r["id"]))
+                     (coords[0] if coords else None, coords[1] if coords else None, status, r["id"]))
         conn.commit()
         done += 1
     return done

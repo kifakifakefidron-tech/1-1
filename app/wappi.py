@@ -19,7 +19,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
-from . import agent, config, db, ingest
+from . import agent, config, db, ingest, region
 
 log = logging.getLogger(__name__)
 
@@ -128,10 +128,14 @@ def _store(conn: sqlite3.Connection, source: str, profile_id: str, m: dict,
     text = _text(m)
     if len(text) < 30:
         return False, ts
+    cid = str(chat_id or m.get("chatId") or m.get("chat_id") or "")
+    chat_name = (chat_name or m.get("chat_name") or m.get("chatName") or m.get("chat_title")
+                 or region.chat_name(conn, source, cid))
+    if region.is_foreign(chat_name):   # чат Сочи/Адлера/… — пока не берём
+        return False, ts
     mid = ingest.add_message(
         conn, source=source, text=text, ts=ts or int(time.time()), profile_id=profile_id,
-        chat_id=str(chat_id or m.get("chatId") or m.get("chat_id") or ""),
-        chat_name=chat_name or m.get("chat_name") or m.get("chatName") or m.get("chat_title"),
+        chat_id=cid, chat_name=chat_name,
         msg_id=str(m.get("id") or ""), sender=_sender_phone(m), sender_name=m.get("senderName"),
     )
     return bool(mid), ts
@@ -225,6 +229,8 @@ def _poll_by_chats(conn, profile, source, profile_id, token, cursor) -> tuple[in
             _show_fields(profile, "чат", batch[0])
         old = False
         for c in batch:
+            region.save_chat(conn, source, str(c.get("id") or c.get("chatId") or c.get("chat_id") or ""),
+                             c.get("name") or c.get("title") or c.get("chat_name"))
             last = _ts(c.get("last_timestamp") or c.get("last_time") or c.get("timestamp"))
             if last is not None and last < cursor - 300:
                 old = True
@@ -264,6 +270,50 @@ def _poll_by_chats(conn, profile, source, profile_id, token, cursor) -> tuple[in
                 break
         time.sleep(0.2)  # бережно к Wappi
     return added, received, newest
+
+
+def _chat_title(c: dict) -> str | None:
+    for k in ("name", "title", "subject", "chat_name", "chatName", "formattedTitle"):
+        v = c.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    contact = c.get("contact")
+    if isinstance(contact, dict):
+        return contact.get("name") or contact.get("pushname")
+    return None
+
+
+def refresh_chat_names(conn: sqlite3.Connection, every_h: int = 6) -> int | None:
+    """WhatsApp: названия групп из списка чатов (в сообщениях их нет). Раз в every_h часов; None — ещё рано."""
+    if time.time() - float(db.get_state(conn, "chat_names_at") or 0) < every_h * 3600:
+        return None
+    db.set_state(conn, "chat_names_at", str(int(time.time())))
+    saved = 0
+    for profile in config.WAPPI_PROFILES:
+        source, _, profile_id = profile.partition(":")
+        token = config.WAPPI_TOKENS.get(source)
+        if source != "wa" or not token:
+            continue
+        for page in range(20):
+            payload = _call(profile, f"{PREFIX[source]}/chats/get",
+                            {"profile_id": profile_id, "limit": CHATS_PAGE, "offset": page * CHATS_PAGE, "show_all": "true"},
+                            token)
+            if payload is None:
+                break
+            batch = _list(payload, ("dialogs", "chats", "data", "result"))
+            if batch:
+                _show_fields(profile, "чат", batch[0])
+            for c in batch:
+                cid = str(c.get("id") or c.get("chatId") or c.get("chat_id") or "")
+                name = _chat_title(c)
+                if cid and name:
+                    region.save_chat(conn, source, cid, name)
+                    saved += 1
+            if len(batch) < CHATS_PAGE:
+                break
+    conn.commit()
+    log.info("Wappi: названия чатов обновлены (%d)", saved)
+    return saved
 
 
 def poll_profile(conn: sqlite3.Connection, profile: str) -> int:

@@ -7,12 +7,15 @@ from __future__ import annotations
 import logging
 import time
 
-from . import agent, config, db, feed, geocode, ingest, llm, mailer, notify, wappi
+from . import agent, config, db, feed, geocode, ingest, llm, mailer, notify, region, wappi
 
 log = logging.getLogger("worker")
 
 
 def tick(conn) -> dict:
+    if config.WAPPI_ENABLED and wappi.refresh_chat_names(conn) is not None:
+        stats_r = region.hide_foreign(conn)   # чаты Сочи/Адлера/… — не показываем
+        log.info("другие города: %s", stats_r)
     stats = {"new_messages": wappi.poll_all(conn) if config.WAPPI_ENABLED else "пауза"}
     llm.failures = 0
     stats["processed"] = ingest.process_pending(conn, limit=300, budget_s=60)

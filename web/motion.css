@@ -421,3 +421,8 @@ dialog::backdrop { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px
   .agent-btns { grid-column: 1 / -1; flex-direction: row; }
   .agent-btns > * { flex: 1; }
 }
+
+/* карта: примерные точки и подпись «на карте N из M» */
+.pin.approx { opacity: .82; border-style: dashed; }
+.mc-approx { font-size: 11px; color: var(--ink-3, #6b7b7a); margin-top: 2px; }
+.map-note { margin: 8px 2px 0; font-size: 13px; color: var(--ink-3); }
