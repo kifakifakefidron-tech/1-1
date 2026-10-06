@@ -24,6 +24,7 @@ from . import geo
 from .textnorm import words
 
 _cache: dict = {"t": 0.0, "rules": {}}
+NONE = "__none__"   # «Без района» / «Без ЖК» в справочнике
 _STREET_WORDS = r"\b(?:ул|улица|пр кт|проспект|пер|переулок|проезд|бульвар|б р|шоссе|пл|площадь)\b"
 
 
@@ -276,13 +277,16 @@ def move(conn: sqlite3.Connection, kind: str, name: str, frm: str | None, to: st
             return {"listings": 0}
         conn.execute("""INSERT INTO learned_rules (kind, key, value, label, n, ts) VALUES ('street', ?, ?, ?, 1, ?)
                         ON CONFLICT(kind, key) DO UPDATE SET value = excluded.value, label = excluded.label, n = n + 1, ts = excluded.ts""",
-                     (k, json.dumps({"district": to, "from": frm, "extra": extra or []}, ensure_ascii=False),
+                     (k, json.dumps({"district": to, "from": None if frm == NONE else frm, "extra": extra or []},
+                                    ensure_ascii=False),
                       f"ул. {name} → {', '.join([to, *(extra or [])])}", now))
         rows = [r for r in conn.execute("SELECT * FROM listings WHERE is_active = 1 AND street IS NOT NULL AND complex IS NULL")
                 if street_key(r["street"], r["settlement"]) == street_key(name, r["settlement"])]
     n = 0
     for r in rows:
-        if frm and r["district"] != frm:
+        if frm == NONE and r["district"] is not None:      # «Без района»: назначаем район только пустым
+            continue
+        if frm and frm != NONE and r["district"] != frm:
             continue
         d = {**dict(r), "district": to}
         d["search_text"] = make_search_text(d)
@@ -345,3 +349,127 @@ def directory(conn: sqlite3.Connection, kind: str) -> list[dict]:
     for e in items:
         e["districts"] = sorted(e["districts"].items(), key=lambda x: -x[1])
     return items
+
+
+# ─── Справочник: список и карточка района / ЖК / улицы ────────────────────
+_LISTING_COLS = """id, title, price, deal, district, extra_districts, complex, street, house, settlement, admin_fixed, source,
+                   last_seen"""
+
+
+def _listings(conn, where: str, params: tuple, limit: int = 150) -> list[dict]:
+    out = []
+    for r in conn.execute(f"SELECT {_LISTING_COLS} FROM listings WHERE is_active = 1 AND {where} "
+                          f"ORDER BY last_seen DESC LIMIT {limit}", params):
+        d = dict(r)
+        d["extra_districts"] = json.loads(d["extra_districts"] or "[]")
+        out.append(d)
+    return out
+
+
+def dir_list(conn: sqlite3.Connection, kind: str) -> list[dict]:
+    """Левая колонка справочника. Сверху — «пустые»: без района / без ЖК."""
+    if kind == "district":
+        counts = dict(conn.execute("""SELECT name, COUNT(*) FROM (
+                                          SELECT district AS name FROM listings WHERE is_active = 1 AND district IS NOT NULL
+                                          UNION ALL SELECT j.value FROM listings, json_each(listings.extra_districts) j
+                                          WHERE is_active = 1) GROUP BY name""").fetchall())
+        custom = {r[0] for r in conn.execute("SELECT name FROM custom_districts")}
+        empty = conn.execute("SELECT COUNT(*) FROM listings WHERE is_active = 1 AND district IS NULL").fetchone()[0]
+        return [{"name": NONE, "title": "Без района", "count": empty, "special": True}] + [
+            {"name": n, "title": n, "count": counts.get(n, 0), "custom": n in custom} for n in geo.all_district_names()]
+    items = directory(conn, kind)
+    out = [{"name": e["street"] if kind == "street" else e["name"], "title": e["name"], "count": e["count"],
+            "districts": [d for d, _ in e["districts"]][:3], "rule": e["rule"]} for e in items]
+    if kind == "complex":
+        empty = conn.execute("""SELECT COUNT(*) FROM listings WHERE is_active = 1 AND complex IS NULL
+                                AND type IN ('flat', 'new')""").fetchone()[0]
+        out.insert(0, {"name": NONE, "title": "Квартиры без ЖК", "count": empty, "special": True})
+    return out
+
+
+def dir_item(conn: sqlite3.Connection, kind: str, name: str) -> dict:
+    """Правая карточка: что сейчас, откуда (справочник, правило) и собранные объекты."""
+    rs = rules(conn)
+    if kind == "district":
+        if name == NONE:
+            where, p = "district IS NULL", ()
+            det = {"streets": [dict(r) for r in conn.execute(
+                       """SELECT street AS name, COUNT(*) AS n FROM listings WHERE is_active = 1 AND district IS NULL
+                          AND street IS NOT NULL AND complex IS NULL GROUP BY street ORDER BY n DESC LIMIT 300""")],
+                   "complexes": [dict(r) for r in conn.execute(
+                       """SELECT complex AS name, COUNT(*) AS n FROM listings WHERE is_active = 1 AND district IS NULL
+                          AND complex IS NOT NULL GROUP BY complex ORDER BY n DESC LIMIT 300""")]}
+        else:
+            where, p = "(district = ? OR extra_districts LIKE ?)", (name, f'%"{name}"%')
+            det = district_detail(conn, name)
+        return {"kind": kind, "name": name, **det, "listings": _listings(conn, where, p),
+                "total": conn.execute(f"SELECT COUNT(*) FROM listings WHERE is_active = 1 AND {where}", p).fetchone()[0]}
+    if kind == "complex":
+        if name == NONE:
+            where, p = "complex IS NULL AND type IN ('flat', 'new')", ()
+            info = {}
+        else:
+            k = geo.complex_key(name)
+            where, p = "cxkey(complex) = ?", (k,)
+            rec = geo.resolve_complex(name)
+            rule = rs.get(("cx_district", f"cx:{k}"))
+            alias = rs.get(("cx_alias", f"cx:{k}"))
+            info = {"kb_district": rec.district if rec else None, "in_kb": bool(rec),
+                    "rule": rule["district"] if rule else None, "alias": alias}
+    else:
+        k = street_key(name)
+        rows = [r["id"] for r in conn.execute("SELECT id, street, settlement FROM listings WHERE is_active = 1 AND street IS NOT NULL")
+                if street_key(r["street"]) == k]
+        where = f"id IN ({','.join(map(str, rows)) or '0'})"
+        p = ()
+        rule = rs.get(("street", f"street:|{k[8:]}" if k else ""))
+        info = {"kb_district": ", ".join(geo.street_districts(name)) or None, "rule": rule["district"] if rule else None}
+    dist = [dict(r) for r in conn.execute(
+        f"""SELECT COALESCE(district, '{NONE}') AS name, COUNT(*) AS n FROM listings WHERE is_active = 1 AND {where}
+            GROUP BY 1 ORDER BY n DESC""", p)]
+    return {"kind": kind, "name": name, **info, "districts": dist, "listings": _listings(conn, where, p),
+            "total": sum(d["n"] for d in dist)}
+
+
+def rename_complex(conn: sqlite3.Connection, old: str, new: str | None) -> dict:
+    """«Это ЖК …» (переименовать / объединить с другим ЖК) или «это не ЖК» (new=None) — везде и на будущее."""
+    k = cx_key(old)
+    if not k:
+        return {"listings": 0}
+    if new:
+        rec = geo.resolve_complex(new)
+        new = rec.name if rec else " ".join(new.split())
+    conn.execute("""INSERT INTO learned_rules (kind, key, value, label, n, ts) VALUES ('cx_alias', ?, ?, ?, 1, ?)
+                    ON CONFLICT(kind, key) DO UPDATE SET value = excluded.value, label = excluded.label, n = n + 1, ts = excluded.ts""",
+                 (k, json.dumps({"complex": new}, ensure_ascii=False),
+                  f"«{old}» → {('ЖК ' + new) if new else 'это не ЖК'}", int(time.time())))
+    conn.commit()
+    rules(conn, fresh=True)
+    # уже собранные — включая поправленные вручную: админ прямо сказал, что это за ЖК
+    from .ingest import _reindex, make_search_text
+    n = 0
+    for r in conn.execute("SELECT * FROM listings WHERE is_active = 1 AND cxkey(complex) = ?", (k[3:],)).fetchall():
+        d = dict(r)
+        apply(conn, d)
+        d["search_text"] = make_search_text(d)
+        conn.execute("UPDATE listings SET complex = ?, district = ?, search_text = ? WHERE id = ?",
+                     (d["complex"], d["district"], d["search_text"], r["id"]))
+        _reindex(conn, r["id"], d["search_text"])
+        n += 1
+    conn.commit()
+    return {"listings": n, "name": new}
+
+
+def delete_district(conn: sqlite3.Connection, name: str, to: str | None) -> dict:
+    """Удалить район: его объекты, правила и подписки — в другой район (старое имя узнаётся как тот район).
+    Без «куда» можно удалить только пустой свой район."""
+    if to:
+        return rename_district(conn, name, to)
+    if conn.execute("SELECT COUNT(*) FROM listings WHERE district = ? OR extra_districts LIKE ?",
+                    (name, f'%"{name}"%')).fetchone()[0]:
+        raise ValueError("В районе есть объекты — выберите, куда их перенести.")
+    if not conn.execute("DELETE FROM custom_districts WHERE name = ?", (name,)).rowcount:
+        raise ValueError("Встроенный район без объектов удалить нельзя — его можно слить с другим.")
+    conn.commit()
+    sync_districts(conn)
+    return {"listings": 0}

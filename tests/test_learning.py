@@ -159,3 +159,34 @@ def test_directory_lists_and_admin_only(env):
     assert c.post("/api/admin/districts", json={"action": "rename", "old": "ФМР", "new": "X"}).status_code in (401, 403)
     assert c.post("/api/admin/listings/1/place", json={"district": "ЦМР"}).status_code in (401, 403)
     assert c.post("/api/admin/listings/1/geo", json={"lat": 45.0, "lon": 39.0}).status_code in (401, 403)
+
+
+def test_directory_cards_delete_district_and_complex_rename(env):
+    from app import geo
+    c, conn = env
+    a = add(conn, "2-к квартира 50 м², 3/9 эт., ЖК Мозаика, ФМР. 6 млн. 89180000051")["listing_id"]
+    b = add(conn, "1-к квартира 38 м², 5/9 эт., ул. Новаторов 12. 4 млн. 89180000052")["listing_id"]
+    # «Без района» — отдельный пункт; в карточке видны его улицы и объекты
+    lst = c.get("/api/admin/dir?kind=district").json()["items"]
+    assert lst[0]["title"] == "Без района" and lst[0]["count"] >= 1
+    none = c.get("/api/admin/dir?kind=district&name=__none__").json()
+    assert b in [x["id"] for x in none["listings"]] and none["streets"][0]["name"] == "Новаторов"
+    # назначить район улице из «Без района»
+    c.post("/api/admin/dir", json={"action": "move", "kind": "street", "name": "Новаторов", "from": "__none__", "to": "ФМР"})
+    assert row(conn, b)["district"] == "ФМР"
+    # карточка ЖК: где объекты, справочник, правило
+    cx = c.get("/api/admin/dir?kind=complex&name=Мозаика").json()
+    assert cx["districts"][0]["name"] == "ФМР" and cx["listings"][0]["id"] == a
+    # «это другой ЖК» — везде и на будущее
+    c.post("/api/admin/dir", json={"action": "rename_complex", "name": "Мозаика", "to": "Мозаика Парк"})
+    assert row(conn, a)["complex"] == "Мозаика Парк"
+    a2 = add(conn, "Студия 25 м², 2/9 эт., ЖК Мозаика. 3 млн. 89180000053")["listing_id"]
+    assert row(conn, a2)["complex"] == "Мозаика Парк"
+    # удалить район с переносом объектов
+    r = c.post("/api/admin/dir", json={"action": "delete_district", "name": "ФМР", "to": "ЦМР"}).json()
+    assert "ФМР" not in r["districts"] and row(conn, b)["district"] == "ЦМР"
+    assert geo.canonical_district("фестивальный") == "ЦМР"
+    # пустой свой район удаляется без переноса; с объектами — нет
+    c.post("/api/admin/districts", json={"name": "Пустой"})
+    assert c.post("/api/admin/dir", json={"action": "delete_district", "name": "Пустой"}).status_code == 200
+    assert c.post("/api/admin/dir", json={"action": "delete_district", "name": "ЦМР"}).status_code == 400

@@ -971,6 +971,38 @@ def api_admin_districts(request: Request, body: dict | None = None):
                          "items": [{"name": n, "count": counts.get(n, 0), "custom": n in custom} for n in names]})
 
 
+def api_admin_dir(request: Request, body: dict | None = None):
+    """Справочник: GET ?kind=district|complex|street — список; &name= — карточка; POST {action, ...} — изменения."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    conn = db.get()
+    learning.sync_districts(conn)
+    q = request.query_params
+    kind = q.get("kind") if q.get("kind") in ("district", "complex", "street") else "district"
+    if request.method == "GET":
+        if q.get("name"):
+            return JSONResponse(learning.dir_item(conn, kind, q["name"]))
+        return JSONResponse({"items": learning.dir_list(conn, kind), "districts": geo.all_district_names()})
+    body = body or {}
+    action = body.get("action")
+    try:
+        if action == "delete_district":
+            res = learning.delete_district(conn, str(body.get("name", "")), body.get("to") or None)
+        elif action == "rename_district":
+            res = learning.rename_district(conn, str(body.get("name", "")), str(body.get("to", "")))
+        elif action == "rename_complex":
+            res = learning.rename_complex(conn, str(body.get("name", "")), (str(body.get("to") or "").strip() or None))
+        elif action == "move":
+            res = learning.move(conn, "complex" if body.get("kind") == "complex" else "street", str(body.get("name", "")),
+                                body.get("from") or None, str(body.get("to", "")))
+        else:
+            return _err("Неизвестное действие.")
+    except ValueError as e:
+        return _err(str(e))
+    return JSONResponse({**res, "districts": geo.all_district_names()})
+
+
 def api_admin_fix(request: Request, body: dict | None = None):
     """Экран разбора /fix: следующий объект очереди (без уже разобранных и пропущенных в этой сессии)
     или конкретный объект (?id=). mode: place (ЖК/район) | geo (карта)."""
@@ -1108,6 +1140,7 @@ routes = [
     Route("/api/admin/listings/{id:int}/geo", threaded(api_admin_geo), methods=["POST"]),
     Route("/api/admin/geo-queue", threaded(api_admin_geo_queue)),
     Route("/api/admin/fix", threaded(api_admin_fix)),
+    Route("/api/admin/dir", threaded(api_admin_dir), methods=["GET", "POST"]),
     Route("/api/admin/districts", threaded(api_admin_districts), methods=["GET", "POST"]),
     Route("/fix", threaded(fix_page)),
     Route("/api/admin/listings/{id:int}/place", threaded(api_admin_place), methods=["POST"]),

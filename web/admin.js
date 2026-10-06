@@ -242,104 +242,159 @@
       : `<tr><td class="note">Здесь пусто 🎉</td></tr>`;
   }
 
-  // ─── Районы: список, улицы и ЖК района, перенос, переименование ─────────
-  let distItems = [], distNames = [], distOpen = "";
-  async function districts() {
-    const d = await call("/api/admin/districts");
-    distItems = d.items; distNames = d.districts;
-    renderDistList();
-    if (distOpen) openDistrict(distOpen);
+  // ─── Справочник: районы / ЖК / улицы — список слева, карточка справа ─────
+  const NONE = "__none__";
+  let spKind = "district", spItems = [], spDistricts = [], spOpen = "", spBack = [];
+  const KIND_LABEL = { district: "Район", complex: "ЖК", street: "Улица" };
+  const HINT = {
+    district: "Нажмите на район — увидите его ЖК, улицы и все объекты. Можно переименовать, удалить (с переносом объектов), перенести любой ЖК или улицу в другой район.",
+    complex: "Нажмите на ЖК — увидите, в каких районах его объекты и почему. Можно перенести ЖК в район, сказать «это другой ЖК» или «это не ЖК».",
+    street: "Нажмите на улицу — увидите, в каких районах её объекты. Можно перенести улицу (или её часть из одного района) в другой район.",
+  };
+  const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 10 || h >= 20) ? b : c; };
+  const objs = (n) => `${n} ${plural(n, "объект", "объекта", "объектов")}`;
+  const dname = (n) => (n === NONE ? "без района" : n);
+  const price = (p) => (p ? `${(p / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} млн` : "—");
+
+  async function districts() { await spLoad(); }
+  async function spLoad(kind) {
+    if (kind) { spKind = kind; spOpen = ""; spBack = []; }
+    document.querySelectorAll("#spKinds .seg").forEach((b) => b.classList.toggle("on", b.dataset.spKind === spKind));
+    $("spHint").textContent = HINT[spKind];
+    $("spNew").hidden = spKind !== "district";
+    $("spQ").placeholder = spKind === "district" ? "Найти район…" : spKind === "complex" ? "Найти ЖК…" : "Найти улицу…";
+    const d = await call(`/api/admin/dir?kind=${spKind}`);
+    spItems = d.items; spDistricts = d.districts;
+    spRenderList();
+    if (spOpen) spShow(spOpen);
+    else $("spCard").innerHTML = `<div class="sp-empty">Выберите слева, что посмотреть.</div>`;
   }
-  function renderDistList() {
-    const q = ($("distQ").value || "").trim().toLowerCase().replace(/ё/g, "е");
-    $("distList").innerHTML = distItems.filter((x) => !q || x.name.toLowerCase().replace(/ё/g, "е").includes(q)).map((x) =>
-      `<li><button type="button" class="dist-item${x.name === distOpen ? " on" : ""}" data-dist="${esc(x.name)}">
-        <span>${esc(x.name)}${x.custom ? ' <small class="note">свой</small>' : ""}</span><b>${x.count}</b></button></li>`).join("")
-      || `<li class="note">Ничего не нашлось</li>`;
-  }
-  async function openDistrict(name) {
-    distOpen = name;
-    renderDistList();
-    const d = await call(`/api/admin/districts?name=${encodeURIComponent(name)}`);
-    const row = (kind, x) => `<li><span>${esc(x.name)} <small class="note">${x.n}</small></span>
-        <button type="button" class="chip" data-move="${kind}" data-name="${esc(x.name)}">Перенести в…</button></li>`;
-    $("distDetail").innerHTML = `
-      <div class="dist-head"><h3>${esc(name)}</h3>
-        <button type="button" class="chip" data-rename="${esc(name)}">✎ Переименовать</button></div>
-      <div class="dist-cols">
-        <div><h4>ЖК · ${d.complexes.length}</h4><ul class="dist-sub">${d.complexes.map((x) => row("complex", x)).join("") || '<li class="note">нет</li>'}</ul></div>
-        <div><h4>Улицы (без ЖК) · ${d.streets.length}</h4><ul class="dist-sub">${d.streets.map((x) => row("street", x)).join("") || '<li class="note">нет</li>'}</ul></div>
-      </div>`;
-  }
-  // Перенос: под строкой — поле с выпадающим списком районов
-  function askMove(btn) {
-    document.querySelectorAll(".move-box").forEach((x) => x.remove());
-    const li = btn.closest("li");
-    li.insertAdjacentHTML("beforeend", `<div class="move-box"><input placeholder="В какой район…"></div>`);
-    const input = li.querySelector(".move-box input");
-    Combo(input, {
-      options: () => distNames.filter((n) => n !== distOpen),
-      onPick: async (to) => {
-        const kind = btn.dataset.move, name = btn.dataset.name;
-        const r = await call("/api/admin/districts", { action: "move", kind, name, from: distOpen, to });
-        alert(`${kind === "complex" ? "ЖК" : "Улица"} «${name}» → ${to}. Перенесено объектов: ${r.listings}. Новые объявления тоже пойдут туда.`);
-        districts();
-      },
-    });
-    input.focus();
-  }
-  async function renameDistrict(old) {
-    const name = prompt(`Новое название района «${old}»:\n(если указать название другого района — они сольются в один)`, old);
-    if (!name || name.trim() === old) return;
-    const r = await call("/api/admin/districts", { action: "rename", old, new: name.trim() });
-    distOpen = r.name || name.trim();
-    alert(`Готово: «${old}» → «${distOpen}». Объектов: ${r.listings}.`);
-    districts();
+  function spRenderList() {
+    const q = ($("spQ").value || "").trim().toLowerCase().replace(/ё/g, "е");
+    const list = spItems.filter((x) => !q || x.title.toLowerCase().replace(/ё/g, "е").includes(q)).slice(0, 600);
+    $("spList").innerHTML = list.map((x) => `<li><button type="button" class="sp-item${x.name === spOpen ? " on" : ""}${x.special ? " special" : ""}"
+        data-sp-open="${esc(x.name)}"><span class="sp-name">${esc(x.title)}${x.custom ? ' <small>свой</small>' : ""}
+        ${x.districts && x.districts.length ? `<small>${esc(x.districts.join(", "))}</small>` : ""}</span><b>${x.count}</b></button></li>`).join("")
+      || `<li class="note sp-none">Ничего не нашлось</li>`;
   }
 
-  // ─── Справочник: все ЖК / улицы и их районы, с изменением ──────────────
-  let dirKind = "districts", dirItems = [];
-  async function showDir(kind) {
-    dirKind = kind;
-    document.querySelectorAll("#dirKinds .chip").forEach((b) => b.classList.toggle("on", b.dataset.dir === kind));
-    $("dirDistricts").hidden = kind !== "districts";
-    $("dirTable").hidden = kind === "districts";
-    if (kind === "districts") { await districts(); return; }
-    $("dirNote").innerHTML = kind === "complex"
-      ? "Все ЖК: где их объекты сейчас, район из справочника и ваше правило. «Изменить» — перенести ЖК в район (все его объекты и новые объявления)."
-      : "Все улицы из объявлений: в каких районах их объекты. «Изменить» — все объекты улицы (без ЖК) и новые объявления — в выбранный район.";
-    const d = await call(`/api/admin/districts?dir=${kind}`);
-    dirItems = d.items; distNames = d.districts;
-    renderDir();
-  }
-  function renderDir() {
-    const q = ($("dirQ").value || "").trim().toLowerCase().replace(/ё/g, "е");
-    const rows = dirItems.filter((x) => !q || x.name.toLowerCase().replace(/ё/g, "е").includes(q)).slice(0, 400);
-    $("dirRows").innerHTML = `<tr><th>${dirKind === "complex" ? "ЖК" : "Улица"}</th><th>Объектов</th><th>Сейчас в районах</th>
-        <th>Справочник</th><th>Ваше правило</th><th></th></tr>` + rows.map((x) => `<tr>
-        <td><b>${esc(x.name)}</b></td><td>${x.count}</td>
-        <td>${x.districts.map(([n, c]) => `${esc(n)} <small class="note">${c}</small>`).join(", ") || '<span class="note">—</span>'}</td>
-        <td>${esc(x.kb_district || "—")}</td><td>${x.rule ? `<b>${esc(x.rule)}</b>` : '<span class="note">—</span>'}</td>
-        <td class="acts"><button type="button" data-dir-edit="${esc(dirKind === "complex" ? x.name : x.street)}">Изменить</button></td></tr>`).join("");
-  }
-  function dirEdit(btn) {
-    document.querySelectorAll(".move-box").forEach((x) => x.closest("tr")?.remove());
-    const tr = btn.closest("tr");
-    tr.insertAdjacentHTML("afterend", `<tr><td colspan="6"><div class="move-box"><input placeholder="В какой район…"></div></td></tr>`);
-    const input = tr.nextElementSibling.querySelector("input");
-    Combo(input, {
-      options: () => distNames,
-      onPick: async (to) => {
-        const name = btn.dataset.dirEdit;
-        const r = await call("/api/admin/districts", { action: "move", kind: dirKind === "complex" ? "complex" : "street", name, to });
-        alert(`«${name}» → ${to}. Объектов перенесено: ${r.listings}. Новые объявления тоже пойдут туда.`);
-        showDir(dirKind);
-      },
-    });
-    input.focus();
+  // Карточка
+  async function spShow(name, kind) {
+    if (kind && kind !== spKind) { spBack.push([spKind, spOpen]); spKind = kind; await spLoad(); }
+    spOpen = name;
+    spRenderList();
+    $("spCard").innerHTML = `<div class="sp-empty">Загружаю…</div>`;
+    const d = await call(`/api/admin/dir?kind=${spKind}&name=${encodeURIComponent(name)}`);
+    const back = spBack.length ? `<button type="button" class="sp-back" data-sp-back="1">← назад</button>` : "";
+    const listingRows = d.listings.map((o) => `<li>
+        <a href="/?open=${o.id}" target="_blank"><b>${esc(o.title)}</b></a>
+        <span>${price(o.price)}</span>
+        <span class="note">${esc([o.complex && "ЖК " + o.complex, [o.district, ...(o.extra_districts || [])].filter(Boolean).join(" / ") || "без района",
+          o.street && `ул. ${o.street}${o.house ? ", " + o.house : ""}`].filter(Boolean).join(" · "))}</span>
+        <a class="sp-fix" href="/fix?mode=place&kind=fixed&id=${o.id}" title="Поправить ЖК и район этого объекта">✎</a></li>`).join("");
+    const listingsBlock = `<details class="sp-sec" ${d.listings.length <= 12 ? "open" : ""}>
+        <summary>Объекты · ${d.total}${d.total > d.listings.length ? ` (показаны последние ${d.listings.length})` : ""}</summary>
+        <ul class="sp-objs">${listingRows || '<li class="note">нет</li>'}</ul></details>`;
+    let html = "";
+    if (spKind === "district") {
+      const special = name === NONE;
+      const row = (kind, x) => `<li><button type="button" class="link" data-sp-goto="${kind}" data-name="${esc(x.name)}">${esc(x.name)}</button>
+          <small>${objs(x.n)}</small>
+          <button type="button" class="chip" data-sp-move="${kind}" data-name="${esc(x.name)}">${special ? "Назначить район…" : "Перенести в…"}</button></li>`;
+      html = `<div class="sp-head">${back}<span class="sp-kind">${special ? "Без района" : "Район"}</span>
+          <h2>${special ? "Объекты без района" : esc(name)}</h2><span class="sp-count">${objs(d.total)}</span></div>
+        ${special ? `<p class="sp-explain">Эти объекты не находятся по фильтру районов. Назначьте район улице или ЖК — сразу для всех их объектов
+            и для новых объявлений. Или поправьте объект по одному (✎).</p>`
+          : `<div class="sp-actions">
+            <button type="button" class="pill light" data-sp-act="rename_district">✎ Переименовать</button>
+            <button type="button" class="pill light" data-sp-act="merge_district">⇄ Слить с другим районом</button>
+            <button type="button" class="pill light danger" data-sp-act="delete_district">🗑 Удалить с переносом объектов</button>
+          </div>`}
+        <div class="sp-ask" id="spAsk" hidden></div>
+        <div class="sp-cols">
+          <details class="sp-sec" open><summary>ЖК · ${d.complexes.length}</summary><ul class="sp-sub">${d.complexes.map((x) => row("complex", x)).join("") || '<li class="note">нет</li>'}</ul></details>
+          <details class="sp-sec" open><summary>Улицы без ЖК · ${d.streets.length}</summary><ul class="sp-sub">${d.streets.map((x) => row("street", x)).join("") || '<li class="note">нет</li>'}</ul></details>
+        </div>
+        ${listingsBlock}`;
+    } else if (spKind === "complex" && name === NONE) {
+      html = `<div class="sp-head">${back}<span class="sp-kind">Без ЖК</span><h2>Квартиры без ЖК</h2><span class="sp-count">${objs(d.total)}</span></div>
+        <p class="sp-explain">Квартиры, у которых не указан ЖК. Если ЖК виден в тексте — поправьте объект (✎), и сервис запомнит.</p>
+        ${listingsBlock}`;
+    } else {
+      const isCx = spKind === "complex";
+      const where = d.districts.map((x) => `<li><span>${esc(dname(x.name))}</span><small>${objs(x.n)}</small>
+          ${!isCx && d.districts.length > 1 ? `<button type="button" class="chip" data-sp-move-from="${esc(x.name)}">Только эти → в…</button>` : ""}</li>`).join("");
+      html = `<div class="sp-head">${back}<span class="sp-kind">${KIND_LABEL[spKind]}</span><h2>${isCx ? "ЖК " : "ул. "}${esc(name)}</h2>
+          <span class="sp-count">${objs(d.total)}</span></div>
+        <div class="sp-facts">
+          <div><span class="sp-flabel">Сейчас в районах</span><ul class="sp-where">${where || '<li class="note">объектов нет</li>'}</ul></div>
+          <div><span class="sp-flabel">По справочнику</span><b>${esc(d.kb_district || "—")}</b></div>
+          <div><span class="sp-flabel">Ваше правило</span><b>${d.rule ? esc(d.rule) : "—"}</b>${d.alias ? `<small>${d.alias.complex ? "это ЖК " + esc(d.alias.complex) : "это не ЖК"}</small>` : ""}</div>
+        </div>
+        <div class="sp-actions">
+          <button type="button" class="pill" data-sp-act="move_all">→ Перенести ${isCx ? "ЖК" : "улицу"} в район…</button>
+          ${isCx ? `<button type="button" class="pill light" data-sp-act="rename_complex">✎ Это другой ЖК / переименовать</button>
+                    <button type="button" class="pill light danger" data-sp-act="not_complex">Это не ЖК</button>` : ""}
+        </div>
+        <div class="sp-ask" id="spAsk" hidden></div>
+        ${listingsBlock}`;
+    }
+    $("spCard").innerHTML = html;
   }
 
-  const loaders = { overview, users, promos, optouts, complaints, edits, chats, geo, place, districts: () => showDir(dirKind) };
+  // Вопрос «куда?» — прямо в карточке, с выпадающим списком
+  function spAsk(title, options, onPick, newLabel) {
+    const box = $("spAsk");
+    box.hidden = false;
+    box.innerHTML = `<div class="sp-ask-title">${title}</div><div class="sp-ask-row"><input placeholder="Начните вводить…">
+      <button type="button" class="ghost" data-sp-cancel="1">Отмена</button></div>`;
+    const input = box.querySelector("input");
+    Combo(input, { options: () => options, onPick, ...(newLabel ? { newLabel, onNew: onPick } : {}) });
+    input.focus();
+    box.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+  async function spDo(body, msg) {
+    try {
+      const r = await call("/api/admin/dir", body);
+      spToast(msg(r));
+      if (body.action === "rename_district" || body.action === "delete_district") spOpen = r.name || body.to || "";
+      if (body.action === "rename_complex" && r.name) spOpen = r.name;
+      await spLoad();
+    } catch (err) { fail(err); }
+  }
+  function spToast(text) {
+    const t = $("chatToast");
+    t.innerHTML = esc(text); t.hidden = false;
+    clearTimeout(spToast.timer);
+    spToast.timer = setTimeout(() => { t.hidden = true; }, 6000);
+  }
+  function spAction(act, btn) {
+    const name = spOpen;
+    const others = spDistricts.filter((d) => d !== name);
+    if (act === "rename_district") {
+      spAsk(`Новое название района «${esc(name)}». Старое продолжит узнаваться в объявлениях.`, [], (to) =>
+        spDo({ action: "rename_district", name, to }, (r) => `«${name}» → «${r.name || to}» · объектов: ${r.listings}`), (v) => `Назвать «${v}»`);
+    } else if (act === "merge_district" || act === "delete_district") {
+      const del = act === "delete_district";
+      spAsk(del ? `Удалить район «${esc(name)}». Куда перенести его объекты? (старое название будет узнаваться как выбранный район)`
+                : `Слить «${esc(name)}» с районом:`, others, (to) => {
+        if (!confirm(`${del ? "Удалить" : "Слить"} «${name}» → «${to}»? Все объекты, правила и подписки перейдут в «${to}».`)) return;
+        spDo({ action: "delete_district", name, to }, (r) => `Район «${name}» ${del ? "удалён" : "слит"}: объекты в «${to}» (${r.listings})`);
+      });
+    } else if (act === "move_all") {
+      spAsk(`В какой район перенести ${spKind === "complex" ? "ЖК" : "улицу"} «${esc(name)}»? (все объекты и новые объявления)`, spDistricts, (to) =>
+        spDo({ action: "move", kind: spKind, name, to }, (r) => `«${name}» → ${to} · перенесено объектов: ${r.listings}`));
+    } else if (act === "rename_complex") {
+      const cxs = spItems.filter((x) => !x.special && x.name !== name).map((x) => x.name);
+      spAsk(`Как правильно называется ЖК «${esc(name)}»? Можно выбрать существующий — объединятся.`, cxs, (to) =>
+        spDo({ action: "rename_complex", name, to }, (r) => `«${name}» → ЖК ${r.name} · объектов: ${r.listings}`), (v) => `Назвать «${v}»`);
+    } else if (act === "not_complex") {
+      if (!confirm(`«${name}» — это не ЖК? У всех объектов ЖК уберётся, и в новых объявлениях так больше считаться не будет.`)) return;
+      spDo({ action: "rename_complex", name, to: "" }, (r) => `«${name}» больше не считается ЖК · объектов: ${r.listings}`);
+    }
+  }
+
+  const loaders = { overview, users, promos, optouts, complaints, edits, chats, geo, place, districts };
 
   function show(tab) {
     document.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
@@ -363,16 +418,29 @@
       } else if (b.dataset.unopt) {
         await call("/api/admin/optouts", { remove: b.dataset.unopt });
         optouts();
-      } else if (b.dataset.dir) {
-        await showDir(b.dataset.dir);
-      } else if (b.dataset.dirEdit) {
-        dirEdit(b);
-      } else if (b.dataset.dist) {
-        await openDistrict(b.dataset.dist);
-      } else if (b.dataset.move) {
-        askMove(b);
-      } else if (b.dataset.rename) {
-        await renameDistrict(b.dataset.rename);
+      } else if (b.dataset.spKind) {
+        await spLoad(b.dataset.spKind);
+      } else if (b.dataset.spOpen) {
+        spBack = [];
+        await spShow(b.dataset.spOpen);
+      } else if (b.dataset.spGoto) {
+        await spShow(b.dataset.name, b.dataset.spGoto);
+      } else if (b.dataset.spBack) {
+        const [k, n] = spBack.pop();
+        spKind = k; await spLoad(); await spShow(n);
+      } else if (b.dataset.spMove) {
+        const kind = b.dataset.spMove, name = b.dataset.name, from = spOpen;
+        spAsk(`${from === NONE ? "Назначить район" : "Перенести в район"}: ${kind === "complex" ? "ЖК" : "ул."} «${esc(name)}»`,
+          spDistricts.filter((d) => d !== from), (to) =>
+            spDo({ action: "move", kind, name, from, to }, (r) => `«${name}» → ${to} · объектов: ${r.listings}`));
+      } else if (b.dataset.spMoveFrom) {
+        const from = b.dataset.spMoveFrom, name = spOpen;
+        spAsk(`Объекты ул. «${esc(name)}» из «${esc(dname(from))}» — перенести в:`, spDistricts.filter((d) => d !== from), (to) =>
+          spDo({ action: "move", kind: "street", name, from, to }, (r) => `ул. ${name}: ${dname(from)} → ${to} · объектов: ${r.listings}`));
+      } else if (b.dataset.spAct) {
+        spAction(b.dataset.spAct, b);
+      } else if (b.dataset.spCancel) {
+        $("spAsk").hidden = true;
       } else if (b.dataset.placeKind) {
         placeKind = b.dataset.placeKind;
         await place();
@@ -406,17 +474,17 @@
   $("userSearch").addEventListener("submit", (e) => { e.preventDefault(); users().catch(fail); });
   $("chatSearch").addEventListener("submit", (e) => e.preventDefault());
   $("chatQ").addEventListener("input", renderChats);
-  $("distQ").addEventListener("input", renderDistList);
-  $("dirQ").addEventListener("input", renderDir);
-  $("distNew").addEventListener("submit", async (e) => {
+  $("spQ").addEventListener("input", spRenderList);
+  $("spNew").addEventListener("submit", async (e) => {
     e.preventDefault();
     const name = e.target.name.value.trim();
     if (!name) return;
     try {
       const r = await call("/api/admin/districts", { name });
       e.target.name.value = "";
-      distOpen = r.name;
-      await districts();
+      spOpen = r.name;
+      await spLoad();
+      spToast(`Район «${r.name}» добавлен`);
     } catch (err) { fail(err); }
   });
   document.addEventListener("change", (e) => {
