@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Карта районов · 1+1</title>
+<meta name="theme-color" content="#035352">
+<meta name="robots" content="noindex">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.css">
+<link rel="stylesheet" href="/static/style.css?v=10">
+<link rel="stylesheet" href="/static/motion.css?v=27">
+<link rel="stylesheet" href="/static/districts.css?v=1">
+</head>
+<body class="dm-body">
+<header class="nav"><div class="nav-in">
+  <a class="brand" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="40" height="40" style="border-radius:10px">
+    <span class="brand-text"><b class="brand-name">1+1</b><span class="brand-sub">карта районов</span></span></a>
+  <nav class="nav-links"><a class="nav-link" href="/admin">Админка</a><a class="nav-link" href="/fix">Разбор</a><a class="nav-cta" href="/">К поиску</a></nav>
+</div></header>
+
+<main class="dm">
+  <aside class="dm-side">
+    <p class="dm-denied" id="dmDenied" hidden>Эта страница только для администратора. <a href="/?login=1">Войти</a></p>
+    <div id="dmApp" hidden>
+      <div class="dm-tools">
+        <button type="button" class="pill light" id="dmOsm" title="Контуры районов и ЖК из открытой карты OpenStreetMap">⬇ Загрузить из OpenStreetMap</button>
+        <label class="check"><input type="checkbox" id="dmShowCx"> показывать ЖК</label>
+      </div>
+      <p class="note dm-stat" id="dmStat"></p>
+      <input id="dmQ" class="dm-search" placeholder="Найти район…">
+      <ul class="dm-list" id="dmList"></ul>
+
+      <section class="dm-sel" id="dmSel" hidden>
+        <h2 id="dmSelName"></h2>
+        <p class="note" id="dmSelInfo"></p>
+        <div class="dm-btns">
+          <button type="button" class="pill" id="dmDraw">✏️ Обвести на карте</button>
+          <button type="button" class="pill light" id="dmEdit">✎ Поправить контур</button>
+          <button type="button" class="pill" id="dmSave" hidden>💾 Сохранить контур</button>
+          <button type="button" class="ghost" id="dmCancel" hidden>Отмена</button>
+          <button type="button" class="ghost danger" id="dmDel">Удалить контур</button>
+        </div>
+        <p class="note dm-help" id="dmHelp" hidden></p>
+      </section>
+
+      <section class="dm-check">
+        <h3>Проверить объекты по карте</h3>
+        <p class="note" id="dmCheck">—</p>
+        <button type="button" class="pill light" id="dmFill" hidden></button>
+        <div id="dmDiffs"></div>
+      </section>
+      <p class="note dm-attr">Контуры районов и ЖК: © участники <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> и ваши правки.</p>
+    </div>
+  </aside>
+  <div class="dm-map" id="dmMap"></div>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.min.js"></script>
+<script src="/static/districts.js?v=2"></script>
+</body>
+</html>

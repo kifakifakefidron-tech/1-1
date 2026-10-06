@@ -23,3 +23,23 @@ def test_district_by_point_and_auto_fill(conn, add):
     assert rc["empty_total"] == 1 and rc["empty"][0]["map"] == "ФМР"
     assert districtmap.fill_empty(conn) == 1
     assert conn.execute("SELECT district FROM listings WHERE id = ?", (lid,)).fetchone()[0] == "ФМР"
+
+
+def test_osm_import_and_admin_polygon(conn):
+    osm = {"elements": [
+        {"type": "way", "tags": {"name": "Жилой комплекс «Мозаика»", "place": "neighbourhood"},
+         "geometry": [{"lat": 45.050, "lon": 39.000}, {"lat": 45.050, "lon": 39.004}, {"lat": 45.053, "lon": 39.004},
+                      {"lat": 45.053, "lon": 39.000}, {"lat": 45.050, "lon": 39.000}]},
+        {"type": "way", "tags": {"name": "микрорайон Горхутор", "place": "neighbourhood"},
+         "geometry": [{"lat": 45.10, "lon": 38.90}, {"lat": 45.10, "lon": 38.95}, {"lat": 45.13, "lon": 38.95},
+                      {"lat": 45.13, "lon": 38.90}, {"lat": 45.10, "lon": 38.90}]},
+        {"type": "way", "tags": {"name": "СНТ «Луч»", "place": "neighbourhood"}, "geometry": []},
+    ]}
+    st = districtmap.import_osm(conn, osm)
+    assert st["district"] == 1 and st["complex"] == 1 and st["skipped"] == 1
+    assert districtmap.district_at(conn, 45.11, 38.92)[0] == "Горхутор"
+    assert districtmap.complex_at(conn, 45.051, 39.002) == "Мозаика"
+    # админ обвёл ФМР сам — его контур не трогает повторная загрузка из OSM
+    districtmap.save_polygon(conn, "ФМР", "district", [[(45.04, 38.99), (45.04, 39.02), (45.06, 39.02), (45.06, 38.99)]])
+    districtmap.import_osm(conn, osm)
+    assert districtmap.district_at(conn, 45.045, 39.01)[0] == "ФМР"

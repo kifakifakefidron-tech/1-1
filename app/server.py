@@ -1018,6 +1018,19 @@ def api_admin_reconcile(request: Request, body: dict | None = None):
                 return _err("Нужен файл карты районов.")
             res = districtmap.import_map(conn, str(body["xml"]).encode("utf-8"))
             return JSONResponse({**res, **districtmap.reconcile(conn)})
+        if action == "import_osm":
+            res = districtmap.import_osm(conn)
+            return JSONResponse(res)
+        if action == "save_polygon":
+            name = str(body.get("name", "")).strip()
+            kind = "complex" if body.get("kind") == "complex" else "district"
+            if kind == "district":
+                name = geo.canonical_district(name) or name
+            pid = districtmap.save_polygon(conn, name, kind, body.get("rings") or [])
+            return JSONResponse({"id": pid, "name": name})
+        if action == "delete_polygon":
+            districtmap.delete_polygon(conn, _num(body.get("id"), int) or 0)
+            return JSONResponse({"ok": True})
         if action == "accept":
             res = districtmap.accept(conn, body.get("kind", ""), str(body.get("name", "")), body.get("district"))
             return JSONResponse(res)
@@ -1028,7 +1041,16 @@ def api_admin_reconcile(request: Request, body: dict | None = None):
             return JSONResponse({"listings": districtmap.fill_empty(conn)})
     except (ValueError, OSError) as e:
         return _err(f"Не получилось: {e}")
+    if request.query_params.get("polygons"):
+        counts = dict(conn.execute("""SELECT district, COUNT(*) FROM listings WHERE is_active = 1 AND district IS NOT NULL
+                                      GROUP BY district""").fetchall())
+        return JSONResponse({"polygons": districtmap.all_polygons(conn), "districts": geo.all_district_names(),
+                             "counts": counts})
     return JSONResponse(districtmap.reconcile(conn))
+
+
+def districts_map_page(request: Request, body: dict | None = None):
+    return _page("districts.html")
 
 
 def api_admin_fix(request: Request, body: dict | None = None):
@@ -1170,6 +1192,7 @@ routes = [
     Route("/api/admin/fix", threaded(api_admin_fix)),
     Route("/api/admin/dir", threaded(api_admin_dir), methods=["GET", "POST"]),
     Route("/api/admin/reconcile", threaded(api_admin_reconcile), methods=["GET", "POST"]),
+    Route("/admin/map", threaded(districts_map_page)),
     Route("/api/admin/districts", threaded(api_admin_districts), methods=["GET", "POST"]),
     Route("/fix", threaded(fix_page)),
     Route("/api/admin/listings/{id:int}/place", threaded(api_admin_place), methods=["POST"]),

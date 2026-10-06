@@ -1,0 +1,43 @@
+/* Карта районов (админ) */
+.dm-body { overflow: hidden; }
+.dm { display: grid; grid-template-columns: 340px 1fr; height: calc(100dvh - 70px); }
+.dm-side { overflow-y: auto; padding: 14px 16px 24px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.dm-map { height: 100%; }
+.dm-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.dm-tools .pill { font-size: 14px; padding: 8px 14px; }
+.dm-search { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line-2);
+  background: var(--paper); color: var(--ink); font: inherit; }
+.dm-list { list-style: none; margin: 0; padding: 4px; max-height: 38vh; overflow-y: auto; border-radius: 14px; background: rgba(0,0,0,.12); }
+.dm-item { width: 100%; display: grid; grid-template-columns: 14px 1fr auto auto; gap: 8px; align-items: center; padding: 8px 10px;
+  border: 0; border-radius: 10px; background: none; color: var(--ink); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.dm-item:hover { background: rgba(243,232,188,.08); }
+.dm-item.on { background: var(--ink); color: var(--on-accent); }
+.dm-item b { opacity: .7; font-weight: 600; }
+.dm-dot { width: 12px; height: 12px; border-radius: 4px; border: 1px solid rgba(243,232,188,.5); }
+.dm-badge { font-size: 11px; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.dm-badge.mine { background: #9be8b8; color: #063b2c; }
+.dm-badge.osm { background: rgba(243,232,188,.15); }
+.dm-badge.none { background: rgba(255,180,160,.18); color: #ffb4a0; }
+.dm-item.on .dm-badge { background: rgba(3,83,82,.15); color: inherit; }
+.dm-sel { border: 1px solid #ffd86b; border-radius: 16px; padding: 12px 14px; }
+.dm-sel h2 { margin: 0; font: 600 24px var(--head); }
+.dm-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.dm-btns .pill, .dm-btns .ghost { font-size: 14px; padding: 8px 14px; }
+.dm-btns .danger { color: #ffb4a0; }
+.dm-help { background: rgba(255,216,107,.1); border-radius: 10px; padding: 8px 10px; }
+.dm-check h3 { margin: 6px 0 4px; font: 600 18px var(--head); }
+.dm-diffs { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.dm-diffs li { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 12px; background: rgba(0,0,0,.12); font-size: 14px; }
+.dm-acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.dm-attr { margin-top: auto; font-size: 12px; }
+.dm-denied { padding: 20px 0; }
+.leaflet-tooltip.dm-tip { background: rgba(3,83,82,.88); color: #f3e8bc; border: 0; box-shadow: none; font: 600 12px var(--body);
+  padding: 2px 6px; border-radius: 6px; }
+.leaflet-tooltip.dm-tip::before { display: none; }
+.leaflet-tooltip.dm-tip.cx { background: rgba(255,255,255,.9); color: #035352; }
+@media (max-width: 860px) {
+  .dm-body { overflow: auto; }
+  .dm { grid-template-columns: 1fr; height: auto; }
+  .dm-map { height: 70vh; order: -1; }
+  .dm-side { border-right: 0; }
+}

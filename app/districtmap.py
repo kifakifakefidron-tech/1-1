@@ -116,6 +116,8 @@ def district_at(conn: sqlite3.Connection, lat: float | None, lon: float | None) 
     if lat is None or lon is None:
         return None
     for name, kind, polys, _area_, (a, b, c, d) in _polys(conn):   # уже отсортированы по площади
+        if kind == "complex":
+            continue
         if a <= lat <= b and c <= lon <= d and any(_inside(lat, lon, p) for p in polys):
             return name, kind
     return None
@@ -219,3 +221,166 @@ def ignore(conn: sqlite3.Connection, key: str) -> None:
 
 def auto_enabled() -> bool:
     return config.DISTRICT_FROM_MAP
+
+
+# ─── Своя карта из OpenStreetMap (© участники OpenStreetMap, лицензия ODbL) ──
+OSM_SERVERS = ("https://overpass.kumi.systems/api/interpreter", "https://overpass-api.de/api/interpreter",
+               "https://maps.mail.ru/osm/tools/overpass/api/interpreter")
+OSM_BBOX = "44.93,38.75,45.22,39.30"   # Краснодар с пригородами
+_CX_RE = re.compile(r"^(?:жилой\s+комплекс|жк|коттеджный\s+(?:комплекс|посёлок|поселок)|кп)\s*[«\"']?(.+?)[»\"']?$", re.IGNORECASE)
+_SKIP_RE = re.compile(r"^(?:снт|нст|днт|ст\b|сельское поселение|городское поселение)|поселение$|округ$|трасс|км\b", re.IGNORECASE)
+
+
+def _fetch_osm() -> dict:
+    import urllib.parse
+    import urllib.request
+    q = f"""[out:json][timeout:180];
+(
+  way["place"~"suburb|neighbourhood|quarter|village|hamlet|locality"]["name"]({OSM_BBOX});
+  relation["place"~"suburb|neighbourhood|quarter|village|hamlet|locality"]["name"]({OSM_BBOX});
+);
+out geom;"""
+    last = None
+    for url in OSM_SERVERS:
+        try:
+            req = urllib.request.Request(url, data=urllib.parse.urlencode({"data": q}).encode(),
+                                         headers={"User-Agent": "1plus1-search/1.0 (Krasnodar real estate)"})
+            with urllib.request.urlopen(req, timeout=240) as resp:
+                return json.loads(resp.read())
+        except Exception as e:  # noqa: BLE001 — пробуем следующий сервер
+            last = e
+    raise ValueError(f"OpenStreetMap не ответил: {last}")
+
+
+def _rings_from_relation(el: dict) -> list[list[tuple[float, float]]]:
+    """Внешние контуры отношения: склеиваем кусочки линий в замкнутые кольца."""
+    parts = [[(p["lat"], p["lon"]) for p in m.get("geometry", [])]
+             for m in el.get("members", []) if m.get("role") in ("outer", "") and m.get("geometry")]
+    rings = []
+    while parts:
+        ring = parts.pop(0)
+        changed = True
+        while ring[0] != ring[-1] and changed:
+            changed = False
+            for i, p in enumerate(parts):
+                if p[0] == ring[-1]:
+                    ring += p[1:]
+                elif p[-1] == ring[-1]:
+                    ring += p[::-1][1:]
+                elif p[-1] == ring[0]:
+                    ring = p + ring[1:]
+                elif p[0] == ring[0]:
+                    ring = p[::-1] + ring[1:]
+                else:
+                    continue
+                parts.pop(i)
+                changed = True
+                break
+        if len(ring) >= 4:
+            rings.append(ring)
+    return rings
+
+
+def classify_osm_name(name: str) -> tuple[str, str] | None:
+    """Название из OSM → (наше название, вид district | complex | settlement), или None — не берём."""
+    name = " ".join(name.split())
+    m = _CX_RE.match(name)
+    if m:
+        cx = m.group(1).strip(" «»\"'")
+        rec = geo.resolve_complex(cx)
+        return (rec.name if rec else cx), "complex"
+    if _SKIP_RE.search(name):
+        return None
+    base = re.sub(r"^(?:микрорайон|мкр|квартал|посёлок|поселок|хутор|жилой массив)\s+", "", name, flags=re.IGNORECASE)
+    for cand in (name, base):
+        d = geo.canonical_district(cand)
+        if d:
+            return d, "district"
+    rec = geo.resolve_complex(base)
+    if rec:
+        return rec.name, "complex"    # в OSM многие ЖК записаны просто «Самолёт», «Ракурс»
+    return None                       # неизвестное — не берём, чтобы не плодить мусорные районы
+
+
+def import_osm(conn: sqlite3.Connection, data: dict | None = None) -> dict:
+    """Загрузить контуры районов и ЖК из OpenStreetMap в district_polygons (source='osm')."""
+    from . import learning
+    learning.sync_districts(conn)
+    data = data or _fetch_osm()
+    conn.execute("DELETE FROM district_polygons WHERE source = 'osm'")
+    drawn = {(r[0], r[1]) for r in conn.execute("SELECT name, kind FROM district_polygons WHERE source = 'admin'")}
+    stats = {"district": 0, "complex": 0, "settlement": 0, "skipped": 0}
+    names = {"district": set(), "complex": set()}
+    for el in data.get("elements", []):
+        cls = classify_osm_name(el.get("tags", {}).get("name", ""))
+        if not cls:
+            stats["skipped"] += 1
+            continue
+        name, kind = cls
+        if (name, kind) in drawn:          # этот район админ обвёл сам — его контур главнее
+            continue
+        if el["type"] == "way":
+            rings = [[(p["lat"], p["lon"]) for p in el.get("geometry", [])]]
+        else:
+            rings = _rings_from_relation(el)
+        rings = [r for r in rings if len(r) >= 4]
+        if not rings:
+            stats["skipped"] += 1
+            continue
+        lats = [p[0] for r in rings for p in r]
+        lons = [p[1] for r in rings for p in r]
+        conn.execute("""INSERT INTO district_polygons (name, source_name, kind, source, polys, area,
+                        lat_min, lat_max, lon_min, lon_max, ts) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                     (name, el["tags"]["name"], kind, "osm", json.dumps(rings), sum(_area(r) for r in rings),
+                      min(lats), max(lats), min(lons), max(lons), int(time.time())))
+        stats[kind] += 1
+        names.setdefault(kind, set()).add(name)
+    conn.commit()
+    _cache["t"] = 0
+    have = {r[0] for r in conn.execute("SELECT DISTINCT name FROM district_polygons WHERE kind = 'district'")}
+    stats["districts_with_contour"] = sorted(have)
+    stats["districts_without_contour"] = [d for d in geo.all_district_names() if d not in have]
+    stats["complexes"] = len(names.get("complex", ()))
+    return stats
+
+
+def complex_at(conn: sqlite3.Connection, lat: float | None, lon: float | None) -> str | None:
+    """ЖК по точке (если у ЖК есть контур на карте)."""
+    if lat is None or lon is None:
+        return None
+    for name, kind, polys, _a, (a, b, c, d) in _polys(conn):
+        if kind == "complex" and a <= lat <= b and c <= lon <= d and any(_inside(lat, lon, p) for p in polys):
+            return name
+    return None
+
+
+# ─── редактор карты районов (админ обводит районы сам) ─────────────────────
+def save_polygon(conn: sqlite3.Connection, name: str, kind: str, rings: list) -> int:
+    """Контур, нарисованный админом. Заменяет контур из OpenStreetMap того же района/ЖК."""
+    rings = [[(float(p[0]), float(p[1])) for p in r] for r in rings if len(r) >= 3]
+    if not rings:
+        raise ValueError("Пустой контур")
+    for r in rings:
+        if r[0] != r[-1]:
+            r.append(r[0])
+    lats = [p[0] for r in rings for p in r]
+    lons = [p[1] for r in rings for p in r]
+    conn.execute("DELETE FROM district_polygons WHERE name = ? AND kind = ?", (name, kind))
+    cur = conn.execute("""INSERT INTO district_polygons (name, source_name, kind, source, polys, area,
+                          lat_min, lat_max, lon_min, lon_max, ts) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                       (name, name, kind, "admin", json.dumps(rings), sum(_area(r) for r in rings),
+                        min(lats), max(lats), min(lons), max(lons), int(time.time())))
+    conn.commit()
+    _cache["t"] = 0
+    return cur.lastrowid
+
+
+def delete_polygon(conn: sqlite3.Connection, pid: int) -> None:
+    conn.execute("DELETE FROM district_polygons WHERE id = ?", (pid,))
+    conn.commit()
+    _cache["t"] = 0
+
+
+def all_polygons(conn: sqlite3.Connection) -> list[dict]:
+    return [{"id": r["id"], "name": r["name"], "kind": r["kind"], "source": r["source"],
+             "polys": json.loads(r["polys"])} for r in conn.execute("SELECT * FROM district_polygons ORDER BY area DESC")]
