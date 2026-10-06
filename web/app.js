@@ -921,7 +921,7 @@
       const r = await call("/api/auth/email/start", { email });
       btn.disabled = false;
       btn.textContent = label;
-      if (!r.ok) { loginError(r.data.detail || "Не получилось отправить код. Попробуйте ещё раз."); return; }
+      if (!r.ok) { loginError(r.data.detail || `Не получилось отправить код (ошибка ${r.status}). Попробуйте ещё раз чуть позже.`); return; }
       $("codeForm").hidden = false;
       $("loginLead").innerHTML = `Код отправлен на <b>${esc(email)}</b>. Проверьте и папку «Спам».`;
       $("codeInput").focus();

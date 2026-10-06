@@ -53,3 +53,10 @@ def send_code(to: str, code: str) -> bool:
         log.error("Письмо на %s не отправилось: %s — если это таймаут, хостинг закрыл почтовый порт %s "
                   "(в Timeweb: тикет в поддержку «открыть SMTP-порты»)", to, e, config.SMTP_PORT)
         return False
+    except UnicodeError as e:
+        log.error("Почта: в SMTP_USER/SMTP_PASSWORD русские буквы или остались слова-подсказки — "
+                  "впишите настоящий ящик и пароль приложения латиницей: %s", e)
+        return False
+    except Exception:  # noqa: BLE001 — любая другая ошибка не должна ронять вход
+        log.exception("Почта: неожиданная ошибка при отправке на %s", to)
+        return False
