@@ -2,7 +2,9 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <title>1+1 · поиск объектов</title>
 <meta name="theme-color" content="#035352">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -10,7 +12,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
-<link rel="stylesheet" href="/static/style.css?v=5">
+<link rel="stylesheet" href="/static/style.css?v=7">
+<link rel="stylesheet" href="/static/motion.css?v=2">
 </head>
 <body>
 <header class="top">
@@ -25,15 +28,28 @@
 <main class="wrap">
   <form class="search" id="searchForm" role="search">
     <label class="visually-hidden" for="q">Поиск</label>
-    <input id="q" name="q" type="search" autocomplete="off"
-           placeholder="ЖК, улица, район или слово из описания">
+    <div class="q-wrap">
+      <svg class="q-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" name="q" type="search" autocomplete="off" enterkeyhint="search"
+             placeholder="ЖК, улица, район или «2к фмр»">
+    </div>
+    <button type="button" class="filter-btn" id="filterBtn" aria-label="Фильтры">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+      <span class="badge" id="filterBadge" hidden></span>
+    </button>
     <div class="deal" role="group" aria-label="Тип сделки">
       <button type="button" data-deal="sale" class="seg on">Продажа</button>
       <button type="button" data-deal="rent" class="seg">Аренда</button>
     </div>
   </form>
 
-  <section class="filters" aria-label="Фильтры">
+  <section class="filters" id="filters" aria-label="Фильтры">
+    <div class="sheet-head"><span class="grab" aria-hidden="true"></span><b>Фильтры</b>
+      <button type="button" class="sheet-x" data-sheet-close aria-label="Закрыть">✕</button></div>
+    <div class="deal sheet-deal" role="group" aria-label="Тип сделки">
+      <button type="button" data-deal="sale" class="seg on">Продажа</button>
+      <button type="button" data-deal="rent" class="seg">Аренда</button>
+    </div>
     <div class="row" id="types" role="group" aria-label="Тип объекта"></div>
     <div class="row">
       <div class="chips" id="rooms" role="group" aria-label="Комнаты">
@@ -84,10 +100,17 @@
       </div>
       <button type="button" class="reset" id="resetBtn">Сбросить фильтры</button>
     </div>
+    <div class="sheet-foot"><button type="button" class="pill wide" id="sheetApply" data-sheet-close>Показать</button></div>
   </section>
+  <div class="sheet-overlay" id="sheetOverlay" data-sheet-close></div>
 
   <div class="bar">
-    <p class="count" id="count" aria-live="polite"></p>
+    <div class="count-wrap">
+      <p class="count" id="count" aria-live="polite"></p>
+      <button type="button" class="icon-btn" id="refreshBtn" aria-label="Обновить объекты" title="Обновить объекты">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
+      </button>
+    </div>
     <div class="bar-right">
       <label class="visually-hidden" for="sort">Сортировка</label>
       <select id="sort">
@@ -109,17 +132,37 @@
   <div class="more-results"><button type="button" id="loadMore" class="pill" hidden>Показать ещё</button></div>
 </main>
 
+<button type="button" class="new-pill" id="newPill" hidden>↑ Новые объекты: <b id="newCount"></b></button>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<nav class="tabbar" aria-label="Разделы">
+  <button type="button" data-tab="list" class="on">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>
+    <span>Объекты</span></button>
+  <button type="button" data-tab="map">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+    <span>Карта</span></button>
+  <button type="button" data-tab="fav">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7.5-4.6-9.2-9.4C1.6 7.2 4 4 7.3 4c2 0 3.6 1.2 4.7 2.8C13.1 5.2 14.7 4 16.7 4 20 4 22.4 7.2 21.2 10.6 19.5 15.4 12 20 12 20z"/></svg>
+    <span>Избранное</span><i class="tab-badge" id="favBadge" hidden></i></button>
+  <button type="button" data-tab="account">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>
+    <span id="tabAccount">Войти</span></button>
+</nav>
+
 <footer class="foot">
   <span>1+1 · поиск объектов Краснодара</span>
   <a id="optoutLink" href="#" target="_blank" rel="noopener">Агентам: убрать свой номер с сайта</a>
 </footer>
 
 <dialog id="detail" class="detail" aria-labelledby="dTitle">
+  <span class="grab" aria-hidden="true"></span>
   <button class="close" id="closeDetail" aria-label="Закрыть">✕</button>
   <div id="detailBody"></div>
 </dialog>
 
 <dialog id="loginDlg" class="small-dlg" aria-labelledby="loginTitle">
+  <span class="grab" aria-hidden="true"></span>
   <div class="dlg-body">
     <h2 id="loginTitle">Вход на 1+1</h2>
     <p class="note" id="loginLead">Номера агентов открываются после входа.</p>
@@ -149,11 +192,12 @@
 </dialog>
 
 <dialog id="cabinetDlg" class="small-dlg" aria-labelledby="cabTitle">
+  <span class="grab" aria-hidden="true"></span>
   <div class="dlg-body" id="cabinetBody"></div>
 </dialog>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
-<script src="/static/app.js?v=5"></script>
+<script src="/static/app.js?v=7"></script>
 </body>
 </html>

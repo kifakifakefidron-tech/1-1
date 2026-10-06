@@ -20,6 +20,8 @@
   let map = null, cluster = null;
   let favMode = false;      // показываем избранное вместо поиска
   let tgPoll = 0;           // ожидание входа через Telegram
+  let loadedAt = 0;         // время сервера, когда загрузили список (для «новых объектов»)
+  let lastTotal = 0;        // сколько объектов найдено — для кнопки «Показать N»
 
   // ─── форматирование ──────────────────────────────────────────────────────
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
@@ -180,6 +182,9 @@
     $("priceMin").setAttribute("aria-label", rent ? "Цена от, тысяч рублей в месяц" : "Цена от, млн");
     $("priceMax").setAttribute("aria-label", rent ? "Цена до, тысяч рублей в месяц" : "Цена до, млн");
     renderComplexChosen();
+    const fc = filtersCount();
+    $("filterBadge").hidden = !fc;
+    $("filterBadge").textContent = fc;
   }
 
   function renderTypes() {
@@ -215,7 +220,7 @@
     const photo = o.photos && o.photos[0]
       ? `<div class="item-photo"><img src="${esc(o.photos[0])}" alt="" loading="lazy"></div>` : "";
     const fav = me() && me().favorites.includes(o.id);
-    const strely = o.source === "feed" ? `<span class="tag tag-strely">СТРЕЛЫ</span>` : "";
+    const strely = o.source === "feed" ? `<span class="tag tag-strely">Партнёр</span>` : "";
     const addr = address(o);
     return `<li class="item${photo ? " has-photo" : ""}" tabindex="0" data-id="${o.id}">
       ${photo}
@@ -229,9 +234,18 @@
     </li>`;
   }
 
+  function skeletons(n) {
+    return Array.from({ length: n }, () => `<li class="item skel" aria-hidden="true"><i></i><i></i><i></i><i></i></li>`).join("");
+  }
+
   async function loadList(append = false) {
     const seq = append ? reqSeq : ++reqSeq;
-    if (!append) page = 1;
+    if (!append) {
+      page = 1;
+      const res = $("results");
+      if (!res.querySelector(".item:not(.skel)")) res.innerHTML = skeletons(8);
+      else res.classList.add("busy");
+    }
     let data;
     try {
       if (favMode) {
@@ -245,10 +259,18 @@
       return;
     }
     if (seq !== reqSeq) return;
+    $("results").classList.remove("busy");
+    if (!append && !favMode) {
+      loadedAt = data.now || Math.floor(Date.now() / 1000);
+      lastTotal = data.total;
+      hideNewPill();
+    }
+    $("sheetApply").textContent = data.total ? `Показать ${num(data.total)} ${plural(data.total, "объект", "объекта", "объектов")}` : "Ничего не нашлось";
     $("count").innerHTML = favMode
       ? `Избранное: ${num(data.total)} <button type="button" class="link-btn" id="favExit">← ко всем объектам</button>`
       : esc(data.total ? `${num(data.total)} ${plural(data.total, "объект", "объекта", "объектов")}` : "Ничего не нашлось");
-    const html = data.items.map(itemHTML).join("");
+    // Карточки появляются волной: у каждой своя небольшая задержка
+    const html = data.items.map((o, i) => itemHTML(o).replace('<li class="item', `<li style="--d:${Math.min(i, 12) * 35}ms" class="item`)).join("");
     if (append) $("results").insertAdjacentHTML("beforeend", html);
     else $("results").innerHTML = html || (favMode
       ? `<li class="empty"><b>Пока пусто</b>Нажмите ♡ на объекте, чтобы сохранить его сюда.</li>`
@@ -411,12 +433,108 @@
       </form></details>`;
   }
 
+  function openDlg(d) {
+    if (!d.open) d.showModal();
+    d.classList.remove("closing");
+    d.style.transform = "";
+  }
+
+  function closeDlg(d) {
+    if (!d || !d.open || d.classList.contains("closing")) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) { d.close(); return; }
+    d.classList.add("closing");
+    let finished = false;
+    const done = () => {
+      if (finished) return;
+      finished = true;
+      d.removeEventListener("animationend", done);
+      d.classList.remove("closing");
+      d.style.transform = "";
+      d.close();
+    };
+    d.addEventListener("animationend", done);
+    setTimeout(done, 350);  // страховка: анимация могла не проиграться (свёрнутая вкладка, экономия энергии)
+  }
+
+  // Свайп вниз закрывает окно (телефон): тянем за верх, отпустили ниже 110px — закрыли
+  function swipeToClose(d) {
+    let y0 = null, dy = 0;
+    d.addEventListener("touchstart", (e) => {
+      if (window.innerWidth > 640 || d.scrollTop > 0) { y0 = null; return; }
+      y0 = e.touches[0].clientY; dy = 0;
+    }, { passive: true });
+    d.addEventListener("touchmove", (e) => {
+      if (y0 === null) return;
+      dy = Math.max(0, e.touches[0].clientY - y0);
+      if (dy > 4) { d.classList.add("dragging"); d.style.transform = `translateY(${dy}px)`; }
+    }, { passive: true });
+    d.addEventListener("touchend", () => {
+      if (y0 === null) return;
+      d.classList.remove("dragging");
+      if (dy > 110) closeDlg(d);
+      else { d.style.transition = "transform .3s cubic-bezier(.2,.9,.25,1)"; d.style.transform = "";
+        setTimeout(() => { d.style.transition = ""; }, 320); }
+      y0 = null;
+    });
+    d.addEventListener("cancel", (e) => { e.preventDefault(); closeDlg(d); });   // Esc — тоже плавно
+    d.addEventListener("click", (e) => { if (e.target === d) closeDlg(d); });     // нажатие мимо окна
+  }
+
+  // Всплывающая подсказка внизу
+  let toastTimer = 0;
+  function toast(text) {
+    const t = $("toast");
+    t.textContent = text;
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+  }
+
+  // ─── новые объекты, пока человек на сайте ───────────────────────────────
+  function hideNewPill() { $("newPill").classList.remove("show"); }
+
+  async function checkNew() {
+    if (document.hidden || favMode || !loadedAt) return;
+    const r = await call(`/api/listings?${apiParams({ size: 1, since: loadedAt })}`);
+    if (r.ok && r.data.total > 0) {
+      $("newCount").textContent = num(r.data.total);
+      $("newPill").hidden = false;
+      $("newPill").classList.add("show");
+    }
+  }
+
+  function reloadList() {
+    hideNewPill();
+    const b = $("refreshBtn");
+    b.classList.remove("spin"); void b.offsetWidth; b.classList.add("spin");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    loadList();
+    loadFacets();
+    if (state.view === "map") loadMap();
+  }
+
+  // ─── шторка фильтров (телефон) ──────────────────────────────────────────
+  function openSheet() { document.body.classList.add("sheet-open"); }
+  function closeSheet() { document.body.classList.remove("sheet-open"); }
+  function filtersCount() {
+    return state.types.length + state.rooms.length + state.districts.length + state.complexes.length
+      + ["priceMin", "priceMax", "areaMin", "areaMax", "landMin", "landMax", "fresh"].filter((k) => state[k]).length
+      + (state.notFirst ? 1 : 0) + (state.notLast ? 1 : 0) + (state.deal === "rent" ? 1 : 0);
+  }
+
+  // ─── нижняя панель (телефон) ────────────────────────────────────────────
+  function setTab(tab) {
+    document.querySelectorAll(".tabbar [data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  }
+
   let openedId = 0;
   async function openDetail(id) {
     openedId = id;
     const dlg = $("detail");
     $("detailBody").innerHTML = `<p class="d-place">Загрузка…</p>`;
-    if (!dlg.open) dlg.showModal();
+    openDlg(dlg);
+    dlg.scrollTop = 0;
     try {
       const o = await getJSON(`/api/listings/${id}`);
       $("detailBody").innerHTML = detailHTML(o);
@@ -428,10 +546,14 @@
   // ─── вход и кабинет ─────────────────────────────────────────────────────
   function renderAccount() {
     const u = me();
-    $("accountBtn").textContent = u ? "Кабинет" : (meta.access ? "Вы вошли ✓" : "Войти");
-    $("accountBtn").classList.toggle("on", !!u || !!meta.access);
-    $("favBtn").hidden = !u;
-    if (u) $("favBtn").textContent = `♡ Избранное${u.favorites.length ? " · " + u.favorites.length : ""}`;
+    $("accountBtn").textContent = u ? "Кабинет" : "Войти";
+    $("accountBtn").classList.toggle("on", !!u);
+    $("tabAccount").textContent = u ? "Кабинет" : "Войти";
+    $("favBtn").hidden = false;
+    const n = u ? u.favorites.length : 0;
+    $("favBtn").textContent = `♡ Избранное${n ? " · " + n : ""}`;
+    $("favBadge").hidden = !n;
+    $("favBadge").textContent = n;
     $("optoutLink").hidden = !meta.bot;
     if (meta.bot) $("optoutLink").href = `https://t.me/${meta.bot}?start=optout`;
   }
@@ -453,7 +575,7 @@
     if (!meta.tg_login && !meta.email_login && !meta.promo_login) {
       $("loginLead").textContent = "Вход скоро откроется.";
     }
-    if (!$("loginDlg").open) $("loginDlg").showModal();
+    openDlg($("loginDlg"));
   }
 
   function loginError(text) {
@@ -495,8 +617,9 @@
   }
 
   async function afterLogin() {
-    if ($("loginDlg").open) $("loginDlg").close();
+    if ($("loginDlg").open) closeDlg($("loginDlg"));
     await reloadMeta();
+    toast("Вы вошли");
     refresh();
     if ($("detail").open && openedId) openDetail(openedId);
     if ($("cabinetDlg").open) renderCabinet();
@@ -504,15 +627,18 @@
 
   function renderCabinet() {
     const u = me();
-    if (!u) { $("cabinetDlg").close(); return; }
+    if (!u) { closeDlg($("cabinetDlg")); return; }
     const who = [u.name, u.tg_username && "@" + u.tg_username, u.email].filter(Boolean).join(" · ");
     let status;
     if (u.is_admin) status = "Администратор — доступ к номерам без ограничений.";
     else if (u.access) status = `Доступ к номерам открыт до <b>${esc(fmtDay(u.access_until))}</b>.`;
     else status = "Доступа к номерам сейчас нет.";
     const views = u.views_limit ? `<p class="note">Открыто номеров за сутки: ${u.views_today} из ${u.views_limit}.</p>` : "";
-    const confirm = !u.phone_confirmed
-      ? `<button type="button" class="pill" data-tglink>Подтвердить номер через Telegram${u.trial_used ? "" : ` — ${meta.trial_days} дней бесплатно`}</button>` : "";
+    const promoUser = !u.tg_username && !u.email;
+    const confirm = !u.phone_confirmed && meta.tg_login
+      ? `${promoUser ? `<p class="note">Вы вошли по коду коллег. Привяжите Telegram — так избранное и доступ сохранятся на любом устройстве.</p>` : ""}
+         <button type="button" class="pill" data-tglink>${promoUser ? "Привязать Telegram" : "Подтвердить номер через Telegram"}${u.trial_used || promoUser ? "" : ` — ${meta.trial_days} дней бесплатно`}</button>`
+      : (promoUser ? `<p class="note">Вы вошли по коду коллег.</p>` : "");
     const pay = u.is_admin ? "" : `<div class="cab-row"><div><b>Подписка</b><br><span class="note">${meta.price} ₽ за ${meta.period_days} дней</span></div>
       ${meta.payments ? `<button type="button" class="pill" data-pay>Оплатить</button>` : `<span class="note">Оплата появится скоро</span>`}</div>`;
     $("cabinetBody").innerHTML = `
@@ -532,13 +658,14 @@
         <button type="button" class="ghost" id="logoutBtn">Выйти</button>
         <button type="button" class="pill light" data-close>Закрыть</button>
       </div>`;
-    if (!$("cabinetDlg").open) $("cabinetDlg").showModal();
+    openDlg($("cabinetDlg"));
   }
 
   async function toggleFavorite(id) {
     if (!me()) { openLogin("Чтобы сохранять объекты в избранное, войдите."); return; }
     const r = await call(`/api/favorites/${id}`, {});
-    if (!r.ok) return;
+    if (!r.ok) { toast(r.data.detail || "Не получилось — попробуйте ещё раз."); return; }
+    toast(r.data.favorite ? "♥ Добавлено в избранное" : "Убрано из избранного");
     const list = me().favorites;
     const i = list.indexOf(id);
     if (r.data.favorite && i < 0) list.push(id);
@@ -546,13 +673,16 @@
     renderAccount();
     document.querySelectorAll(`[data-fav="${id}"]`).forEach((b) => {
       b.classList.toggle("on", r.data.favorite);
+      b.classList.remove("pop"); void b.offsetWidth; b.classList.add("pop");
       b.textContent = b.classList.contains("d-fav") ? (r.data.favorite ? "♥ В избранном" : "♡ В избранное") : (r.data.favorite ? "♥" : "♡");
     });
     if (favMode && !r.data.favorite) loadList();
   }
 
   function setFavMode(on) {
+    if (on && !me()) { openLogin("Чтобы сохранять объекты в избранное, войдите."); return; }
     favMode = on;
+    setTab(on ? "fav" : (state.view === "map" ? "map" : "list"));
     if (on && state.view === "map") { state.view = "list"; syncControls(); applyView(); }
     document.querySelector(".filters").hidden = on;
     $("searchForm").hidden = on;
@@ -590,13 +720,26 @@
       if (!t) return;
       if (t.dataset.fav) { e.stopPropagation(); toggleFavorite(Number(t.dataset.fav)); return; }
       if (t.hasAttribute("data-login")) { openLogin(); return; }
+      if (t.hasAttribute("data-sheet-close")) { closeSheet(); return; }
+      if (t.dataset.tab) {
+        const tab = t.dataset.tab;
+        if (tab === "account") { me() ? renderCabinet() : openLogin(); return; }
+        if (tab === "fav") { setFavMode(true); return; }
+        if (favMode) setFavMode(false);
+        if (state.view !== tab) { state.view = tab; syncControls(); writeUrl(); applyView(); if (tab === "map") loadMap(); else loadList(); }
+        else window.scrollTo({ top: 0, behavior: "smooth" });
+        setTab(tab);
+        return;
+      }
       if (t.hasAttribute("data-tglink")) { startTelegram(!!me()); return; }
       if (t.hasAttribute("data-pay")) { pay(); return; }
-      if (t.hasAttribute("data-close")) { t.closest("dialog").close(); return; }
+      if (t.hasAttribute("data-close")) { closeDlg(t.closest("dialog")); return; }
       if (t.id === "favExit") { setFavMode(false); return; }
-      if (t.id === "cabFav") { $("cabinetDlg").close(); setFavMode(true); return; }
+      if (t.id === "cabFav") { closeDlg($("cabinetDlg")); setFavMode(true); return; }
       if (t.id === "logoutBtn") {
-        call("/api/auth/logout", {}).then(async () => { $("cabinetDlg").close(); favMode = false; setFavMode(false); await reloadMeta(); });
+        call("/api/auth/logout", {}).then(async () => {
+          closeDlg($("cabinetDlg")); favMode = false; await reloadMeta(); setFavMode(false); toast("Вы вышли");
+        });
         return;
       }
       if (t.dataset.deal) {
@@ -647,6 +790,26 @@
     });
 
     $("loadMore").addEventListener("click", () => { page += 1; loadList(true); });
+    // Подгрузка при прокрутке: дошли почти до конца — подгружаем следующую страницу
+    if ("IntersectionObserver" in window) {
+      let busy = false;
+      new IntersectionObserver(async (entries) => {
+        if (!entries[0].isIntersecting || busy || $("loadMore").hidden) return;
+        busy = true; page += 1; await loadList(true); busy = false;
+      }, { rootMargin: "900px 0px" }).observe(document.querySelector(".more-results"));  // контейнер виден всегда, кнопка — нет
+    }
+    $("filterBtn").addEventListener("click", openSheet);
+    $("sheetOverlay").addEventListener("click", closeSheet);
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
+    $("refreshBtn").addEventListener("click", reloadList);
+    $("newPill").addEventListener("click", reloadList);
+    setInterval(checkNew, 60000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) checkNew(); });
+    // Фото проявляются плавно, когда загрузились
+    document.addEventListener("load", (e) => {
+      if (e.target.tagName === "IMG") e.target.classList.add("loaded");
+    }, true);
+    ["detail", "loginDlg", "cabinetDlg"].forEach((id) => swipeToClose($(id)));
 
     $("results").addEventListener("click", (e) => {
       if (e.target.closest("[data-fav]")) return;
@@ -659,8 +822,7 @@
     });
 
     const detail = $("detail");
-    $("closeDetail").addEventListener("click", () => detail.close());
-    detail.addEventListener("click", (e) => { if (e.target === detail) detail.close(); });
+    $("closeDetail").addEventListener("click", () => closeDlg(detail));
 
     $("accountBtn").addEventListener("click", () => (me() ? renderCabinet() : openLogin()));
     $("favBtn").addEventListener("click", () => setFavMode(!favMode));
@@ -725,6 +887,7 @@
     }
     syncControls();
     bind();
+    setTab(state.view === "map" ? "map" : "list");
     refresh();
     const openId = Number(new URLSearchParams(location.search).get("open"));
     if (openId) openDetail(openId);  // ссылка из админки: /?open=123

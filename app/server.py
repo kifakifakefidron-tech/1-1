@@ -171,7 +171,10 @@ async def api_meta(request: Request):
 
 async def api_listings(request: Request):
     # В списке телефонов нет никогда — только в карточке, по одному объекту
-    return JSONResponse(search.search(db.get(), query_from(request), int(time.time()), False))
+    now = int(time.time())
+    res = search.search(db.get(), query_from(request), now, False)
+    res["now"] = now  # от этого момента страница считает «новые объекты»
+    return JSONResponse(res)
 
 
 async def api_listing(request: Request):
