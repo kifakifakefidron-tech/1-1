@@ -91,7 +91,24 @@ CREATE TABLE IF NOT EXISTS geocache (
 CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT);
 """
 
+# Новые поля в уже существующих таблицах (база на сервере обновится сама при запуске)
+MIGRATIONS = [
+    ("listings", "source", "TEXT NOT NULL DEFAULT 'chat'"),   # chat | feed
+    ("listings", "ext_id", "TEXT"),                           # id объекта в фиде
+    ("listings", "photos", "TEXT NOT NULL DEFAULT '[]'"),
+    ("listings", "url", "TEXT"),
+]
+
 _local = threading.local()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    for table, col, decl in MIGRATIONS:
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if col not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_listings_ext ON listings(ext_id) WHERE ext_id IS NOT NULL")
+    conn.commit()
 
 
 def connect(path: str | None = None) -> sqlite3.Connection:
@@ -101,6 +118,7 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(p, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
 
 

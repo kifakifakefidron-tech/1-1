@@ -11,15 +11,21 @@ def listings(conn):
     return conn.execute("SELECT * FROM listings ORDER BY id").fetchall()
 
 
-def test_same_flat_from_different_agents_is_one_listing(conn, add):
-    a = add(AGENT_A, chat="Чат 1", sender="Ирина")
-    b = add(AGENT_B, chat="Чат 2", sender="Олег")
-    assert a["results"][0]["match"] == "new"
+def test_same_flat_from_different_agents_stays_separate(conn, add):
+    """Разные агенты с одним объектом — это рынок, показываем каждого."""
+    add(AGENT_A, chat="Чат 1", sender="Ирина")
+    add(AGENT_B, chat="Чат 2", sender="Олег")
+    assert len(listings(conn)) == 2
+
+
+def test_same_agent_reposting_is_one_listing(conn, add):
+    """Тот же агент (тот же номер) прислал объект ещё раз другим текстом — склеиваем."""
+    a = add(AGENT_A, chat="Чат 1")
+    b = add(AGENT_B.replace("89995556677", "89181112233"), chat="Чат 2")
     assert b["results"][0]["listing_id"] == a["results"][0]["listing_id"]
     [row] = listings(conn)
     assert row["seen_count"] == 2
     assert row["price"] == 7_400_000  # свежая цена
-    assert "+79181112233" in row["phones"] and "+79995556677" in row["phones"]
 
 
 def test_different_floors_in_same_complex_are_different(conn, add):
@@ -42,9 +48,9 @@ def test_exact_repost_skips_parsing(conn, add):
     assert row["seen_count"] == 2
 
 
-def test_land_from_different_agents_is_one_listing(conn, add):
+def test_land_repost_by_same_agent_is_one_listing(conn, add):
     add("Участок 6 сот, ул. Садовая 15, ИЖС, газ рядом. 1,9 млн руб. 89183334455")
-    add("Продам землю 6 соток по ул. Садовая 15. Цена 1 900 000 руб. Тел 89187776655")
+    add("Продам землю 6 соток по ул. Садовая 15. Цена 1 900 000 руб. Тел 89183334455")
     assert len(listings(conn)) == 1
 
 

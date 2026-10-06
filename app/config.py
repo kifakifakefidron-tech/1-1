@@ -73,6 +73,10 @@ SECRET_KEY = os.getenv("SECRET_KEY", "change-me")
 # Геокодер для карты: nominatim (бесплатно, 1 запрос/сек) или off
 GEOCODER = os.getenv("GEOCODER", "nominatim")
 
+# Фид объектов СТРЕЛ (YML с сайта на Тильде); пусто — не загружать
+FEED_URL = os.getenv("FEED_URL", "https://arrowsrealty.ru/tstore/yml/a950e007bd575604e7517f13082cfeba.yml").strip()
+FEED_HOURS = int(os.getenv("FEED_HOURS", "6"))
+
 # Уведомления о сбоях в Telegram: бот от @BotFather и ник, кому писать (без @).
 # Ник должен сам написать боту /start — после этого бот запомнит, куда слать.
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()

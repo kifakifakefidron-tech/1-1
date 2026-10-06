@@ -220,7 +220,8 @@ def process_pending(conn: sqlite3.Connection, limit: int = 200, use_llm: bool | 
 
 def archive_stale(conn: sqlite3.Connection, now: int | None = None) -> int:
     now = int(now or time.time())
-    cur = conn.execute("UPDATE listings SET is_active = 0 WHERE is_active = 1 AND last_seen < ?",
+    # Объекты фида СТРЕЛ не устаревают сами — их снимает сам фид
+    cur = conn.execute("UPDATE listings SET is_active = 0 WHERE is_active = 1 AND source = 'chat' AND last_seen < ?",
                        (now - config.STALE_DAYS * 86400,))
     conn.commit()
     return cur.rowcount

@@ -71,6 +71,11 @@ def same_object(o: ParsedObject, row: sqlite3.Row) -> tuple[bool, str]:
         if v is False:
             return False, f"разные: {k}"
 
+    # Один и тот же объект от разных агентов — это рынок: показываем отдельно.
+    # Склеиваем только повторы одного агента (тот же номер телефона).
+    if not phone:
+        return False, "другой агент"
+
     addr = bool(street and house)
     sizes = [v for v in (area, land) if v is not None]
     size_ok = bool(sizes) and all(sizes)

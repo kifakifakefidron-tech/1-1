@@ -134,7 +134,7 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
 
 PUBLIC_FIELDS = ("id", "type", "deal", "rooms", "area", "land", "floor", "floors", "price", "price_m2",
                  "district", "complex", "settlement", "street", "house", "title", "description",
-                 "first_seen", "last_seen", "seen_count", "lat", "lon")
+                 "first_seen", "last_seen", "seen_count", "lat", "lon", "source", "url")
 
 
 def mask_phone(p: str) -> str:
@@ -145,6 +145,7 @@ def mask_phone(p: str) -> str:
 
 def row_to_item(r: sqlite3.Row, with_contacts: bool) -> dict:
     d = {k: r[k] for k in PUBLIC_FIELDS}
+    d["photos"] = json.loads(r["photos"] or "[]")
     phones = json.loads(r["phones"] or "[]")
     if with_contacts:
         d["phones"] = phones

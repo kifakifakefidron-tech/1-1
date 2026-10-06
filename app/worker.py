@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import time
 
-from . import config, db, geocode, ingest, llm, notify, wappi
+from . import config, db, feed, geocode, ingest, llm, notify, wappi
 
 log = logging.getLogger("worker")
 
@@ -19,6 +19,9 @@ def tick(conn) -> dict:
     stats["queue"] = conn.execute("SELECT COUNT(*) FROM messages WHERE status='new'").fetchone()[0]
     stats["geocoded"] = geocode.run(conn, limit=40)
     stats["archived"] = ingest.archive_stale(conn)
+    synced = feed.maybe_sync(conn)
+    if synced:
+        stats["feed"] = synced
     if db.get_state(conn, "cleanup_day") != time.strftime("%Y-%m-%d"):
         stats["cleanup"] = ingest.cleanup_old(conn)
         db.set_state(conn, "cleanup_day", time.strftime("%Y-%m-%d"))

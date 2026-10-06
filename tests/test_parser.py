@@ -24,7 +24,7 @@ def test_land_in_khutor_gets_no_invented_complex_or_district():
     assert o.land == 20
     assert o.price == 2_800_000
     assert o.complex is None
-    assert o.district is None
+    assert o.district == "х. Ленина"  # из текста, а не «Теплоэлектроцентраль» по догадке
 
 
 def test_multi_object_price_list_is_split():
