@@ -42,7 +42,14 @@ def _vendor(v: str | None) -> tuple[str | None, int | None]:
     return None, None
 
 
-def parse_offer(o: ET.Element) -> dict | None:
+def placeholder_pictures(offers: list[ET.Element]) -> set[str]:
+    """Картинки, которые стоят у многих объектов сразу, — заглушки вроде «Фото в пути»."""
+    from collections import Counter
+    c = Counter(p.text.strip() for o in offers for p in o.findall("picture") if p.text)
+    return {url for url, n in c.items() if n >= 3}
+
+
+def parse_offer(o: ET.Element, skip_pictures: set[str] | frozenset = frozenset()) -> dict | None:
     text = _text(o.findtext("description"))
     if not text:
         return None
@@ -73,7 +80,8 @@ def parse_offer(o: ET.Element) -> dict | None:
         rec = geo.resolve_complex(complex_name)
         d["district"] = rec.district if rec else None
     d.update(ext_id=f"feed:{o.get('id')}", url=(o.findtext("url") or "").strip() or None,
-             photos=[p.text.strip() for p in o.findall("picture") if p.text][:12], lat=lat, lon=lon)
+             photos=[p.text.strip() for p in o.findall("picture")
+                     if p.text and p.text.strip() not in skip_pictures][:12], lat=lat, lon=lon)
     d["title"] = make_title(d)
     return d if d["price"] else None
 
@@ -89,13 +97,14 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
     offers = root.findall("./shop/offers/offer")
     seen: set[str] = set()
     added = updated = 0
+    skip = placeholder_pictures(offers)
     for o in offers:
-        d = parse_offer(o)
+        d = parse_offer(o, skip)
         if not d:
             continue
         seen.add(d["ext_id"])
         d["search_text"] = make_search_text(d)
-        row = conn.execute("SELECT id FROM listings WHERE ext_id = ?", (d["ext_id"],)).fetchone()
+        row = conn.execute("SELECT id, price FROM listings WHERE ext_id = ?", (d["ext_id"],)).fetchone()
         vals = (d["type"], d["deal"], d["rooms"], d["area"], d["land"], d["floor"], d["floors"], d["price"],
                 _price_m2(d["price"], d["area"]), d["district"], d["complex"], d["settlement"], d["street"],
                 d["house"], d["title"], d["description"], d["fragment"], d["search_text"],
@@ -106,8 +115,10 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
             conn.execute(
                 """UPDATE listings SET type=?, deal=?, rooms=?, area=?, land=?, floor=?, floors=?, price=?, price_m2=?,
                        district=?, complex=?, settlement=?, street=?, house=?, title=?, description=?, fragment=?,
-                       search_text=?, photos=?, url=?, lat=?, lon=?, geo_status=?, last_seen=?, is_active=1
-                   WHERE id=?""", vals + (now, lid))
+                       search_text=?, photos=?, url=?, lat=?, lon=?, geo_status=?, is_active=1,
+                       last_seen=CASE WHEN price_changed THEN ? ELSE last_seen END
+                   WHERE id=?""".replace("price_changed", "1" if row["price"] != d["price"] else "0"),
+                vals + (now, lid))
             updated += 1
         else:
             cur = conn.execute(

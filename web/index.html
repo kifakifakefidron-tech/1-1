@@ -10,13 +10,16 @@
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
-<link rel="stylesheet" href="/static/style.css?v=3">
+<link rel="stylesheet" href="/static/style.css?v=4">
 </head>
 <body>
 <header class="top">
   <a class="brand" href="/" aria-label="1+1 — на главную">1<span aria-hidden="true">+</span>1</a>
   <span class="brand-sub">вторичка и новостройки Краснодара из риелторских чатов</span>
-  <button class="access-btn" id="accessBtn" hidden>Войти</button>
+  <div class="top-actions">
+    <button class="access-btn ghost-btn" id="favBtn" hidden>♡ Избранное</button>
+    <button class="access-btn" id="accountBtn">Войти</button>
+  </div>
 </header>
 
 <main class="wrap">
@@ -106,42 +109,51 @@
   <div class="more-results"><button type="button" id="loadMore" class="pill" hidden>Показать ещё</button></div>
 </main>
 
+<footer class="foot">
+  <span>1+1 · поиск объектов Краснодара</span>
+  <a id="optoutLink" href="#" target="_blank" rel="noopener">Агентам: убрать свой номер с сайта</a>
+</footer>
+
 <dialog id="detail" class="detail" aria-labelledby="dTitle">
   <button class="close" id="closeDetail" aria-label="Закрыть">✕</button>
   <div id="detailBody"></div>
 </dialog>
 
-<dialog id="paywallDlg" class="small-dlg" aria-labelledby="pwTitle">
+<dialog id="loginDlg" class="small-dlg" aria-labelledby="loginTitle">
   <div class="dlg-body">
-    <h2 id="pwTitle">Номера агентов — по подписке</h2>
-    <ol class="steps">
-      <li><b>Регистрация</b> по номеру телефона — минута.</li>
-      <li><b>Первый месяц бесплатно</b> — открыты все номера и исходные сообщения из чатов.</li>
-      <li><b>Дальше — подписка.</b> Без неё номера снова скрыты, поиск остаётся бесплатным.</li>
-    </ol>
-    <p class="note">Регистрация откроется совсем скоро. Если у вас уже есть код доступа — войдите по нему.</p>
-    <div class="dlg-actions">
-      <button type="button" class="ghost" id="paywallClose">Понятно</button>
-      <button type="button" class="pill" id="paywallLogin">Войти по коду</button>
+    <h2 id="loginTitle">Вход на 1+1</h2>
+    <p class="note" id="loginLead">Номера агентов открываются после входа.</p>
+    <div class="login-opts">
+      <button type="button" class="pill wide" id="tgLogin">Войти через Telegram</button>
+      <div class="tg-wait" id="tgWait" hidden></div>
+      <div class="or">или по почте</div>
+      <form id="emailForm" class="inline-form">
+        <input id="emailInput" type="email" autocomplete="email" placeholder="Ваша почта" aria-label="Почта">
+        <button type="submit" class="pill light">Получить код</button>
+      </form>
+      <form id="codeForm" class="inline-form" hidden>
+        <input id="codeInput" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Код из письма" aria-label="Код из письма">
+        <button type="submit" class="pill">Войти</button>
+      </form>
+      <p class="err" id="loginErr" hidden></p>
+      <details class="promo-box" id="promoBox" hidden>
+        <summary>Есть код коллег?</summary>
+        <form id="accessForm" class="inline-form">
+          <input id="accessCode" autocomplete="off" placeholder="Код доступа" aria-label="Код доступа">
+          <button type="submit" class="pill light">Войти по коду</button>
+        </form>
+      </details>
     </div>
+    <div class="dlg-actions"><button type="button" class="ghost" data-close>Закрыть</button></div>
   </div>
 </dialog>
 
-<dialog id="accessDlg" class="small-dlg">
-  <form id="accessForm" method="dialog">
-    <h2>Вход по коду</h2>
-    <p>С кодом видны телефоны агентов и исходные сообщения из чатов.</p>
-    <input id="accessCode" autocomplete="off" placeholder="Код доступа" aria-label="Код доступа">
-    <p class="err" id="accessErr" hidden>Код не подошёл. Проверьте и введите ещё раз.</p>
-    <div class="dlg-actions">
-      <button type="button" class="ghost" id="accessCancel">Отмена</button>
-      <button type="submit" class="pill">Войти</button>
-    </div>
-  </form>
+<dialog id="cabinetDlg" class="small-dlg" aria-labelledby="cabTitle">
+  <div class="dlg-body" id="cabinetBody"></div>
 </dialog>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
-<script src="/static/app.js?v=3"></script>
+<script src="/static/app.js?v=4"></script>
 </body>
 </html>

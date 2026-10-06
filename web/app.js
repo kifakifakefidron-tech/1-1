@@ -18,6 +18,8 @@
   let page = 1;
   let reqSeq = 0;
   let map = null, cluster = null;
+  let favMode = false;      // показываем избранное вместо поиска
+  let tgPoll = 0;           // ожидание входа через Telegram
 
   // ─── форматирование ──────────────────────────────────────────────────────
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
@@ -126,6 +128,22 @@
     return r.json();
   }
 
+  // POST/GET с понятной ошибкой: { ok, status, data }
+  async function call(url, body, method) {
+    const opts = { credentials: "same-origin", method: method || (body !== undefined ? "POST" : "GET") };
+    if (body !== undefined) { opts.headers = { "Content-Type": "application/json" }; opts.body = JSON.stringify(body); }
+    try {
+      const r = await fetch(url, opts);
+      let data = {};
+      try { data = await r.json(); } catch { /* пустой ответ */ }
+      return { ok: r.ok, status: r.status, data };
+    } catch {
+      return { ok: false, status: 0, data: { detail: "Нет связи с сайтом. Проверьте интернет." } };
+    }
+  }
+  const me = () => meta.me || null;
+  const fmtDay = (ts) => new Date(ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+
   // ─── отрисовка фильтров ─────────────────────────────────────────────────
   function syncControls() {
     $("q").value = state.q;
@@ -184,9 +202,15 @@
     const tag = o.type === "new" ? `<span class="tag">новостройка</span>` : "";
     const m2 = o.price_m2 && o.deal !== "rent" ? `<div class="price-m2">${num(o.price_m2)} ₽/м²</div>` : "";
     const seen = o.seen_count > 1 ? ` · присылали ${o.seen_count} ${plural(o.seen_count, "раз", "раза", "раз")}` : "";
-    return `<li class="item" tabindex="0" data-id="${o.id}">
+    const photo = o.photos && o.photos[0]
+      ? `<div class="item-photo"><img src="${esc(o.photos[0])}" alt="" loading="lazy"></div>` : "";
+    const fav = me() && me().favorites.includes(o.id);
+    const strely = o.source === "feed" ? `<span class="tag tag-strely">СТРЕЛЫ</span>` : "";
+    return `<li class="item${photo ? " has-photo" : ""}" tabindex="0" data-id="${o.id}">
+      ${photo}
+      <button type="button" class="fav-btn${fav ? " on" : ""}" data-fav="${o.id}" aria-label="${fav ? "Убрать из избранного" : "В избранное"}">${fav ? "♥" : "♡"}</button>
       <div class="item-price"><div class="price">${esc(fmtPrice(o.price, o.deal))}</div>${m2}</div>
-      <h3 class="item-title">${esc(o.title)}${tag}</h3>
+      <h3 class="item-title">${esc(o.title)}${tag}${strely}</h3>
       ${where ? `<div class="item-place">${esc(where)}</div>` : ""}
       ${o.description ? `<p class="item-desc">${esc(o.description)}</p>` : ""}
       <div class="item-meta">${esc(fmtAgo(o.last_seen))}${esc(seen)}</div>
@@ -198,18 +222,25 @@
     if (!append) page = 1;
     let data;
     try {
-      data = await getJSON(`/api/listings?${apiParams({ page, size: PAGE_SIZE })}`);
+      if (favMode) {
+        const fav = await getJSON("/api/favorites");
+        data = { total: fav.items.length, page: 1, pages: 1, items: fav.items };
+      } else {
+        data = await getJSON(`/api/listings?${apiParams({ page, size: PAGE_SIZE })}`);
+      }
     } catch {
       if (seq === reqSeq) $("count").textContent = "Не получилось загрузить. Обновите страницу.";
       return;
     }
     if (seq !== reqSeq) return;
-    $("count").textContent = data.total
-      ? `${num(data.total)} ${plural(data.total, "объект", "объекта", "объектов")}`
-      : "Ничего не нашлось";
+    $("count").innerHTML = favMode
+      ? `Избранное: ${num(data.total)} <button type="button" class="link-btn" id="favExit">← ко всем объектам</button>`
+      : esc(data.total ? `${num(data.total)} ${plural(data.total, "объект", "объекта", "объектов")}` : "Ничего не нашлось");
     const html = data.items.map(itemHTML).join("");
     if (append) $("results").insertAdjacentHTML("beforeend", html);
-    else $("results").innerHTML = html || `<li class="empty"><b>Ничего не нашлось</b>Попробуйте убрать часть фильтров или изменить запрос.</li>`;
+    else $("results").innerHTML = html || (favMode
+      ? `<li class="empty"><b>Пока пусто</b>Нажмите ♡ на объекте, чтобы сохранить его сюда.</li>`
+      : `<li class="empty"><b>Ничего не нашлось</b>Попробуйте убрать часть фильтров или изменить запрос.</li>`);
     $("loadMore").hidden = state.view !== "list" || data.page >= data.pages;
   }
 
@@ -288,22 +319,10 @@
       fact("Адрес", o.street ? `ул. ${o.street}${o.house ? ", " + o.house : ""}` : null),
     ].join("");
 
-    // Телефон агента: открыт по подписке (пока — по коду доступа), иначе — скрыт с пояснением
-    let contact = "";
-    if (meta.access && o.phones && o.phones.length) {
-      contact = `<div class="d-contact">${o.phones.map((p) => {
-        const digits = p.replace(/\D/g, "");
-        return `<a class="pill" href="tel:${esc(p)}">${esc(p)}</a><a class="pill light" href="https://wa.me/${digits}" target="_blank" rel="noopener">WhatsApp</a>`;
-      }).join("")}</div>`;
-    } else if (o.phones_masked && o.phones_masked.length) {
-      contact = `<div class="d-locked">
-        <div class="d-locked-num">${esc(o.phones_masked[0])}</div>
-        <p>Телефон агента открывается по подписке. <b>Первый месяц — бесплатно.</b></p>
-        <button type="button" class="pill" data-paywall>Открыть номер</button>
-      </div>`;
-    } else if (meta.public_contact) {
-      contact = `<div class="d-contact"><a class="pill" href="${esc(meta.public_contact)}" target="_blank" rel="noopener">${esc(meta.public_contact_label || "Узнать подробности")} →</a></div>`;
-    }
+    const contact = contactHTML(o);
+    const gallery = o.photos && o.photos.length
+      ? `<div class="gallery">${o.photos.map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="" loading="lazy"></a>`).join("")}</div>` : "";
+    const site = o.url ? `<a class="pill light" href="${esc(o.url)}" target="_blank" rel="noopener">Смотреть на сайте СТРЕЛ →</a>` : "";
 
     const hist = (o.history || []).map((h) => {
       const who = meta.access ? [h.chat, h.sender].filter(Boolean).join(" · ") : "";
@@ -312,7 +331,10 @@
     }).join("");
 
     const chats = o.chats > 1 ? `Объект присылали в ${o.chats} ${plural(o.chats, "чат", "чата", "чатов")}. ` : "";
+    const fav = !!o.favorite;
     return `
+      ${gallery}
+      <button type="button" class="fav-btn d-fav${fav ? " on" : ""}" data-fav="${o.id}">${fav ? "♥ В избранном" : "♡ В избранное"}</button>
       <h2 class="d-title" id="dTitle">${esc(o.title)}</h2>
       <p class="d-place">${esc(place(o))}</p>
       <p class="d-price">${esc(fmtPrice(o.price, o.deal))}</p>
@@ -320,12 +342,65 @@
       <dl class="d-facts">${facts}</dl>
       ${o.description ? `<h3 class="d-h">Описание</h3><p class="d-desc">${esc(o.description)}</p>` : ""}
       ${contact}
+      ${site ? `<div class="d-contact">${site}</div>` : ""}
       ${meta.access && o.fragment ? `<h3 class="d-h">Исходное сообщение</h3><pre class="d-source">${esc(o.fragment)}</pre>` : ""}
       ${hist ? `<details class="d-hist-box"><summary>История · ${o.history.length} ${plural(o.history.length, "сообщение", "сообщения", "сообщений")}</summary><ul class="d-hist">${hist}</ul></details>` : ""}
-      <p class="d-note">${esc(chats)}Впервые: ${esc(fmtAgo(o.first_seen))}, последний раз: ${esc(fmtAgo(o.last_seen))}.</p>`;
+      <p class="d-note">${esc(chats)}Впервые: ${esc(fmtAgo(o.first_seen))}, последний раз: ${esc(fmtAgo(o.last_seen))}.</p>
+      ${reportHTML(o)}`;
   }
 
+  // Телефон агента: открыт по подписке; иначе — скрыт с понятным следующим шагом
+  function contactHTML(o) {
+    if (o.source === "feed") {
+      return meta.public_contact
+        ? `<div class="d-contact"><a class="pill" href="${esc(meta.public_contact)}" target="_blank" rel="noopener">${esc(meta.public_contact_label || "Узнать подробности")} →</a></div>` : "";
+    }
+    if (o.phones && o.phones.length) {
+      return `<div class="d-contact">${o.phones.map((p) => {
+        const digits = p.replace(/\D/g, "");
+        return `<a class="pill" href="tel:${esc(p)}">${esc(p)}</a><a class="pill light" href="https://wa.me/${digits}" target="_blank" rel="noopener">WhatsApp</a>`;
+      }).join("")}</div>`;
+    }
+    if (o.phones_limit) {
+      return `<div class="d-locked"><p>На сегодня открыто максимум номеров (${esc(me() && me().views_limit)}). Завтра лимит обновится.</p></div>`;
+    }
+    if (!o.phones_masked || !o.phones_masked.length) return "";
+    const u = me();
+    let text, btn;
+    if (!u) {
+      text = `Телефон агента открывается после входа. <b>Новым — ${meta.trial_days || 7} дней бесплатно.</b>`;
+      btn = `<button type="button" class="pill" data-login>Войти и открыть номер</button>`;
+    } else if (!u.phone_confirmed && !u.trial_used) {
+      text = `Подтвердите номер в Telegram — и <b>${meta.trial_days || 7} дней бесплатно</b>.`;
+      btn = `<button type="button" class="pill" data-tglink>Подтвердить номер</button>`;
+    } else {
+      text = `Доступ к номерам закончился. Подписка — <b>${meta.price} ₽ за ${meta.period_days} дней</b>.`;
+      btn = `<button type="button" class="pill" data-pay>Оформить подписку</button>`;
+    }
+    return `<div class="d-locked">
+      <div class="d-locked-num">${esc(o.phones_masked[0])}</div>
+      <p>${text}</p>${btn}</div>`;
+  }
+
+  function reportHTML(o) {
+    return `<details class="d-report"><summary>Сообщить об ошибке</summary>
+      <form class="report-form" data-report="${o.id}">
+        <select name="reason">
+          <option value="sold">Объект продан или неактуален</option>
+          <option value="wrong">Неверные данные (цена, этаж, адрес)</option>
+          <option value="my_phone">Это мой номер — уберите его</option>
+          <option value="other">Другое</option>
+        </select>
+        <textarea name="text" rows="2" placeholder="Что не так? (необязательно)"></textarea>
+        <p class="note" data-optout-hint hidden>Быстрее всего — подтвердить номер в нашем Telegram-боте: он исчезнет с сайта сразу.
+          ${meta.bot ? `<a href="https://t.me/${esc(meta.bot)}?start=optout" target="_blank" rel="noopener">Открыть бота</a>` : ""}</p>
+        <button type="submit" class="pill light">Отправить</button>
+      </form></details>`;
+  }
+
+  let openedId = 0;
   async function openDetail(id) {
+    openedId = id;
     const dlg = $("detail");
     $("detailBody").innerHTML = `<p class="d-place">Загрузка…</p>`;
     if (!dlg.open) dlg.showModal();
@@ -337,31 +412,145 @@
     }
   }
 
-  // ─── вход для коллег ────────────────────────────────────────────────────
-  function renderAccess() {
-    const b = $("accessBtn");
-    b.hidden = !meta.access_required;
-    b.classList.toggle("on", !!meta.access);
-    b.textContent = meta.access ? "Вы вошли ✓" : "Войти";
-    b.disabled = !!meta.access;
+  // ─── вход и кабинет ─────────────────────────────────────────────────────
+  function renderAccount() {
+    const u = me();
+    $("accountBtn").textContent = u ? "Кабинет" : (meta.access ? "Вы вошли ✓" : "Войти");
+    $("accountBtn").classList.toggle("on", !!u || !!meta.access);
+    $("favBtn").hidden = !u;
+    if (u) $("favBtn").textContent = `♡ Избранное${u.favorites.length ? " · " + u.favorites.length : ""}`;
+    $("optoutLink").hidden = !meta.bot;
+    if (meta.bot) $("optoutLink").href = `https://t.me/${meta.bot}?start=optout`;
   }
 
-  async function login(e) {
-    e.preventDefault();
-    const code = $("accessCode").value.trim();
-    if (!code) return;
-    try {
-      await getJSON("/api/login", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }),
-      });
-    } catch {
-      $("accessErr").hidden = false;
+  async function reloadMeta() {
+    try { meta = await getJSON("/api/meta"); } catch { /* оставим как было */ }
+    renderAccount();
+  }
+
+  function openLogin(lead) {
+    $("loginLead").innerHTML = lead || `Номера агентов открываются после входа. Новым — <b>${meta.trial_days || 7} дней бесплатно</b> после подтверждения номера в Telegram.`;
+    $("tgLogin").hidden = !meta.tg_login;
+    $("emailForm").hidden = !meta.email_login;
+    $("codeForm").hidden = true;
+    document.querySelector("#loginDlg .or").hidden = !(meta.tg_login && meta.email_login);
+    $("promoBox").hidden = !meta.promo_login;
+    $("tgWait").hidden = true;
+    $("loginErr").hidden = true;
+    if (!meta.tg_login && !meta.email_login && !meta.promo_login) {
+      $("loginLead").textContent = "Вход скоро откроется.";
+    }
+    if (!$("loginDlg").open) $("loginDlg").showModal();
+  }
+
+  function loginError(text) {
+    $("loginErr").textContent = text;
+    $("loginErr").hidden = false;
+  }
+
+  // Вход/подтверждение номера через бота: открываем Telegram и ждём подтверждения
+  async function startTelegram(link) {
+    const w = window.open("", "_blank");  // открываем сразу, иначе браузер заблокирует окно
+    const r = await call("/api/auth/tg/start", link ? { link: true } : {});
+    if (!r.ok) {
+      if (w) w.close();
+      if (!$("loginDlg").open) openLogin();
+      loginError(r.data.detail || "Не получилось. Попробуйте ещё раз.");
       return;
     }
-    $("accessDlg").close();
-    meta.access = true;
-    renderAccess();
+    if (w) w.location = r.data.url; else window.location.href = r.data.url;
+    if (!$("loginDlg").open) openLogin(link ? "Подтверждаем номер через Telegram." : undefined);
+    $("tgWait").hidden = false;
+    $("tgWait").innerHTML = `В Telegram нажмите <b>«Старт»</b>, затем <b>«📱 Поделиться номером»</b>. Это окно обновится само.<br>
+      Telegram не открылся? <a href="${esc(r.data.url)}" target="_blank" rel="noopener">Открыть бота</a>`;
+    clearInterval(tgPoll);
+    const started = Date.now();
+    tgPoll = setInterval(async () => {
+      if (Date.now() - started > 30 * 60 * 1000) { clearInterval(tgPoll); return; }
+      const st = await call(`/api/auth/tg/status?t=${encodeURIComponent(r.data.token)}`);
+      if (st.ok && st.data.status === "ok") {
+        clearInterval(tgPoll);
+        await afterLogin();
+      } else if (st.data.status === "expired") {
+        clearInterval(tgPoll);
+        loginError("Время входа вышло — нажмите «Войти через Telegram» ещё раз.");
+      } else if (st.data.status === "error") {
+        clearInterval(tgPoll);
+        loginError("Этот Telegram уже привязан к другому аккаунту.");
+      }
+    }, 2000);
+  }
+
+  async function afterLogin() {
+    if ($("loginDlg").open) $("loginDlg").close();
+    await reloadMeta();
     refresh();
+    if ($("detail").open && openedId) openDetail(openedId);
+    if ($("cabinetDlg").open) renderCabinet();
+  }
+
+  function renderCabinet() {
+    const u = me();
+    if (!u) { $("cabinetDlg").close(); return; }
+    const who = [u.name, u.tg_username && "@" + u.tg_username, u.email].filter(Boolean).join(" · ");
+    let status;
+    if (u.is_admin) status = "Администратор — доступ к номерам без ограничений.";
+    else if (u.access) status = `Доступ к номерам открыт до <b>${esc(fmtDay(u.access_until))}</b>.`;
+    else status = "Доступа к номерам сейчас нет.";
+    const views = u.views_limit ? `<p class="note">Открыто номеров за сутки: ${u.views_today} из ${u.views_limit}.</p>` : "";
+    const confirm = !u.phone_confirmed
+      ? `<button type="button" class="pill" data-tglink>Подтвердить номер через Telegram${u.trial_used ? "" : ` — ${meta.trial_days} дней бесплатно`}</button>` : "";
+    const pay = u.is_admin ? "" : `<div class="cab-row"><div><b>Подписка</b><br><span class="note">${meta.price} ₽ за ${meta.period_days} дней</span></div>
+      ${meta.payments ? `<button type="button" class="pill" data-pay>Оплатить</button>` : `<span class="note">Оплата появится скоро</span>`}</div>`;
+    $("cabinetBody").innerHTML = `
+      <h2 id="cabTitle">Личный кабинет</h2>
+      <p class="note">${esc(who)}</p>
+      <p>${status}</p>${views}
+      ${confirm}
+      ${pay}
+      <form class="inline-form" id="promoForm">
+        <input id="promoInput" autocomplete="off" placeholder="Промокод" aria-label="Промокод">
+        <button type="submit" class="pill light">Применить</button>
+      </form>
+      <p class="note" id="promoMsg" hidden></p>
+      <div class="dlg-actions cab-actions">
+        <button type="button" class="ghost" id="cabFav">♡ Избранное (${u.favorites.length})</button>
+        ${u.is_admin ? `<a class="ghost" href="/admin">Админка</a>` : ""}
+        <button type="button" class="ghost" id="logoutBtn">Выйти</button>
+        <button type="button" class="pill light" data-close>Закрыть</button>
+      </div>`;
+    if (!$("cabinetDlg").open) $("cabinetDlg").showModal();
+  }
+
+  async function toggleFavorite(id) {
+    if (!me()) { openLogin("Чтобы сохранять объекты в избранное, войдите."); return; }
+    const r = await call(`/api/favorites/${id}`, {});
+    if (!r.ok) return;
+    const list = me().favorites;
+    const i = list.indexOf(id);
+    if (r.data.favorite && i < 0) list.push(id);
+    if (!r.data.favorite && i >= 0) list.splice(i, 1);
+    renderAccount();
+    document.querySelectorAll(`[data-fav="${id}"]`).forEach((b) => {
+      b.classList.toggle("on", r.data.favorite);
+      b.textContent = b.classList.contains("d-fav") ? (r.data.favorite ? "♥ В избранном" : "♡ В избранное") : (r.data.favorite ? "♥" : "♡");
+    });
+    if (favMode && !r.data.favorite) loadList();
+  }
+
+  function setFavMode(on) {
+    favMode = on;
+    if (on && state.view === "map") { state.view = "list"; syncControls(); applyView(); }
+    document.querySelector(".filters").hidden = on;
+    $("searchForm").hidden = on;
+    loadList();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function pay() {
+    const r = await call("/api/pay", {});
+    if (r.ok && r.data.url) { window.location.href = r.data.url; return; }
+    alert(r.data.detail || "Оплата скоро появится.");
   }
 
   // ─── события ────────────────────────────────────────────────────────────
@@ -386,7 +575,17 @@
     document.addEventListener("click", (e) => {
       const t = e.target.closest("button");
       if (!t) return;
-      if (t.hasAttribute("data-paywall")) { $("paywallDlg").showModal(); return; }
+      if (t.dataset.fav) { e.stopPropagation(); toggleFavorite(Number(t.dataset.fav)); return; }
+      if (t.hasAttribute("data-login")) { openLogin(); return; }
+      if (t.hasAttribute("data-tglink")) { startTelegram(!!me()); return; }
+      if (t.hasAttribute("data-pay")) { pay(); return; }
+      if (t.hasAttribute("data-close")) { t.closest("dialog").close(); return; }
+      if (t.id === "favExit") { setFavMode(false); return; }
+      if (t.id === "cabFav") { $("cabinetDlg").close(); setFavMode(true); return; }
+      if (t.id === "logoutBtn") {
+        call("/api/auth/logout", {}).then(async () => { $("cabinetDlg").close(); favMode = false; setFavMode(false); await reloadMeta(); });
+        return;
+      }
       if (t.dataset.deal) {
         if (state.deal === t.dataset.deal) return;
         state.deal = t.dataset.deal;
@@ -437,6 +636,7 @@
     $("loadMore").addEventListener("click", () => { page += 1; loadList(true); });
 
     $("results").addEventListener("click", (e) => {
+      if (e.target.closest("[data-fav]")) return;
       const li = e.target.closest(".item");
       if (li) openDetail(Number(li.dataset.id));
     });
@@ -449,26 +649,61 @@
     $("closeDetail").addEventListener("click", () => detail.close());
     detail.addEventListener("click", (e) => { if (e.target === detail) detail.close(); });
 
-    $("accessBtn").addEventListener("click", () => {
-      $("accessErr").hidden = true;
-      $("accessCode").value = "";
-      $("accessDlg").showModal();
+    $("accountBtn").addEventListener("click", () => (me() ? renderCabinet() : openLogin()));
+    $("favBtn").addEventListener("click", () => setFavMode(!favMode));
+    $("tgLogin").addEventListener("click", () => startTelegram(false));
+    $("loginDlg").addEventListener("close", () => clearInterval(tgPoll));
+    $("emailForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = $("emailInput").value.trim();
+      if (!email) return;
+      const r = await call("/api/auth/email/start", { email });
+      if (!r.ok) { loginError(r.data.detail || "Не получилось отправить код."); return; }
+      $("loginErr").hidden = true;
+      $("codeForm").hidden = false;
+      $("codeInput").focus();
     });
-    $("accessCancel").addEventListener("click", () => $("accessDlg").close());
-    $("paywallClose").addEventListener("click", () => $("paywallDlg").close());
-    $("paywallLogin").addEventListener("click", () => {
-      $("paywallDlg").close();
-      $("detail").close();
-      $("accessBtn").click();
+    $("codeForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const r = await call("/api/auth/email/verify", { email: $("emailInput").value.trim(), code: $("codeInput").value.trim() });
+      if (!r.ok) { loginError(r.data.detail || "Код не подошёл."); return; }
+      await afterLogin();
     });
-    $("accessForm").addEventListener("submit", login);
+    $("accessForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const code = $("accessCode").value.trim();
+      if (!code) return;
+      const r = await call("/api/login", { code });
+      if (!r.ok) { loginError(r.data.detail || "Код не подошёл. Проверьте и введите ещё раз."); return; }
+      await afterLogin();
+    });
+    document.addEventListener("submit", async (e) => {
+      const f = e.target;
+      if (f.id === "promoForm") {
+        e.preventDefault();
+        const r = await call("/api/promo", { code: $("promoInput").value.trim() });
+        $("promoMsg").hidden = false;
+        $("promoMsg").textContent = r.data.text || r.data.detail || "";
+        if (r.ok) { meta.me = r.data.me; meta.access = r.data.me.access; renderAccount(); setTimeout(renderCabinet, 1200); }
+      } else if (f.dataset.report) {
+        e.preventDefault();
+        const r = await call("/api/complaints", { listing_id: Number(f.dataset.report), reason: f.reason.value, text: f.text.value });
+        f.innerHTML = `<p class="note">${r.ok ? "Спасибо! Проверим и поправим." : esc(r.data.detail || "Не отправилось.")}</p>`;
+      }
+    });
+    document.addEventListener("change", (e) => {
+      if (e.target.name === "reason") {
+        const hint = e.target.form.querySelector("[data-optout-hint]");
+        if (hint) hint.hidden = e.target.value !== "my_phone";
+      }
+    });
   }
 
   async function init() {
     readUrl();
     try { meta = await getJSON("/api/meta"); } catch { /* страница всё равно покажет список */ }
     renderTypes();
-    renderAccess();
+    renderAccount();
     if (state.areaMin || state.areaMax || state.landMin || state.landMax || state.notFirst || state.notLast
         || state.fresh || state.districts.length || state.complexes.length) {
       $("more").hidden = false;
@@ -478,6 +713,8 @@
     syncControls();
     bind();
     refresh();
+    const openId = Number(new URLSearchParams(location.search).get("open"));
+    if (openId) openDetail(openId);  // ссылка из админки: /?open=123
   }
 
   init();

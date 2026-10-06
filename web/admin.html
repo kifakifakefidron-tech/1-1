@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>1+1 · админка</title>
+<meta name="theme-color" content="#035352">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=4">
+<link rel="stylesheet" href="/static/admin.css?v=1">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/" aria-label="1+1 — на главную">1<span aria-hidden="true">+</span>1</a>
+  <span class="brand-sub">админка</span>
+  <a class="access-btn" href="/">← на сайт</a>
+</header>
+<main class="wrap">
+  <p class="adm-msg" id="denied" hidden>Эта страница только для администратора. <a href="/">Войдите на сайте</a> через Telegram (@ArtemAndreevic1).</p>
+  <div id="app" hidden>
+    <nav class="adm-tabs" role="tablist">
+      <button class="seg on" data-tab="overview">Обзор</button>
+      <button class="seg" data-tab="users">Пользователи</button>
+      <button class="seg" data-tab="promos">Промокоды</button>
+      <button class="seg" data-tab="optouts">Скрытые номера</button>
+      <button class="seg" data-tab="complaints">Жалобы</button>
+    </nav>
+
+    <section data-pane="overview"><div class="adm-cards" id="overview"></div></section>
+
+    <section data-pane="users" hidden>
+      <form class="inline-form adm-search" id="userSearch">
+        <input id="userQ" placeholder="Поиск: ник, почта, телефон, имя">
+        <button class="pill light">Найти</button>
+      </form>
+      <div class="adm-table-wrap"><table class="adm-table" id="users"></table></div>
+    </section>
+
+    <section data-pane="promos" hidden>
+      <form class="adm-form" id="promoNew">
+        <label>Код <input name="code" placeholder="авто"></label>
+        <label>Дней доступа <input name="days" type="number" value="7" min="1"></label>
+        <label>Сколько раз можно <input name="max_uses" type="number" value="10" min="1"></label>
+        <label class="grow">Заметка <input name="note" placeholder="Например: коллеги, тест"></label>
+        <button class="pill">Создать</button>
+      </form>
+      <div class="adm-table-wrap"><table class="adm-table" id="promos"></table></div>
+    </section>
+
+    <section data-pane="optouts" hidden>
+      <p class="note">Номера, которые не показываются на сайте нигде. Агент может скрыть свой номер сам через бота — или добавьте вручную.</p>
+      <form class="inline-form adm-search" id="optoutNew">
+        <input name="phone" placeholder="Номер: +7 918 111-22-33">
+        <button class="pill light">Скрыть номер</button>
+      </form>
+      <div class="adm-table-wrap"><table class="adm-table" id="optouts"></table></div>
+    </section>
+
+    <section data-pane="complaints" hidden>
+      <div class="adm-table-wrap"><table class="adm-table" id="complaints"></table></div>
+    </section>
+  </div>
+</main>
+<script src="/static/admin.js?v=1"></script>
+</body>
+</html>

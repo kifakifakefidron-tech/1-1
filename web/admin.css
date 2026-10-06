@@ -1,0 +1,23 @@
+/* Админка 1+1 — поверх style.css */
+.adm-msg { padding: 40px 0; font-size: 17px; }
+.adm-msg a, .adm-table a { color: var(--ink); }
+.adm-tabs { display: inline-flex; flex-wrap: wrap; gap: 4px; background: var(--chip); border-radius: 22px; padding: 4px; margin: 10px 0 18px; }
+.adm-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.adm-card { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; }
+.adm-card b { display: block; font: 600 28px var(--head); }
+.adm-card span { color: var(--ink-3); font-size: 13px; }
+.adm-search { max-width: 520px; margin-bottom: 14px; }
+.adm-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 16px; }
+.adm-form label { display: grid; gap: 4px; font-size: 13px; color: var(--ink-3); }
+.adm-form label.grow { flex: 1 1 220px; }
+.adm-form input { background: var(--bg); border: 1px solid var(--line-2); border-radius: var(--radius); padding: 9px 14px; width: 150px; }
+.adm-form label.grow input { width: 100%; }
+.adm-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; }
+.adm-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.adm-table th, .adm-table td { padding: 9px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.adm-table th { color: var(--ink-3); font-weight: 500; font-size: 12px; white-space: nowrap; }
+.adm-table tr:last-child td { border-bottom: 0; }
+.adm-table .acts { white-space: nowrap; }
+.adm-table .acts button { border: 1px solid var(--line-2); background: transparent; border-radius: var(--radius); padding: 4px 10px; font-size: 12px; margin: 2px; }
+.adm-table .acts button:hover { border-color: var(--ink); }
+.ok { color: #9be3b0; } .bad { color: var(--err); }
