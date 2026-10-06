@@ -114,8 +114,11 @@ def threaded(fn):
     """Обработчик выполняется в отдельном потоке: медленная операция с базой или почтой
     у одного посетителя не задерживает ответы всем остальным."""
     async def endpoint(request: Request):
+        t0 = time.perf_counter()
         body = await _body(request) if request.method in ("POST", "PUT", "DELETE", "PATCH") else None
-        return await run_in_threadpool(fn, request, body)
+        resp = await run_in_threadpool(fn, request, body)
+        resp.headers["Server-Timing"] = f"app;dur={(time.perf_counter() - t0) * 1000:.0f}"
+        return resp
     endpoint.__name__ = fn.__name__
     return endpoint
 

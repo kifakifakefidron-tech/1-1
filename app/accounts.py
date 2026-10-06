@@ -54,6 +54,10 @@ def user_by_session(conn: sqlite3.Connection, token: str | None) -> sqlite3.Row 
     user = get_user(conn, row["user_id"])
     if user is None or user["blocked"]:
         return None
+    if not user["is_admin"] and _is_admin_identity(user["tg_username"], user["email"]):
+        conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (user["id"],))
+        conn.commit()
+        user = get_user(conn, user["id"])
     now = int(time.time())
     if (row["last_seen"] or 0) < now - 3600:  # не пишем в базу на каждый запрос
         try:

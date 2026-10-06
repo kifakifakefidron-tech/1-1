@@ -338,6 +338,7 @@
       ? `Избранное: ${num(data.total)} <button type="button" class="link-btn" id="favExit">← ко всем объектам</button>`
       : esc(data.total ? `${num(data.total)} ${plural(data.total, "объект", "объекта", "объектов")}` : "Ничего не нашлось");
     // Карточки появляются волной: у каждой своя небольшая задержка
+    data.items.forEach((o) => known.set(o.id, o));
     const html = data.items.map((o, i) => itemHTML(o).replace('<li class="item', `<li style="--d:${Math.min(i, 12) * 35}ms" class="item`)).join("");
     if (append) $("results").insertAdjacentHTML("beforeend", html);
     else $("results").innerHTML = html || (favMode
@@ -373,16 +374,38 @@
     });
   }
 
-  function popupHTML(p) {
+  function popupHTML(p, extra) {
     const head = p.complex ? `ЖК ${p.complex}` : (p.district || (p.street ? `ул. ${p.street}` : ""));
-    return `<div class="map-card" data-open="${p.id}">
+    return `<div class="map-card" data-pid="${p.id}">
       ${p.photo ? `<img src="${esc(p.photo)}" alt="" loading="lazy">` : ""}
       <div class="mc-body">
         ${head ? `<div class="mc-head">${esc(head)}${p.source === "feed" ? ` <span class="tag tag-strely">Партнёр</span>` : ""}</div>` : ""}
         <div class="mc-price">${esc(fmtPrice(p.price, state.deal))}</div>
         <div class="mc-title">${esc(p.title)}</div>
-        <span class="mc-more">Подробнее →</span>
+        <div class="mc-extra">${extra ?? `<div class="skel"><i></i><i></i></div>`}</div>
+        <span class="mc-more" data-open="${p.id}">Подробнее →</span>
       </div></div>`;
+  }
+
+  // В окошке метки: параметры, адрес, цена за м² и телефон (если есть доступ)
+  async function fillPopup(popup, p) {
+    const r = await call(`/api/listings/${p.id}`);
+    if (!r.ok) { popup.setContent(popupHTML(p, "")); return; }
+    const o = r.data;
+    known.set(o.id, o);
+    const addr = address(o);
+    const phones = o.phones && o.phones.length
+      ? `<div class="mc-phones">${o.phones.map((ph) => `<a class="mc-call" href="tel:${esc(ph)}">${esc(ph)}</a>
+          <a class="mc-wa" href="https://wa.me/${ph.replace(/\D/g, "")}" target="_blank" rel="noopener">WhatsApp</a>`).join("")}</div>`
+      : o.source === "feed" && meta.public_contact
+        ? `<div class="mc-phones"><a class="mc-call" href="${esc(meta.public_contact)}" target="_blank" rel="noopener">${esc(meta.public_contact_label || "Узнать подробности")}</a></div>`
+        : o.phones_masked && o.phones_masked.length
+          ? `<div class="mc-phones locked"><span>${esc(o.phones_masked[0])}</span>${me() ? "" : `<button type="button" class="mc-call" data-login>Войти и открыть номер</button>`}</div>` : "";
+    // Окошко собираем заново уже с адресом и телефоном (update() вернул бы исходный текст)
+    popup.setContent(popupHTML(p, `
+      ${addr ? `<div class="mc-addr">${esc(addr)}</div>` : ""}
+      ${o.price_m2 && o.deal !== "rent" ? `<div class="mc-m2">${esc(num(o.price_m2))} ₽/м² · ${esc(fmtAgo(o.last_seen))}</div>` : ""}
+      ${phones}`));
   }
 
   async function loadMap() {
@@ -398,8 +421,10 @@
         className: "pin-wrap", iconSize: null,
         html: `<div class="pin${p.source === "feed" ? " partner" : ""}">${esc(fmtShortPrice(p.price, state.deal))}</div>`,
       });
-      return L.marker([p.lat, p.lon], { icon, riseOnHover: true })
-        .bindPopup(popupHTML(p), { closeButton: false, className: "map-pop", offset: [0, -30], maxWidth: 260, minWidth: 220 });
+      const mk = L.marker([p.lat, p.lon], { icon, riseOnHover: true })
+        .bindPopup(popupHTML(p), { closeButton: false, className: "map-pop", offset: [0, -30], maxWidth: 280, minWidth: 250 });
+      mk.on("popupopen", (e) => fillPopup(e.popup, p));
+      return mk;
     });
     if (cluster.addLayers) cluster.addLayers(markers); else markers.forEach((m) => cluster.addLayer(m));
     if (markers.length) map.flyToBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lon])).pad(0.1), { maxZoom: 15, duration: 0.6 });
@@ -480,6 +505,7 @@
 
   // Телефон агента: открыт по подписке; иначе — скрыт с понятным следующим шагом
   function contactHTML(o) {
+    if (o.loading) return `<div class="d-locked loading"><div class="skel"><i></i></div><p>Загружаем контакты…</p></div>`;
     if (o.source === "feed") {
       return meta.public_contact
         ? `<div class="d-contact"><a class="pill" href="${esc(meta.public_contact)}" target="_blank" rel="noopener">${esc(meta.public_contact_label || "Узнать подробности")} →</a></div>` : "";
@@ -622,11 +648,15 @@
     document.querySelectorAll(".tabbar [data-tab], .nav-links [data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
   }
 
+  const known = new Map();  // объекты, которые уже пришли списком/картой — для мгновенного открытия
   let openedId = 0;
   async function openDetail(id) {
     openedId = id;
     const dlg = $("detail");
     $("detailBody").innerHTML = `<p class="d-place">Загрузка…</p>`;
+    // Сразу показываем то, что уже знаем (фото, цена, описание), номер и история догрузятся
+    const pre = known.get(id);
+    if (pre) $("detailBody").innerHTML = detailHTML({ ...pre, phones_masked: null, history: [], loading: true });
     openDlg(dlg);
     dlg.scrollTop = 0;
     const r = await call(`/api/listings/${id}`);  // тихие повторы — внутри call()

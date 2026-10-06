@@ -338,3 +338,22 @@ dialog::backdrop { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px
 .cab-stats .skel i { height: 100%; min-height: 58px; border-radius: 12px; }
 .cab-admin .pill { text-align: center; text-decoration: none; }
 @media (max-width: 640px) { .cab-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ─── окошко метки на карте: адрес, цена за м², телефон ─────────────────── */
+.map-card img { cursor: pointer; }
+.mc-addr { font-size: 12.5px; color: #3d5f5d; }
+.mc-m2 { font-size: 12px; color: #6b8583; }
+.mc-phones { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; animation: riseIn .4s var(--spring) both; }
+.mc-phones.locked span { font: 600 14px var(--head); color: #035352; letter-spacing: .04em; }
+.mc-call, .mc-wa { border: 0; border-radius: 999px; padding: 7px 12px; font: 600 12.5px var(--body); text-decoration: none; cursor: pointer; }
+.mc-call { background: #035352; color: #f3e8bc !important; }
+.mc-wa { background: #e8f0ef; color: #035352 !important; }
+.mc-more { cursor: pointer; }
+.d-locked.loading { display: grid; gap: 8px; }
+.d-locked.loading .skel i { height: 26px; width: 60%; }
+
+.mc-extra { display: grid; gap: 2px; }
+.mc-extra .skel { display: grid; gap: 6px; padding-top: 4px; }
+.mc-extra .skel i { height: 10px; background-color: #e3ecea; }
+.mc-extra .skel i:first-child { width: 80%; height: 10px; border-radius: 5px; }
+.mc-extra .skel i:last-child { width: 55%; }
