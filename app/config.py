@@ -83,3 +83,27 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_ADMIN = os.getenv("TELEGRAM_ADMIN", "ArtemAndreevic1").strip().lstrip("@")
 # Тревога, если новых сообщений нет столько часов (при включённом сборе)
 ALERT_SILENCE_HOURS = int(os.getenv("ALERT_SILENCE_HOURS", "3"))
+
+# ─── Личный кабинет и подписка ─────────────────────────────────────────────
+SITE_DOMAIN = os.getenv("SITE_DOMAIN", "localhost:8090").strip()
+SITE_URL = os.getenv("SITE_URL", "").strip() or (
+    f"http://{SITE_DOMAIN}" if SITE_DOMAIN.startswith("localhost") else f"https://{SITE_DOMAIN}")
+TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "7"))           # бесплатно после подтверждения номера (раз на номер)
+SUB_PRICE = int(os.getenv("SUB_PRICE", "49"))            # ₽ за период
+SUB_DAYS = int(os.getenv("SUB_DAYS", "7"))               # период подписки, дней
+PHONE_VIEWS_PER_DAY = int(os.getenv("PHONE_VIEWS_PER_DAY", "60"))  # защита от выкачивания номеров
+ADMIN_EMAILS = {e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()}
+# Ник бота (без @) — для ссылки «Войти через Telegram»; если пусто, узнаём у Telegram сами
+TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
+
+# Почта для кодов входа (SMTP). Яндекс: smtp.yandex.ru, 465, пароль приложения
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.yandex.ru").strip()
+SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
+SMTP_USER = os.getenv("SMTP_USER", "").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").strip()
+SMTP_FROM = os.getenv("SMTP_FROM", "").strip() or SMTP_USER
+
+# Оплата ЮKassa — подготовлена, но выключена, пока PAYMENTS_ENABLED не true
+PAYMENTS_ENABLED = _bool("PAYMENTS_ENABLED", False)
+YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "").strip()
+YOOKASSA_SECRET = os.getenv("YOOKASSA_SECRET", "").strip()

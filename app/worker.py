@@ -25,7 +25,6 @@ def tick(conn) -> dict:
     if db.get_state(conn, "cleanup_day") != time.strftime("%Y-%m-%d"):
         stats["cleanup"] = ingest.cleanup_old(conn)
         db.set_state(conn, "cleanup_day", time.strftime("%Y-%m-%d"))
-    notify.check_inbox(conn)
     notify.check_health(conn, dict(wappi.errors), llm.failures)
     notify.daily_summary(conn)
     return stats

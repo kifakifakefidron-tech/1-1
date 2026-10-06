@@ -103,13 +103,10 @@ def test_telegram_alert_once_per_period(conn, monkeypatch):
 
 
 def test_bot_remembers_only_admin(conn, monkeypatch):
-    from app import db, notify
-    monkeypatch.setattr(config, "TELEGRAM_BOT_TOKEN", "t")
+    from app import bot, db
     monkeypatch.setattr(config, "TELEGRAM_ADMIN", "ArtemAndreevic1")
-    updates = {"result": [
-        {"update_id": 1, "message": {"from": {"username": "stranger"}, "chat": {"id": 7}, "text": "/start"}},
-        {"update_id": 2, "message": {"from": {"username": "artemandreevic1"}, "chat": {"id": 42}, "text": "/start"}}]}
-    monkeypatch.setattr(notify, "_api", lambda method, payload: updates if method == "getUpdates" else {"ok": True})
-    notify.check_inbox(conn)
+    monkeypatch.setattr(bot, "say", lambda *a, **k: None)
+    bot.remember_admin(conn, {"from": {"id": 7, "username": "stranger"}, "chat": {"id": 7}})
+    assert db.get_state(conn, "tg_admin_chat") is None
+    bot.remember_admin(conn, {"from": {"id": 42, "username": "artemandreevic1"}, "chat": {"id": 42}})
     assert db.get_state(conn, "tg_admin_chat") == "42"
-    assert db.get_state(conn, "tg_offset") == "3"

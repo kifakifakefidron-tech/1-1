@@ -1,7 +1,8 @@
-# Три сервиса на отдельном сервере:
+# Четыре сервиса на отдельном сервере:
 #   caddy  — принимает посетителей на 80/443 и сам получает HTTPS-сертификат
 #   web    — сайт и API (снаружи недоступен, только через caddy)
 #   worker — каждые 1–2 минуты забирает сообщения из Wappi и разбирает их
+#   bot    — Telegram-бот: вход на сайт, подтверждение номера, уведомления владельцу
 # База — один файл в папке ./data на сервере.
 name: oneplusone
 
@@ -39,6 +40,14 @@ services:
     restart: unless-stopped
     env_file: .env
     command: ["python", "-m", "app.worker"]
+    volumes:
+      - ./data:/app/data
+
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    command: ["python", "-m", "app.bot"]
     volumes:
       - ./data:/app/data
 

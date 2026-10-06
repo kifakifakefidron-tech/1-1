@@ -1,8 +1,8 @@
 """Уведомления в Telegram о сбоях и короткая сводка раз в день.
 
 Бот создаётся в @BotFather, токен — в .env (TELEGRAM_BOT_TOKEN). Получатель
-(TELEGRAM_ADMIN, ник без @) пишет боту /start — бот запоминает его чат и дальше
-шлёт туда. Сообщения от других людей бот игнорирует.
+(TELEGRAM_ADMIN, ник без @) пишет боту /start — сервис бота (app/bot.py) запоминает
+его чат, а отсюда туда шлются тревоги и сводка.
 """
 from __future__ import annotations
 
@@ -36,24 +36,6 @@ def _api(method: str, payload: dict) -> dict | None:
 
 def _chat_id(conn: sqlite3.Connection) -> str | None:
     return db.get_state(conn, "tg_admin_chat")
-
-
-def check_inbox(conn: sqlite3.Connection) -> None:
-    """Забрать сообщения боту: запомнить чат администратора по его /start."""
-    if not config.TELEGRAM_BOT_TOKEN:
-        return
-    offset = int(db.get_state(conn, "tg_offset") or 0)
-    res = _api("getUpdates", {"offset": offset, "timeout": 0, "allowed_updates": ["message"]})
-    for upd in (res or {}).get("result", []):
-        db.set_state(conn, "tg_offset", str(upd["update_id"] + 1))
-        msg = upd.get("message") or {}
-        user = (msg.get("from") or {}).get("username") or ""
-        chat = (msg.get("chat") or {}).get("id")
-        if chat and user.lower() == config.TELEGRAM_ADMIN.lower():
-            if _chat_id(conn) != str(chat):
-                db.set_state(conn, "tg_admin_chat", str(chat))
-                send(conn, "✅ Готово: сюда буду присылать уведомления о работе сайта 1+1 "
-                           "(сбои и короткая сводка раз в день).")
 
 
 def send(conn: sqlite3.Connection, text: str) -> bool:

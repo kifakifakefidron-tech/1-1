@@ -89,6 +89,58 @@ CREATE TABLE IF NOT EXISTS geocache (
 );
 
 CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT);
+
+-- ─── личный кабинет ───────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS users (
+    id          INTEGER PRIMARY KEY,
+    tg_id       INTEGER UNIQUE,
+    tg_username TEXT,
+    email       TEXT UNIQUE,
+    phone       TEXT,                   -- подтверждён через Telegram («Поделиться номером»)
+    name        TEXT,
+    created     INTEGER NOT NULL,
+    last_seen   INTEGER,
+    trial_until INTEGER NOT NULL DEFAULT 0,
+    paid_until  INTEGER NOT NULL DEFAULT 0,
+    is_admin    INTEGER NOT NULL DEFAULT 0,
+    blocked     INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created INTEGER NOT NULL, last_seen INTEGER, ua TEXT
+);
+-- Вход/привязка/«убрать мой номер» через бота: сайт создаёт токен, бот его подтверждает
+CREATE TABLE IF NOT EXISTS tg_tokens (
+    token TEXT PRIMARY KEY, purpose TEXT NOT NULL, user_id INTEGER, chat_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'pending', result_user INTEGER, created INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS email_codes (
+    email TEXT PRIMARY KEY, code_hash TEXT NOT NULL, created INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS trials (phone TEXT PRIMARY KEY, user_id INTEGER, ts INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS favorites (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
+    created INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)
+);
+CREATE TABLE IF NOT EXISTS phone_views (
+    id INTEGER PRIMARY KEY, user_id INTEGER, listing_id INTEGER NOT NULL, ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_phone_views ON phone_views(user_id, ts);
+CREATE TABLE IF NOT EXISTS promo_codes (
+    code TEXT PRIMARY KEY, days INTEGER NOT NULL, max_uses INTEGER NOT NULL DEFAULT 1,
+    used INTEGER NOT NULL DEFAULT 0, note TEXT, created INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS promo_uses (code TEXT, user_id INTEGER, ts INTEGER, PRIMARY KEY (code, user_id));
+-- Агент попросил убрать свой номер — не показываем нигде
+CREATE TABLE IF NOT EXISTS optout_phones (phone TEXT PRIMARY KEY, ts INTEGER NOT NULL, source TEXT);
+CREATE TABLE IF NOT EXISTS complaints (
+    id INTEGER PRIMARY KEY, listing_id INTEGER, user_id INTEGER, reason TEXT, text TEXT,
+    ts INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'new'
+);
+CREATE TABLE IF NOT EXISTS payments (
+    id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, amount INTEGER NOT NULL, days INTEGER NOT NULL,
+    provider_id TEXT UNIQUE, status TEXT NOT NULL DEFAULT 'pending', created INTEGER NOT NULL, paid INTEGER
+);
 """
 
 # Новые поля в уже существующих таблицах (база на сервере обновится сама при запуске)
