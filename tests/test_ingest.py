@@ -82,3 +82,20 @@ def test_filters_and_contacts_visibility(conn, add):
     assert search.search(conn, search.Query(deal="rent"), NOW, False)["total"] == 1
     full = search.search(conn, q, NOW, with_contacts=True)
     assert full["items"][0]["phones"] == ["+79002223344"]
+
+
+def test_smart_search_rooms_and_district_jargon(conn, add):
+    add("Продаётся 2-к квартира 58 м², 7/16 эт., Фестивальный, ул. Тургенева 100. 7,5 млн руб.")
+    add("Продаётся 1-к квартира 38 м², 3/9 эт., Фестивальный, ул. Тургенева 102. 4,5 млн руб.")
+    add("Продаётся 2-к квартира 60 м², 5/9 эт., ЮМР, ул. Рождественская 10. 6,5 млн руб.")
+    res = search.search(conn, search.Query(q="2к фмр"), NOW, False)
+    assert [i["rooms"] for i in res["items"]] == [2]
+    assert search.search(conn, search.Query(q="однушка фестивалка"), NOW, False)["total"] == 1
+    assert search.search(conn, search.Query(q="двушка"), NOW, False)["total"] == 2
+
+
+def test_stale_listing_hidden_after_20_days(conn, add):
+    from app import ingest
+    add(AGENT_A, ts=NOW - 25 * 86400)
+    assert ingest.archive_stale(conn, now=NOW) == 1
+    assert search.search(conn, search.Query(), NOW, False)["total"] == 0

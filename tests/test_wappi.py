@@ -87,3 +87,29 @@ def test_max_reads_group_chats_and_converts_milliseconds(conn, monkeypatch):
     assert m["ts"] == NOW
     assert m["chat_name"] == "Риелторы Краснодара"
     assert m["source"] == "max"
+
+
+def test_telegram_alert_once_per_period(conn, monkeypatch):
+    from app import db, notify
+    sent = []
+    monkeypatch.setattr(config, "TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setattr(notify, "_api", lambda method, payload: sent.append(payload["text"]) or {"ok": True})
+    db.set_state(conn, "tg_admin_chat", "123")
+    notify.alert(conn, "silence", "Нет сообщений")
+    notify.alert(conn, "silence", "Нет сообщений")
+    assert len(sent) == 1
+    notify.resolve(conn, "silence", "Снова идут")
+    assert sent[-1].startswith("✅")
+
+
+def test_bot_remembers_only_admin(conn, monkeypatch):
+    from app import db, notify
+    monkeypatch.setattr(config, "TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setattr(config, "TELEGRAM_ADMIN", "ArtemAndreevic1")
+    updates = {"result": [
+        {"update_id": 1, "message": {"from": {"username": "stranger"}, "chat": {"id": 7}, "text": "/start"}},
+        {"update_id": 2, "message": {"from": {"username": "artemandreevic1"}, "chat": {"id": 42}, "text": "/start"}}]}
+    monkeypatch.setattr(notify, "_api", lambda method, payload: updates if method == "getUpdates" else {"ok": True})
+    notify.check_inbox(conn)
+    assert db.get_state(conn, "tg_admin_chat") == "42"
+    assert db.get_state(conn, "tg_offset") == "3"

@@ -53,9 +53,13 @@ WAPPI_BACKFILL_HOURS = int(os.getenv("WAPPI_BACKFILL_HOURS", "48"))
 WAPPI_GROUPS_ONLY = _bool("WAPPI_GROUPS_ONLY", True)
 # Свои исходящие (вашу рассылку) не разбираем, чтобы не плодить свои же объекты
 WAPPI_INCLUDE_FROM_ME = _bool("WAPPI_INCLUDE_FROM_ME", False)
+# Выключатель сбора: false — новые сообщения из Wappi не забираются (уже скачанные разбираются)
+WAPPI_ENABLED = _bool("WAPPI_ENABLED", True)
 
 # Объект пропадает из поиска, если его не присылали столько дней
-STALE_DAYS = int(os.getenv("STALE_DAYS", "45"))
+STALE_DAYS = int(os.getenv("STALE_DAYS", "20"))
+# Через столько дней удаляем старые сообщения и давно скрытые объекты
+KEEP_DAYS = int(os.getenv("KEEP_DAYS", "90"))
 
 # Доступ: если задан ACCESS_CODE, телефоны агентов и исходные сообщения видны
 # только после ввода кода (для коллег). Остальные (покупатели) видят
@@ -68,3 +72,10 @@ SECRET_KEY = os.getenv("SECRET_KEY", "change-me")
 
 # Геокодер для карты: nominatim (бесплатно, 1 запрос/сек) или off
 GEOCODER = os.getenv("GEOCODER", "nominatim")
+
+# Уведомления о сбоях в Telegram: бот от @BotFather и ник, кому писать (без @).
+# Ник должен сам написать боту /start — после этого бот запомнит, куда слать.
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_ADMIN = os.getenv("TELEGRAM_ADMIN", "ArtemAndreevic1").strip().lstrip("@")
+# Тревога, если новых сообщений нет столько часов (при включённом сборе)
+ALERT_SILENCE_HOURS = int(os.getenv("ALERT_SILENCE_HOURS", "3"))

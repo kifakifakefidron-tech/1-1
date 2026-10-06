@@ -56,6 +56,9 @@ class LLMError(RuntimeError):
     pass
 
 
+failures = 0  # сколько раз нейросеть не ответила (worker читает и обнуляет каждый цикл)
+
+
 def available() -> bool:
     return bool(config.DEEPSEEK_API_KEY)
 
@@ -106,4 +109,6 @@ def parse_message(text: str, retries: int = 2) -> dict:
             last = e
             log.warning("DeepSeek: попытка %s не удалась: %s", attempt + 1, e)
             time.sleep(2 * (attempt + 1))
+    global failures
+    failures += 1
     raise LLMError(str(last))

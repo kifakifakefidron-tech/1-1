@@ -224,3 +224,17 @@ def archive_stale(conn: sqlite3.Connection, now: int | None = None) -> int:
                        (now - config.STALE_DAYS * 86400,))
     conn.commit()
     return cur.rowcount
+
+
+def cleanup_old(conn: sqlite3.Connection, now: int | None = None) -> dict:
+    """Раз в сутки: удалить сообщения старше KEEP_DAYS и объекты, скрытые дольше KEEP_DAYS."""
+    now = int(now or time.time())
+    edge = now - config.KEEP_DAYS * 86400
+    ids = [r[0] for r in conn.execute("SELECT id FROM listings WHERE is_active = 0 AND last_seen < ?", (edge,))]
+    for i in ids:
+        conn.execute("DELETE FROM listings_fts WHERE rowid = ?", (i,))
+        conn.execute("DELETE FROM listing_events WHERE listing_id = ?", (i,))
+        conn.execute("DELETE FROM listings WHERE id = ?", (i,))
+    cur = conn.execute("DELETE FROM messages WHERE ts < ? AND status != 'new'", (edge,))
+    conn.commit()
+    return {"listings": len(ids), "messages": cur.rowcount}

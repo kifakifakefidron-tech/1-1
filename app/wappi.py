@@ -30,6 +30,7 @@ CHAT_PAGE = 100     # Telegram/MAX: сообщений чата за запро�
 CHATS_PAGE = 200    # Telegram/MAX: чатов за запрос
 MAX_PAGES = 50
 _shown_fields: set[str] = set()
+errors: dict[str, str] = {}  # профиль → последняя ошибка в этом цикле (для уведомлений)
 
 
 class WappiError(Exception):
@@ -55,8 +56,10 @@ def _call(profile: str, path: str, params: dict, token: str) -> dict | list | No
         elif e.code == 404:
             hint = " — такого адреса нет в Wappi"
         log.error("Wappi %s %s: HTTP %s %s%s", profile, path, e.code, body, hint)
+        errors[profile] = f"HTTP {e.code} {body.decode(errors='replace')}{hint}"
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
         log.error("Wappi %s %s: %s", profile, path, e)
+        errors[profile] = str(e)
     return None
 
 
@@ -245,6 +248,7 @@ def poll_profile(conn: sqlite3.Connection, profile: str) -> int:
 
 
 def poll_all(conn: sqlite3.Connection) -> int:
+    errors.clear()
     if not config.WAPPI_PROFILES or not any(config.WAPPI_TOKENS.values()):
         return 0
     return sum(poll_profile(conn, p) for p in config.WAPPI_PROFILES)

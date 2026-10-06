@@ -11,7 +11,8 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 
-from .textnorm import norm
+from . import geo
+from .textnorm import norm, words
 
 SORTS = {
     "new": "l.last_seen DESC, l.id DESC",
@@ -44,24 +45,60 @@ class Query:
     size: int = 30
 
 
+def _stem(t: str) -> str:
+    """Окончания: «мозаике» → «мозаик» (ищем по началу слова)."""
+    if len(t) > 5 and not t.isdigit():
+        t = re.sub(r"(ами|ями|ого|ему|ому|ыми|ими|ах|ях|ой|ей|ом|ем|ам|ям|ую|юю|ая|яя|ые|ие|ый|ий|ов|ев|а|я|у|ю|е|ы|и|о)$", "", t)
+    return t
+
+
+_ROOM_WORDS = [(r"\bстуди\w*", 0), (r"\bоднушк\w*|\bоднокомнатн\w*", 1), (r"\bдвушк\w*|\bдвухкомнатн\w*", 2),
+               (r"\bтр[её]шк\w*|\bтр[её]хкомнатн\w*", 3), (r"\bчетыр[её]хкомнатн\w*", 4)]
+_ROOM_NUM = re.compile(r"\b(?:евро\s*-?\s*)?([1-5])\s*-?\s*(?:х\s*)?(?:к|кк|ккв|кв|ком|комн\w*|комнатн\w*)\b|\bевро\s*-?\s*([1-5])\b")
+_STOP = {"жк", "ул", "улица", "мкр", "мкрн", "микрорайон", "район", "р", "н", "в", "на", "и", "квартира",
+         "квартиру", "квартиры", "кв", "продажа", "продам", "купить"}
+
+
+def interpret(q: str) -> tuple[str | None, list[int]]:
+    """Строка поиска → (запрос FTS, комнаты).
+
+    «2к фмр» → комнаты [2] + район ФМР во всех написаниях (фмр, фестивальный, фестивалка…);
+    остальные слова ищутся по началу слова, все вместе."""
+    w = f" {norm(q)} "
+    rooms: list[int] = []
+    for rx, n in _ROOM_WORDS:
+        if re.search(rx, w):
+            rooms.append(n)
+            w = re.sub(rx, " ", w)
+    for m in _ROOM_NUM.finditer(w):
+        rooms.append(int(m.group(1) or m.group(2)))
+    w = _ROOM_NUM.sub(" ", w)
+
+    groups: list[str] = []
+    # Районы: любое написание → все написания этого района
+    for alias, canon in geo._ALIASES:
+        a = f" {alias} "
+        if a in f" {' '.join(w.split())} ":
+            names = {words(canon)} | {al for al, c in geo._ALIASES if c == canon}
+            groups.append("(" + " OR ".join(f'"{n}"' if " " in n else f'"{_stem(n)}"*' for n in sorted(names)) + ")")
+            w = f" {' '.join(w.split())} ".replace(a, " ")
+
+    tokens = [t for t in re.split(r"[^0-9a-zа-я]+", w) if t]
+    tokens = [t for t in tokens if (len(t) >= 2 or t.isdigit()) and t not in _STOP]
+    groups += [f'"{_stem(t)}"*' for t in tokens]
+    return (" AND ".join(groups) or None), sorted(set(rooms))
+
+
 def _fts_query(q: str) -> str | None:
-    tokens = [t for t in re.split(r"[^0-9a-zа-я]+", norm(q)) if t]
-    tokens = [t for t in tokens if len(t) >= 2 or t.isdigit()]
-    if not tokens:
-        return None
-    # «жк» само по себе ничего не сужает
-    tokens = [t for t in tokens if t not in ("жк", "ул", "мкр", "р", "н")] or tokens
-    # Окончания: «мозаике» → ищем «мозаик*»
-    def stem(t: str) -> str:
-        if len(t) > 5 and not t.isdigit():
-            t = re.sub(r"(ами|ями|ого|ему|ому|ыми|ими|ах|ях|ой|ей|ом|ем|ам|ям|ую|юю|ая|яя|ые|ие|ый|ий|ов|ев|а|я|у|ю|е|ы|и|о)$", "", t)
-        return t
-    return " AND ".join(f'"{stem(t)}"*' for t in tokens)
+    return interpret(q)[0]
 
 
 def _where(qr: Query, now: int) -> tuple[str, list]:
     w = ["l.is_active = 1", "l.deal = ?"]
     p: list = [qr.deal]
+    fts, q_rooms = interpret(qr.q) if qr.q else (None, [])
+    if q_rooms and not qr.rooms:  # «2к» в строке поиска = фильтр «2 комнаты»
+        qr = Query(**{**qr.__dict__, "rooms": q_rooms})
     if qr.types:
         w.append(f"l.type IN ({','.join('?' * len(qr.types))})")
         p += qr.types
@@ -90,7 +127,6 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
         w.append("(l.floor IS NULL OR l.floors IS NULL OR l.floor < l.floors)")
     if qr.fresh_days:
         w.append("l.last_seen >= ?"); p.append(now - qr.fresh_days * 86400)
-    fts = _fts_query(qr.q) if qr.q else None
     if fts:
         w.append("l.id IN (SELECT rowid FROM listings_fts WHERE listings_fts MATCH ?)"); p.append(fts)
     return " AND ".join(w), p

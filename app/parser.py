@@ -130,7 +130,8 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
     complex_rec = None
     cx_name = obj.get("complex")
     if cx_name and _in_text(re.sub(r"(?i)^\s*(?:жк|ж/к)\s+", "", cx_name), text_words):
-        complex_rec = geo.resolve_complex(cx_name) or geo.Complex(name=cx_name.strip().strip("«»\""), district=None)
+        complex_rec = geo.resolve_complex(cx_name) or geo.Complex(
+            name=geo.pretty_name(re.sub(r"(?i)^\s*(?:жк|ж/к)\s+", "", cx_name)), district=None)
     if complex_rec is None:
         complex_rec = geo.find_complex_in_text(fragment)
 
@@ -144,7 +145,8 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
     # 3) из ЖК по справочнику; 4) из улицы, если улица целиком в одном районе.
     district = geo.find_district_in_text(fragment)
     if not district and obj.get("district") and _in_text(obj.get("district"), text_words):
-        district = geo.canonical_district(obj.get("district")) or obj.get("district").strip()
+        # Только районы из справочника — иначе «Фестивальный», «ФМР», «фестивалка» стали бы разными районами
+        district = geo.canonical_district(obj.get("district"))
     if not district and complex_rec and complex_rec.district:
         district = complex_rec.district
     if not district and street:

@@ -162,13 +162,13 @@ def _complexes() -> list[tuple[str, Complex]]:
         if len(key) < 3:
             continue
         district = canonical_district(c.get("district")) or canonical_district(c.get("district_hint"))
-        out.append((key, Complex(name=c["name"], district=district)))
+        out.append((key, Complex(name=pretty_name(c["name"]), district=district)))
         # «Sport Village (Спортивная деревня 2)» — ищем и по тексту в скобках
         inner = re.findall(r"\((.*?)\)", c["norm"])
         for alt in inner:
             k2 = words(alt)
             if len(k2) >= 4:
-                out.append((k2, Complex(name=c["name"], district=district)))
+                out.append((k2, Complex(name=pretty_name(c["name"]), district=district)))
     out.sort(key=lambda x: -len(x[0]))
     return out
 
@@ -197,10 +197,27 @@ def find_complex_in_text(text: str) -> Complex | None:
             return cx
     m = re.search(rf"\s{_JK_MARKER}\s+([0-9a-zа-я]+(?:\s[0-9a-zа-я]+)?)\s", w)
     if m:
-        # ЖК, которого нет в справочнике: берём 1–2 слова после маркера как есть
-        raw = m.group(1)
-        return Complex(name=raw.title(), district=None)
+        # ЖК, которого нет в справочнике: берём 1–2 слова после маркера,
+        # но не «ул», «дом», «студия» и т.п. («ЖК Сармат ул. …» → «Сармат»)
+        parts = m.group(1).split()
+        while parts and parts[-1] in _NOT_COMPLEX_WORDS:
+            parts.pop()
+        if parts and parts[0] not in _NOT_COMPLEX_WORDS:
+            return Complex(name=pretty_name(" ".join(parts)), district=None)
     return None
+
+
+_NOT_COMPLEX_WORDS = {"ул", "улица", "д", "дом", "этаж", "эт", "студия", "кв", "квартира", "литер", "лит", "корпус",
+                      "к", "пр", "проспект", "пер", "мкр", "район", "р", "н", "в", "на", "и", "сдан", "сдача", "от",
+                      "1к", "2к", "3к", "евро", "продам", "продаю", "продается"}
+
+
+def pretty_name(name: str) -> str:
+    """«ЗОЛОТАЯ ЛИНИЯ» / «золотая линия» → «Золотая Линия»; «URAL» оставляем."""
+    name = " ".join(name.strip().strip("«»\"'").split())
+    if name.isupper() and re.search(r"[А-ЯЁ]", name) or name.islower():
+        name = name.title()
+    return name
 
 
 @lru_cache(maxsize=1)
