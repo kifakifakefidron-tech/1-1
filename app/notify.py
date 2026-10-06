@@ -13,7 +13,7 @@ import time
 import urllib.error
 import urllib.request
 
-from . import config, db, tg
+from . import config, db, mailer, tg
 
 log = logging.getLogger(__name__)
 
@@ -34,10 +34,14 @@ def _chat_id(conn: sqlite3.Connection) -> str | None:
 
 
 def send(conn: sqlite3.Connection, text: str) -> bool:
+    """Сначала Telegram; если он недоступен или чат не известен — письмо на почту владельца."""
     chat = _chat_id(conn)
-    if not chat:
-        return False
-    return bool(_api("sendMessage", {"chat_id": chat, "text": text, "disable_web_page_preview": True}))
+    if chat and _api("sendMessage", {"chat_id": chat, "text": text, "disable_web_page_preview": True}):
+        return True
+    to = config.ALERT_EMAIL or next(iter(sorted(config.ADMIN_EMAILS)), "")
+    if to and mailer.available():
+        return mailer.send_text(to, "1+1: " + text.splitlines()[0][:80], text)
+    return False
 
 
 def alert(conn: sqlite3.Connection, key: str, text: str, every_s: int = 3 * 3600) -> None:
@@ -78,7 +82,7 @@ def daily_summary(conn: sqlite3.Connection) -> None:
 
 def check_health(conn: sqlite3.Connection, wappi_errors: dict[str, str], llm_failures: int) -> None:
     """Проверки после каждого цикла worker."""
-    if not _chat_id(conn):
+    if not _chat_id(conn) and not (mailer.available() and (config.ALERT_EMAIL or config.ADMIN_EMAILS)):
         return
     now = int(time.time())
     if config.WAPPI_ENABLED and config.WAPPI_PROFILES:

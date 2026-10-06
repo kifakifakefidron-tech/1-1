@@ -475,7 +475,7 @@
     if (!u) {
       text = `Телефон агента открывается после входа. <b>Новым — ${meta.trial_days || 7} дней бесплатно.</b>`;
       btn = `<button type="button" class="pill" data-login>Войти и открыть номер</button>`;
-    } else if (!u.phone_confirmed && !u.trial_used) {
+    } else if (!u.phone_confirmed && !u.trial_used && meta.tg_login) {
       text = `Подтвердите номер в Telegram — и <b>${meta.trial_days || 7} дней бесплатно</b>.`;
       btn = `<button type="button" class="pill" data-tglink>Подтвердить номер</button>`;
     } else {
@@ -641,7 +641,7 @@
   }
 
   function openLogin(lead) {
-    $("loginLead").innerHTML = lead || `Номера агентов открываются после входа. Новым — <b>${meta.trial_days || 7} дней бесплатно</b> после подтверждения номера в Telegram.`;
+    $("loginLead").innerHTML = lead || `Номера агентов открываются после входа. Новым — <b>${meta.trial_days || 7} дней бесплатно</b>.`;
     $("tgLogin").hidden = !meta.tg_login;
     $("emailForm").hidden = !meta.email_login;
     $("codeForm").hidden = true;

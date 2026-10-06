@@ -105,6 +105,8 @@ def upsert_email_user(conn: sqlite3.Connection, email: str) -> sqlite3.Row:
     cur = conn.execute("INSERT INTO users (email, created, last_seen, is_admin) VALUES (?,?,?,?)",
                        (email, now, now, 1 if _is_admin_identity(email=email) else 0))
     conn.commit()
+    if config.TRIAL_BY_EMAIL:
+        start_trial(conn, cur.lastrowid, f"email:{email}")
     return get_user(conn, cur.lastrowid)
 
 
@@ -135,7 +137,7 @@ def link_telegram(conn: sqlite3.Connection, user_id: int, tg_id: int, username: 
 # ─── доступ ────────────────────────────────────────────────────────────────
 def start_trial(conn: sqlite3.Connection, user_id: int, phone: str) -> bool:
     """Пробный доступ — один раз на номер телефона."""
-    phone = rules.normalize_phone(phone) or phone
+    phone = phone if phone.startswith("email:") else (rules.normalize_phone(phone) or phone)
     if conn.execute("SELECT 1 FROM trials WHERE phone = ?", (phone,)).fetchone():
         return False
     now = int(time.time())
@@ -171,8 +173,7 @@ def me(conn: sqlite3.Connection, user: sqlite3.Row | None) -> dict | None:
         return None
     now = int(time.time())
     fav = [r[0] for r in conn.execute("SELECT listing_id FROM favorites WHERE user_id = ?", (user["id"],))]
-    used_trial = bool(user["phone"] and conn.execute(
-        "SELECT 1 FROM trials WHERE phone = ?", (rules.normalize_phone(user["phone"]) or user["phone"],)).fetchone())
+    used_trial = bool(conn.execute("SELECT 1 FROM trials WHERE user_id = ?", (user["id"],)).fetchone())
     return {
         "id": user["id"], "name": user["name"], "tg_username": user["tg_username"], "email": user["email"],
         "phone_confirmed": bool(user["phone"]), "is_admin": bool(user["is_admin"]),

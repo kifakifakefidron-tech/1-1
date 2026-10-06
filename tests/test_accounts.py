@@ -21,6 +21,7 @@ def env(tmp_path, monkeypatch):
     said = []
     monkeypatch.setattr(bot, "say", lambda chat, text, kb=None: said.append((chat, text)))
     conn = db.get()
+    db.set_state(conn, "tg_ok", str(int(time.time())))  # бот на связи с Telegram
     mid = ingest.add_message(conn, source="manual", text=AD)
     lid = ingest.process_message(conn, mid, use_llm=False)["results"][0]["listing_id"]
     with TestClient(server.app) as c:
@@ -136,7 +137,19 @@ def test_email_login(env, monkeypatch):
     assert c.post("/api/auth/email/verify", json={"email": "agent@mail.ru", "code": "000000"}).status_code in (400,)
     r = c.post("/api/auth/email/verify", json={"email": "agent@mail.ru", "code": sent["code"]}).json()
     assert r["ok"] and r["me"]["email"] == "agent@mail.ru"
-    assert not r["me"]["access"]  # без подтверждённого номера пробной недели нет
+    assert r["me"]["access"] and r["me"]["trial_until"] > time.time() + 6 * 86400  # неделя бесплатно при первом входе
+    # Повторный вход тем же адресом — вторую неделю не даёт
+    from app import accounts as acc
+    before = acc.get_user(conn, r["me"]["id"])["trial_until"]
+    acc.upsert_email_user(conn, "agent@mail.ru")
+    assert acc.get_user(conn, r["me"]["id"])["trial_until"] == before
+
+
+def test_telegram_button_hidden_when_bot_offline(env):
+    c, conn, _, _ = env
+    db.set_state(conn, "tg_ok", "0")
+    assert c.get("/api/meta").json()["tg_login"] is False
+    assert c.post("/api/auth/tg/start").status_code == 503
 
 
 def test_admin_actions(env):

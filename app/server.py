@@ -48,6 +48,13 @@ def has_access(request: Request, user=None) -> bool:
     return has_code(request) or accounts.has_access(user)
 
 
+def tg_alive() -> bool:
+    """Вход через Telegram показываем, только если бот недавно достучался до Telegram."""
+    if not config.TELEGRAM_BOT_TOKEN:
+        return False
+    return time.time() - float(db.get_state(db.get(), "tg_ok") or 0) < 600
+
+
 def _err(text: str, status: int = 400) -> JSONResponse:
     return JSONResponse({"detail": text}, status_code=status)
 
@@ -160,7 +167,7 @@ async def api_meta(request: Request):
         "access": has_access(request, user),
         "access_required": bool(config.ACCESS_CODE),
         "promo_login": bool(config.ACCESS_CODE),
-        "tg_login": bool(config.TELEGRAM_BOT_TOKEN),
+        "tg_login": tg_alive(),
         "email_login": mailer.available(),
         "payments": payments.available(),
         "price": config.SUB_PRICE, "period_days": config.SUB_DAYS, "trial_days": config.TRIAL_DAYS,
@@ -245,7 +252,7 @@ async def api_login(request: Request):
 
 # ─── вход через Telegram ───────────────────────────────────────────────────
 async def api_tg_start(request: Request):
-    if not config.TELEGRAM_BOT_TOKEN or not await run_in_threadpool(bot_username):
+    if not tg_alive() or not await run_in_threadpool(bot_username):
         return _err("Вход через Telegram пока не настроен.", 503)
     if _too_often(request, "tg", 20, 600):
         return _err("Слишком много попыток — подождите немного.", 429)

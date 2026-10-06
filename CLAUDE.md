@@ -75,7 +75,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 56 тестов
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 57 тестов
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены
@@ -137,6 +137,13 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
 - Скорость: внешние запросы (SMTP, getMe) — через run_in_threadpool; uvicorn --workers 2;
   worker под `nice -n 10` и sleep(0.01) между сообщениями; SQLite synchronous=NORMAL; Caddy кэширует /static.
 - Timeweb по умолчанию может закрывать исходящие SMTP-порты — при таймауте письма открыть тикет.
+
+## 06.10.2026, вечер: Telegram недоступен в России
+- Timeweb открыл SMTP (почта работает), но api.telegram.org недоступен у большинства провайдеров РФ.
+- Поэтому: вход по почте — основной, пробная неделя при первом входе по почте (TRIAL_BY_EMAIL, ключ
+  в trials — «email:адрес»); кнопка Telegram видна, только если бот недавно достучался (state tg_ok);
+  уведомления: Telegram, иначе письмо на ALERT_EMAIL / ADMIN_EMAILS. Запасной путь — TELEGRAM_API_BASE
+  через зарубежный посредник (app/tg.py).
 
 ## Доступ к телефонам (план)
 Телефоны агентов — по подписке: регистрация → месяц бесплатно → оплата. Пока регистрации

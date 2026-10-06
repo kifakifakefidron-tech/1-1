@@ -96,6 +96,10 @@ SUB_PRICE = int(os.getenv("SUB_PRICE", "49"))            # ₽ за период
 SUB_DAYS = int(os.getenv("SUB_DAYS", "7"))               # период подписки, дней
 PHONE_VIEWS_PER_DAY = int(os.getenv("PHONE_VIEWS_PER_DAY", "0"))  # 0 = без лимита (пока выключен)  # защита от выкачивания номеров
 PROMO_LOGIN_DAYS = int(os.getenv("PROMO_LOGIN_DAYS", "30"))  # доступ после входа по коду коллег
+# Пробная неделя при первом входе по почте (раз на адрес) — пока Telegram в России недоступен
+TRIAL_BY_EMAIL = _bool("TRIAL_BY_EMAIL", True)
+# Куда слать уведомления о сбоях по почте (если пусто — первому из ADMIN_EMAILS)
+ALERT_EMAIL = os.getenv("ALERT_EMAIL", "").strip()
 ADMIN_EMAILS = {e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()}
 # Ник бота (без @) — для ссылки «Войти через Telegram»; если пусто, узнаём у Telegram сами
 TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")

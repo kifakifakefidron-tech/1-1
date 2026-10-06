@@ -162,6 +162,8 @@ def main() -> None:
         if res is None:
             time.sleep(5)
             continue
+        if time.time() - float(db.get_state(conn, "tg_ok") or 0) > 60:
+            db.set_state(conn, "tg_ok", str(int(time.time())))  # связь с Telegram есть
         for upd in res.get("result", []):
             offset = upd["update_id"] + 1
             db.set_state(conn, "tg_offset", str(offset))
