@@ -105,3 +105,34 @@ def test_share_link_preview_and_strict_same(env):
     assert [s["price"] for s in c.get(f"/api/listings/{a}").json()["same"]] == [6_100_000]
     page = c.get(f"/?open={a}").text
     assert 'og:title' in page and "6 млн ₽" in page and "8918" not in page
+
+
+def test_notices_page_feed(env):
+    from app import agent, notices
+    c, conn = env
+    u = _login(c, conn)
+    lid = _add(conn, "2-к квартира 50 м², 3/9 эт., ФМР. 6 млн руб. 89180000001", ts=NOW - 100)
+    c.post(f"/api/favorites/{lid}")
+    c.post("/api/saved", json={"query": "deal=sale&rooms=1", "page": "?rooms=1&view=map&open=5"})
+    conn.execute("UPDATE saved_searches SET checked_at = ?", (NOW - 100,))
+    conn.commit()
+    _add(conn, "1-к квартира 35 м², 3/9 эт., ФМР. 4 млн руб. 89180000002", ts=NOW)
+    conn.execute("UPDATE listings SET price = 6500000 WHERE id = ?", (lid,))   # цена выросла
+    conn.commit()
+    hooks.run(conn, None, every_s=0)
+    kinds = {n["kind"]: n for n in c.get("/api/notices").json()["items"]}
+    assert kinds["search"]["url"] == "/?rooms=1&fresh=new1"
+    assert kinds["price"]["title"].startswith("Цена выросла")
+    assert c.get("/api/me").json()["me"]["unread"] == 2
+    conn.execute("UPDATE listings SET is_active = 0 WHERE id = ?", (lid,))   # объект сняли
+    conn.commit()
+    hooks.run(conn, None, every_s=0)
+    assert "gone" in {n["kind"] for n in c.get("/api/notices").json()["items"]}
+    c.post("/api/notices", json={})
+    assert c.get("/api/notices").json()["unread"] == 0
+    # доступ заканчивается через день
+    conn.execute("UPDATE users SET trial_until = 0, paid_until = ? WHERE id = ?", (NOW + 86400, u["id"]))
+    conn.commit()
+    assert notices.check_subscriptions(conn, lambda ts: "завтра") == 1
+    assert notices.check_subscriptions(conn, lambda ts: "завтра") == 0
+    assert "notifications" in c.get("/notifications").text or c.get("/notifications").status_code == 200

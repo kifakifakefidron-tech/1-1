@@ -184,27 +184,45 @@ def describe(params: str, types: dict) -> str:
     return " · ".join(parts)[:200]
 
 
-def save_search(conn: sqlite3.Connection, user: sqlite3.Row, query: str, types: dict) -> tuple[dict | None, str]:
-    if not user["email"]:
-        return None, "Письма о новых объектах приходят на почту — войдите по почте, чтобы подписаться."
+def save_search(conn: sqlite3.Connection, user: sqlite3.Row, query: str, types: dict,
+                page_query: str = "") -> tuple[dict | None, str]:
     params = clean_params(query)
     if conn.execute("SELECT 1 FROM saved_searches WHERE user_id = ? AND params = ? AND active = 1",
                     (user["id"], params)).fetchone():
-        return None, "Вы уже следите за этим поиском."
+        return None, "Вы уже следите за этим поиском — уведомления на странице «Уведомления»."
     if conn.execute("SELECT COUNT(*) FROM saved_searches WHERE user_id = ? AND active = 1", (user["id"],)).fetchone()[0] >= MAX_SAVED:
-        return None, f"Можно следить не больше чем за {MAX_SAVED} поисками — удалите ненужный в кабинете."
+        return None, f"Можно следить не больше чем за {MAX_SAVED} поисками — удалите ненужный в «Уведомлениях»."
     now = int(time.time())
     title = describe(params, types)
-    cur = conn.execute("INSERT INTO saved_searches (user_id, title, params, created, checked_at) VALUES (?,?,?,?,?)",
-                       (user["id"], title, params, now, now))
+    page_query = _page_query(page_query)
+    cur = conn.execute("""INSERT INTO saved_searches (user_id, title, params, created, checked_at, page_query)
+                          VALUES (?,?,?,?,?,?)""", (user["id"], title, params, now, now, page_query))
     conn.commit()
-    return {"id": cur.lastrowid, "title": title, "params": params}, "Готово! Пришлём письмо, когда появятся новые объекты."
+    where = "в «Уведомлениях»" + (" и на почту" if user["email"] else "")
+    return ({"id": cur.lastrowid, "title": title, "params": params, "page_query": page_query},
+            f"Готово! Новые объекты по этому поиску придут {where}.")
+
+
+def _page_query(q: str) -> str:
+    """Адрес страницы с фильтрами — без вида, страницы и открытого объекта."""
+    pairs = [(k, v) for k, v in urllib.parse.parse_qsl((q or "").lstrip("?")) if k not in ("open", "view", "page", "fresh")]
+    return urllib.parse.urlencode(pairs)
+
+
+def search_url(s) -> str:
+    """Ссылка «показать новые» по подписке: фильтры + «только новые за сегодня»."""
+    pq = s["page_query"] if "page_query" in s.keys() and s["page_query"] else ""
+    return "/?" + "&".join(x for x in (pq, "fresh=new1") if x)
 
 
 def list_saved(conn: sqlite3.Connection, user_id: int) -> list[dict]:
-    return [dict(r) for r in conn.execute(
-        "SELECT id, title, params, created, sent_at FROM saved_searches WHERE user_id = ? AND active = 1 ORDER BY id DESC",
-        (user_id,))]
+    out = []
+    for r in conn.execute("""SELECT id, title, params, page_query, created, sent_at FROM saved_searches
+                             WHERE user_id = ? AND active = 1 ORDER BY id DESC""", (user_id,)):
+        d = dict(r)
+        d["url"] = "/?" + (r["page_query"] or "")
+        out.append(d)
+    return out
 
 
 def delete_saved(conn: sqlite3.Connection, user_id: int, sid: int) -> None:
@@ -233,65 +251,103 @@ def _price(p: int | None, deal: str) -> str:
 
 
 def check_saved(conn: sqlite3.Connection, send) -> int:
-    """Новые объекты по подпискам → письмо (не чаще раза в 3 часа на подписку)."""
+    """Новые объекты по подпискам → уведомление на сайте и письмо (не чаще раза в 3 часа на подписку)."""
     from starlette.datastructures import QueryParams
 
-    from . import search
+    from . import notices, search
     now = int(time.time())
-    sent = 0
+    made = 0
     for s in conn.execute("""SELECT s.*, u.email FROM saved_searches s JOIN users u ON u.id = s.user_id
-                             WHERE s.active = 1 AND u.blocked = 0 AND u.email IS NOT NULL
+                             WHERE s.active = 1 AND u.blocked = 0
                              AND COALESCE(s.sent_at, 0) < ?""", (now - SEND_EVERY_S,)).fetchall():
         qr = search.query_from_params(QueryParams(s["params"]))
         qr.since, qr.sort, qr.size, qr.page = s["checked_at"], "new", 10, 1
         res = search.search(conn, qr, now, False)
         conn.execute("UPDATE saved_searches SET checked_at = ? WHERE id = ?", (now, s["id"]))
         if res["total"]:
-            lines = []
-            for it in res["items"]:
-                place = f"ЖК {it['complex']}" if it["complex"] else (it["district"] or "")
-                lines.append(f"• {it['title']} — {_price(it['price'], it['deal'])}{' · ' + place if place else ''}\n"
-                             f"  {config.SITE_URL}/?open={it['id']}")
-            more = f"\n…и ещё {res['total'] - len(lines)}" if res["total"] > len(lines) else ""
-            body = (f"По вашему поиску «{s['title']}» появились новые объекты: {res['total']}.\n\n"
-                    + "\n".join(lines) + more
-                    + f"\n\nВсе новые: {config.SITE_URL}/?{s['params']}&new_days=1\n\n"
-                    f"Больше не присылать письма по этому поиску: "
-                    f"{config.SITE_URL}/saved/off?s={s['id']}&t={unsub_token(s['id'])}")
-            if send(s["email"], f"1+1: новые объекты — {s['title']}"[:150], body):
-                conn.execute("UPDATE saved_searches SET sent_at = ? WHERE id = ?", (now, s["id"]))
-                sent += 1
+            n = res["total"]
+            url = search_url(s)
+            first = res["items"][0]
+            notices.add(conn, s["user_id"], "search", f"Новые объекты по поиску: {n}", s["title"], url=url,
+                        listing_id=first["id"] if n == 1 else None, dedup_s=60)
+            if s["email"] and send:
+                lines = []
+                for it in res["items"]:
+                    place = f"ЖК {it['complex']}" if it["complex"] else (it["district"] or "")
+                    lines.append(f"• {it['title']} — {_price(it['price'], it['deal'])}{' · ' + place if place else ''}\n"
+                                 f"  {config.SITE_URL}/?open={it['id']}")
+                more = f"\n…и ещё {n - len(lines)}" if n > len(lines) else ""
+                send(s["email"], f"1+1: новые объекты — {s['title']}"[:150],
+                     f"По вашему поиску «{s['title']}» появились новые объекты: {n}.\n\n" + "\n".join(lines) + more
+                     + f"\n\nВсе новые: {config.SITE_URL}{url}\n\n"
+                     f"Больше не присылать письма по этому поиску: "
+                     f"{config.SITE_URL}/saved/off?s={s['id']}&t={unsub_token(s['id'])}")
+            conn.execute("UPDATE saved_searches SET sent_at = ? WHERE id = ?", (now, s["id"]))
+            made += 1
         conn.commit()
-    return sent
+    return made
+
+
+def check_favorites(conn: sqlite3.Connection, send) -> int:
+    """Избранное: цена изменилась (вниз или вверх) или объект сняли с сайта → уведомление на сайте.
+    О снижении цены — ещё и письмо (одно на человека со всеми такими объектами)."""
+    from . import notices
+    rows = conn.execute("""SELECT f.user_id, f.listing_id, f.price_at, f.notified_price, f.gone_notified,
+                                  l.price, l.title, l.deal, l.is_active, u.email
+                           FROM favorites f JOIN listings l ON l.id = f.listing_id JOIN users u ON u.id = f.user_id
+                           WHERE u.blocked = 0""").fetchall()
+    drops: dict[int, list] = {}
+    made = 0
+    now = int(time.time())
+    for r in rows:
+        uid, lid = r["user_id"], r["listing_id"]
+        if not r["is_active"]:
+            if not r["gone_notified"]:
+                notices.add(conn, uid, "gone", "Объект из избранного снят с сайта", r["title"], listing_id=lid,
+                            url=f"/?open={lid}")
+                conn.execute("UPDATE favorites SET gone_notified = ? WHERE user_id = ? AND listing_id = ?", (now, uid, lid))
+                made += 1
+            continue
+        if r["gone_notified"]:   # объект вернулся на сайт
+            conn.execute("UPDATE favorites SET gone_notified = NULL WHERE user_id = ? AND listing_id = ?", (uid, lid))
+        base = r["notified_price"] or r["price_at"]
+        if not (r["price"] and base) or r["price"] == base:
+            continue
+        down = r["price"] < base
+        diff = abs(r["price"] - base)
+        notices.add(conn, uid, "price", f"Цена {'снизилась' if down else 'выросла'} на {_price(diff, r['deal'])}",
+                    f"{r['title']}: {_price(base, r['deal'])} → {_price(r['price'], r['deal'])}",
+                    listing_id=lid, url=f"/?open={lid}", dedup_s=60)
+        conn.execute("UPDATE favorites SET notified_price = ? WHERE user_id = ? AND listing_id = ?", (r["price"], uid, lid))
+        made += 1
+        if down and r["email"]:
+            drops.setdefault(uid, []).append((r, base))
+    for uid, items in drops.items():
+        if not send:
+            continue
+        lines = [f"• {r['title']}: {_price(base, r['deal'])} → {_price(r['price'], r['deal'])}\n"
+                 f"  {config.SITE_URL}/?open={r['listing_id']}" for r, base in items]
+        send(items[0][0]["email"], "1+1: цена снизилась в вашем избранном",
+             "Цена снизилась на объекты из вашего избранного:\n\n" + "\n".join(lines))
+    conn.commit()
+    return made
 
 
 def check_price_drops(conn: sqlite3.Connection, send) -> int:
-    """Цена в избранном снизилась → одно письмо пользователю со всеми такими объектами."""
-    rows = conn.execute("""SELECT f.user_id, f.listing_id, f.price_at, f.notified_price, l.price, l.title, l.deal,
-                                  u.email FROM favorites f JOIN listings l ON l.id = f.listing_id
-                                  JOIN users u ON u.id = f.user_id
-                           WHERE l.is_active = 1 AND l.price IS NOT NULL AND u.email IS NOT NULL AND u.blocked = 0
-                             AND l.price < COALESCE(f.notified_price, f.price_at)""").fetchall()
-    by_user: dict[int, list] = {}
-    for r in rows:
-        by_user.setdefault(r["user_id"], []).append(r)
-    sent = 0
-    for uid, items in by_user.items():
-        lines = [f"• {r['title']}: {_price(r['notified_price'] or r['price_at'], r['deal'])} → "
-                 f"{_price(r['price'], r['deal'])}\n  {config.SITE_URL}/?open={r['listing_id']}" for r in items]
-        if send(items[0]["email"], "1+1: цена снизилась в вашем избранном",
-                "Цена снизилась на объекты из вашего избранного:\n\n" + "\n".join(lines)):
-            sent += 1
-        for r in items:
-            conn.execute("UPDATE favorites SET notified_price = ? WHERE user_id = ? AND listing_id = ?",
-                         (r["price"], uid, r["listing_id"]))
-    conn.commit()
-    return sent
+    """Совместимость: письма о снижении цены (теперь — часть check_favorites)."""
+    sent = []
+    check_favorites(conn, (lambda *a: sent.append(a) or (send(*a) if send else True)))
+    return len(sent)
 
 
-def run(conn: sqlite3.Connection, send, every_s: int = 1800) -> dict | None:
-    """Из фонового цикла: раз в полчаса проверить подписки и снижение цен."""
+def run(conn: sqlite3.Connection, send, every_s: int = 900) -> dict | None:
+    """Из фонового цикла: раз в 15 минут — подписки, избранное, окончание доступа."""
+    from . import notices
     if time.time() - float(db.get_state(conn, "hooks_at") or 0) < every_s:
         return None
     db.set_state(conn, "hooks_at", str(int(time.time())))
-    return {"saved": check_saved(conn, send), "price_drops": check_price_drops(conn, send)}
+    fmt_day = lambda ts: time.strftime("%d.%m", time.localtime(ts))  # noqa: E731
+    out = {"saved": check_saved(conn, send), "favorites": check_favorites(conn, send),
+           "subscriptions": notices.check_subscriptions(conn, fmt_day)}
+    notices.cleanup(conn)
+    return out

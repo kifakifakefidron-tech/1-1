@@ -98,6 +98,11 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   audit: ЖК, которого нет ни в одном сообщении объекта, снимается (audit_fix=4 — один раз при запуске worker).
   Ссылка /?open=id отдаёт og:title/og:image (превью в мессенджерах); окно объекта держит ?open= в адресе и
   стек «← Назад» (detailStack в app.js). Отметки карточки — класс .mark (не .badge: тот — счётчик в шапке).
+- `app/notices.py` + `web/notify.*` — уведомления на сайте (/notifications, таблица notices, колокольчик в шапке,
+  me().unread). Создаёт worker через hooks.run (раз в 15 мин): search, price (вверх/вниз), gone, sub (доступ
+  кончается ≤2 дня / кончился, users.sub_notified), own (agent.expire_own — кнопки «Да/Нет»). Письма — дубль важного.
+  Подписка на поиск хранит page_query (адрес страницы) — ссылки «Показать» ведут на те же фильтры + fresh=new1.
+  Тост — popover (верхний слой, поверх dialog). Ссылки ?login=1 / ?fav=1 / ?cabinet=1 / ?agent=1 открывают разделы.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

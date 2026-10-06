@@ -21,7 +21,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import accounts, agent, config, db, geo, hooks, ingest, mailer, parser, payments, region, search, tg
+from . import accounts, agent, config, db, geo, hooks, ingest, mailer, notices, parser, payments, region, search, tg
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -630,13 +630,35 @@ def api_saved(request: Request, body: dict | None = None):
     if request.method == "POST":
         if _too_often(request, "saved", 30, 3600):
             return _err("Слишком часто — попробуйте позже.", 429)
-        res, why = hooks.save_search(conn, user, str(body.get("query", ""))[:2000], TYPE_LABELS)
+        res, why = hooks.save_search(conn, user, str(body.get("query", ""))[:2000], TYPE_LABELS,
+                                     str(body.get("page", ""))[:2000])
         if res is None:
             return _err(why)
         return JSONResponse({"saved": res, "text": why, "items": hooks.list_saved(conn, user["id"])})
     if request.method == "DELETE":
         hooks.delete_saved(conn, user["id"], _num(body.get("id"), int) or 0)
     return JSONResponse({"items": hooks.list_saved(conn, user["id"])})
+
+
+def api_notices(request: Request, body: dict | None = None):
+    user, err = _need_user(request)
+    if err:
+        return err
+    conn = db.get()
+    if request.method == "POST":
+        notices.mark_read(conn, user["id"], _num((body or {}).get("id"), int))
+        return JSONResponse({"ok": True, "unread": notices.unread(conn, user["id"])})
+    favs = conn.execute("""SELECT COUNT(*), SUM(l.is_active) FROM favorites f JOIN listings l ON l.id = f.listing_id
+                           WHERE f.user_id = ?""", (user["id"],)).fetchone()
+    own = conn.execute("SELECT COUNT(*) FROM listings WHERE owner_user_id = ? AND is_active = 1", (user["id"],)).fetchone()[0]
+    return JSONResponse({"items": notices.items(conn, user["id"]), "unread": notices.unread(conn, user["id"]),
+                         "saved": hooks.list_saved(conn, user["id"]), "favorites": favs[0], "favorites_active": favs[1] or 0,
+                         "own": own, "email": user["email"], "access_until": accounts.access_until(user),
+                         "is_admin": bool(user["is_admin"])})
+
+
+def notices_page(request: Request, body: dict | None = None):
+    return _page("notify.html")
 
 
 def saved_off_page(request: Request, body: dict | None = None):
@@ -840,6 +862,8 @@ routes = [
     Route("/api/messages", threaded(api_add_message), methods=["POST"]),
     Route("/api/notes/{id:int}", threaded(api_note), methods=["POST"]),
     Route("/api/saved", threaded(api_saved), methods=["GET", "POST", "DELETE"]),
+    Route("/api/notices", threaded(api_notices), methods=["GET", "POST"]),
+    Route("/notifications", threaded(notices_page)),
     Route("/saved/off", threaded(saved_off_page)),
     Route("/api/agent", threaded(api_agent)),
     Route("/api/agent/verify", threaded(api_agent_verify), methods=["GET", "POST"]),

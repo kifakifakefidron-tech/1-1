@@ -474,3 +474,21 @@ button.link { border: 0; background: none; padding: 0; color: var(--ink); font: 
 .mc-logo { position: absolute; right: 10px; bottom: 8px; width: 22px; height: 22px; color: #035352; opacity: .55; }
 .mc-logo .logo { width: 100%; height: 100%; }
 .mc-logo .walls path, .mc-logo .logo-txt { animation: none; stroke-dashoffset: 0; opacity: 1; }
+
+/* ─── уведомление поверх окон (popover) ─────────────────────────────────── */
+.toast[popover] { inset: auto auto calc(24px + var(--tabbar-h)) 50%; margin: 0; border: 0; overflow: visible; }
+.toast[popover]:not(:popover-open) { display: none; }
+
+/* ─── «← Назад» в окне объекта — заметная кнопка ───────────────────────── */
+.d-back { height: 42px; padding: 0 18px; border-radius: 999px; border: 0; cursor: pointer;
+  background: var(--ink); color: var(--on-accent); font: 600 15px var(--body); box-shadow: 0 6px 18px rgba(0, 0, 0, .25);
+  animation: pop .35s var(--spring); }
+.d-back:hover { background: var(--hover); }
+
+/* ─── колокольчик уведомлений ──────────────────────────────────────────── */
+.bell-mobile { display: none; position: relative; margin-left: auto; width: 42px; height: 42px; border-radius: 50%;
+  place-items: center; color: var(--ink); background: var(--chip); }
+.bell-mobile svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.bell-dot { position: absolute; top: 8px; right: 9px; width: 9px; height: 9px; border-radius: 50%; background: #ff8a7a;
+  box-shadow: 0 0 0 2px var(--bg); }
+@media (max-width: 640px) { .bell-mobile:not([hidden]) { display: grid; } }

@@ -28,10 +28,10 @@ def tick(conn) -> dict:
     own = agent.expire_own(conn, mailer.send_text if mailer.available() else None)
     if any(own.values()):
         stats["own"] = own
-    if mailer.available():
-        sent = hooks.run(conn, mailer.send_text)   # подписки на поиск, снижение цены в избранном
-        if sent and any(sent.values()):
-            stats["letters"] = sent
+    # подписки на поиск, избранное (цена, снят с сайта), окончание доступа — на сайте и письмом
+    sent = hooks.run(conn, mailer.send_text if mailer.available() else None)
+    if sent and any(sent.values()):
+        stats["notices"] = sent
     synced = feed.maybe_sync(conn)
     if synced:
         stats["feed"] = synced

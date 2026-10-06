@@ -275,5 +275,6 @@
     if (inp.dataset && inp.dataset.photoAdd) addPhotos(Number(inp.dataset.photoAdd), [...inp.files]);
   });
   dlg.addEventListener("close", () => clearInterval(waitTimer));
+  document.addEventListener("oneplus:agent", () => open());   // ссылка «Кабинет агента» из уведомлений
   void num;
 })();

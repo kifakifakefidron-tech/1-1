@@ -173,6 +173,12 @@ CREATE TABLE IF NOT EXISTS saved_searches (
     title TEXT NOT NULL, params TEXT NOT NULL, created INTEGER NOT NULL, checked_at INTEGER NOT NULL,
     sent_at INTEGER, active INTEGER NOT NULL DEFAULT 1
 );
+CREATE TABLE IF NOT EXISTS notices (
+    id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, ts INTEGER NOT NULL,
+    kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT, url TEXT, listing_id INTEGER, actions TEXT,
+    read INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS ix_notices_user ON notices(user_id, read);
 CREATE TABLE IF NOT EXISTS notes (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
     text TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)
@@ -202,6 +208,9 @@ MIGRATIONS = [
     ("chats", "link", "TEXT"),                                # ссылка на чат, если мессенджер её отдаёт
     ("chats", "blocked_at", "INTEGER"),                       # когда отключили (через 10 мин — чистка сообщений)
     ("chats", "purged_at", "INTEGER"),                        # когда удалили сообщения этого чата
+    ("saved_searches", "page_query", "TEXT"),                 # адрес страницы с этими фильтрами (для ссылки)
+    ("favorites", "gone_notified", "INTEGER"),                # уже сообщили, что объект снят с сайта
+    ("users", "sub_notified", "TEXT"),                        # о каком окончании доступа уже сообщили
     ("listings", "hidden_reason", "TEXT"),                    # 'chat' — скрыт, т.к. приходил только из отключённых чатов
 ]
 

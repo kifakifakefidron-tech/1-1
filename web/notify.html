@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Уведомления · 1+1</title>
+<meta name="theme-color" content="#035352">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=10">
+<link rel="stylesheet" href="/static/motion.css?v=17">
+<link rel="stylesheet" href="/static/doc.css?v=1">
+<link rel="stylesheet" href="/static/notify.css?v=2">
+</head>
+<body>
+<header class="nav"><div class="nav-in">
+  <a class="brand" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="40" height="40" style="border-radius:10px">
+    <span class="brand-text"><b class="brand-name">1+1</b><span class="brand-sub">поиск объектов Краснодара</span></span></a>
+  <nav class="nav-links"><a class="nav-cta" href="/">← К поиску</a></nav>
+</div></header>
+
+<main class="doc nt">
+  <h1>Уведомления</h1>
+  <p class="lead">Здесь всё, за чем вы следите: новые объекты по вашим поискам, изменение цены и снятие с продажи
+    объектов из избранного, окончание доступа и актуальность ваших объектов.</p>
+
+  <div id="ntGuest" hidden class="note-box">
+    Уведомления доступны после входа. <a href="/?login=1">Войти</a>
+  </div>
+
+  <section id="ntApp" hidden>
+    <div class="nt-head">
+      <div class="chips" id="ntFilter">
+        <button type="button" class="chip on" data-f="">Все</button>
+        <button type="button" class="chip" data-f="search">Поиски</button>
+        <button type="button" class="chip" data-f="price">Цена</button>
+        <button type="button" class="chip" data-f="gone">Сняты</button>
+        <button type="button" class="chip" data-f="own">Мои объекты</button>
+        <button type="button" class="chip" data-f="sub">Подписка</button>
+      </div>
+      <button type="button" class="chip" id="ntReadAll" hidden>Отметить всё прочитанным</button>
+    </div>
+    <ul class="nt-list" id="ntList"></ul>
+
+    <h2>Слежу за поисками</h2>
+    <p class="meta">Настройте фильтры на главной и нажмите «🔔 Следить» — новые объекты будут приходить сюда<span id="ntMail"></span>.</p>
+    <ul class="nt-saved" id="ntSaved"></ul>
+
+    <h2>Отслеживаю</h2>
+    <ul class="nt-track" id="ntTrack"></ul>
+  </section>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="/static/notify.js?v=1"></script>
+</body>
+</html>

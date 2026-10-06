@@ -581,7 +581,8 @@
       try { copied = document.execCommand("copy"); } catch { /* нет */ }
       ta.remove();
     }
-    toast(copied ? "Ссылка скопирована — вставьте её в чат" : "Не получилось скопировать");
+    if (copied) toast("✓ Ссылка скопирована — вставьте её в чат", 3000);
+    else prompt("Скопируйте ссылку на объект:", url);   // браузер не дал доступ к буферу обмена
     // На телефоне сразу предлагаем отправить (WhatsApp, Telegram…)
     if (navigator.share && window.matchMedia("(pointer: coarse)").matches) {
       try { await navigator.share({ url, title }); } catch { /* закрыли меню */ }
@@ -589,9 +590,10 @@
   }
 
   async function watchSearch() {
-    if (!me()) { openLogin("Чтобы получать письма о новых объектах по этому поиску, войдите по почте."); return; }
-    const r = await call("/api/saved", { query: apiParams().toString() });
-    toast(r.data.text || r.data.detail || "Не получилось.");
+    if (!me()) { openLogin("Чтобы получать уведомления о новых объектах по этому поиску, войдите."); return; }
+    const r = await call("/api/saved", { query: apiParams().toString(), page: location.search });
+    toast(r.data.text || r.data.detail || "Не получилось.", 3500);
+    if (r.ok) reloadMeta();
   }
 
   // Телефон агента: открыт по подписке; иначе — скрыт с понятным следующим шагом
@@ -690,12 +692,23 @@
 
   // Всплывающая подсказка внизу
   let toastTimer = 0;
-  function toast(text) {
+  // Уведомление всегда поверх всего, в том числе поверх открытого окна объекта
+  function toast(text, ms = 2400) {
     const t = $("toast");
     t.textContent = text;
-    t.classList.add("show");
+    if (t.showPopover) {
+      try { t.hidePopover(); } catch { /* ещё не показан */ }
+      try { t.showPopover(); } catch { /* старый браузер */ }
+    } else {
+      const dlg = document.querySelector("dialog[open]");   // запасной вариант: внутрь открытого окна
+      (dlg || document.body).appendChild(t);
+    }
+    requestAnimationFrame(() => t.classList.add("show"));
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+    toastTimer = setTimeout(() => {
+      t.classList.remove("show");
+      setTimeout(() => { if (!t.classList.contains("show") && t.hidePopover) { try { t.hidePopover(); } catch { /* */ } } }, 450);
+    }, ms);
   }
 
   // ─── новые объекты, пока человек на сайте ───────────────────────────────
@@ -791,6 +804,10 @@
     const n = u ? u.favorites.length : 0;
     $("favBtn").innerHTML = `Избранное${n ? `<i class="nav-badge">${n}</i>` : ""}`;
     $("adminLink").hidden = !(u && u.is_admin);
+    const unread = u ? u.unread || 0 : 0;
+    $("bellLink").hidden = $("bellMobile").hidden = !u;
+    $("bellBadge").hidden = $("bellDot").hidden = !unread;
+    $("bellBadge").textContent = unread;
     $("favBadge").hidden = !n;
     $("favBadge").textContent = n;
     $("optoutLink").hidden = !meta.bot;
@@ -897,6 +914,7 @@
       <div class="cab-saved" id="cabSaved"></div>
       <div class="dlg-actions cab-actions">
         <button type="button" class="ghost" id="cabFav">♡ Избранное (${u.favorites.length})</button>
+        <a class="ghost" href="/notifications">🔔 Уведомления${u.unread ? ` (${u.unread})` : ""}</a>
         <button type="button" class="ghost" data-agent>Я агент: мои объявления</button>
         ${u.is_admin ? `<a class="ghost" href="/admin">Админка</a>` : ""}
         <button type="button" class="ghost" id="logoutBtn">Выйти</button>
@@ -914,7 +932,7 @@
     if (!box || !r.ok) return;
     const items = r.data.items || [];
     box.innerHTML = `<h3 class="d-h">Слежу за поисками · ${items.length}</h3>` + (items.length
-      ? `<ul class="saved-list">${items.map((x) => `<li><a href="/?${esc(x.params)}">${esc(x.title)}</a>
+      ? `<ul class="saved-list">${items.map((x) => `<li><a href="${esc(x.url)}">${esc(x.title)}</a>
           <button type="button" class="ghost" data-unsave="${x.id}" aria-label="Не следить">✕</button></li>`).join("")}</ul>`
       : `<p class="note">Настройте фильтры и нажмите «🔔 Следить» — пришлём письмо, когда появятся новые объекты.</p>`);
   }
@@ -1244,8 +1262,20 @@
     bind();
     setTab(state.view === "map" ? "map" : "list");
     refresh();
-    const openId = Number(new URLSearchParams(location.search).get("open"));
-    if (openId) openDetail(openId);  // ссылка из админки: /?open=123
+    const sp = new URLSearchParams(location.search);
+    const openId = Number(sp.get("open"));
+    if (openId) openDetail(openId);  // ссылка на объект: /?open=123
+    // Ссылки со страницы уведомлений: открыть нужный раздел и убрать служебный параметр из адреса
+    const act = ["login", "fav", "cabinet", "agent"].find((k) => sp.has(k));
+    if (act) {
+      sp.delete(act);
+      history.replaceState(null, "", sp.toString() ? `?${sp}` : location.pathname);
+      if (act === "login") { if (!me()) openLogin(); }
+      else if (!me()) openLogin();
+      else if (act === "fav") setFavMode(true);
+      else if (act === "cabinet") renderCabinet();
+      else if (act === "agent") document.dispatchEvent(new CustomEvent("oneplus:agent"));
+    }
   }
 
   // Кабинет агента (web/agent.js) пользуется общими помощниками страницы

@@ -14,7 +14,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
 <link rel="stylesheet" href="/static/style.css?v=10">
-<link rel="stylesheet" href="/static/motion.css?v=15">
+<link rel="stylesheet" href="/static/motion.css?v=17">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -33,10 +33,12 @@
     </svg>
       <span class="brand-text"><b class="brand-name">1+1</b><span class="brand-sub">поиск объектов Краснодара</span></span>
     </a>
+    <a class="bell-mobile" href="/notifications" id="bellMobile" hidden aria-label="Уведомления"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><i class="bell-dot" id="bellDot" hidden></i></a>
     <nav class="nav-links" aria-label="Разделы">
       <button type="button" class="nav-link on" data-tab="list">Объекты</button>
       <button type="button" class="nav-link" data-tab="map">Карта</button>
       <button type="button" class="nav-link" data-tab="fav" id="favBtn">Избранное</button>
+      <a class="nav-link" href="/notifications" id="bellLink" hidden>Уведомления<i class="nav-badge" id="bellBadge" hidden></i></a>
       <a class="nav-link" href="/how">Как это работает</a>
       <a class="nav-link" href="/admin" id="adminLink" hidden>Админка</a>
       <button type="button" class="nav-cta" id="accountBtn">Войти</button>
@@ -163,7 +165,7 @@
 </main>
 
 <button type="button" class="new-pill" id="newPill" hidden>↑ Новые объекты: <b id="newCount"></b></button>
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
 
 <nav class="tabbar" aria-label="Разделы">
   <button type="button" data-tab="list" class="on">
@@ -191,7 +193,7 @@
 <dialog id="detail" class="detail" aria-labelledby="dTitle">
   <span class="grab" aria-hidden="true"></span>
   <div class="d-tools">
-    <button type="button" class="d-iconbtn d-back" id="detailBack" hidden aria-label="Назад к предыдущему объекту">←</button>
+    <button type="button" class="d-back" id="detailBack" hidden aria-label="Назад к предыдущему объекту">← Назад</button>
     <button type="button" class="fav-btn d-iconbtn" id="detailFav" data-fav="" aria-label="В избранное"></button>
     <button class="close" id="closeDetail" aria-label="Закрыть">✕</button>
   </div>
@@ -259,7 +261,7 @@
   <div class="dlg-body" id="agentBody"></div>
 </dialog>
 
-<script src="/static/app.js?v=23"></script>
-<script src="/static/agent.js?v=2"></script>
+<script src="/static/app.js?v=25"></script>
+<script src="/static/agent.js?v=3"></script>
 </body>
 </html>
