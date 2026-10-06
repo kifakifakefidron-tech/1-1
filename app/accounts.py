@@ -56,9 +56,12 @@ def user_by_session(conn: sqlite3.Connection, token: str | None) -> sqlite3.Row 
         return None
     now = int(time.time())
     if (row["last_seen"] or 0) < now - 3600:  # не пишем в базу на каждый запрос
-        conn.execute("UPDATE sessions SET last_seen = ? WHERE token_hash = ?", (now, row["token_hash"]))
-        conn.execute("UPDATE users SET last_seen = ? WHERE id = ?", (now, user["id"]))
-        conn.commit()
+        try:
+            conn.execute("UPDATE sessions SET last_seen = ? WHERE token_hash = ?", (now, row["token_hash"]))
+            conn.execute("UPDATE users SET last_seen = ? WHERE id = ?", (now, user["id"]))
+            conn.commit()
+        except sqlite3.OperationalError:  # база занята — время визита обновим в следующий раз
+            conn.rollback()
     return user
 
 
@@ -217,8 +220,11 @@ def open_phones(conn: sqlite3.Connection, user: sqlite3.Row | None, listing_id: 
                             (uid, listing_id, since)).fetchone()
         if not seen and views_today(conn, uid) >= config.PHONE_VIEWS_PER_DAY:
             return None, "limit"
-    conn.execute("INSERT INTO phone_views (user_id, listing_id, ts) VALUES (?,?,?)", (uid, listing_id, int(time.time())))
-    conn.commit()
+    try:
+        conn.execute("INSERT INTO phone_views (user_id, listing_id, ts) VALUES (?,?,?)", (uid, listing_id, int(time.time())))
+        conn.commit()
+    except sqlite3.OperationalError:  # база занята — запись в журнал пропускаем, номер всё равно показываем
+        conn.rollback()
     return phones, None
 
 

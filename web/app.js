@@ -136,8 +136,32 @@
     return p;
   }
 
+  // Запросы с тихими повторами: связь моргнула или сервер на миг занят — пробуем ещё,
+  // и только если не вышло 3 раза — показываем ошибку. Ждём не дольше 15 секунд.
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function fetchRetry(url, opts = {}, tries = 3) {
+    const idempotent = !opts.method || opts.method === "GET";
+    let last;
+    for (let i = 0; i < (idempotent ? tries : 1); i++) {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 15000);
+      try {
+        const r = await fetch(url, { credentials: "same-origin", ...opts, signal: ctl.signal });
+        clearTimeout(timer);
+        if (r.status < 500 || i === tries - 1) return r;
+        last = r;
+      } catch (e) {
+        clearTimeout(timer);
+        last = e;
+      }
+      await sleep(500 * (i + 1) * (i + 1));  // 0,5 с, 2 с
+    }
+    if (last instanceof Response) return last;
+    throw last;
+  }
+
   async function getJSON(url, opts) {
-    const r = await fetch(url, { credentials: "same-origin", ...opts });
+    const r = await fetchRetry(url, opts);
     if (!r.ok) throw new Error(`${r.status}`);
     return r.json();
   }
@@ -147,7 +171,7 @@
     const opts = { credentials: "same-origin", method: method || (body !== undefined ? "POST" : "GET") };
     if (body !== undefined) { opts.headers = { "Content-Type": "application/json" }; opts.body = JSON.stringify(body); }
     try {
-      const r = await fetch(url, opts);
+      const r = await fetchRetry(url, opts);
       let data = {};
       try { data = await r.json(); } catch { /* пустой ответ */ }
       return { ok: r.ok, status: r.status, data };
@@ -605,8 +629,7 @@
     $("detailBody").innerHTML = `<p class="d-place">Загрузка…</p>`;
     openDlg(dlg);
     dlg.scrollTop = 0;
-    let r = await call(`/api/listings/${id}`);
-    if (!r.ok && r.status !== 404) r = await call(`/api/listings/${id}`);  // одна тихая повторная попытка
+    const r = await call(`/api/listings/${id}`);  // тихие повторы — внутри call()
     if (openedId !== id) return;  // пока грузилось, открыли другой объект
     if (r.ok) {
       $("detailBody").innerHTML = detailHTML(r.data);

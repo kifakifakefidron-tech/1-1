@@ -110,6 +110,16 @@ async def _body(request: Request) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def threaded(fn):
+    """Обработчик выполняется в отдельном потоке: медленная операция с базой или почтой
+    у одного посетителя не задерживает ответы всем остальным."""
+    async def endpoint(request: Request):
+        body = await _body(request) if request.method in ("POST", "PUT", "DELETE", "PATCH") else None
+        return await run_in_threadpool(fn, request, body)
+    endpoint.__name__ = fn.__name__
+    return endpoint
+
+
 # ─── разбор параметров ─────────────────────────────────────────────────────
 def _num(v: str | None, cast=float):
     if v in (None, ""):
@@ -149,16 +159,16 @@ def query_from(request: Request) -> search.Query:
 
 
 # ─── страницы и поиск ──────────────────────────────────────────────────────
-async def index(request: Request):
+def index(request: Request, body: dict | None = None):
     # no-cache: после обновления сайта браузер сразу берёт новую страницу (и новые ?v= у стилей/скриптов)
     return FileResponse(WEB / "index.html", headers={"Cache-Control": "no-cache"})
 
 
-async def admin_page(request: Request):
+def admin_page(request: Request, body: dict | None = None):
     return FileResponse(WEB / "admin.html", headers={"Cache-Control": "no-cache"})
 
 
-async def api_meta(request: Request):
+def api_meta(request: Request, body: dict | None = None):
     user = current_user(request)
     return JSONResponse({
         "title": config.SITE_TITLE,
@@ -171,14 +181,14 @@ async def api_meta(request: Request):
         "email_login": mailer.available(),
         "payments": payments.available(),
         "price": config.SUB_PRICE, "period_days": config.SUB_DAYS, "trial_days": config.TRIAL_DAYS,
-        "bot": await run_in_threadpool(bot_username),
+        "bot": bot_username(),
         "me": accounts.me(db.get(), user),
         "public_contact": config.PUBLIC_CONTACT,
         "public_contact_label": config.PUBLIC_CONTACT_LABEL,
     })
 
 
-async def api_listings(request: Request):
+def api_listings(request: Request, body: dict | None = None):
     # В списке телефонов нет никогда — только в карточке, по одному объекту
     now = int(time.time())
     res = search.search(db.get(), query_from(request), now, False)
@@ -186,7 +196,7 @@ async def api_listings(request: Request):
     return JSONResponse(res)
 
 
-async def api_listing(request: Request):
+def api_listing(request: Request, body: dict | None = None):
     conn = db.get()
     lid = int(request.path_params["id"])
     user = current_user(request)
@@ -213,15 +223,15 @@ def _raw_phones(conn, lid: int) -> list[str]:
     return json.loads(row["phones"] or "[]") if row else []
 
 
-async def api_facets(request: Request):
+def api_facets(request: Request, body: dict | None = None):
     return JSONResponse(search.facets(db.get(), query_from(request), int(time.time())))
 
 
-async def api_map(request: Request):
+def api_map(request: Request, body: dict | None = None):
     return JSONResponse(search.map_points(db.get(), query_from(request), int(time.time())))
 
 
-async def api_stats(request: Request):
+def api_stats(request: Request, body: dict | None = None):
     conn = db.get()
     one = lambda sql, *p: conn.execute(sql, p).fetchone()[0]  # noqa: E731
     day = int(time.time()) - 86400
@@ -234,10 +244,10 @@ async def api_stats(request: Request):
 
 
 # ─── промокод для коллег (временный) ───────────────────────────────────────
-async def api_login(request: Request):
+def api_login(request: Request, body: dict | None = None):
     if _too_often(request, "promo", 10, 600):
         return _err("Слишком много попыток — подождите 10 минут.", 429)
-    body = await _body(request)
+    body = body or {}
     code = str(body.get("code", "")).strip().encode()  # bytes: код может быть по-русски
     if config.ACCESS_CODE and hmac.compare_digest(code, config.ACCESS_CODE.encode()):
         conn = db.get()
@@ -251,12 +261,12 @@ async def api_login(request: Request):
 
 
 # ─── вход через Telegram ───────────────────────────────────────────────────
-async def api_tg_start(request: Request):
-    if not tg_alive() or not await run_in_threadpool(bot_username):
+def api_tg_start(request: Request, body: dict | None = None):
+    if not tg_alive() or not bot_username():
         return _err("Вход через Telegram пока не настроен.", 503)
     if _too_often(request, "tg", 20, 600):
         return _err("Слишком много попыток — подождите немного.", 429)
-    body = await _body(request)
+    body = body or {}
     purpose = "link" if body.get("link") else "login"
     user = current_user(request)
     if purpose == "link" and user is None:
@@ -265,7 +275,7 @@ async def api_tg_start(request: Request):
     return JSONResponse({"token": token, "url": f"https://t.me/{_bot_name or config.TELEGRAM_BOT_USERNAME}?start={purpose}_{token}"})
 
 
-async def api_tg_status(request: Request):
+def api_tg_status(request: Request, body: dict | None = None):
     conn = db.get()
     row = accounts.tg_token(conn, request.query_params.get("t", ""))
     if row is None:
@@ -280,26 +290,26 @@ async def api_tg_status(request: Request):
 
 
 # ─── вход по почте ─────────────────────────────────────────────────────────
-async def api_email_start(request: Request):
+def api_email_start(request: Request, body: dict | None = None):
     if not mailer.available():
         return _err("Вход по почте пока не настроен.", 503)
     if _too_often(request, "email", 5, 3600):
         return _err("Слишком много запросов кода — попробуйте позже.", 429)
-    body = await _body(request)
+    body = body or {}
     email = str(body.get("email", ""))[:200]
     code, err = accounts.new_email_code(db.get(), email)
     if err:
         return _err(err)
     # Отправка письма — в фоне: пока почта отвечает, сайт для остальных не подвисает
-    if not await run_in_threadpool(mailer.send_code, email.strip().lower(), code):
+    if not mailer.send_code(email.strip().lower(), code):
         return _err("Письмо не отправилось. Попробуйте ещё раз через минуту или войдите через Telegram.", 502)
     return JSONResponse({"ok": True})
 
 
-async def api_email_verify(request: Request):
+def api_email_verify(request: Request, body: dict | None = None):
     if _too_often(request, "email_verify", 20, 600):
         return _err("Слишком много попыток — подождите 10 минут.", 429)
-    body = await _body(request)
+    body = body or {}
     conn = db.get()
     email = str(body.get("email", ""))[:200]
     ok, err = accounts.check_email_code(conn, email, str(body.get("code", ""))[:12])
@@ -312,7 +322,7 @@ async def api_email_verify(request: Request):
     return _session_response(request, {"ok": True, "me": accounts.me(conn, user)}, token)
 
 
-async def api_logout(request: Request):
+def api_logout(request: Request, body: dict | None = None):
     accounts.end_session(db.get(), request.cookies.get(SESSION))
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(SESSION)
@@ -326,11 +336,11 @@ def _need_user(request: Request):
     return user, (None if user is not None else _err("Нужно войти.", 401))
 
 
-async def api_me(request: Request):
+def api_me(request: Request, body: dict | None = None):
     return JSONResponse({"me": accounts.me(db.get(), current_user(request))})
 
 
-async def api_favorites(request: Request):
+def api_favorites(request: Request, body: dict | None = None):
     user, err = _need_user(request)
     if err:
         return err
@@ -339,7 +349,7 @@ async def api_favorites(request: Request):
     return JSONResponse({"items": [search.row_to_item(r, False) for r in rows]})
 
 
-async def api_favorite_toggle(request: Request):
+def api_favorite_toggle(request: Request, body: dict | None = None):
     user, err = _need_user(request)
     if err:
         return err
@@ -350,23 +360,23 @@ async def api_favorite_toggle(request: Request):
     return JSONResponse({"favorite": accounts.toggle_favorite(conn, user["id"], lid)})
 
 
-async def api_promo(request: Request):
+def api_promo(request: Request, body: dict | None = None):
     user, err = _need_user(request)
     if err:
         return err
     if _too_often(request, "promo_redeem", 10, 600):
         return _err("Слишком много попыток — подождите 10 минут.", 429)
-    body = await _body(request)
+    body = body or {}
     conn = db.get()
     ok, text = accounts.redeem_promo(conn, user["id"], str(body.get("code", ""))[:40])
     return JSONResponse({"ok": ok, "text": text, "me": accounts.me(conn, accounts.get_user(conn, user["id"]))},
                         status_code=200 if ok else 400)
 
 
-async def api_complaint(request: Request):
+def api_complaint(request: Request, body: dict | None = None):
     if _too_often(request, "complaint", 10, 3600):
         return _err("Слишком много жалоб — попробуйте позже.", 429)
-    body = await _body(request)
+    body = body or {}
     user = current_user(request)
     conn = db.get()
     conn.execute("INSERT INTO complaints (listing_id, user_id, reason, text, ts) VALUES (?,?,?,?,?)",
@@ -377,7 +387,7 @@ async def api_complaint(request: Request):
 
 
 # ─── оплата (подготовлено, выключено) ──────────────────────────────────────
-async def api_pay(request: Request):
+def api_pay(request: Request, body: dict | None = None):
     user, err = _need_user(request)
     if err:
         return err
@@ -386,11 +396,11 @@ async def api_pay(request: Request):
     return JSONResponse({"url": payments.create(db.get(), user["id"])})
 
 
-async def api_yookassa(request: Request):
+def api_yookassa(request: Request, body: dict | None = None):
     """Уведомление ЮKassa. Статус перепроверяется запросом к API ЮKassa."""
     if not payments.available():
         return Response(status_code=404)
-    body = await _body(request)
+    body = body or {}
     pid = str((body.get("object") or {}).get("id", ""))[:64]
     if pid:
         payments.confirm(db.get(), pid)
@@ -405,7 +415,7 @@ def _need_admin(request: Request):
     return user, None
 
 
-async def api_admin_overview(request: Request):
+def api_admin_overview(request: Request, body: dict | None = None):
     _, err = _need_admin(request)
     if err:
         return err
@@ -428,7 +438,7 @@ async def api_admin_overview(request: Request):
     })
 
 
-async def api_admin_users(request: Request):
+def api_admin_users(request: Request, body: dict | None = None):
     _, err = _need_admin(request)
     if err:
         return err
@@ -439,7 +449,7 @@ async def api_admin_users(request: Request):
     return JSONResponse({"items": [accounts.user_public_row(r) for r in rows]})
 
 
-async def api_admin_user_action(request: Request):
+def api_admin_user_action(request: Request, body: dict | None = None):
     admin, err = _need_admin(request)
     if err:
         return err
@@ -447,7 +457,7 @@ async def api_admin_user_action(request: Request):
     uid = int(request.path_params["id"])
     if accounts.get_user(conn, uid) is None:
         return _err("не найдено", 404)
-    body = await _body(request)
+    body = body or {}
     action = body.get("action")
     if action == "extend":
         accounts.extend(conn, uid, max(1, min(_num(body.get("days"), int) or 7, 3650)))
@@ -469,13 +479,13 @@ async def api_admin_user_action(request: Request):
     return JSONResponse({"ok": True, "user": accounts.user_public_row(accounts.get_user(conn, uid))})
 
 
-async def api_admin_promos(request: Request):
+def api_admin_promos(request: Request, body: dict | None = None):
     _, err = _need_admin(request)
     if err:
         return err
     conn = db.get()
     if request.method == "POST":
-        body = await _body(request)
+        body = body or {}
         try:
             code = accounts.create_promo(conn, max(1, min(_num(body.get("days"), int) or 7, 3650)),
                                          max(1, min(_num(body.get("max_uses"), int) or 1, 100000)),
@@ -491,13 +501,13 @@ async def api_admin_promos(request: Request):
     return JSONResponse({"items": [dict(r) for r in rows]})
 
 
-async def api_admin_optouts(request: Request):
+def api_admin_optouts(request: Request, body: dict | None = None):
     _, err = _need_admin(request)
     if err:
         return err
     conn = db.get()
     if request.method == "POST":
-        body = await _body(request)
+        body = body or {}
         if body.get("remove"):
             conn.execute("DELETE FROM optout_phones WHERE phone = ?", (str(body["remove"]),))
             conn.commit()
@@ -508,13 +518,13 @@ async def api_admin_optouts(request: Request):
     return JSONResponse({"items": [dict(r) for r in rows]})
 
 
-async def api_admin_complaints(request: Request):
+def api_admin_complaints(request: Request, body: dict | None = None):
     _, err = _need_admin(request)
     if err:
         return err
     conn = db.get()
     if request.method == "POST":
-        body = await _body(request)
+        body = body or {}
         cid = _num(body.get("id"), int)
         conn.execute("UPDATE complaints SET status = ? WHERE id = ?", (str(body.get("status", "done"))[:20], cid))
         if body.get("hide_listing"):
@@ -528,22 +538,22 @@ async def api_admin_complaints(request: Request):
 
 
 # ─── отладка (только админ) ────────────────────────────────────────────────
-async def api_parse(request: Request):
+def api_parse(request: Request, body: dict | None = None):
     """Проверить разбор текста, ничего не сохраняя."""
     _, err = _need_admin(request)
     if err and not has_code(request):
         return err
-    body = await _body(request)
+    body = body or {}
     kind, objs = parser.parse(str(body.get("text", ""))[:8000])
     return JSONResponse({"kind": kind, "objects": [o.to_dict() for o in objs]})
 
 
-async def api_add_message(request: Request):
+def api_add_message(request: Request, body: dict | None = None):
     """Добавить сообщение вручную (например, переслать объект, которого нет в чатах)."""
     _, err = _need_admin(request)
     if err and not has_code(request):
         return err
-    body = await _body(request)
+    body = body or {}
     conn = db.get()
     mid = ingest.add_message(conn, source="manual", text=str(body.get("text", ""))[:8000], chat_name="вручную")
     if mid is None:
@@ -552,35 +562,35 @@ async def api_add_message(request: Request):
 
 
 routes = [
-    Route("/", index),
-    Route("/admin", admin_page),
-    Route("/api/meta", api_meta),
-    Route("/api/listings", api_listings),
-    Route("/api/listings/{id:int}", api_listing),
-    Route("/api/facets", api_facets),
-    Route("/api/map", api_map),
-    Route("/api/stats", api_stats),
-    Route("/api/login", api_login, methods=["POST"]),
-    Route("/api/auth/tg/start", api_tg_start, methods=["POST"]),
-    Route("/api/auth/tg/status", api_tg_status),
-    Route("/api/auth/email/start", api_email_start, methods=["POST"]),
-    Route("/api/auth/email/verify", api_email_verify, methods=["POST"]),
-    Route("/api/auth/logout", api_logout, methods=["POST"]),
-    Route("/api/me", api_me),
-    Route("/api/favorites", api_favorites),
-    Route("/api/favorites/{id:int}", api_favorite_toggle, methods=["POST"]),
-    Route("/api/promo", api_promo, methods=["POST"]),
-    Route("/api/complaints", api_complaint, methods=["POST"]),
-    Route("/api/pay", api_pay, methods=["POST"]),
-    Route("/api/payments/yookassa", api_yookassa, methods=["POST"]),
-    Route("/api/admin/overview", api_admin_overview),
-    Route("/api/admin/users", api_admin_users),
-    Route("/api/admin/users/{id:int}", api_admin_user_action, methods=["POST"]),
-    Route("/api/admin/promos", api_admin_promos, methods=["GET", "POST", "DELETE"]),
-    Route("/api/admin/optouts", api_admin_optouts, methods=["GET", "POST"]),
-    Route("/api/admin/complaints", api_admin_complaints, methods=["GET", "POST"]),
-    Route("/api/parse", api_parse, methods=["POST"]),
-    Route("/api/messages", api_add_message, methods=["POST"]),
+    Route("/", threaded(index)),
+    Route("/admin", threaded(admin_page)),
+    Route("/api/meta", threaded(api_meta)),
+    Route("/api/listings", threaded(api_listings)),
+    Route("/api/listings/{id:int}", threaded(api_listing)),
+    Route("/api/facets", threaded(api_facets)),
+    Route("/api/map", threaded(api_map)),
+    Route("/api/stats", threaded(api_stats)),
+    Route("/api/login", threaded(api_login), methods=["POST"]),
+    Route("/api/auth/tg/start", threaded(api_tg_start), methods=["POST"]),
+    Route("/api/auth/tg/status", threaded(api_tg_status)),
+    Route("/api/auth/email/start", threaded(api_email_start), methods=["POST"]),
+    Route("/api/auth/email/verify", threaded(api_email_verify), methods=["POST"]),
+    Route("/api/auth/logout", threaded(api_logout), methods=["POST"]),
+    Route("/api/me", threaded(api_me)),
+    Route("/api/favorites", threaded(api_favorites)),
+    Route("/api/favorites/{id:int}", threaded(api_favorite_toggle), methods=["POST"]),
+    Route("/api/promo", threaded(api_promo), methods=["POST"]),
+    Route("/api/complaints", threaded(api_complaint), methods=["POST"]),
+    Route("/api/pay", threaded(api_pay), methods=["POST"]),
+    Route("/api/payments/yookassa", threaded(api_yookassa), methods=["POST"]),
+    Route("/api/admin/overview", threaded(api_admin_overview)),
+    Route("/api/admin/users", threaded(api_admin_users)),
+    Route("/api/admin/users/{id:int}", threaded(api_admin_user_action), methods=["POST"]),
+    Route("/api/admin/promos", threaded(api_admin_promos), methods=["GET", "POST", "DELETE"]),
+    Route("/api/admin/optouts", threaded(api_admin_optouts), methods=["GET", "POST"]),
+    Route("/api/admin/complaints", threaded(api_admin_complaints), methods=["GET", "POST"]),
+    Route("/api/parse", threaded(api_parse), methods=["POST"]),
+    Route("/api/messages", threaded(api_add_message), methods=["POST"]),
     Mount("/static", StaticFiles(directory=WEB), name="static"),
 ]
 
