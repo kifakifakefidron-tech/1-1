@@ -414,7 +414,7 @@
         ${head ? `<div class="mc-head">${esc(head)}</div>` : ""}
         <div class="mc-price">${esc(fmtPrice(p.price, state.deal))}</div>
         <div class="mc-title">${esc(p.title)}</div>
-        ${p.approx ? `<div class="mc-approx">Точка примерная — точного адреса в объявлении нет</div>` : ""}
+        ${p.approx ? `<div class="mc-approx">Место примерное — в объявлении нет точного адреса</div>` : ""}
         <div class="mc-extra">${extra ?? `<div class="skel"><i></i><i></i></div>`}</div>
         <span class="mc-more" data-open="${p.id}">Подробнее →</span>
         ${me() && me().is_admin ? `<button type="button" class="mc-geo" data-geo-edit="${p.id}">📍 поправить</button>` : ""}
