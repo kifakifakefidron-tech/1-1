@@ -1,0 +1,50 @@
+/* Экран разбора: ЖК/район и точки на карте */
+.fx { max-width: 1240px; margin: 0 auto; padding: 16px 16px 60px; }
+.fx-top { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 16px; }
+.seg-group { display: inline-flex; background: var(--chip); border-radius: 999px; padding: 3px; }
+.fx-top .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.fx-progress { margin-left: auto; color: var(--ink-3); font-size: 14px; }
+.fx-progress b { color: var(--ink); }
+.fx-denied, .fx-done { padding: 40px 16px; text-align: center; font-size: 18px; }
+.fx-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 20px; animation: riseIn .4s var(--spring, ease) both; }
+.fx-left, .fx-right { background: var(--paper); border: 1px solid var(--line); border-radius: 20px; padding: 18px; min-width: 0; }
+.fx-head { display: flex; gap: 14px; align-items: flex-start; }
+.fx-head img { width: 96px; height: 72px; object-fit: cover; border-radius: 12px; flex: 0 0 auto; }
+.fx-head h1 { font: 600 22px/1.2 var(--head); margin: 0 0 4px; }
+.fx-price { font: 600 20px var(--head); }
+.fx-now { color: var(--ink-2); font-size: 14px; margin-top: 4px; }
+.fx-now b { color: var(--ink); }
+.fx-text { white-space: pre-wrap; word-break: break-word; font: 14px/1.55 var(--body); color: var(--ink-2); background: rgba(0, 0, 0, .12);
+  border-radius: 14px; padding: 12px 14px; margin: 14px 0 8px; max-height: 52vh; overflow: auto; }
+.fx-open { font-size: 13px; color: var(--ink-3); }
+.fx-form { display: flex; flex-direction: column; gap: 16px; }
+.fx-block { display: flex; flex-direction: column; gap: 8px; }
+.fx-label { font-size: 13px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
+.fx-block .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.fx-block .chip { display: inline-flex; align-items: center; gap: 6px; }
+.fx-block .chip small { opacity: .65; font-size: 11px; }
+.fx-block .chip.on small { opacity: .8; }
+.fx-block select, .fx-block input, #fxCoords {
+  font: inherit; font-size: 15px; color: var(--ink); background: var(--bg); border: 1px solid var(--line-2);
+  border-radius: 12px; padding: 10px 12px; width: 100%; box-sizing: border-box; }
+.fx-dsearch { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.fx-dsearch input { flex: 1 1 220px; }
+#fxDistrictAdd { border-color: #9be8b8; color: #9be8b8; }
+.fx-check { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 14px;
+  color: var(--ink-2); line-height: 1.4; cursor: pointer; }
+.fx-check input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--ink); }
+.fx-check b { color: var(--ink); }
+.fx-map { height: min(52vh, 440px); border-radius: 16px; overflow: hidden; }
+.fx-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.fx-save { margin-left: auto; font-size: 16px; padding: 12px 22px; }
+.kbd { display: inline-block; min-width: 16px; padding: 0 5px; border-radius: 5px; font: 600 11px/18px var(--body);
+  background: rgba(0, 0, 0, .18); color: inherit; text-align: center; opacity: .85; }
+.geo-pin img { width: 22px; height: 22px; transform: rotate(45deg); border-radius: 4px; }
+@media (max-width: 860px) {
+  .fx-card { grid-template-columns: 1fr; }
+  .fx-progress { margin-left: 0; width: 100%; }
+  .fx-text { max-height: 30vh; }
+  .kbd { display: none; }
+  .fx-actions { position: sticky; bottom: 0; background: var(--paper); margin: 18px -18px -18px; padding: 12px 18px;
+    border-radius: 0 0 20px 20px; }
+}

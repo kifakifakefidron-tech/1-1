@@ -208,6 +208,7 @@ def admin_page(request: Request, body: dict | None = None):
 
 def api_meta(request: Request, body: dict | None = None):
     user = current_user(request)
+    learning.rules(db.get())   # подтянуть районы, добавленные админом (раз в минуту)
     return JSONResponse({
         "title": config.SITE_TITLE,
         "types": TYPE_LABELS,
@@ -860,6 +861,7 @@ def api_admin_place(request: Request, body: dict | None = None):
     if cx:
         rec = geo.resolve_complex(cx)
         cx = rec.name if rec else geo.pretty_name(re.sub(r"(?i)^\s*(?:жк|ж/к)\s+", "", cx))
+    learning.sync_districts(conn)
     district = str(body.get("district") or "").strip() or None
     if district and not geo.canonical_district(district):
         return _err("Выберите район из списка.")
@@ -883,8 +885,8 @@ def api_admin_place(request: Request, body: dict | None = None):
 
 
 _PLACE_QUEUE = {
-    "nodistrict": "l.district IS NULL AND l.settlement IS NULL",
-    "nocomplex": "l.complex IS NULL AND l.type IN ('flat', 'new') AND l.district IS NOT NULL",
+    "nodistrict": "l.district IS NULL AND l.settlement IS NULL AND l.admin_fixed = 0",
+    "nocomplex": "l.complex IS NULL AND l.type IN ('flat', 'new') AND l.district IS NOT NULL AND l.admin_fixed = 0",
     "fixed": "l.admin_fixed = 1",
 }
 
@@ -908,6 +910,71 @@ def api_admin_place_queue(request: Request, body: dict | None = None):
                    substr(COALESCE(l.fragment, l.description, ''), 1, 300) AS text
             FROM listings l WHERE {_VISIBLE} AND {where} ORDER BY l.last_seen DESC LIMIT 200""").fetchall()
     return JSONResponse({"items": [dict(r) for r in rows], "counts": counts, "rules": learning.list_rules(conn)})
+
+
+def _fix_item(conn, lid: int) -> dict | None:
+    r = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
+    if r is None:
+        return None
+    text = (r["fragment"] or r["description"] or "")[:2000]
+    photos = json.loads(r["photos"] or "[]")
+    return {k: r[k] for k in ("id", "title", "price", "deal", "type", "rooms", "area", "floor", "floors", "complex",
+                              "district", "street", "house", "settlement", "lat", "lon", "geo_status", "admin_fixed",
+                              "source")} | {
+        "text": text, "photo": photos[0] if photos else None,
+        "suggest": geo.suggestions(text, r["street"], r["complex"]),
+        "learned": [label for _, label in geocode.learn_keys(r)],
+    }
+
+
+def api_admin_districts(request: Request, body: dict | None = None):
+    """Добавить район (POST {name, aliases}) / список (GET)."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    conn = db.get()
+    learning.sync_districts(conn)
+    if request.method == "POST":
+        body = body or {}
+        aliases = [a.strip() for a in str(body.get("aliases", "")).split(",") if a.strip()]
+        name = learning.add_district(conn, str(body.get("name", "")), aliases)
+        if not name:
+            return _err("Напишите название района.")
+        return JSONResponse({"name": name, "districts": geo.all_district_names()})
+    return JSONResponse({"districts": geo.all_district_names()})
+
+
+def api_admin_fix(request: Request, body: dict | None = None):
+    """Экран разбора /fix: следующий объект очереди (без уже разобранных и пропущенных в этой сессии)
+    или конкретный объект (?id=). mode: place (ЖК/район) | geo (карта)."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    conn = db.get()
+    learning.sync_districts(conn)
+    q = request.query_params
+    mode = "geo" if q.get("mode") == "geo" else "place"
+    queues = _GEO_QUEUE if mode == "geo" else _PLACE_QUEUE
+    kind = q.get("kind") if q.get("kind") in queues else next(iter(queues))
+    where = queues[kind]
+    left = conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE} AND {where}").fetchone()[0]
+    if q.get("id"):
+        item = _fix_item(conn, _num(q.get("id"), int) or 0)
+    else:
+        exclude = [int(x) for x in q.get("exclude", "").split(",") if x.strip().isdigit()][:2000]
+        ph = ",".join("?" * len(exclude)) or "0"
+        row = conn.execute(f"""SELECT l.id FROM listings l WHERE {_VISIBLE} AND {where} AND l.id NOT IN ({ph})
+                               ORDER BY l.last_seen DESC LIMIT 1""", exclude).fetchone()
+        item = _fix_item(conn, row[0]) if row else None
+    complexes = sorted({c.name for _, c in geo._complexes()} | {r[0] for r in conn.execute(
+        "SELECT DISTINCT complex FROM listings WHERE complex IS NOT NULL AND is_active = 1")},
+        key=lambda x: x.lower().replace("ё", "е"))
+    return JSONResponse({"item": item, "left": left, "mode": mode, "kind": kind,
+                         "districts": geo.all_district_names(), "complexes": complexes})
+
+
+def fix_page(request: Request, body: dict | None = None):
+    return _page("fix.html")
 
 
 def api_admin_geo_queue(request: Request, body: dict | None = None):
@@ -1013,6 +1080,9 @@ routes = [
     Route("/api/admin/chats", threaded(api_admin_chats), methods=["GET", "POST"]),
     Route("/api/admin/listings/{id:int}/geo", threaded(api_admin_geo), methods=["POST"]),
     Route("/api/admin/geo-queue", threaded(api_admin_geo_queue)),
+    Route("/api/admin/fix", threaded(api_admin_fix)),
+    Route("/api/admin/districts", threaded(api_admin_districts), methods=["GET", "POST"]),
+    Route("/fix", threaded(fix_page)),
     Route("/api/admin/listings/{id:int}/place", threaded(api_admin_place), methods=["POST"]),
     Route("/api/admin/place-queue", threaded(api_admin_place_queue), methods=["GET", "POST"]),
     Mount("/static", StaticFiles(directory=WEB), name="static"),

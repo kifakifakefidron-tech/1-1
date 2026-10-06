@@ -113,9 +113,12 @@ class Complex:
     district: str | None
 
 
+_CUSTOM: list[tuple[str, list[str]]] = []   # районы, добавленные админом (таблица custom_districts)
+
+
 def _alias_table() -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
-    for canon, aliases in DISTRICTS:
+    for canon, aliases in DISTRICTS + _CUSTOM:
         for a in aliases + [canon]:
             w = words(a)
             if w:
@@ -256,7 +259,18 @@ def district_by_street(street: str | None) -> str | None:
 
 
 def all_district_names() -> list[str]:
-    return [d for d, _ in DISTRICTS]
+    """Все районы по алфавиту (включая добавленные админом)."""
+    return sorted({d for d, _ in DISTRICTS + _CUSTOM}, key=lambda x: x.lower().replace("ё", "е"))
+
+
+def set_custom_districts(items: list[tuple[str, list[str]]]) -> None:
+    """Подключить районы, добавленные админом: они сразу узнаются в тексте, фильтре и поиске."""
+    global _CUSTOM, _ALIASES
+    known = {d for d, _ in DISTRICTS}
+    new = [(n, a) for n, a in items if n not in known]
+    if new != _CUSTOM:
+        _CUSTOM = new
+        _ALIASES = _alias_table()
 
 
 def complex_key(name: str | None) -> str | None:
@@ -358,3 +372,36 @@ def place_from_lines(text: str, max_lines: int = 6) -> dict:
         out["settlement"] = name
         break
     return out
+
+
+def street_districts(street: str | None) -> list[str]:
+    """Все районы, через которые проходит улица (для подсказок админу)."""
+    w = words(re.sub(r"\b(?:улица|ул|проспект|пр т|переулок|пер|проезд|бульвар|шоссе|площадь)\b", " ", words(street or "")))
+    w = " ".join(w.split())
+    if len(w) < 4:
+        return []
+    for key, districts in _streets():
+        if w == key:
+            return districts
+    return []
+
+
+def suggestions(text: str, street: str | None, current_complex: str | None = None) -> dict:
+    """Подсказки для разбора: районы и ЖК с объяснением «откуда»."""
+    ds: list[dict] = []
+
+    def add_d(name, why):
+        if name and name not in [x["name"] for x in ds]:
+            ds.append({"name": name, "why": why})
+    add_d(find_district_in_text(text), "названо в тексте")
+    pl = place_from_lines(text)
+    add_d(pl.get("district"), "строка в шапке")
+    cxs: list[dict] = []
+    for rec, why in ((find_complex_in_text(text), "«ЖК …» в тексте"), (pl.get("complex"), "строка в шапке"),
+                     (resolve_complex(current_complex) if current_complex else None, "сейчас")):
+        if rec and rec.name not in [x["name"] for x in cxs]:
+            cxs.append({"name": rec.name, "why": why})
+            add_d(rec.district, f"по ЖК {rec.name}")
+    for d in street_districts(street):
+        add_d(d, "по улице")
+    return {"districts": ds[:8], "complexes": cxs[:5]}

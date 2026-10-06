@@ -178,6 +178,8 @@ CREATE TABLE IF NOT EXISTS geo_learned (
     key TEXT PRIMARY KEY,            -- addr:<посёлок>|<улица>|<дом>  или  cx:<ЖК>
     lat REAL NOT NULL, lon REAL NOT NULL, n INTEGER NOT NULL DEFAULT 1, ts INTEGER NOT NULL, label TEXT
 );
+-- Районы, добавленные админом (в дополнение к справочнику geo.DISTRICTS)
+CREATE TABLE IF NOT EXISTS custom_districts (name TEXT PRIMARY KEY, aliases TEXT NOT NULL DEFAULT '[]', ts INTEGER NOT NULL);
 -- Выученные правила ЖК/района (app/learning.py)
 CREATE TABLE IF NOT EXISTS learned_rules (
     id INTEGER PRIMARY KEY, kind TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, label TEXT,

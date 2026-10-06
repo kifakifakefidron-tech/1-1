@@ -74,3 +74,39 @@ def test_admin_fix_survives_audit(env):
     c.post(f"/api/admin/listings/{a}/place", json={"complex": "Мозаика", "district": "ФМР", "learn": {}})
     audit.run(fix=True, conn=conn)          # ЖК нет в тексте, но его поставил админ — не снимаем
     assert row(conn, a)["complex"] == "Мозаика"
+
+
+def test_fix_queue_skips_and_suggestions(env):
+    c, conn = env
+    ids = [add(conn, f"2-к квартира {50 + i} м², 3/9 эт., ул. Ставропольская {10 + i}. 6 млн. 8918000001{i}")["listing_id"]
+           for i in range(3)]
+    first = c.get("/api/admin/fix?mode=place&kind=nodistrict").json()
+    assert first["left"] == 3 and first["item"]["suggest"]["districts"]          # подсказки районов по улице
+    a = first["item"]["id"]
+    # пропустили a — следующий другой, a не возвращается, пока есть непросмотренные
+    b = c.get(f"/api/admin/fix?mode=place&kind=nodistrict&exclude={a}").json()["item"]["id"]
+    c.post(f"/api/admin/listings/{b}/place", json={"district": "ЧМР", "learn": {}})
+    nxt = c.get(f"/api/admin/fix?mode=place&kind=nodistrict&exclude={a},{b}").json()
+    assert nxt["item"]["id"] not in (a, b) and nxt["left"] == 2
+    # поправленный «без района» больше не возвращается в очередь
+    c.post(f"/api/admin/listings/{nxt['item']['id']}/place", json={"district": "", "learn": {}})
+    assert c.get("/api/admin/fix?mode=place&kind=nodistrict").json()["left"] == 1
+    assert "fix.js" in c.get("/fix").text
+
+
+def test_street_learns_district_and_custom_district(env):
+    from app import geo
+    c, conn = env
+    a = add(conn, "2-к квартира 50 м², 3/9 эт., ул. Новаторов 7. 6 млн. 89180000021")["listing_id"]
+    # своего района нет в справочнике — добавляем
+    r = c.post("/api/admin/districts", json={"name": "Новые Сады", "aliases": "новосады"}).json()
+    assert "Новые Сады" in r["districts"] and r["districts"] == sorted(r["districts"], key=lambda x: x.lower())
+    c.post(f"/api/admin/listings/{a}/place", json={"district": "Новые Сады", "learn": {"street": True}})
+    # другая квартира на той же улице (другой дом) — сразу в этом районе
+    b = add(conn, "1-к квартира 38 м², 5/9 эт., ул. Новаторов 15. 4 млн. 89180000022")["listing_id"]
+    assert row(conn, b)["district"] == "Новые Сады"
+    # новый район узнаётся в тексте и в фильтре
+    assert geo.canonical_district("новосады") == "Новые Сады"
+    assert search.search(conn, search.Query(districts=["Новые Сады"]), NOW, False)["total"] == 2
+    item = c.get(f"/api/admin/fix?mode=place&kind=nodistrict&id={b}").json()
+    assert "Новые Сады" in item["districts"] and item["complexes"]

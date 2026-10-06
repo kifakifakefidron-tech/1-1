@@ -91,6 +91,7 @@
       <p class="note">Объекты, которые не попали на карту или стоят примерно. Нажмите «Поставить точку» — откроется карта;
         после сохранения сразу откроется следующий объект из списка. Каждая правка <b>учит сервис</b>: точка запоминается
         для этого дома и ЖК, и все объявления с тем же адресом — сейчас и в будущем — встают туда же.</p>
+      <p><a class="pill-link" href="/fix?mode=geo">▶ Разбирать по очереди</a></p>
       <div class="chips chat-filter" id="geoKinds">
         <button type="button" class="chip on" data-geo-kind="none">Нет на карте</button>
         <button type="button" class="chip" data-geo-kind="approx">Примерные</button>
@@ -105,6 +106,7 @@
         и окно «ЖК и район»; после сохранения — следующий. Отметьте галочки «научить сервис», и правка подействует
         на все такие объявления — уже собранные и новые. Новые объявления о том же объекте получают исправленные ЖК
         и район ещё до проверки на дубли, поэтому склеиваются с исправленной карточкой, а не создают новую.</p>
+      <p><a class="pill-link" href="/fix?mode=place">▶ Разбирать по очереди</a></p>
       <div class="chips chat-filter" id="placeKinds">
         <button type="button" class="chip on" data-place-kind="nodistrict">Без района</button>
         <button type="button" class="chip" data-place-kind="nocomplex">Квартиры без ЖК</button>
@@ -120,6 +122,6 @@
     </section>
   </div>
 </main>
-<script src="/static/admin.js?v=7"></script>
+<script src="/static/admin.js?v=8"></script>
 </body>
 </html>

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Разбор · 1+1</title>
+<meta name="theme-color" content="#035352">
+<meta name="robots" content="noindex">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="/static/style.css?v=10">
+<link rel="stylesheet" href="/static/motion.css?v=25">
+<link rel="stylesheet" href="/static/fix.css?v=2">
+</head>
+<body>
+<header class="nav"><div class="nav-in">
+  <a class="brand" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="40" height="40" style="border-radius:10px">
+    <span class="brand-text"><b class="brand-name">1+1</b><span class="brand-sub">разбор и обучение</span></span></a>
+  <nav class="nav-links"><a class="nav-link" href="/admin">Админка</a><a class="nav-cta" href="/">К поиску</a></nav>
+</div></header>
+
+<main class="fx">
+  <div class="fx-top">
+    <div class="seg-group">
+      <button type="button" class="seg" data-mode="place">ЖК и районы</button>
+      <button type="button" class="seg" data-mode="geo">Карта</button>
+    </div>
+    <div class="chips" id="fxKinds"></div>
+    <div class="fx-progress" id="fxProgress"></div>
+  </div>
+
+  <p class="fx-denied" id="fxDenied" hidden>Эта страница только для администратора. <a href="/?login=1">Войти</a></p>
+  <p class="fx-done" id="fxDone" hidden></p>
+
+  <section class="fx-card" id="fxCard" hidden>
+    <div class="fx-left">
+      <div class="fx-head">
+        <img id="fxPhoto" alt="" hidden>
+        <div>
+          <h1 id="fxTitle"></h1>
+          <div class="fx-price" id="fxPrice"></div>
+          <div class="fx-now" id="fxNow"></div>
+        </div>
+      </div>
+      <pre class="fx-text" id="fxText"></pre>
+      <a class="fx-open" id="fxOpen" target="_blank">Открыть объект на сайте ↗</a>
+    </div>
+
+    <div class="fx-right">
+      <!-- ЖК и район -->
+      <form id="fxPlace" class="fx-form" autocomplete="off">
+        <div class="fx-block">
+          <div class="fx-label">Район <span class="kbd">1–9</span></div>
+          <div class="chips" id="fxDistricts"></div>
+          <div class="fx-dsearch">
+            <input id="fxDistrictInput" list="fxDistrictList" placeholder="Найти район по названию…">
+            <datalist id="fxDistrictList"></datalist>
+            <button type="button" class="chip" id="fxDistrictAdd" hidden></button>
+          </div>
+        </div>
+        <div class="fx-block">
+          <div class="fx-label">ЖК</div>
+          <div class="chips" id="fxComplexes"></div>
+          <input id="fxComplex" list="fxComplexList" placeholder="Название ЖК — или пусто, если ЖК нет">
+          <datalist id="fxComplexList"></datalist>
+        </div>
+        <div class="fx-block fx-learn" id="fxLearn"></div>
+      </form>
+
+      <!-- Карта -->
+      <div id="fxGeo" class="fx-form" hidden>
+        <div id="fxMap" class="fx-map"></div>
+        <form class="inline-form" id="fxCoordsForm">
+          <input id="fxCoords" placeholder="Координаты или ссылка с Яндекс/Google Карт">
+          <button type="submit" class="pill light">Найти</button>
+        </form>
+        <p class="note" id="fxGeoNow"></p>
+        <p class="note">Точка запомнится для этого дома и ЖК — объявления с тем же адресом встанут сюда же.</p>
+      </div>
+
+      <div class="fx-actions">
+        <button type="button" class="ghost" id="fxBack" title="Предыдущий объект (←)">← Назад</button>
+        <button type="button" class="ghost" id="fxSkip" title="В конец очереди (→)">Пропустить →</button>
+        <button type="button" class="ghost" id="fxHide" hidden>Убрать с карты</button>
+        <button type="button" class="pill fx-save" id="fxSave">Сохранить и дальше <span class="kbd">Enter</span></button>
+      </div>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="/static/fix.js?v=2"></script>
+</body>
+</html>

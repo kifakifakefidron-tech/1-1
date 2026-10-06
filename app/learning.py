@@ -5,7 +5,8 @@
 
   * addr        — «ул. Тургенева, 10 — это ЖК Мозаика, район ФМР» (точный дом);
   * cx_alias    — «то, что агенты пишут как „Акварели 3“, — это ЖК „Акварели“», или «„Выше“ — это не ЖК»;
-  * cx_district — «ЖК Мозаика — это район ФМР» (если справочник ошибается).
+  * cx_district — «ЖК Мозаика — это район ФМР» (если справочник ошибается);
+  * street      — «ул. Тургенева — это район ФМР» (для объявлений этой улицы без своего района).
 
 Правила применяются к каждому новому объявлению ДО проверки на дубли (ingest.save_object, feed.sync).
 Поэтому следующее объявление о том же объекте сразу получает исправленные ЖК/район, совпадает с уже
@@ -40,9 +41,38 @@ def cx_key(name: str | None) -> str | None:
     return f"cx:{k}" if k else None
 
 
+def sync_districts(conn: sqlite3.Connection) -> None:
+    """Районы, добавленные админом, — в справочник этого процесса."""
+    try:
+        geo.set_custom_districts([(r["name"], json.loads(r["aliases"] or "[]"))
+                                  for r in conn.execute("SELECT name, aliases FROM custom_districts")])
+    except sqlite3.OperationalError:
+        pass
+
+
+def add_district(conn: sqlite3.Connection, name: str, aliases: list[str] | None = None) -> str | None:
+    name = " ".join(str(name or "").split())[:60]
+    if len(name) < 2:
+        return None
+    existing = geo.canonical_district(name)
+    if existing:
+        return existing
+    conn.execute("INSERT OR IGNORE INTO custom_districts (name, aliases, ts) VALUES (?,?,?)",
+                 (name, json.dumps([a for a in (aliases or []) if a], ensure_ascii=False), int(time.time())))
+    conn.commit()
+    sync_districts(conn)
+    return name
+
+
+def street_key(street: str | None, settlement: str | None = None) -> str | None:
+    s = _street_key(street)
+    return f"street:{words(settlement or '')}|{s}" if s else None
+
+
 def rules(conn: sqlite3.Connection, fresh: bool = False) -> dict:
     """Все правила (кэш на минуту: сайт и фоновая работа — разные процессы)."""
     if fresh or time.time() - _cache["t"] > 60:
+        sync_districts(conn)
         r = {}
         for row in conn.execute("SELECT kind, key, value FROM learned_rules"):
             r[(row["kind"], row["key"])] = json.loads(row["value"])
@@ -75,11 +105,17 @@ def apply(conn: sqlite3.Connection, o) -> bool:
         if new and not get("district"):
             rec = geo.resolve_complex(new)
             put("district", rec.district if rec else None)
-    # 2) ЖК → район
+    # 2) улица → район: если района нет или он был угадан справочником по улице
+    k = street_key(get("street"), get("settlement"))
+    if k and ("street", k) in rs:
+        cur = get("district")
+        if not cur or cur == geo.district_by_street(get("street")):
+            put("district", rs[("street", k)]["district"])
+    # 3) ЖК → район (ЖК точнее улицы)
     k = cx_key(get("complex"))
     if k and ("cx_district", k) in rs:
         put("district", rs[("cx_district", k)]["district"])
-    # 3) точный дом → ЖК и район (самое конкретное правило — последним, оно главнее)
+    # 4) точный дом → ЖК и район (самое конкретное правило — последним, оно главнее)
     k = addr_key(get("street"), get("house"), get("settlement"))
     if k and ("addr", k) in rs:
         v = rs[("addr", k)]
@@ -114,6 +150,10 @@ def learn(conn: sqlite3.Connection, row: sqlite3.Row, new_complex: str | None, n
     if want.get("alias") and old_cx and cx_key(old_cx) != cx_key(new_complex):
         save("cx_alias", cx_key(old_cx), {"complex": new_complex},
              f"«{old_cx}» → {('ЖК ' + new_complex) if new_complex else 'это не ЖК'}")
+    if want.get("street") and new_district:
+        k = street_key(row["street"], row["settlement"])
+        if k:
+            save("street", k, {"district": new_district}, f"ул. {row['street']} → район {new_district}")
     if want.get("cx_district") and new_complex and new_district:
         save("cx_district", cx_key(new_complex), {"district": new_district}, f"ЖК {new_complex} → район {new_district}")
     conn.commit()

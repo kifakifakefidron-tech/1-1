@@ -605,6 +605,7 @@
   // ─── админ: поправить точку объекта на карте ───────────────────────────
   let geoMap = null, geoMarker = null, geoId = 0;
   let geoQueue = "";        // разбираем очередь «Нет на карте» из админки
+  const geoSkipped = new Set();
   function openGeoEdit(id) {
     const o = known.get(id) || {};
     geoId = id;
@@ -675,7 +676,9 @@
   // Следующий объект из очереди админки
   async function nextInQueue() {
     const r = await call(`/api/admin/geo-queue?kind=${encodeURIComponent(geoQueue)}`);
-    const next = r.ok && (r.data.items || []).find((o) => o.id !== geoId);
+    geoSkipped.add(geoId);
+    const items = r.ok ? r.data.items || [] : [];
+    const next = items.find((o) => !geoSkipped.has(o.id)) || items.find((o) => o.id !== geoId);
     if (!next) { toast("Очередь разобрана 🎉"); geoQueue = ""; return; }
     const left = r.data.counts[geoQueue];
     await openDetail(next.id);
@@ -684,6 +687,7 @@
 
   // ─── админ: поправить ЖК и район и научить сервис ──────────────────────
   let placeId = 0, placeQueue = "";
+  const placeSkipped = new Set();   // разобранные и пропущенные — в конец очереди
   function openPlaceEdit(id) {
     const o = known.get(id) || {};
     placeId = id;
@@ -703,6 +707,7 @@
     const f = $("placeForm");
     const cx = f.complex.value.trim(), d = f.district.value;
     const box = [];
+    if (o.street && d) box.push(["street", `Улица <b>${esc(o.street)}</b> → район <b>${esc(d)}</b> (для её объявлений без своего района)`]);
     if (o.street && o.house) box.push(["addr", `Запомнить для дома <b>ул. ${esc(o.street)}, ${esc(o.house)}</b>: ${cx ? "ЖК " + esc(cx) : "без ЖК"}${d ? ", " + esc(d) : ""}`]);
     if (o.complex && o.complex !== cx) box.push(["alias", cx
       ? `Везде, где агенты пишут <b>«${esc(o.complex)}»</b>, — это ЖК <b>${esc(cx)}</b>`
@@ -716,7 +721,7 @@
   async function savePlace() {
     const f = $("placeForm");
     const learn = {};
-    ["addr", "alias", "cx_district"].forEach((k) => { if (f[`learn_${k}`] && f[`learn_${k}`].checked) learn[k] = true; });
+    ["addr", "alias", "cx_district", "street"].forEach((k) => { if (f[`learn_${k}`] && f[`learn_${k}`].checked) learn[k] = true; });
     const r = await call(`/api/admin/listings/${placeId}/place`, { complex: f.complex.value, district: f.district.value, learn });
     if (!r.ok) { toast(r.data.detail || "Не получилось сохранить"); return; }
     const o = known.get(placeId);
@@ -730,7 +735,9 @@
   }
   async function nextPlace() {
     const r = await call(`/api/admin/place-queue?kind=${encodeURIComponent(placeQueue)}`);
-    const next = r.ok && (r.data.items || []).find((o) => o.id !== placeId);
+    placeSkipped.add(placeId);
+    const items = r.ok ? r.data.items || [] : [];
+    const next = items.find((o) => !placeSkipped.has(o.id)) || items.find((o) => o.id !== placeId);
     if (!next) { toast("Очередь разобрана 🎉"); placeQueue = ""; return; }
     await openDetail(next.id);
     setTimeout(() => { openPlaceEdit(next.id); $("placeLeft").textContent = `Осталось в очереди: ${r.data.counts[placeQueue]}`; }, 400);

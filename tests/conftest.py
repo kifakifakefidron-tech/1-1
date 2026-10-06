@@ -43,7 +43,9 @@ def add(conn):
 @pytest.fixture(autouse=True)
 def _fresh_learning_cache():
     """Кэш выученных правил — на процесс; в тестах у каждой проверки своя база."""
-    from app import learning
+    from app import geo, learning
     learning._cache.update(t=0.0, rules={})
+    geo.set_custom_districts([])
     yield
     learning._cache.update(t=0.0, rules={})
+    geo.set_custom_districts([])

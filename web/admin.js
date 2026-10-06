@@ -209,7 +209,7 @@
       ? `<tr><th>Объект</th><th>Адрес из объявления</th><th></th></tr>` + d.items.map((o) => `<tr>
           <td><b>${esc(o.title)}</b><div class="note msg-snip">${esc(o.text)}</div></td>
           <td>${esc(addr(o)) || '<span class="note">—</span>'}</td>
-          <td class="acts"><a class="btn-link pill-link" href="/?open=${o.id}&geo=${geoKind}">📍 Поставить точку</a></td></tr>`).join("")
+          <td class="acts"><a class="btn-link pill-link" href="/fix?mode=geo&kind=${geoKind}&id=${o.id}">📍 Поставить точку</a></td></tr>`).join("")
       : `<tr><td class="note">Здесь пусто — всё на карте 🎉</td></tr>`;
   }
 
@@ -238,7 +238,7 @@
       ? `<tr><th>Объект</th><th>Сейчас</th><th></th></tr>` + d.items.map((o) => `<tr>
           <td><b>${esc(o.title)}</b><div class="note msg-snip">${esc(o.text)}</div></td>
           <td>${esc(addr(o)) || '<span class="note">—</span>'}</td>
-          <td class="acts"><a class="btn-link pill-link" href="/?open=${o.id}&place=${placeKind}">✎ Поправить</a></td></tr>`).join("")
+          <td class="acts"><a class="btn-link pill-link" href="/fix?mode=place&kind=${placeKind}&id=${o.id}">✎ Поправить</a></td></tr>`).join("")
       : `<tr><td class="note">Здесь пусто 🎉</td></tr>`;
   }
 
