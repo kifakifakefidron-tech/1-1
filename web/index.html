@@ -10,13 +10,13 @@
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
-<link rel="stylesheet" href="/static/style.css?v=2">
+<link rel="stylesheet" href="/static/style.css?v=3">
 </head>
 <body>
 <header class="top">
   <a class="brand" href="/" aria-label="1+1 — на главную">1<span aria-hidden="true">+</span>1</a>
   <span class="brand-sub">вторичка и новостройки Краснодара из риелторских чатов</span>
-  <button class="access-btn" id="accessBtn" hidden>Вход для коллег</button>
+  <button class="access-btn" id="accessBtn" hidden>Войти</button>
 </header>
 
 <main class="wrap">
@@ -111,9 +111,25 @@
   <div id="detailBody"></div>
 </dialog>
 
+<dialog id="paywallDlg" class="small-dlg" aria-labelledby="pwTitle">
+  <div class="dlg-body">
+    <h2 id="pwTitle">Номера агентов — по подписке</h2>
+    <ol class="steps">
+      <li><b>Регистрация</b> по номеру телефона — минута.</li>
+      <li><b>Первый месяц бесплатно</b> — открыты все номера и исходные сообщения из чатов.</li>
+      <li><b>Дальше — подписка.</b> Без неё номера снова скрыты, поиск остаётся бесплатным.</li>
+    </ol>
+    <p class="note">Регистрация откроется совсем скоро. Если у вас уже есть код доступа — войдите по нему.</p>
+    <div class="dlg-actions">
+      <button type="button" class="ghost" id="paywallClose">Понятно</button>
+      <button type="button" class="pill" id="paywallLogin">Войти по коду</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="accessDlg" class="small-dlg">
   <form id="accessForm" method="dialog">
-    <h2>Вход для коллег</h2>
+    <h2>Вход по коду</h2>
     <p>С кодом видны телефоны агентов и исходные сообщения из чатов.</p>
     <input id="accessCode" autocomplete="off" placeholder="Код доступа" aria-label="Код доступа">
     <p class="err" id="accessErr" hidden>Код не подошёл. Проверьте и введите ещё раз.</p>
@@ -126,6 +142,6 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
-<script src="/static/app.js?v=2"></script>
+<script src="/static/app.js?v=3"></script>
 </body>
 </html>

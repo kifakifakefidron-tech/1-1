@@ -6,7 +6,7 @@
   "use strict";
 
   const $ = (id) => document.getElementById(id);
-  const PAGE_SIZE = 30;
+  const PAGE_SIZE = 32;  // делится и на 4 (компьютер), и на 2 (телефон)
 
   const state = {
     q: "", deal: "sale", types: [], rooms: [],
@@ -185,9 +185,9 @@
     const m2 = o.price_m2 && o.deal !== "rent" ? `<div class="price-m2">${num(o.price_m2)} ₽/м²</div>` : "";
     const seen = o.seen_count > 1 ? ` · присылали ${o.seen_count} ${plural(o.seen_count, "раз", "раза", "раз")}` : "";
     return `<li class="item" tabindex="0" data-id="${o.id}">
-      <div><h3 class="item-title">${esc(o.title)}${tag}</h3>
-        ${where ? `<div class="item-place">${esc(where)}</div>` : ""}</div>
       <div class="item-price"><div class="price">${esc(fmtPrice(o.price, o.deal))}</div>${m2}</div>
+      <h3 class="item-title">${esc(o.title)}${tag}</h3>
+      ${where ? `<div class="item-place">${esc(where)}</div>` : ""}
       ${o.description ? `<p class="item-desc">${esc(o.description)}</p>` : ""}
       <div class="item-meta">${esc(fmtAgo(o.last_seen))}${esc(seen)}</div>
     </li>`;
@@ -288,14 +288,21 @@
       fact("Адрес", o.street ? `ул. ${o.street}${o.house ? ", " + o.house : ""}` : null),
     ].join("");
 
+    // Телефон агента: открыт по подписке (пока — по коду доступа), иначе — скрыт с пояснением
     let contact = "";
     if (meta.access && o.phones && o.phones.length) {
-      contact = o.phones.map((p) => {
+      contact = `<div class="d-contact">${o.phones.map((p) => {
         const digits = p.replace(/\D/g, "");
         return `<a class="pill" href="tel:${esc(p)}">${esc(p)}</a><a class="pill light" href="https://wa.me/${digits}" target="_blank" rel="noopener">WhatsApp</a>`;
-      }).join("");
+      }).join("")}</div>`;
+    } else if (o.phones_masked && o.phones_masked.length) {
+      contact = `<div class="d-locked">
+        <div class="d-locked-num">${esc(o.phones_masked[0])}</div>
+        <p>Телефон агента открывается по подписке. <b>Первый месяц — бесплатно.</b></p>
+        <button type="button" class="pill" data-paywall>Открыть номер</button>
+      </div>`;
     } else if (meta.public_contact) {
-      contact = `<a class="pill" href="${esc(meta.public_contact)}" target="_blank" rel="noopener">${esc(meta.public_contact_label || "Узнать подробности")} →</a>`;
+      contact = `<div class="d-contact"><a class="pill" href="${esc(meta.public_contact)}" target="_blank" rel="noopener">${esc(meta.public_contact_label || "Узнать подробности")} →</a></div>`;
     }
 
     const hist = (o.history || []).map((h) => {
@@ -312,9 +319,9 @@
       <p class="d-price-m2">${o.price_m2 && o.deal !== "rent" ? esc(num(o.price_m2)) + " ₽/м²" : "&nbsp;"}</p>
       <dl class="d-facts">${facts}</dl>
       ${o.description ? `<h3 class="d-h">Описание</h3><p class="d-desc">${esc(o.description)}</p>` : ""}
-      ${contact ? `<div class="d-contact">${contact}</div>` : ""}
+      ${contact}
       ${meta.access && o.fragment ? `<h3 class="d-h">Исходное сообщение</h3><pre class="d-source">${esc(o.fragment)}</pre>` : ""}
-      ${hist ? `<h3 class="d-h">История</h3><ul class="d-hist">${hist}</ul>` : ""}
+      ${hist ? `<details class="d-hist-box"><summary>История · ${o.history.length} ${plural(o.history.length, "сообщение", "сообщения", "сообщений")}</summary><ul class="d-hist">${hist}</ul></details>` : ""}
       <p class="d-note">${esc(chats)}Впервые: ${esc(fmtAgo(o.first_seen))}, последний раз: ${esc(fmtAgo(o.last_seen))}.</p>`;
   }
 
@@ -335,7 +342,7 @@
     const b = $("accessBtn");
     b.hidden = !meta.access_required;
     b.classList.toggle("on", !!meta.access);
-    b.textContent = meta.access ? "Вы вошли ✓" : "Вход для коллег";
+    b.textContent = meta.access ? "Вы вошли ✓" : "Войти";
     b.disabled = !!meta.access;
   }
 
@@ -379,6 +386,7 @@
     document.addEventListener("click", (e) => {
       const t = e.target.closest("button");
       if (!t) return;
+      if (t.hasAttribute("data-paywall")) { $("paywallDlg").showModal(); return; }
       if (t.dataset.deal) {
         if (state.deal === t.dataset.deal) return;
         state.deal = t.dataset.deal;
@@ -447,6 +455,12 @@
       $("accessDlg").showModal();
     });
     $("accessCancel").addEventListener("click", () => $("accessDlg").close());
+    $("paywallClose").addEventListener("click", () => $("paywallDlg").close());
+    $("paywallLogin").addEventListener("click", () => {
+      $("paywallDlg").close();
+      $("detail").close();
+      $("accessBtn").click();
+    });
     $("accessForm").addEventListener("submit", login);
   }
 

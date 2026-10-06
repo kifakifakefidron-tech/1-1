@@ -101,11 +101,20 @@ PUBLIC_FIELDS = ("id", "type", "deal", "rooms", "area", "land", "floor", "floors
                  "first_seen", "last_seen", "seen_count", "lat", "lon")
 
 
+def mask_phone(p: str) -> str:
+    """+79181112233 → «+7 918 •••-••-••»: видно, что номер есть, но не сам номер."""
+    d = "".join(ch for ch in p if ch.isdigit())
+    return f"+7 {d[1:4]} •••-••-••" if len(d) == 11 else "+7 ••• •••-••-••"
+
+
 def row_to_item(r: sqlite3.Row, with_contacts: bool) -> dict:
     d = {k: r[k] for k in PUBLIC_FIELDS}
+    phones = json.loads(r["phones"] or "[]")
     if with_contacts:
-        d["phones"] = json.loads(r["phones"] or "[]")
+        d["phones"] = phones
         d["fragment"] = r["fragment"]
+    else:
+        d["phones_masked"] = [mask_phone(p) for p in phones]
     return d
 
 

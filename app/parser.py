@@ -84,26 +84,11 @@ def strip_phones(description: str) -> str:
     return "\n".join(out).strip()
 
 
-def _locate_fragment(candidate: str | None, text: str, chunks: list[str]) -> str:
-    """Дословный кусок исходного текста про объект."""
-    if candidate:
-        cw = words(candidate)
-        if cw and cw in words(text):
-            # найдём точную подстроку в оригинале (с учётом регистра/пробелов)
-            idx = text.find(candidate.strip()[:40])
-            if idx >= 0:
-                return text[idx: idx + len(candidate.strip())] if candidate.strip() in text else candidate.strip()
-            return candidate.strip()
-        # LLM переписал текст своими словами — выберем ближайший кусок правил
-        cand_set = set(cw.split())
-        best = max(chunks, key=lambda c: len(cand_set & set(words(c).split())), default=text)
-        return best
-    return chunks[0] if chunks else text
-
-
-def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None) -> ParsedObject:
+def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
+           single: bool = True) -> ParsedObject:
     obj = obj or {}
-    text_words = words(text)
+    # В подборке ЖК/улицу/район, названные нейросетью, проверяем по куску этого объекта
+    text_words = words(text if single else fragment)
     r = rules.extract(fragment)
 
     otype = obj.get("type") if obj.get("type") in rules.TYPES else None
@@ -120,7 +105,12 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None)
     if otype in ("flat", "new", "room"):
         land = None
 
-    price = _int(obj.get("price_rub"))
+    # Цена: явно подписанная цена из текста куска надёжнее ответа нейросети
+    # (нейросеть иногда берёт обременение или «сумму в ДКП»)
+    strict_price = rules.extract_price(fragment, deal, strict=True)
+    price = strict_price or _int(obj.get("price_rub"))
+    if price is not None and deal == "sale" and price < 300_000:
+        price = price * 1000 if 300 <= price < 100_000 else None
     if price is None or price < 1000:
         price = r.price
 
@@ -131,8 +121,8 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None)
     if otype in ("land", "commercial"):
         rooms = None
 
-    floor = _int(obj.get("floor")) or r.floor
-    floors = _int(obj.get("floors")) or r.floors
+    floor = r.floor or _int(obj.get("floor"))
+    floors = r.floors or _int(obj.get("floors"))
     if floor and floors and floor > floors:
         floor, floors = None, None
 
@@ -168,7 +158,7 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None)
         if p:
             phones = [p]
 
-    description = strip_phones((obj.get("description") or "").strip() or _clean_description(fragment))
+    description = strip_phones(_clean_description(fragment))
 
     return ParsedObject(
         type=otype, deal=deal, rooms=rooms, area=area, land=land, floor=floor, floors=floors,
@@ -178,6 +168,23 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None)
     )
 
 
+def _llm_fragments(objs: list[dict], text: str, chunks: list[str]) -> list[str]:
+    """Кусок текста каждого объекта по номерам строк из ответа нейросети."""
+    lines = text.splitlines()
+    out = []
+    for i, obj in enumerate(objs):
+        frag = ""
+        rng = obj.get("lines")
+        if isinstance(rng, list) and len(rng) == 2:
+            a, b = _int(rng[0]), _int(rng[1])
+            if a and b and 1 <= a <= b <= len(lines):
+                frag = "\n".join(lines[a - 1: b]).strip()
+        if not frag:
+            frag = chunks[i] if len(chunks) == len(objs) else text
+        out.append(frag)
+    return out
+
+
 def _is_meaningful(o: ParsedObject) -> bool:
     has_size = any(v is not None for v in (o.area, o.land, o.rooms))
     return o.price is not None and o.type is not None and has_size
@@ -185,7 +192,7 @@ def _is_meaningful(o: ParsedObject) -> bool:
 
 def parse(text: str, sender_phone: str | None = None, use_llm: bool | None = None) -> tuple[str, list[ParsedObject]]:
     """Возвращает (kind, objects). kind: listing | request | other."""
-    text = (text or "").strip()
+    text = rules.normalize_digits(text).strip()
     if len(text) < 15:
         return "other", []
     chunks = rules.split_objects(text)
@@ -196,23 +203,32 @@ def parse(text: str, sender_phone: str | None = None, use_llm: bool | None = Non
     if use_llm:
         try:
             res = llm.parse_message(text)
+        except llm.LLMError as e:
+            log.warning("Нейросеть недоступна, разбираю правилами: %s", e)
+        else:
             kind = res.get("kind") if res.get("kind") in ("listing", "request", "other") else "other"
             if kind != "listing":
                 return kind, []
-            out = []
-            for obj in res.get("objects") or []:
-                if not isinstance(obj, dict):
-                    continue
-                frag = _locate_fragment(obj.get("fragment"), text, chunks)
-                po = _build(obj, frag, text, sender_phone)
-                if _is_meaningful(po):
-                    out.append(po)
-            return ("listing" if out else "other"), out
-        except llm.LLMError as e:
-            log.warning("Нейросеть недоступна, разбираю правилами: %s", e)
+            objs = [o for o in res.get("objects") or [] if isinstance(o, dict)]
+            frags = _llm_fragments(objs, text, chunks)
+            # Нейросеть увидела меньше объектов, чем правила, — режем правилами
+            if len(chunks) > len(objs):
+                log.info("Нейросеть нашла %d объектов, правила — %d: беру разбивку правил", len(objs), len(chunks))
+            else:
+                single = len(objs) == 1
+                out = []
+                for obj, frag in zip(objs, frags):
+                    subs = rules.split_objects(frag)
+                    if len(subs) > 1:  # в куске нейросети несколько цен — делим правилами
+                        out += [_build(None, sub, text, sender_phone, single=False) for sub in subs]
+                    else:
+                        out.append(_build(obj, frag, text, sender_phone, single=single))
+                out = [po for po in out if _is_meaningful(po)]
+                return ("listing" if out else "other"), out
 
     # Разбор только правилами
     if rules.is_buyer_request(text):
         return "request", []
-    out = [po for po in (_build(None, c, text, sender_phone) for c in chunks) if _is_meaningful(po)]
+    single = len(chunks) == 1
+    out = [po for po in (_build(None, c, text, sender_phone, single=single) for c in chunks) if _is_meaningful(po)]
     return ("listing" if out else "other"), out

@@ -78,3 +78,74 @@ def test_agent_phone_removed_from_public_description():
     assert "111-22-33" not in o.description
     assert "Тел" not in o.description
     assert "7,5 млн" in o.description
+
+
+# ─── «Портянки» из реальных чатов ──────────────────────────────────────────
+PORTYANKA = """ЖК САМОЛЕТ
+ул. Западный обход 39/2к7
+Студия 21м2.   7/16
+Ремонт. Метель
+Без обрем. В дкп 1350
+Цена 3 600 000
+Заклад обсуждаем
+ЖК СВОБОДА
+ул. Домбайская 17/25
+Студия 20м2.  Этаж 17
+ПЧО
+Обрем: 450 Сбербанк
+Вся сумма в дкп
+Цена 3200
+Заклад обсуждаем"""
+
+
+def test_portyanka_without_blank_lines_is_split():
+    _, objs = parse(PORTYANKA)
+    assert [(o.area, o.floor, o.floors, o.price) for o in objs] == [
+        (21, 7, 16, 3_600_000), (20, 17, None, 3_200_000)]
+    assert "СВОБОДА" not in objs[0].description
+    assert "САМОЛЕТ" not in objs[1].description
+    assert "Заклад обсуждаем" in objs[0].description
+
+
+def test_emoji_digits_and_encumbrance():
+    text = ("📣СРОЧНО📣\n✅ 1 к.кв.\n✅ ЖК \"Славянка\", ул.Заполярная 39 к10\n✅ 2 этаж\n✅ 38 кв.м.\n"
+            "🔥Цена: 4⃣9⃣0⃣0⃣ т.р.🔥\n✅ 2 к.кв.\n✅ ЖК «Красных Партизан», ул.Заполярная 35 к6\n✅ 7 этаж\n"
+            "✅ 56 кв.м.\n✅ Обременение 300 т.р/ВСЯ СУММА В ДОГОВОРЕ\n🔥Цена: 6⃣6⃣5⃣0⃣ т.р.🔥")
+    _, objs = parse(text)
+    assert [(o.rooms, o.area, o.floor, o.price) for o in objs] == [(1, 38, 2, 4_900_000), (2, 56, 7, 6_650_000)]
+
+
+def test_realtor_price_shorthands():
+    for text, price in [("Студия 24 м², 3/9 эт. Цена 7,8🍋", 7_800_000),
+                        ("1к 38 м2, 5/16 эт.\n7️⃣5️⃣5️⃣0️⃣ 💰", 7_550_000),
+                        ("2к 56 м2, 7/9 эт. Вся сумма в договоре. цена 27500тр", 27_500_000),
+                        ("2к 42 кв м, 9 этаж\n🔥Цена : 5. 600 т р 🔥", 5_600_000)]:
+        _, [o] = parse(text)
+        assert o.price == price, text
+
+
+def test_house_number_is_not_floor():
+    _, [o] = parse("Студия 20м2, ЖК Свобода, ул. Домбайская 17/25, Этаж 17. Цена 3 200 000")
+    assert (o.floor, o.floors) == (17, None)
+
+
+def test_llm_line_ranges(monkeypatch):
+    from app import llm
+    monkeypatch.setattr(llm, "parse_message", lambda text: {"kind": "listing", "objects": [
+        {"lines": [1, 7], "type": "flat", "deal": "sale", "rooms": 0, "area_m2": 21, "price_rub": 3600000,
+         "complex": "Самолет"},
+        {"lines": [8, 15], "type": "flat", "deal": "sale", "rooms": 0, "area_m2": 20, "price_rub": 450000,
+         "complex": "Самолет"},  # нейросеть ошиблась: обременение вместо цены и чужой ЖК
+    ]})
+    _, objs = parser.parse(PORTYANKA, use_llm=True)
+    assert [(o.area, o.price) for o in objs] == [(21, 3_600_000), (20, 3_200_000)]
+    assert objs[1].complex != "Самолет"
+    assert objs[1].description.startswith("ЖК СВОБОДА")
+
+
+def test_llm_merged_objects_are_split_by_rules(monkeypatch):
+    from app import llm
+    monkeypatch.setattr(llm, "parse_message", lambda text: {"kind": "listing", "objects": [
+        {"lines": [1, 15], "type": "flat", "deal": "sale", "rooms": 0, "area_m2": 21, "price_rub": 3600000}]})
+    _, objs = parser.parse(PORTYANKA, use_llm=True)
+    assert len(objs) == 2
