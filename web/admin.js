@@ -103,28 +103,83 @@
   }
 
   let chatList = [];
+  let chatShow = "";
   const SRC = { wa: "WhatsApp", tg: "Telegram", max: "MAX" };
+  const chatKey = (c) => `${c.source}|${c.chat_id}`;
   async function chats() {
     chatList = (await call("/api/admin/chats")).items;
     renderChats();
   }
+  function chatRow(c) {
+    const off = c.blocked || c.foreign;
+    const name = c.name || `Без названия · ${SRC[c.source] || c.source} ${c.chat_id.slice(0, 18)}`;
+    const toggle = c.foreign
+      ? `<span class="note">другой город</span>`
+      : `<label class="switch" title="${off ? "Не берём — включить" : "Берём — выключить"}">
+           <input type="checkbox" data-toggle="${esc(chatKey(c))}"${off ? "" : " checked"}><span></span></label>`;
+    return `<tr class="${off ? "muted" : ""}" data-row="${esc(chatKey(c))}">
+      <td><b>${esc(name)}</b><div class="note">${SRC[c.source] || c.source} · сообщений ${c.messages}
+        ${c.last_ts ? " · последнее " + day(c.last_ts) : ""}</div></td>
+      <td class="num">${c.listings}<div class="note">на сайте</div></td>
+      <td class="acts">
+        ${c.messages ? `<button data-peek="${esc(chatKey(c))}">Посмотреть</button>` : ""}
+        ${c.link ? `<a class="btn-link" href="${esc(c.link)}" target="_blank" rel="noopener">Открыть чат ↗</a>` : ""}
+      </td>
+      <td class="acts">${toggle}</td></tr>`;
+  }
   function renderChats() {
     const q = $("chatQ").value.trim().toLowerCase();
-    const show = $("chatShow").value;
     const rows = chatList.filter((c) => {
       const off = c.blocked || c.foreign;
-      return (!q || (c.name || c.chat_id).toLowerCase().includes(q)) && (!show || (show === "off") === !!off);
+      if (q && !(c.name || c.chat_id).toLowerCase().includes(q)) return false;
+      if (chatShow === "on") return !off;
+      if (chatShow === "off") return off;
+      if (chatShow === "empty") return !c.listings;
+      return true;
     });
-    $("chats").innerHTML = `<tr><th>Чат</th><th>Где</th><th>Сообщений</th><th>Объектов на сайте</th><th>Последнее</th><th>Статус</th><th></th></tr>` +
-      rows.map((c) => {
-        const status = c.foreign ? "другой город — не берём" : c.blocked ? "<b>не берём</b>" : "берём";
-        const btn = c.foreign ? "" : c.blocked
-          ? `<button data-chat="${esc(c.chat_id)}" data-src="${c.source}" data-block="0">Брать</button>`
-          : `<button data-chat="${esc(c.chat_id)}" data-src="${c.source}" data-block="1">Не брать</button>`;
-        return `<tr${c.blocked || c.foreign ? ' class="muted"' : ""}><td>${esc(c.name || "без названия (" + c.chat_id + ")")}</td>
-          <td>${SRC[c.source] || c.source}</td><td>${c.messages}</td><td>${c.listings}</td><td>${day(c.last_ts)}</td>
-          <td>${status}</td><td class="acts">${btn}</td></tr>`;
-      }).join("");
+    $("chats").innerHTML = rows.length ? rows.map(chatRow).join("") : `<tr><td class="note">Ничего не нашлось</td></tr>`;
+  }
+  async function peek(key, btn) {
+    const row = document.querySelector(`[data-row="${CSS.escape(key)}"]`);
+    const next = row.nextElementSibling;
+    if (next && next.classList.contains("peek")) { next.remove(); btn.textContent = "Посмотреть"; return; }
+    const [source, chat_id] = key.split(/\|(.*)/s);
+    btn.textContent = "Загружаю…";
+    const d = await call(`/api/admin/chats?source=${encodeURIComponent(source)}&chat_id=${encodeURIComponent(chat_id)}`);
+    btn.textContent = "Скрыть";
+    const objs = d.listings.map((o) => `<li><a href="/?open=${o.id}" target="_blank">${esc(o.title)}</a>
+        ${o.is_active ? "" : '<span class="note">(скрыт)</span>'}
+        <span class="note">${esc([o.complex && "ЖК " + o.complex, o.district, o.street].filter(Boolean).join(" · "))}</span></li>`).join("");
+    const msgs = d.messages.map((m) => `<li><span class="note">${day(m.ts)}${m.sender_name ? " · " + esc(m.sender_name) : ""}</span>
+        <div class="msg">${esc(m.text)}</div></li>`).join("");
+    row.insertAdjacentHTML("afterend", `<tr class="peek"><td colspan="4">
+        <div class="peek-grid"><div><h4>Последние сообщения</h4><ul>${msgs || "<li class=note>нет</li>"}</ul></div>
+        <div><h4>Объекты из этого чата</h4><ul>${objs || "<li class=note>нет</li>"}</ul></div></div></td></tr>`);
+  }
+  let toastTimer = 0;
+  function chatToast(html) {
+    const t = $("chatToast");
+    t.innerHTML = html; t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 8000);
+  }
+  async function setChat(key, blocked) {
+    const c = chatList.find((x) => chatKey(x) === key);
+    const [source, chat_id] = key.split(/\|(.*)/s);
+    c.blocked = blocked ? 1 : 0;
+    renderChats();
+    try {
+      const r = await call("/api/admin/chats", { source, chat_id, blocked });
+      const name = esc(c.name || "чат");
+      chatToast(blocked
+        ? `«${name}» — не берём. Скрыто объектов: ${r.hidden || 0}. <button data-undo="${esc(key)}">Отменить</button>`
+        : `«${name}» — снова берём. Вернулось объектов: ${r.returned || 0}.`);
+      chats();
+    } catch (err) {
+      c.blocked = blocked ? 0 : 1;
+      renderChats();
+      alert(err.message);
+    }
   }
 
   const loaders = { overview, users, promos, optouts, complaints, edits, chats };
@@ -151,12 +206,15 @@
       } else if (b.dataset.unopt) {
         await call("/api/admin/optouts", { remove: b.dataset.unopt });
         optouts();
-      } else if (b.dataset.chat) {
-        const off = b.dataset.block === "1";
-        if (off && !confirm("Не брать объявления из этого чата? Объекты, которые были только оттуда, пропадут с сайта.")) return;
-        const r = await call("/api/admin/chats", { source: b.dataset.src, chat_id: b.dataset.chat, blocked: off });
-        await chats();
-        if (off) alert(`Готово. Скрыто объектов: ${r.hidden}.`);
+      } else if (b.dataset.peek) {
+        await peek(b.dataset.peek, b);
+      } else if (b.dataset.undo) {
+        $("chatToast").hidden = true;
+        await setChat(b.dataset.undo, false);
+      } else if (b.dataset.show !== undefined) {
+        chatShow = b.dataset.show;
+        document.querySelectorAll("#chatShow .chip").forEach((x) => x.classList.toggle("on", x === b));
+        renderChats();
       } else if (b.dataset.revert) {
         if (!confirm("Вернуть прежнее значение?")) return;
         await call("/api/admin/edits", { id: Number(b.dataset.revert) });
@@ -171,7 +229,10 @@
   $("userSearch").addEventListener("submit", (e) => { e.preventDefault(); users().catch(fail); });
   $("chatSearch").addEventListener("submit", (e) => e.preventDefault());
   $("chatQ").addEventListener("input", renderChats);
-  $("chatShow").addEventListener("change", renderChats);
+  document.addEventListener("change", (e) => {
+    const t = e.target;
+    if (t.dataset && t.dataset.toggle) setChat(t.dataset.toggle, !t.checked);
+  });
   $("promoNew").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = e.target;

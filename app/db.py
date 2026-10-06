@@ -199,6 +199,7 @@ MIGRATIONS = [
     ("favorites", "price_at", "INTEGER"),                     # цена, когда добавили в избранное
     ("favorites", "notified_price", "INTEGER"),               # о какой цене уже написали
     ("chats", "blocked", "INTEGER NOT NULL DEFAULT 0"),       # админ отключил чат («не брать»)
+    ("chats", "link", "TEXT"),                                # ссылка на чат, если мессенджер её отдаёт
     ("listings", "hidden_reason", "TEXT"),                    # 'chat' — скрыт, т.к. приходил только из отключённых чатов
 ]
 

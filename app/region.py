@@ -54,12 +54,13 @@ def chat_name(conn: sqlite3.Connection, source: str, chat_id: str | None) -> str
     return row[0] if row else None
 
 
-def save_chat(conn: sqlite3.Connection, source: str, chat_id: str, name: str | None) -> None:
+def save_chat(conn: sqlite3.Connection, source: str, chat_id: str, name: str | None, link: str | None = None) -> None:
     if not chat_id or not name:
         return
-    conn.execute("""INSERT INTO chats (source, chat_id, name, foreign_place) VALUES (?,?,?,?)
+    conn.execute("""INSERT INTO chats (source, chat_id, name, foreign_place, link) VALUES (?,?,?,?,?)
                     ON CONFLICT(source, chat_id) DO UPDATE SET name = excluded.name,
-                    foreign_place = excluded.foreign_place""", (source, chat_id, name, int(is_foreign(name))))
+                    foreign_place = excluded.foreign_place, link = COALESCE(excluded.link, chats.link)""",
+                 (source, chat_id, name, int(is_foreign(name)), link))
 
 
 def hide_foreign(conn: sqlite3.Connection) -> dict:
@@ -96,34 +97,94 @@ def hide_foreign(conn: sqlite3.Connection) -> dict:
     return {"skipped": skipped, "hidden": hidden + by_place}
 
 
+def _retry(fn, tries: int = 4):
+    """База может быть на секунду занята фоновой работой — пробуем ещё раз, а не падаем с ошибкой."""
+    for i in range(tries):
+        try:
+            return fn()
+        except sqlite3.OperationalError as e:
+            if "locked" not in str(e) or i == tries - 1:
+                raise
+            time.sleep(1.5)
+
+
 def set_blocked(conn: sqlite3.Connection, source: str, chat_id: str, blocked: bool) -> dict:
-    """Админ отключил/включил чат. Объекты пересчитываются сразу."""
-    conn.execute("""INSERT INTO chats (source, chat_id, blocked) VALUES (?,?,?)
-                    ON CONFLICT(source, chat_id) DO UPDATE SET blocked = excluded.blocked""",
-                 (source, chat_id, int(blocked)))
-    if not blocked:
-        # Вернуть то, что скрывали из-за чатов, и снова поставить в очередь пропущенные сообщения этого чата
-        conn.execute("UPDATE messages SET status = 'new', error = NULL WHERE source = ? AND chat_id = ? "
-                     "AND status = 'skipped' AND error = 'чат исключён'", (source, chat_id))
-        conn.execute("UPDATE listings SET is_active = 1, hidden_reason = NULL WHERE hidden_reason = 'chat' "
-                     "AND last_seen >= ?", (int(time.time()) - config.STALE_DAYS * 86400,))
-    conn.commit()
-    return hide_foreign(conn)
+    """Админ отключил/включил чат. Пересчитываются только объекты этого чата — быстро."""
+    def work() -> dict:
+        try:
+            conn.execute("""INSERT INTO chats (source, chat_id, blocked) VALUES (?,?,?)
+                            ON CONFLICT(source, chat_id) DO UPDATE SET blocked = excluded.blocked""",
+                         (source, chat_id, int(blocked)))
+            bl = blocked_set(conn, fresh=True)
+            # Объекты, которые хоть раз приходили из этого чата
+            ids = [r[0] for r in conn.execute(
+                """SELECT DISTINCT e.listing_id FROM listing_events e JOIN messages m ON m.id = e.message_id
+                   WHERE m.source = ? AND m.chat_id = ?""", (source, chat_id))]
+            changed = 0
+            for lid in ids:
+                srcs = conn.execute("""SELECT m.source, m.chat_id, m.chat_name FROM listing_events e
+                                       JOIN messages m ON m.id = e.message_id WHERE e.listing_id = ?""", (lid,)).fetchall()
+                only_bad = all(is_foreign(r[2]) or (r[0], r[1] or "") in bl for r in srcs)
+                if blocked and only_bad:
+                    changed += conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'chat' "
+                                            "WHERE id = ? AND is_active = 1 AND source = 'chat'", (lid,)).rowcount
+                elif not blocked and not only_bad:
+                    changed += conn.execute(
+                        "UPDATE listings SET is_active = 1, hidden_reason = NULL WHERE id = ? AND hidden_reason = 'chat' "
+                        "AND last_seen >= ?", (lid, int(time.time()) - config.STALE_DAYS * 86400)).rowcount
+            if blocked:
+                conn.execute("UPDATE messages SET status = 'skipped', error = 'чат исключён' "
+                             "WHERE source = ? AND chat_id = ? AND status = 'new'", (source, chat_id))
+            else:
+                conn.execute("UPDATE messages SET status = 'new', error = NULL WHERE source = ? AND chat_id = ? "
+                             "AND status = 'skipped' AND error = 'чат исключён'", (source, chat_id))
+            conn.commit()
+            return {"hidden" if blocked else "returned": changed}
+        except Exception:
+            conn.rollback()
+            raise
+    return _retry(work)
+
+
+def _link(source: str, chat_id: str, link: str | None) -> str | None:
+    if link:
+        return link
+    if source == "tg" and chat_id and not chat_id.lstrip("-").isdigit():
+        return f"https://t.me/{chat_id.lstrip('@')}"
+    return None
 
 
 def chats_for_admin(conn: sqlite3.Connection) -> list[dict]:
-    hide_foreign(conn)   # подтянуть чаты из сообщений
-    rows = conn.execute("""
-        SELECT c.source, c.chat_id, c.name, c.blocked, c.foreign_place,
-               (SELECT COUNT(*) FROM messages m WHERE m.source = c.source AND m.chat_id = c.chat_id) AS messages,
-               (SELECT MAX(ts) FROM messages m WHERE m.source = c.source AND m.chat_id = c.chat_id) AS last_ts,
-               (SELECT COUNT(DISTINCT e.listing_id) FROM messages m JOIN listing_events e ON e.message_id = m.id
-                  JOIN listings l ON l.id = e.listing_id AND l.is_active = 1
-                WHERE m.source = c.source AND m.chat_id = c.chat_id) AS listings
-        FROM chats c ORDER BY messages DESC, c.name""").fetchall()
+    """Все чаты: сколько сообщений, сколько объектов на сайте, когда было последнее, ссылка (если есть)."""
+    _retry(lambda: (conn.execute("""INSERT OR IGNORE INTO chats (source, chat_id, name, foreign_place)
+                    SELECT source, chat_id, MAX(chat_name), 0 FROM messages
+                    WHERE chat_id IS NOT NULL AND chat_id != '' AND source IN ('wa', 'tg', 'max') GROUP BY 1, 2"""),
+                    conn.commit()))
+    stats = {(r[0], r[1]): (r[2], r[3], r[4]) for r in conn.execute(
+        "SELECT source, chat_id, COUNT(*), MAX(ts), MAX(chat_name) FROM messages GROUP BY 1, 2")}
+    objs = {(r[0], r[1]): r[2] for r in conn.execute(
+        """SELECT m.source, m.chat_id, COUNT(DISTINCT e.listing_id) FROM listing_events e
+           JOIN messages m ON m.id = e.message_id JOIN listings l ON l.id = e.listing_id AND l.is_active = 1
+           GROUP BY 1, 2""")}
     out = []
-    for r in rows:
-        d = dict(r)
-        d["foreign"] = is_foreign(r["name"])
-        out.append(d)
+    for r in conn.execute("SELECT * FROM chats").fetchall():
+        k = (r["source"], r["chat_id"])
+        n, last, msg_name = stats.get(k, (0, None, None))
+        name = r["name"] or msg_name
+        out.append({"source": r["source"], "chat_id": r["chat_id"], "name": name, "blocked": r["blocked"],
+                    "foreign": is_foreign(name), "messages": n, "last_ts": last, "listings": objs.get(k, 0),
+                    "link": _link(r["source"], r["chat_id"], r["link"] if "link" in r.keys() else None)})
+    out.sort(key=lambda c: (-c["listings"], -c["messages"], c["name"] or "я"))
     return out
+
+
+def chat_preview(conn: sqlite3.Connection, source: str, chat_id: str) -> dict:
+    """Последние сообщения и объекты чата — чтобы решить, нужен ли он, не заходя в мессенджер."""
+    msgs = [dict(r) for r in conn.execute(
+        """SELECT ts, sender_name, substr(text, 1, 600) AS text, status FROM messages
+           WHERE source = ? AND chat_id = ? ORDER BY ts DESC LIMIT 8""", (source, chat_id))]
+    objs = [dict(r) for r in conn.execute(
+        """SELECT DISTINCT l.id, l.title, l.price, l.deal, l.is_active, l.complex, l.district, l.street FROM listing_events e
+           JOIN messages m ON m.id = e.message_id JOIN listings l ON l.id = e.listing_id
+           WHERE m.source = ? AND m.chat_id = ? ORDER BY l.last_seen DESC LIMIT 20""", (source, chat_id))]
+    return {"messages": msgs, "listings": objs}

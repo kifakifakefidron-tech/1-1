@@ -230,7 +230,7 @@ def _poll_by_chats(conn, profile, source, profile_id, token, cursor) -> tuple[in
         old = False
         for c in batch:
             region.save_chat(conn, source, str(c.get("id") or c.get("chatId") or c.get("chat_id") or ""),
-                             c.get("name") or c.get("title") or c.get("chat_name"))
+                             c.get("name") or c.get("title") or c.get("chat_name"), _chat_link(source, c))
             last = _ts(c.get("last_timestamp") or c.get("last_time") or c.get("timestamp"))
             if last is not None and last < cursor - 300:
                 old = True
@@ -272,6 +272,21 @@ def _poll_by_chats(conn, profile, source, profile_id, token, cursor) -> tuple[in
     return added, received, newest
 
 
+def _chat_link(source: str, c: dict) -> str | None:
+    """Ссылка на чат: приглашение (если Wappi отдаёт) или публичный @username в Telegram."""
+    for k in ("invite_link", "inviteLink", "link", "url"):
+        v = c.get(k)
+        if isinstance(v, str) and v.startswith("http"):
+            return v
+    code = c.get("inviteCode") or c.get("invite_code")
+    if source == "wa" and isinstance(code, str) and code:
+        return f"https://chat.whatsapp.com/{code}"
+    user = c.get("username") or c.get("userName")
+    if source == "tg" and isinstance(user, str) and user:
+        return f"https://t.me/{user.lstrip('@')}"
+    return None
+
+
 def _chat_title(c: dict) -> str | None:
     for k in ("name", "title", "subject", "chat_name", "chatName", "formattedTitle"):
         v = c.get(k)
@@ -307,7 +322,7 @@ def refresh_chat_names(conn: sqlite3.Connection, every_h: int = 6) -> int | None
                 cid = str(c.get("id") or c.get("chatId") or c.get("chat_id") or "")
                 name = _chat_title(c)
                 if cid and name:
-                    region.save_chat(conn, source, cid, name)
+                    region.save_chat(conn, source, cid, name, _chat_link(source, c))
                     saved += 1
             if len(batch) < CHATS_PAGE:
                 break

@@ -6,7 +6,9 @@ import hashlib
 import hmac
 import html
 import json
+import logging
 import re
+import sqlite3
 import threading
 import time
 from collections import defaultdict, deque
@@ -23,6 +25,7 @@ from . import accounts, agent, config, db, geo, hooks, ingest, mailer, parser, p
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
+log = logging.getLogger("server")
 COOKIE = "strely_access"   # промокод для коллег (временно, потом уберём)
 SESSION = "s"              # вход в личный кабинет
 
@@ -753,12 +756,19 @@ def api_admin_chats(request: Request, body: dict | None = None):
     if err:
         return err
     conn = db.get()
-    if request.method == "POST":
-        body = body or {}
-        res = region.set_blocked(conn, str(body.get("source", ""))[:10], str(body.get("chat_id", ""))[:200],
-                                 bool(body.get("blocked")))
-        return JSONResponse({"ok": True, **res})
-    return JSONResponse({"items": region.chats_for_admin(conn)})
+    q = request.query_params
+    try:
+        if request.method == "POST":
+            body = body or {}
+            res = region.set_blocked(conn, str(body.get("source", ""))[:10], str(body.get("chat_id", ""))[:200],
+                                     bool(body.get("blocked")))
+            return JSONResponse({"ok": True, **res})
+        if q.get("chat_id"):
+            return JSONResponse(region.chat_preview(conn, q.get("source", ""), q.get("chat_id", "")))
+        return JSONResponse({"items": region.chats_for_admin(conn)})
+    except sqlite3.OperationalError:
+        log.exception("чаты: база занята")
+        return _err("Сайт сейчас обновляет базу — попробуйте ещё раз через минуту.", 503)
 
 
 def api_admin_edits(request: Request, body: dict | None = None):
@@ -843,4 +853,13 @@ routes = [
     Route("/photos/{id:int}/{name}", threaded(photo_file)),
 ]
 
-app = Starlette(routes=routes)
+async def _server_error(request: Request, exc: Exception):
+    """Любая непредвиденная ошибка — понятный ответ (а не «Ошибка 500») и подробности в журнал."""
+    log.error("ошибка %s %s", request.method, request.url.path, exc_info=exc)
+    if isinstance(exc, sqlite3.OperationalError) and "locked" in str(exc):
+        return _err("Сайт сейчас обновляет базу — попробуйте ещё раз через минуту.", 503)
+    return _err(f"Что-то пошло не так на сервере ({type(exc).__name__}). Попробуйте ещё раз; если повторится — "
+                f"пришлите скриншот.", 500)
+
+
+app = Starlette(routes=routes, exception_handlers={Exception: _server_error})

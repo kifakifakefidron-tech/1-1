@@ -544,7 +544,9 @@
   function sameHTML(o) {
     if (!o.same || !o.same.length) return "";
     const n = o.same.length;
-    return `<details class="d-same"><summary>Этот объект продают ещё ${n} ${plural(n, "агент", "агента", "агентов")}</summary>
+    return `<details class="d-same"><summary>Похожие объявления других агентов · ${n}</summary>
+      <p class="note">Тот же или очень похожий объект: совпадают ЖК/улица, этаж, комнаты и площадь.
+        Агенты описывают объекты по-разному — сверьте детали перед звонком.</p>
       <ul>${o.same.map((s) => `<li><button type="button" class="link" data-open-id="${s.id}">${esc(fmtPrice(s.price, o.deal))}</button>
         <span>${esc(s.title)} · ${esc(fmtAgo(s.last_seen))}</span></li>`).join("")}</ul></details>`;
   }

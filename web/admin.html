@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css?v=4">
-<link rel="stylesheet" href="/static/admin.css?v=2">
+<link rel="stylesheet" href="/static/admin.css?v=3">
 </head>
 <body>
 <header class="top">
@@ -67,13 +67,19 @@
     </section>
 
     <section data-pane="chats" hidden>
-      <p class="note">Из каких чатов берём объявления. «Не брать» — сообщения из чата перестают разбираться,
-        а объекты, которые присылали только туда, сразу пропадают с сайта. «Брать» — всё возвращается.
-        Чаты других городов (Сочи, Адлер, Сириус, Туапсе…) отключены автоматически.</p>
+      <p class="note">Переключатель справа: <b>включён</b> — берём объявления из чата, <b>выключен</b> — не берём
+        (объекты, которые были только оттуда, сразу пропадают с сайта; включите обратно — вернутся).
+        «Посмотреть» — последние сообщения и объекты чата прямо здесь. Чаты других городов отключены автоматически.</p>
       <form class="inline-form adm-search" id="chatSearch">
         <input id="chatQ" placeholder="Поиск по названию чата">
-        <select id="chatShow"><option value="">все</option><option value="on">берём</option><option value="off">не берём</option></select>
       </form>
+      <div class="chips chat-filter" id="chatShow">
+        <button type="button" class="chip on" data-show="">Все</button>
+        <button type="button" class="chip" data-show="on">Берём</button>
+        <button type="button" class="chip" data-show="off">Не берём</button>
+        <button type="button" class="chip" data-show="empty">Без объектов</button>
+      </div>
+      <div class="chat-toast" id="chatToast" hidden></div>
       <div class="adm-table-wrap"><table class="adm-table" id="chats"></table></div>
     </section>
 
@@ -83,6 +89,6 @@
     </section>
   </div>
 </main>
-<script src="/static/admin.js?v=3"></script>
+<script src="/static/admin.js?v=4"></script>
 </body>
 </html>

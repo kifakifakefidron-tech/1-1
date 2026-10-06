@@ -43,3 +43,12 @@ def test_admin_blocks_and_unblocks_chat(conn, add):
     assert search.search(conn, search.Query(), NOW, False)["total"] == 2
     chats = {c["name"]: c for c in region.chats_for_admin(conn)}
     assert chats["Спам-чат"]["listings"] == 1 and chats["Спам-чат"]["blocked"] == 0
+
+
+def test_chat_preview_and_counts(conn, add):
+    add(AD, chat="Риелторы")
+    cid = conn.execute("SELECT chat_id FROM messages").fetchone()[0]
+    p = region.chat_preview(conn, "wa", cid)
+    assert len(p["messages"]) == 1 and len(p["listings"]) == 1
+    assert region.set_blocked(conn, "wa", cid, True) == {"hidden": 1}
+    assert region.set_blocked(conn, "wa", cid, False) == {"returned": 1}
