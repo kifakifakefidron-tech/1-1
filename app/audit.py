@@ -6,10 +6,25 @@
 """
 from __future__ import annotations
 
+import re
 import sys
 
 from . import db, geo, region, rules
+from .textnorm import words
 from .ingest import _reindex, make_search_text, make_title
+
+
+def _complex_in(name: str, text: str) -> bool:
+    """ЖК назван в тексте: все значимые слова названия есть в тексте (с учётом окончаний), или строкой шапки."""
+    tw = f" {words(text)} "
+    # «DOGMA PARK (Догма парк)» — годится любое из написаний: снаружи или в скобках
+    for variant in [re.sub(r"\(.*?\)", " ", name), *re.findall(r"\((.*?)\)", name)]:
+        name_w = re.sub(r"^(?:жк|ж к)\s+", "", words(variant))
+        toks = [t for t in name_w.split() if len(t) >= 3 or t.isdigit()]
+        if toks and all(f" {t[:max(3, len(t) - 2)]}" in tw for t in toks):
+            return True
+    pl = geo.place_from_lines(text)
+    return bool(pl.get("complex") and geo.complex_key(pl["complex"].name) == geo.complex_key(name))
 
 
 def _show(title: str, n: int, examples: list[str] | None = None) -> None:
@@ -61,6 +76,20 @@ def run(fix: bool = False, conn=None) -> dict:
             cx_missing.append((r, rec))
     _show("объектов, где ЖК назван в тексте, но не проставлен", len(cx_missing),
           [f"{r['title']} → ЖК {rec.name}" for r, rec in cx_missing])
+    # ЖК, которого нет ни в одном сообщении этого объекта (раньше приклеивался при склейке дублей
+    # или нейросеть «угадывала») — снимаем, чтобы объект не показывался в чужом ЖК
+    cx_wrong = []
+    for r in act:
+        if not r["complex"] or r["source"] != "chat":
+            continue
+        texts = [r["fragment"] or "", r["description"] or ""] + [m[0] for m in conn.execute(
+            """SELECT m.text FROM listing_events e JOIN messages m ON m.id = e.message_id
+               WHERE e.listing_id = ? LIMIT 30""", (r["id"],))]
+        if not any(_complex_in(r["complex"], t) for t in texts):
+            cx_wrong.append(r)
+    _show("объектов с ЖК, которого нет в тексте объявлений", len(cx_wrong),
+          [f"{r['title']} · ЖК {r['complex']}" for r in cx_wrong])
+    out["complex_wrong"] = len(cx_wrong)
     groups = conn.execute("""SELECT cxkey(complex) k, COUNT(DISTINCT complex) v, GROUP_CONCAT(DISTINCT complex) names
                              FROM listings WHERE is_active = 1 AND complex IS NOT NULL GROUP BY k HAVING v > 1""").fetchall()
     print(f"  ✓ разные написания одного ЖК теперь считаются одним ЖК: {len(groups)} групп")
@@ -147,6 +176,15 @@ def run(fix: bool = False, conn=None) -> dict:
             _reindex(conn, r["id"], d["search_text"])
         for r in bad_d:
             conn.execute("UPDATE listings SET district = ? WHERE id = ?", (geo.canonical_district(r["district"]), r["id"]))
+        for r in cx_wrong:
+            rec = geo.resolve_complex(r["complex"])
+            # район, взятый из этого ЖК, тоже снимаем — если он не назван в тексте сам
+            drop_d = rec and rec.district == r["district"] and not geo.find_district_in_text(r["fragment"] or "")
+            d = {**dict(r), "complex": None, "district": None if drop_d else r["district"]}
+            d["search_text"] = make_search_text(d)
+            conn.execute("UPDATE listings SET complex = NULL, district = ?, search_text = ?, geo_status = 'pending' "
+                         "WHERE id = ?", (d["district"], d["search_text"], r["id"]))
+            _reindex(conn, r["id"], d["search_text"])
         for r, d in no_d:
             st = make_search_text({**dict(r), "district": d})
             conn.execute("UPDATE listings SET district = ?, search_text = ? WHERE id = ?", (d, st, r["id"]))

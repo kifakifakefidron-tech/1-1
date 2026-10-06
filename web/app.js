@@ -290,12 +290,12 @@
   function badgesHTML(o) {
     const now = loadedAt || Date.now() / 1000;
     const b = [];
-    if (o.first_seen > now - 86400) b.push(`<span class="badge new">Новое</span>`);
+    if (o.first_seen > now - 86400) b.push(`<span class="mark new">Новое</span>`);
     if (o.prev_price && o.price && o.prev_price > o.price && o.price_changed_at > now - 14 * 86400) {
-      b.push(`<span class="badge down">↓ ${esc(fmtShortPrice(o.prev_price - o.price, o.deal))}</span>`);
+      b.push(`<span class="mark down">Цена ↓ ${esc(fmtShortPrice(o.prev_price - o.price, o.deal))}</span>`);
     }
-    if (o.market_diff != null) b.push(`<span class="badge good">ниже рынка на ${Math.abs(o.market_diff)}%</span>`);
-    return b.length ? `<div class="badges">${b.join("")}</div>` : "";
+    if (o.market_diff != null) b.push(`<span class="mark good">ниже рынка на ${Math.abs(o.market_diff)}%</span>`);
+    return b.length ? `<div class="marks">${b.join("")}</div>` : "";
   }
 
   function itemHTML(o) {
@@ -559,11 +559,20 @@
 
   // Поделиться: на телефоне — системное меню (WhatsApp, Telegram…), на компьютере — копируем ссылку
   async function share(url, title) {
-    if (navigator.share) {
-      try { await navigator.share({ url, title }); return; } catch (e) { if (e && e.name === "AbortError") return; }
+    let copied = false;
+    try { await navigator.clipboard.writeText(url); copied = true; } catch { /* нет доступа к буферу */ }
+    if (!copied) {   // старые браузеры: копируем через скрытое поле
+      const ta = document.createElement("textarea");
+      ta.value = url; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;opacity:0";
+      document.body.appendChild(ta); ta.select();
+      try { copied = document.execCommand("copy"); } catch { /* нет */ }
+      ta.remove();
     }
-    try { await navigator.clipboard.writeText(url); toast("Ссылка скопирована — вставьте её в WhatsApp"); }
-    catch { prompt("Скопируйте ссылку:", url); }
+    toast(copied ? "Ссылка скопирована — вставьте её в чат" : "Не получилось скопировать");
+    // На телефоне сразу предлагаем отправить (WhatsApp, Telegram…)
+    if (navigator.share && window.matchMedia("(pointer: coarse)").matches) {
+      try { await navigator.share({ url, title }); } catch { /* закрыли меню */ }
+    }
   }
 
   async function watchSearch() {
@@ -715,9 +724,22 @@
 
   const known = new Map();  // объекты, которые уже пришли списком/картой — для мгновенного открытия
   let openedId = 0;
-  async function openDetail(id) {
-    openedId = id;
+  // Переходы между объектами внутри окна («продают ещё N агентов») — со стрелкой «Назад»
+  let detailStack = [];
+  function setOpenParam(id) {
+    const sp = new URLSearchParams(location.search);
+    if (id) sp.set("open", id); else sp.delete("open");
+    const s = sp.toString();
+    history.replaceState(null, "", s ? `?${s}` : location.pathname);
+  }
+
+  async function openDetail(id, opts = {}) {
     const dlg = $("detail");
+    if (opts.push && openedId && dlg.open && openedId !== id) detailStack.push(openedId);
+    if (!dlg.open) detailStack = [];
+    openedId = id;
+    $("detailBack").hidden = !detailStack.length;
+    setOpenParam(id);
     $("detailBody").innerHTML = `<p class="d-place">Загрузка…</p>`;
     // Сразу показываем то, что уже знаем (фото, цена, описание), номер и история догрузятся
     const pre = known.get(id);
@@ -983,7 +1005,7 @@
         share(`${location.origin}/?open=${t.dataset.share}`, o ? `${o.title} — ${fmtPrice(o.price, o.deal)}` : "Объект на 1+1");
         return;
       }
-      if (t.dataset.openId) { openDetail(Number(t.dataset.openId)); return; }
+      if (t.dataset.openId) { openDetail(Number(t.dataset.openId), { push: true }); return; }
       if (t.dataset.unsave) { call("/api/saved", { id: Number(t.dataset.unsave) }, "DELETE").then(loadSaved); return; }
       if (t.dataset.retry) { openDetail(Number(t.dataset.retry)); return; }
       if (t.hasAttribute("data-refresh-list")) { closeDlg($("detail")); reloadList(); return; }
@@ -1130,6 +1152,11 @@
 
     const detail = $("detail");
     $("closeDetail").addEventListener("click", () => closeDlg(detail));
+    $("detailBack").addEventListener("click", () => {
+      const prev = detailStack.pop();
+      if (prev) openDetail(prev);
+    });
+    detail.addEventListener("close", () => { detailStack = []; openedId = 0; setOpenParam(null); });
 
     $("accountBtn").addEventListener("click", () => (me() ? renderCabinet() : openLogin()));
 

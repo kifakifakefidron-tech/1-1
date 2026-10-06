@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import sqlite3
 import statistics
 import threading
@@ -18,6 +19,7 @@ import time
 import urllib.parse
 
 from . import config, db, geo
+from .textnorm import words
 
 log = logging.getLogger(__name__)
 DAY = 86400
@@ -87,24 +89,41 @@ def annotate(conn: sqlite3.Connection, items: list[dict]) -> list[dict]:
 
 
 # ─── «продают ещё N агентов» ───────────────────────────────────────────────
+def _norm_street(v: str | None) -> str | None:
+    w = words(v or "")
+    w = re.sub(r"\b(?:ул|улица|пр кт|проспект|пер|переулок|проезд|бульвар|б р|шоссе)\b", " ", w)
+    return " ".join(w.split()) or None
+
+
 def same_elsewhere(conn: sqlite3.Connection, row: sqlite3.Row, limit: int = 10) -> list[dict]:
-    """Похожие карточки других агентов: тот же тип, сделка, комнаты, площадь ±1 м², этаж и ЖК/улица."""
-    if row["area"] is None or not (row["complex"] or row["street"]):
+    """Тот же объект у других агентов. Строго: тот же тип, сделка, комнаты, этаж, площадь ±1 м²,
+    и место совпадает — улица (если указана у обоих) и ЖК (если указан у обоих); хотя бы одно из них есть."""
+    if row["area"] is None or row["floor"] is None or not (row["complex"] or row["street"]):
         return []
     phones = set(json.loads(row["phones"] or "[]"))
     rows = conn.execute(
-        """SELECT id, price, title, last_seen, phones, source, complex, street FROM listings
+        """SELECT id, price, title, last_seen, phones, complex, street, house FROM listings
            WHERE is_active = 1 AND id != ? AND deal = ? AND type IN (?, ?) AND area BETWEEN ? AND ?
-             AND (rooms IS ? OR rooms = ?) AND (floor IS NULL OR ? IS NULL OR floor = ?)
-           LIMIT 50""",
+             AND rooms IS ? AND floor = ?
+             AND (district IS NOT NULL OR complex IS NOT NULL OR street IS NOT NULL OR settlement IS NOT NULL)
+           LIMIT 100""",
         (row["id"], row["deal"], row["type"], "new" if row["type"] == "flat" else row["type"],
-         row["area"] - 1, row["area"] + 1, row["rooms"], row["rooms"], row["floor"], row["floor"])).fetchall()
-    out = []
+         row["area"] - 1, row["area"] + 1, row["rooms"], row["floor"])).fetchall()
     key = geo.complex_key(row["complex"]) if row["complex"] else None
+    street = _norm_street(row["street"])
+    out = []
     for r in rows:
-        same_place = (key and r["complex"] and geo.complex_key(r["complex"]) == key) or \
-                     (row["street"] and r["street"] and r["street"].lower() == row["street"].lower())
-        if not same_place or (phones & set(json.loads(r["phones"] or "[]"))):
+        r_key = geo.complex_key(r["complex"]) if r["complex"] else None
+        r_street = _norm_street(r["street"])
+        if key and r_key and key != r_key:
+            continue
+        if street and r_street and street != r_street:
+            continue
+        if row["house"] and r["house"] and words(row["house"]) != words(r["house"]):
+            continue
+        if not ((key and r_key) or (street and r_street)):   # место должно совпасть хоть по чему-то
+            continue
+        if phones & set(json.loads(r["phones"] or "[]")):
             continue
         out.append({"id": r["id"], "price": r["price"], "title": r["title"], "last_seen": r["last_seen"]})
     out.sort(key=lambda x: (x["price"] is None, x["price"] or 0))

@@ -434,11 +434,13 @@ dialog::backdrop { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px
 dialog.detail { contain: layout paint; overscroll-behavior: contain; }
 
 /* ─── фишки: отметки, рынок, другие агенты, заметки, подписки ──────────── */
-.badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.badge { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--chip); color: var(--ink); }
-.badge.new { background: var(--ink); color: var(--on-accent); }
-.badge.down { background: #ffd27a; color: #3b2a00; }
-.badge.good { background: rgba(140, 230, 170, .22); color: #c9f5d6; }
+.marks { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; }
+.mark { position: static; font-size: 12px; line-height: 1.5; font-weight: 600; padding: 1px 9px; border-radius: 999px;
+  background: var(--chip); color: var(--ink); white-space: nowrap; }
+.mark.new { background: var(--ink); color: var(--on-accent); }
+.mark.down { background: #ffd27a; color: #3b2a00; }
+.mark.good { background: rgba(140, 230, 170, .22); color: #c9f5d6; }
+.d-back { font-size: 20px; font-weight: 600; }
 .bar-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; width: 100%; }
 .bar-tools .chip { font-size: 13px; padding: 5px 12px; }
 .bar-tools .reset-chip { border-color: var(--ink); color: var(--ink); font-weight: 600; }

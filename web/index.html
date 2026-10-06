@@ -14,7 +14,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
 <link rel="stylesheet" href="/static/style.css?v=10">
-<link rel="stylesheet" href="/static/motion.css?v=12">
+<link rel="stylesheet" href="/static/motion.css?v=13">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -191,6 +191,7 @@
 <dialog id="detail" class="detail" aria-labelledby="dTitle">
   <span class="grab" aria-hidden="true"></span>
   <div class="d-tools">
+    <button type="button" class="d-iconbtn d-back" id="detailBack" hidden aria-label="Назад к предыдущему объекту">←</button>
     <button type="button" class="fav-btn d-iconbtn" id="detailFav" data-fav="" aria-label="В избранное"></button>
     <button class="close" id="closeDetail" aria-label="Закрыть">✕</button>
   </div>
@@ -258,7 +259,7 @@
   <div class="dlg-body" id="agentBody"></div>
 </dialog>
 
-<script src="/static/app.js?v=19"></script>
+<script src="/static/app.js?v=20"></script>
 <script src="/static/agent.js?v=1"></script>
 </body>
 </html>

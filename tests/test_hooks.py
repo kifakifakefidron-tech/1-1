@@ -94,3 +94,14 @@ def test_new_today_filter(env):
     _add(conn, "2-к квартира 50 м², 3/9 эт., ФМР. 6 млн руб. 89180000001", ts=NOW - 5 * 86400)
     _add(conn, "1-к квартира 35 м², 3/9 эт., ФМР. 4 млн руб. 89180000002", ts=NOW)
     assert search.search(conn, search.Query(new_days=1), NOW, False)["total"] == 1
+
+
+def test_share_link_preview_and_strict_same(env):
+    c, conn = env
+    a = _add(conn, "2-к квартира 50 м², 3/9 эт., ЖК Мозаика, ул. Тургенева 10. 6 млн руб. 89180000001")
+    _add(conn, "2-к квартира 50 м², 3/9 эт., ЖК Мозаика, ул. Тургенева 10. 6,1 млн руб. 89180000002")
+    _add(conn, "2-к квартира 50 м², 3/9 эт., ЖК Мозаика, ул. Красная 5. 6,2 млн руб. 89180000003")   # другая улица
+    _add(conn, "2-к квартира 50 м², ЖК Мозаика, ул. Тургенева 10. 6,3 млн руб. 89180000004")          # этаж не указан
+    assert [s["price"] for s in c.get(f"/api/listings/{a}").json()["same"]] == [6_100_000]
+    page = c.get(f"/?open={a}").text
+    assert 'og:title' in page and "6 млн ₽" in page and "8918" not in page

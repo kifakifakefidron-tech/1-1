@@ -93,6 +93,11 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   «Узнать подробности» убрана: у фида телефон FEED_PHONE, виден только с подпиской; история сообщений,
   «присылали N раз» — только админу; геокодер для Краснодара ограничен CITY_BOX (viewbox+bounded);
   worker один раз запускает `audit.run(fix=True)` (state audit_fix).
+- «Похожие у других агентов» (hooks.same_elsewhere): обязательно этаж, комнаты, площадь ±1, и совпадение
+  ЖК/улицы/дома там, где указаны у обоих. Склейка дублей: разные улицы = разные объекты.
+  audit: ЖК, которого нет ни в одном сообщении объекта, снимается (audit_fix=4 — один раз при запуске worker).
+  Ссылка /?open=id отдаёт og:title/og:image (превью в мессенджерах); окно объекта держит ?open= в адресе и
+  стек «← Назад» (detailStack в app.js). Отметки карточки — класс .mark (не .badge: тот — счётчик в шапке).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

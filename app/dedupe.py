@@ -67,7 +67,7 @@ def same_object(o: ParsedObject, row: sqlite3.Row) -> tuple[bool, str]:
 
     # Явные различия — это разные объекты (две квартиры в одном доме).
     for k, v in (("комнаты", rooms), ("этаж", floor), ("площадь", area), ("участок", land),
-                 ("ЖК", cx), ("район", district), ("дом", house if street else None)):
+                 ("ЖК", cx), ("район", district), ("улица", street), ("дом", house if street else None)):
         if v is False:
             return False, f"разные: {k}"
 

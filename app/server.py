@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import html
 import json
 import re
 import threading
@@ -135,9 +136,41 @@ def query_from(request: Request) -> search.Query:
     return search.query_from_params(request.query_params)
 
 
+def _price_text(price, deal) -> str:
+    if not price:
+        return "цена не указана"
+    if deal == "rent":
+        return f"{price:,} ₽/мес".replace(",", " ")
+    return f"{price / 1e6:.2f}".rstrip("0").rstrip(".").replace(".", ",") + " млн ₽"
+
+
 def index(request: Request, body: dict | None = None):
     # no-cache: после обновления сайта браузер сразу берёт новую страницу (и новые ?v= у стилей/скриптов)
-    return FileResponse(WEB / "index.html", headers={"Cache-Control": "no-cache"})
+    headers = {"Cache-Control": "no-cache"}
+    oid = _num(request.query_params.get("open"), int)
+    if not oid:
+        return FileResponse(WEB / "index.html", headers=headers)
+    # Ссылка на объект («Поделиться»): превью в WhatsApp/Telegram — название, цена, место, фото. Без телефонов.
+    html_text = (WEB / "index.html").read_text(encoding="utf-8")
+    r = db.get().execute("SELECT * FROM listings WHERE id = ?", (oid,)).fetchone()
+    if r is not None:
+        place = " · ".join(x for x in (f"ЖК {r['complex']}" if r["complex"] else None, r["district"],
+                                       f"ул. {r['street']}" if r["street"] else None) if x)
+        title = f"{r['title']} — {_price_text(r['price'], r['deal'])}"
+        photos = json.loads(r["photos"] or "[]")
+        img = photos[0] if photos else "/static/favicon.svg"
+        if img.startswith("/"):
+            img = config.SITE_URL + img
+        esc = lambda v: html.escape(str(v), quote=True)  # noqa: E731
+        meta = (f'<meta property="og:type" content="website">'
+                f'<meta property="og:title" content="{esc(title)}">'
+                f'<meta property="og:description" content="{esc(place or "Объект на 1+1")}">'
+                f'<meta property="og:image" content="{esc(img)}">'
+                f'<meta property="og:url" content="{esc(config.SITE_URL)}/?open={oid}">'
+                f'<meta property="og:site_name" content="1+1 · поиск объектов">')
+        html_text = html_text.replace("<title>1+1 · поиск объектов</title>",
+                                      f"<title>{esc(title)} · 1+1</title>{meta}", 1)
+    return Response(html_text, media_type="text/html; charset=utf-8", headers=headers)
 
 
 def _page(name: str) -> Response:

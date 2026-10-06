@@ -122,7 +122,14 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         owned = bool(cur_d.get("owner_user_id"))
         if ts >= cur_d["last_seen"] and d["price"] and ts > (cur_d.get("owner_edited_at") or 0):
             merged["price"] = d["price"]
-        if not owned and len(d["description"] or "") > len(cur_d["description"] or "") * 1.2:
+        # Описание берём более полное, но не теряем то, где назван ЖК/улица карточки
+        # (иначе в карточке «ЖК Мечта», а в описании про ЖК ни слова)
+        def mentions(desc: str | None) -> int:
+            w = words(desc or "")
+            return sum(1 for v in (merged.get("complex"), merged.get("street")) if v and words(v) and words(v) in w)
+        if not owned and (mentions(d["description"]) > mentions(cur_d["description"]) or (
+                mentions(d["description"]) == mentions(cur_d["description"])
+                and len(d["description"] or "") > len(cur_d["description"] or "") * 1.2)):
             merged["description"] = d["description"]
         # Агент отметил «продано» — повторы старого поста объект не возвращают (только новый пост через 3 дня)
         active = 0 if cur_d.get("sold_at") and ts < cur_d["sold_at"] + 3 * 86400 else 1
