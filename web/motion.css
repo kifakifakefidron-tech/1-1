@@ -225,3 +225,116 @@ dialog::backdrop { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px
   html { scroll-behavior: auto; }
 }
 .more-results { min-height: 1px; }
+
+/* ═══ Стиль Apple: шапка, логотип, пружинные окна, избранное (v5) ═══════════ */
+:root { --spring: cubic-bezier(.32, .72, 0, 1); }   /* кривая «как у iOS» */
+
+/* ─── шапка-меню: прозрачное стекло, уплотняется при прокрутке ─────────── */
+.nav { position: sticky; top: 0; z-index: 40; background: rgba(3, 83, 82, .62);
+  backdrop-filter: saturate(1.8) blur(20px); -webkit-backdrop-filter: saturate(1.8) blur(20px);
+  border-bottom: 1px solid transparent; transition: background-color .35s var(--ease), border-color .35s var(--ease); }
+.nav.scrolled { background: rgba(3, 83, 82, .84); border-bottom-color: var(--line); }
+.nav-in { max-width: 1240px; margin: 0 auto; padding: 12px 16px; display: flex; align-items: center; gap: 18px;
+  transition: padding .35s var(--ease); }
+.nav.scrolled .nav-in { padding-top: 8px; padding-bottom: 8px; }
+.brand { display: flex; align-items: center; gap: 12px; color: var(--ink); text-decoration: none; font: inherit; letter-spacing: 0; }
+.brand .logo { width: 42px; height: 42px; flex: 0 0 auto; transition: transform .45s var(--spring), width .35s var(--ease), height .35s var(--ease); }
+.nav.scrolled .brand .logo { width: 36px; height: 36px; }
+.brand:hover .logo { transform: rotate(-4deg) scale(1.04); }
+.brand-text { display: grid; line-height: 1.05; }
+.brand-name { font: 600 22px var(--head); letter-spacing: .04em; }
+.brand-sub { color: var(--ink-3); font-size: 12px; flex: none; }
+.nav-links { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.nav-link { position: relative; border: 0; background: none; color: var(--ink-2); text-decoration: none;
+  padding: 9px 15px; border-radius: 999px; font: 500 14px var(--body); }
+.nav-link:hover { color: var(--ink); background: var(--chip); }
+.nav-link.on { color: var(--ink); background: rgba(243, 232, 188, .14); }
+.nav-badge { display: inline-block; min-width: 18px; height: 18px; margin-left: 6px; padding: 0 5px; border-radius: 9px;
+  background: var(--ink); color: var(--on-accent); font: 600 11px/18px var(--body); font-style: normal; text-align: center; }
+.nav-cta { margin-left: 6px; border: 0; border-radius: 999px; padding: 10px 20px; background: var(--ink); color: var(--on-accent);
+  font: 600 14px var(--body); box-shadow: 0 6px 18px rgba(0, 0, 0, .18); }
+.nav-cta:hover { background: var(--hover); transform: translateY(-1px); }
+.nav-cta.on { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-2); }
+
+/* ─── логотип: стены «прорисовываются», затем появляется 1+1 ──────────── */
+.logo .walls path { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 1s var(--ease) forwards; }
+.logo .walls path:nth-child(2) { animation-delay: .35s; }
+.logo .walls path:nth-child(3) { animation-delay: .45s; }
+.logo .walls path:nth-child(4) { animation-delay: .55s; }
+.logo .walls path:nth-child(5) { animation-delay: .62s; }
+.logo .walls path:nth-child(6) { animation-delay: .7s; }
+.logo-txt { font: 600 18px var(--head); fill: currentColor; opacity: 0; transform-origin: 27px 50px;
+  animation: logoTxt .6s var(--spring) .85s forwards; }
+.logo.redraw .walls path { animation: draw .8s var(--ease) forwards; }
+.logo.redraw .logo-txt { animation: logoTxt .5s var(--spring) .4s both; }
+@keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes logoTxt { from { opacity: 0; transform: scale(.6) translateY(6px); } to { opacity: 1; transform: none; } }
+.dlg-logo { width: 56px; height: 56px; margin-bottom: 10px; color: var(--ink); }
+.dlg-logo .logo { width: 100%; height: 100%; }
+
+/* ─── появление страницы: элементы мягко «всплывают» по очереди ────────── */
+.search, .filters, .bar { animation: riseIn .7s var(--spring) both; }
+.filters { animation-delay: .08s; }
+.bar { animation-delay: .16s; }
+@keyframes riseIn { from { opacity: 0; transform: translateY(14px); } }
+
+/* ─── сердце избранного ──────────────────────────────────────────────── */
+.fav-btn { display: grid; place-items: center; }
+.fav-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linejoin: round;
+  transition: fill .25s var(--ease), stroke .25s var(--ease), transform .3s var(--spring); }
+.fav-btn.on svg { fill: #ff8a7a; stroke: #ff8a7a; }
+.fav-btn:hover svg { transform: scale(1.12); }
+.fav-btn.pop { animation: heartPop .6s var(--spring); }
+@keyframes heartPop { 0% { transform: scale(1); } 25% { transform: scale(.78); } 55% { transform: scale(1.28); } 100% { transform: scale(1); } }
+.spark { position: fixed; z-index: 200; width: 7px; height: 7px; border-radius: 50%; pointer-events: none; }
+
+/* окно объекта: «избранное» и «закрыть» — справа сверху, всегда под рукой */
+.d-tools { position: sticky; top: 12px; z-index: 3; float: right; display: flex; gap: 8px; margin: 12px 12px 0 0; }
+.d-tools .close { position: static; float: none; margin: 0; }
+.d-iconbtn { position: static; width: 38px; height: 38px; border-radius: 50%; border: 0; background: var(--chip); color: var(--ink); }
+.d-iconbtn svg { width: 19px; height: 19px; }
+.d-iconbtn:empty { visibility: hidden; }
+
+/* ─── окна: пружинное появление и размытие фона (компьютер) ──────────── */
+@media (min-width: 641px) {
+  dialog[open] { animation: dlgSpring .5s var(--spring); }
+  dialog[open]::backdrop { animation: fadeIn .4s var(--ease); }
+  dialog::backdrop { background: rgba(0, 20, 20, .45); backdrop-filter: blur(10px) saturate(1.2); -webkit-backdrop-filter: blur(10px) saturate(1.2); }
+  dialog.closing { animation: dlgAway .24s var(--ease-in) forwards; }
+  @keyframes dlgSpring { from { opacity: 0; transform: translateY(24px) scale(.94); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+  @keyframes dlgAway { to { opacity: 0; transform: translateY(10px) scale(.97); filter: blur(2px); } }
+  .item:hover { transform: translateY(-4px); box-shadow: 0 18px 40px rgba(0, 20, 20, .32); }
+}
+@media (max-width: 640px) {
+  dialog[open] { animation: sheetUp .5s var(--spring); }
+  .d-tools { margin-top: 18px; }
+}
+
+/* ─── переключение «Объекты ↔ Карта» — плавное перетекание ─────────────── */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .35s; animation-timing-function: var(--ease); }
+
+/* ─── телефон: шапка простая, разделы — в нижней панели ───────────────── */
+@media (max-width: 640px) {
+  .nav { position: relative; background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; border: 0; }
+  .nav-in { padding: 14px 16px 4px; }
+  .nav-links, .brand-sub { display: none; }
+  .brand .logo { width: 38px; height: 38px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo .walls path { stroke-dashoffset: 0; }
+  .logo-txt { opacity: 1; }
+}
+
+/* ─── кабинет администратора: сводка ─────────────────────────────────── */
+.cab-admin { display: grid; gap: 12px; padding: 14px; border-radius: 18px; background: var(--chip); }
+.cab-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.cab-tile { background: var(--paper); border-radius: 12px; padding: 10px 12px; display: grid; gap: 2px;
+  animation: riseIn .5s var(--spring) both; }
+.cab-tile b { font: 600 22px var(--head); }
+.cab-tile span { color: var(--ink-3); font-size: 11.5px; line-height: 1.25; }
+.cab-tile.warn b { color: #ffb3a7; }
+.cab-stats .skel { min-height: 58px; border-radius: 12px; overflow: hidden; }
+.cab-stats .skel i { height: 100%; min-height: 58px; border-radius: 12px; }
+.cab-admin .pill { text-align: center; text-decoration: none; }
+@media (max-width: 640px) { .cab-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

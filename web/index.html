@@ -7,21 +7,39 @@
 <meta name="mobile-web-app-capable" content="yes">
 <title>1+1 · поиск объектов</title>
 <meta name="theme-color" content="#035352">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
-<link rel="stylesheet" href="/static/style.css?v=8">
-<link rel="stylesheet" href="/static/motion.css?v=4">
+<link rel="stylesheet" href="/static/style.css?v=9">
+<link rel="stylesheet" href="/static/motion.css?v=5">
 </head>
 <body>
-<header class="top">
-  <a class="brand" href="/" aria-label="1+1 — на главную">1<span aria-hidden="true">+</span>1</a>
-  <span class="brand-sub">вторичка и новостройки Краснодара из риелторских чатов</span>
-  <div class="top-actions">
-    <button class="access-btn ghost-btn" id="favBtn" hidden>♡ Избранное</button>
-    <button class="access-btn" id="accountBtn">Войти</button>
+<header class="nav" id="nav">
+  <div class="nav-in">
+    <a class="brand" href="/" id="brand" aria-label="1+1 — на главную">
+    <svg class="logo" viewBox="0 0 100 100" aria-hidden="true">
+      <g class="walls" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+        <path pathLength="1" d="M4 40V4h92v92H4V60"/>
+        <path pathLength="1" d="M49 4v12"/>
+        <path pathLength="1" d="M49 27v13h47"/>
+        <path pathLength="1" d="M49 59h13"/>
+        <path pathLength="1" d="M72 59h24"/>
+        <path pathLength="1" d="M49 59v37"/>
+      </g>
+      <text class="logo-txt" x="27" y="56.5" text-anchor="middle">1+1</text>
+    </svg>
+      <span class="brand-text"><b class="brand-name">1+1</b><span class="brand-sub">поиск объектов Краснодара</span></span>
+    </a>
+    <nav class="nav-links" aria-label="Разделы">
+      <button type="button" class="nav-link on" data-tab="list">Объекты</button>
+      <button type="button" class="nav-link" data-tab="map">Карта</button>
+      <button type="button" class="nav-link" data-tab="fav" id="favBtn">Избранное</button>
+      <a class="nav-link" href="/admin" id="adminLink" hidden>Админка</a>
+      <button type="button" class="nav-cta" id="accountBtn">Войти</button>
+    </nav>
   </div>
 </header>
 
@@ -161,13 +179,27 @@
 
 <dialog id="detail" class="detail" aria-labelledby="dTitle">
   <span class="grab" aria-hidden="true"></span>
-  <button class="close" id="closeDetail" aria-label="Закрыть">✕</button>
+  <div class="d-tools">
+    <button type="button" class="fav-btn d-iconbtn" id="detailFav" data-fav="" aria-label="В избранное"></button>
+    <button class="close" id="closeDetail" aria-label="Закрыть">✕</button>
+  </div>
   <div id="detailBody"></div>
 </dialog>
 
 <dialog id="loginDlg" class="small-dlg" aria-labelledby="loginTitle">
   <span class="grab" aria-hidden="true"></span>
   <div class="dlg-body">
+    <div class="dlg-logo"><svg class="logo" viewBox="0 0 100 100" aria-hidden="true">
+      <g class="walls" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+        <path pathLength="1" d="M4 40V4h92v92H4V60"/>
+        <path pathLength="1" d="M49 4v12"/>
+        <path pathLength="1" d="M49 27v13h47"/>
+        <path pathLength="1" d="M49 59h13"/>
+        <path pathLength="1" d="M72 59h24"/>
+        <path pathLength="1" d="M49 59v37"/>
+      </g>
+      <text class="logo-txt" x="27" y="56.5" text-anchor="middle">1+1</text>
+    </svg></div>
     <h2 id="loginTitle">Вход на 1+1</h2>
     <p class="note" id="loginLead">Номера агентов открываются после входа.</p>
     <div class="login-opts">
@@ -202,6 +234,6 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
-<script src="/static/app.js?v=10"></script>
+<script src="/static/app.js?v=11"></script>
 </body>
 </html>

@@ -180,6 +180,7 @@
     }
   }
   const me = () => meta.me || null;
+  const HEART = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.3s-7.6-4.7-9.3-9.6C1.5 7.1 4 3.9 7.4 3.9c2 0 3.6 1.2 4.6 2.8 1-1.6 2.6-2.8 4.6-2.8 3.4 0 5.9 3.2 4.7 6.8-1.7 4.9-9.3 9.6-9.3 9.6z"/></svg>`;
   const fmtDay = (ts) => new Date(ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
 
   // ─── отрисовка фильтров ─────────────────────────────────────────────────
@@ -291,7 +292,7 @@
     const addr = address(o);
     return `<li class="item${photo ? " has-photo" : ""}" tabindex="0" data-id="${o.id}">
       ${photo}
-      <button type="button" class="fav-btn${fav ? " on" : ""}" data-fav="${o.id}" aria-label="${fav ? "Убрать из избранного" : "В избранное"}">${fav ? "♥" : "♡"}</button>
+      <button type="button" class="fav-btn${fav ? " on" : ""}" data-fav="${o.id}" aria-label="${fav ? "Убрать из избранного" : "В избранное"}">${HEART}</button>
       ${headline(o) || strely ? `<h3 class="item-head">${esc(headline(o))}${strely}</h3>` : ""}
       <div class="item-price"><div class="price">${esc(fmtPrice(o.price, o.deal))}</div>${m2}</div>
       <div class="item-title">${esc(o.title)}${tag}</div>
@@ -463,7 +464,6 @@
     const fav = !!o.favorite;
     return `
       ${gallery}
-      <button type="button" class="fav-btn d-fav${fav ? " on" : ""}" data-fav="${o.id}">${fav ? "♥ В избранном" : "♡ В избранное"}</button>
       <h2 class="d-title" id="dTitle">${esc(headline(o) || o.title)}</h2>
       <p class="d-place">${esc([headline(o) ? o.title : "", address(o)].filter(Boolean).join(" · "))}</p>
       <p class="d-price">${esc(fmtPrice(o.price, o.deal))}</p>
@@ -619,7 +619,7 @@
 
   // ─── нижняя панель (телефон) ────────────────────────────────────────────
   function setTab(tab) {
-    document.querySelectorAll(".tabbar [data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+    document.querySelectorAll(".tabbar [data-tab], .nav-links [data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
   }
 
   let openedId = 0;
@@ -633,6 +633,11 @@
     if (openedId !== id) return;  // пока грузилось, открыли другой объект
     if (r.ok) {
       $("detailBody").innerHTML = detailHTML(r.data);
+      const fb = $("detailFav");
+      if (!fb.innerHTML) fb.innerHTML = HEART;
+      fb.dataset.fav = id;
+      fb.classList.toggle("on", !!r.data.favorite);
+      fb.setAttribute("aria-label", r.data.favorite ? "Убрать из избранного" : "В избранное");
     } else if (r.status === 404) {
       $("detailBody").innerHTML = `<p class="d-place">Этот объект уже сняли с продажи или обновили. Обновите список — он покажет актуальное.</p>
         <button type="button" class="pill" data-refresh-list>Обновить список</button>`;
@@ -649,9 +654,9 @@
     $("accountBtn").textContent = u ? "Кабинет" : "Войти";
     $("accountBtn").classList.toggle("on", !!u);
     $("tabAccount").textContent = u ? "Кабинет" : "Войти";
-    $("favBtn").hidden = false;
     const n = u ? u.favorites.length : 0;
-    $("favBtn").textContent = `♡ Избранное${n ? " · " + n : ""}`;
+    $("favBtn").innerHTML = `Избранное${n ? `<i class="nav-badge">${n}</i>` : ""}`;
+    $("adminLink").hidden = !(u && u.is_admin);
     $("favBadge").hidden = !n;
     $("favBadge").textContent = n;
     $("optoutLink").hidden = !meta.bot;
@@ -742,9 +747,11 @@
     const pay = u.is_admin ? "" : `<div class="cab-row"><div><b>Подписка</b><br><span class="note">${meta.price} ₽ за ${meta.period_days} дней</span></div>
       ${meta.payments ? `<button type="button" class="pill" data-pay>Оплатить</button>` : `<span class="note">Оплата появится скоро</span>`}</div>`;
     $("cabinetBody").innerHTML = `
-      <h2 id="cabTitle">Личный кабинет</h2>
+      <h2 id="cabTitle">${u.is_admin ? "Кабинет администратора" : "Личный кабинет"}</h2>
       <p class="note">${esc(who)}</p>
       <p>${status}</p>${views}
+      ${u.is_admin ? `<div class="cab-admin" id="cabAdmin"><div class="cab-stats">${"<div class=\"skel\"><i></i></div>".repeat(6)}</div>
+        <a class="pill wide" href="/admin">Открыть админку →</a></div>` : ""}
       ${confirm}
       ${pay}
       <form class="inline-form" id="promoForm">
@@ -759,6 +766,21 @@
         <button type="button" class="pill light" data-close>Закрыть</button>
       </div>`;
     openDlg($("cabinetDlg"));
+    if (u.is_admin) loadAdminStats();
+  }
+
+  // Сводка для администратора прямо в кабинете
+  async function loadAdminStats() {
+    const r = await call("/api/admin/overview");
+    const box = $("cabAdmin");
+    if (!box || !r.ok) return;
+    const o = r.data;
+    const tile = (n, label, warn) => `<div class="cab-tile${warn ? " warn" : ""}"><b>${esc(num(n))}</b><span>${esc(label)}</span></div>`;
+    box.querySelector(".cab-stats").innerHTML = [
+      tile(o.users, "пользователей"), tile(o.users_access, "с доступом"), tile(o.users_paid, "оплатили"),
+      tile(o.complaints_new, "новых жалоб", o.complaints_new > 0), tile(o.listings, "объектов на сайте"),
+      tile(o.queue, "ждут разбора"), tile(o.views_24h, "открытий номеров за сутки"), tile(o.optouts, "скрытых номеров"),
+    ].join("");
   }
 
   async function toggleFavorite(id) {
@@ -774,9 +796,31 @@
     document.querySelectorAll(`[data-fav="${id}"]`).forEach((b) => {
       b.classList.toggle("on", r.data.favorite);
       b.classList.remove("pop"); void b.offsetWidth; b.classList.add("pop");
-      b.textContent = b.classList.contains("d-fav") ? (r.data.favorite ? "♥ В избранном" : "♡ В избранное") : (r.data.favorite ? "♥" : "♡");
+      b.setAttribute("aria-label", r.data.favorite ? "Убрать из избранного" : "В избранное");
+      if (r.data.favorite && b.offsetParent) burst(b);
     });
     if (favMode && !r.data.favorite) loadList();
+  }
+
+  // Искры вокруг сердца, как в приложениях Apple
+  function burst(el) {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || !el.animate) return;
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const colors = ["#ff8a7a", "#f3e8bc", "#ffd27a", "#ffb3a7"];
+    for (let i = 0; i < 10; i++) {
+      const p = document.createElement("i");
+      p.className = "spark";
+      p.style.left = `${cx}px`; p.style.top = `${cy}px`;
+      p.style.background = colors[i % colors.length];
+      document.body.appendChild(p);
+      const a = (Math.PI * 2 * i) / 10 + Math.random() * 0.4;
+      const d = 22 + Math.random() * 16;
+      p.animate([
+        { transform: "translate(-50%,-50%) scale(1)", opacity: 1 },
+        { transform: `translate(calc(-50% + ${Math.cos(a) * d}px), calc(-50% + ${Math.sin(a) * d}px)) scale(.2)`, opacity: 0 },
+      ], { duration: 560 + Math.random() * 200, easing: "cubic-bezier(.2,.9,.25,1)" }).onfinish = () => p.remove();
+    }
   }
 
   function setFavMode(on) {
@@ -827,10 +871,14 @@
         const tab = t.dataset.tab;
         if (tab === "account") { me() ? renderCabinet() : openLogin(); return; }
         if (tab === "fav") { setFavMode(true); return; }
-        if (favMode) setFavMode(false);
-        if (state.view !== tab) { state.view = tab; syncControls(); writeUrl(); applyView(); if (tab === "map") loadMap(); else loadList(); }
-        else window.scrollTo({ top: 0, behavior: "smooth" });
-        setTab(tab);
+        const go = () => {
+          if (favMode) setFavMode(false);
+          if (state.view !== tab) { state.view = tab; syncControls(); writeUrl(); applyView(); if (tab === "map") loadMap(); else loadList(); }
+          else window.scrollTo({ top: 0, behavior: "smooth" });
+          setTab(tab);
+        };
+        if (document.startViewTransition && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) document.startViewTransition(go);
+        else go();
         return;
       }
       if (t.hasAttribute("data-tglink")) { startTelegram(!!me()); return; }
@@ -903,6 +951,13 @@
       }, { rootMargin: "900px 0px" }).observe(document.querySelector(".more-results"));  // контейнер виден всегда, кнопка — нет
     }
     $("filterBtn").addEventListener("click", openSheet);
+    const onScroll = () => $("nav").classList.toggle("scrolled", window.scrollY > 8);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    $("brand").addEventListener("mouseenter", () => {
+      const l = $("brand").querySelector(".logo");
+      l.classList.remove("redraw"); void l.offsetWidth; l.classList.add("redraw");
+    });
     $("sheetOverlay").addEventListener("click", closeSheet);
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
     $("refreshBtn").addEventListener("click", reloadList);
@@ -929,7 +984,7 @@
     $("closeDetail").addEventListener("click", () => closeDlg(detail));
 
     $("accountBtn").addEventListener("click", () => (me() ? renderCabinet() : openLogin()));
-    $("favBtn").addEventListener("click", () => setFavMode(!favMode));
+
     $("tgLogin").addEventListener("click", () => startTelegram(false));
     $("loginDlg").addEventListener("close", () => clearInterval(tgPoll));
     $("emailForm").addEventListener("submit", async (e) => {
