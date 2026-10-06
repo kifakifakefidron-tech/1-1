@@ -500,6 +500,7 @@
       ${meta.access && o.fragment ? `<h3 class="d-h">Исходное сообщение</h3><pre class="d-source">${esc(o.fragment)}</pre>` : ""}
       ${hist ? `<details class="d-hist-box"><summary>История · ${o.history.length} ${plural(o.history.length, "сообщение", "сообщения", "сообщений")}</summary><ul class="d-hist">${hist}</ul></details>` : ""}
       <p class="d-note">${esc(chats)}Впервые: ${esc(fmtAgo(o.first_seen))}, последний раз: ${esc(fmtAgo(o.last_seen))}.</p>
+      ${o.can_edit ? `<div class="d-contact"><button type="button" class="pill light" data-agent-edit="${o.id}">✎ Изменить моё объявление</button></div>` : ""}
       ${reportHTML(o)}`;
   }
 
@@ -791,6 +792,7 @@
       <p class="note" id="promoMsg" hidden></p>
       <div class="dlg-actions cab-actions">
         <button type="button" class="ghost" id="cabFav">♡ Избранное (${u.favorites.length})</button>
+        <button type="button" class="ghost" data-agent>Я агент: мои объявления</button>
         ${u.is_admin ? `<a class="ghost" href="/admin">Админка</a>` : ""}
         <button type="button" class="ghost" id="logoutBtn">Выйти</button>
         <button type="button" class="pill light" data-close>Закрыть</button>
@@ -1095,6 +1097,12 @@
     const openId = Number(new URLSearchParams(location.search).get("open"));
     if (openId) openDetail(openId);  // ссылка из админки: /?open=123
   }
+
+  // Кабинет агента (web/agent.js) пользуется общими помощниками страницы
+  window.OnePlus = {
+    call, esc, num, toast, openDlg, closeDlg, fmtPrice, fmtDay, me, openDetail, openLogin, reloadList,
+    meta: () => meta,
+  };
 
   init();
 })();

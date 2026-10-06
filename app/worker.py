@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import time
 
-from . import config, db, feed, geocode, ingest, llm, notify, wappi
+from . import agent, config, db, feed, geocode, ingest, llm, mailer, notify, wappi
 
 log = logging.getLogger("worker")
 
@@ -19,6 +19,9 @@ def tick(conn) -> dict:
     stats["queue"] = conn.execute("SELECT COUNT(*) FROM messages WHERE status='new'").fetchone()[0]
     stats["geocoded"] = geocode.run(conn, limit=40)
     stats["archived"] = ingest.archive_stale(conn)
+    own = agent.expire_own(conn, mailer.send_text if mailer.available() else None)
+    if any(own.values()):
+        stats["own"] = own
     synced = feed.maybe_sync(conn)
     if synced:
         stats["feed"] = synced

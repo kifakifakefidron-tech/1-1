@@ -142,7 +142,8 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
 
 PUBLIC_FIELDS = ("id", "type", "deal", "rooms", "area", "land", "floor", "floors", "price", "price_m2",
                  "district", "complex", "settlement", "street", "house", "title", "description",
-                 "first_seen", "last_seen", "seen_count", "lat", "lon", "source", "url", "room_kind", "article")
+                 "first_seen", "last_seen", "seen_count", "lat", "lon", "source", "url", "room_kind", "article",
+                 "is_active", "expires_at")
 
 
 def mask_phone(p: str) -> str:

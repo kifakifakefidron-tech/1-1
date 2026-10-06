@@ -19,7 +19,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
-from . import config, db, ingest
+from . import agent, config, db, ingest
 
 log = logging.getLogger(__name__)
 
@@ -118,7 +118,10 @@ def _store(conn: sqlite3.Connection, source: str, profile_id: str, m: dict,
     ts = _ts(m.get("time") or m.get("timestamp"))
     if m.get("fromMe") and not config.WAPPI_INCLUDE_FROM_ME:
         return False, ts
-    if config.WAPPI_GROUPS_ONLY and not (group if group is not None else _is_group(source, m)):
+    is_group = group if group is not None else _is_group(source, m)
+    if not is_group and source in config.VERIFY_CHANNELS and _verify_pending(conn):
+        _check_code(conn, profile_id, source, m, chat_id)
+    if config.WAPPI_GROUPS_ONLY and not is_group:
         return False, ts
     if m.get("isDeleted"):
         return False, ts
@@ -132,6 +135,41 @@ def _store(conn: sqlite3.Connection, source: str, profile_id: str, m: dict,
         msg_id=str(m.get("id") or ""), sender=_sender_phone(m), sender_name=m.get("senderName"),
     )
     return bool(mid), ts
+
+
+_pending_cache: dict = {"t": 0.0, "v": False}
+
+
+def _verify_pending(conn) -> bool:
+    """Есть ли агенты, ждущие подтверждения номера (проверяем не чаще раза в 20 с)."""
+    if time.time() - _pending_cache["t"] > 20:
+        _pending_cache.update(t=time.time(), v=agent.has_pending(conn))
+    return _pending_cache["v"]
+
+
+def _personal_phone(m: dict, chat_id: str | None) -> str | None:
+    """Номер собеседника в личном чате: WhatsApp — «79181234567@c.us», у MAX/Telegram — поле с телефоном."""
+    for k in ("phone", "sender_phone", "senderPhone", "from_phone"):
+        if m.get(k):
+            return str(m[k])
+    for k in ("sender", "from", "author", "contact"):
+        v = m.get(k)
+        if isinstance(v, dict) and (v.get("phone") or v.get("phone_number")):
+            return str(v.get("phone") or v.get("phone_number"))
+    return _sender_phone(m) or _sender_phone({"from": chat_id or m.get("chatId") or m.get("chat_id") or ""})
+
+
+def _check_code(conn, profile_id: str, source: str, m: dict, chat_id: str | None) -> None:
+    text = _text(m)
+    if not text or len(text) > 200 or not any(ch.isdigit() for ch in text):
+        return
+    _show_fields(f"{source}:{profile_id}", "личное сообщение", m)
+    phone = _personal_phone(m, chat_id)
+    if agent.check_message(conn, phone, text):
+        log.info("Номер агента подтверждён через %s", source)
+        _pending_cache["t"] = 0
+    elif phone is None:
+        log.warning("Код подтверждения пришёл в %s, но номер отправителя не найден в полях: %s", source, sorted(m))
 
 
 def _show_fields(profile: str, what: str, obj: dict) -> None:
@@ -193,6 +231,9 @@ def _poll_by_chats(conn, profile, source, profile_id, token, cursor) -> tuple[in
                 continue
             if _is_group(source, c):
                 chats.append(c)
+            elif source in config.VERIFY_CHANNELS and _verify_pending(conn):
+                c = {**c, "_personal": True}   # личка: ищем только коды подтверждения номера
+                chats.append(c)
         if len(batch) < CHATS_PAGE or old:
             break
 
@@ -215,7 +256,8 @@ def _poll_by_chats(conn, profile, source, profile_id, token, cursor) -> tuple[in
             fresh = [m for m in batch if _fresh(m, cursor)]
             received += len(fresh)
             for m in fresh:
-                ok, ts = _store(conn, source, profile_id, m, chat_id=chat_id, chat_name=chat_name, group=True)
+                ok, ts = _store(conn, source, profile_id, m, chat_id=chat_id, chat_name=chat_name,
+                                group=not c.get("_personal"))
                 added += ok
                 newest = max(newest, ts or 0)
             if len(batch) < CHAT_PAGE or len(fresh) < len(batch):

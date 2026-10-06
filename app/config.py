@@ -121,3 +121,12 @@ POLICY_DATE = os.getenv("POLICY_DATE", "07.10.2026").strip()
 PAYMENTS_ENABLED = _bool("PAYMENTS_ENABLED", False)
 YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "").strip()
 YOOKASSA_SECRET = os.getenv("YOOKASSA_SECRET", "").strip()
+
+# ─── Кабинет агента ────────────────────────────────────────────────────────
+# Наш номер, на который агент пишет код из MAX или WhatsApp (номер профиля Wappi)
+VERIFY_NUMBER = os.getenv("VERIFY_NUMBER", "").strip()
+# Через какие мессенджеры принимаем код (профили Wappi): max, wa
+VERIFY_CHANNELS = [c.strip() for c in os.getenv("VERIFY_CHANNELS", "max,wa").split(",") if c.strip()]
+OWN_LISTING_DAYS = int(os.getenv("OWN_LISTING_DAYS", "30"))  # сколько живёт свой объект без подтверждения
+PHOTOS_DIR = os.getenv("PHOTOS_DIR", str(Path(DB_PATH).parent / "photos"))
+MAX_PHOTOS = int(os.getenv("MAX_PHOTOS", "12"))

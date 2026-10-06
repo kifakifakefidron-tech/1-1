@@ -86,7 +86,23 @@
           <button data-c="${c.id}" data-hide="1">Скрыть объект</button>` : ""}</td></tr>`).join("");
   }
 
-  const loaders = { overview, users, promos, optouts, complaints };
+  async function edits() {
+    const { items } = await call("/api/admin/edits");
+    const names = { price: "цена", description: "описание", status: "статус", create: "добавил объект", confirm: "ответ на письмо",
+      "photo+": "добавил фото", "photo-": "удалил фото", type: "тип", deal: "сделка", rooms: "комнат", area: "площадь",
+      land: "участок", floor: "этаж", floors: "этажность", district: "район", complex: "ЖК", street: "улица", house: "дом" };
+    const val = (v) => { try { const x = JSON.parse(v); return x == null ? "—" : String(x); } catch { return v || "—"; } };
+    const revertable = new Set(["price", "description", "type", "deal", "rooms", "area", "land", "floor", "floors",
+      "district", "complex", "street", "house"]);
+    $("edits").innerHTML = `<tr><th>Когда</th><th>Кто</th><th>Объект</th><th>Что</th><th>Было</th><th>Стало</th><th></th></tr>` +
+      items.map((e) => `<tr><td>${day(e.ts)}</td><td>${esc(e.email || e.name || "#" + e.user_id)}</td>
+        <td><a href="/?open=${e.listing_id}" target="_blank">${esc(e.title || "#" + e.listing_id)}</a></td>
+        <td>${esc(names[e.field] || e.field)}</td>
+        <td>${esc(val(e.old).slice(0, 120))}</td><td>${esc(val(e.new).slice(0, 120))}</td>
+        <td class="acts">${e.reverted ? "откачено" : revertable.has(e.field) ? `<button data-revert="${e.id}">Откатить</button>` : ""}</td></tr>`).join("");
+  }
+
+  const loaders = { overview, users, promos, optouts, complaints, edits };
 
   function show(tab) {
     document.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
@@ -110,6 +126,10 @@
       } else if (b.dataset.unopt) {
         await call("/api/admin/optouts", { remove: b.dataset.unopt });
         optouts();
+      } else if (b.dataset.revert) {
+        if (!confirm("Вернуть прежнее значение?")) return;
+        await call("/api/admin/edits", { id: Number(b.dataset.revert) });
+        edits();
       } else if (b.dataset.c) {
         await call("/api/admin/complaints", { id: Number(b.dataset.c), status: "done", hide_listing: !!b.dataset.hide });
         complaints();

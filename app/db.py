@@ -143,6 +143,23 @@ CREATE TABLE IF NOT EXISTS payments (
     id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, amount INTEGER NOT NULL, days INTEGER NOT NULL,
     provider_id TEXT UNIQUE, status TEXT NOT NULL DEFAULT 'pending', created INTEGER NOT NULL, paid INTEGER
 );
+-- ─── кабинет агента ───────────────────────────────────────────────────────
+-- Номер подтверждён: агент прислал код со своего номера на наш (MAX/WhatsApp через Wappi)
+CREATE TABLE IF NOT EXISTS agent_phones (
+    phone TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, verified_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS phone_codes (
+    id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, phone TEXT NOT NULL, code TEXT NOT NULL,
+    created INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending'
+);
+CREATE INDEX IF NOT EXISTS ix_phone_codes ON phone_codes(phone, status);
+-- Журнал правок агентов (админ может откатить)
+CREATE TABLE IF NOT EXISTS listing_edits (
+    id INTEGER PRIMARY KEY, listing_id INTEGER NOT NULL, user_id INTEGER NOT NULL, ts INTEGER NOT NULL,
+    field TEXT NOT NULL, old TEXT, new TEXT, reverted INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS ix_listing_edits ON listing_edits(listing_id);
+CREATE INDEX IF NOT EXISTS ix_listing_edits_user ON listing_edits(user_id, ts);
 """
 
 # Новые поля в уже существующих таблицах (база на сервере обновится сама при запуске)
@@ -154,6 +171,12 @@ MIGRATIONS = [
     ("listings", "article", "TEXT"),                          # артикул СТРЕЛ («Артикул: 337»)
     ("listings", "room_kind", "TEXT"),                        # studio | classic | euro | mini
     ("listings", "rooms_mask", "INTEGER NOT NULL DEFAULT 0"), # для фильтра «Комнаты» (rules.rooms_mask)
+    # кабинет агента: source='own' — объект добавлен агентом вручную
+    ("listings", "owner_user_id", "INTEGER"),                 # кто управляет карточкой (первый правящий)
+    ("listings", "owner_edited_at", "INTEGER"),
+    ("listings", "expires_at", "INTEGER"),                    # свой объект: снять после этого времени
+    ("listings", "confirm_sent", "INTEGER"),                  # когда отправили письмо «ещё актуален?»
+    ("listings", "sold_at", "INTEGER"),                       # агент отметил «продано/снято»
 ]
 
 _local = threading.local()

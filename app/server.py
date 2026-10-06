@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 import time
 from collections import defaultdict, deque
 from pathlib import Path
@@ -16,7 +17,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import accounts, config, db, geo, ingest, mailer, parser, payments, search, tg
+from . import accounts, agent, config, db, geo, ingest, mailer, parser, payments, search, tg
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -241,6 +242,8 @@ def api_listing(request: Request, body: dict | None = None):
         d["phones_limit"] = why == "limit"
         if d.get("fragment"):
             d["fragment"] = parser.strip_phones(d["fragment"])
+    d["can_edit"] = bool(user) and agent.can_edit(conn, user, conn.execute(
+        "SELECT * FROM listings WHERE id = ?", (lid,)).fetchone())[0]
     d["favorite"] = bool(user and conn.execute(
         "SELECT 1 FROM favorites WHERE user_id = ? AND listing_id = ?", (user["id"], lid)).fetchone())
     return JSONResponse(d)
@@ -565,6 +568,116 @@ def api_admin_complaints(request: Request, body: dict | None = None):
     return JSONResponse({"items": [dict(r) for r in rows]})
 
 
+# ─── кабинет агента ────────────────────────────────────────────────────────
+def _agent_items(conn, user) -> list[dict]:
+    out = []
+    for r in agent.my_listings(conn, user["id"]):
+        it = search.row_to_item(r, True)
+        it["can_edit"] = agent.can_edit(conn, user, r)[0]
+        out.append(it)
+    return out
+
+
+def api_agent(request: Request, body: dict | None = None):
+    user, err = _need_user(request)
+    if err:
+        return err
+    conn = db.get()
+    return JSONResponse({
+        "phones": agent.verified_phones(conn, user["id"]), "verify_number": config.VERIFY_NUMBER,
+        "channels": config.VERIFY_CHANNELS, "access": accounts.has_access(user),
+        "own_days": config.OWN_LISTING_DAYS, "max_photos": config.MAX_PHOTOS, "items": _agent_items(conn, user),
+    })
+
+
+def api_agent_verify(request: Request, body: dict | None = None):
+    user, err = _need_user(request)
+    if err:
+        return err
+    conn = db.get()
+    if request.method == "GET":
+        return JSONResponse({"status": agent.verification_status(conn, user["id"], request.query_params.get("phone", ""))})
+    if not config.VERIFY_NUMBER:
+        return _err("Подтверждение номера ещё не настроено. Напишите нам.", 503)
+    if _too_often(request, "agent_verify", 10, 3600):
+        return _err("Слишком много попыток — попробуйте через час.", 429)
+    res, why = agent.start_verification(conn, user["id"], str((body or {}).get("phone", ""))[:40])
+    return JSONResponse(res) if res else _err(why)
+
+
+def api_agent_create(request: Request, body: dict | None = None):
+    user, err = _need_user(request)
+    if err:
+        return err
+    conn = db.get()
+    lid, why = agent.create_own(conn, user, body or {})
+    if lid is None:
+        return _err(why)
+    return JSONResponse({"id": lid, "text": why, "items": _agent_items(conn, user)})
+
+
+def api_agent_edit(request: Request, body: dict | None = None):
+    user, err = _need_user(request)
+    if err:
+        return err
+    conn = db.get()
+    ok, why = agent.edit_listing(conn, user, int(request.path_params["id"]), body or {})
+    if not ok:
+        return _err(why, 403 if "управляет" in why or "нет вашего" in why else 400)
+    return JSONResponse({"ok": True, "text": why, "items": _agent_items(conn, user)})
+
+
+def api_agent_photo(request: Request, body: dict | None = None):
+    user, err = _need_user(request)
+    if err:
+        return err
+    conn = db.get()
+    lid = int(request.path_params["id"])
+    body = body or {}
+    if request.method == "DELETE":
+        photos, why = agent.remove_photo(conn, user, lid, str(body.get("url", "")))
+    else:
+        if _too_often(request, "agent_photo", 60, 3600):
+            return _err("Слишком много фото за час.", 429)
+        photos, why = agent.add_photo(conn, user, lid, str(body.get("data", "")))
+    return JSONResponse({"photos": photos, "text": why}) if photos is not None else _err(why)
+
+
+def agent_confirm_page(request: Request, body: dict | None = None):
+    """Ссылка из письма «объект ещё актуален?»."""
+    q = request.query_params
+    res = agent.confirm(db.get(), _num(q.get("l"), int) or 0, q.get("a", ""), q.get("t", ""))
+    text = {"yes": f"Готово! Объект продлён на {config.OWN_LISTING_DAYS} дней.",
+            "no": "Готово! Объект снят с сайта. Спасибо, что сообщили.",
+            "gone": "Объект уже удалён.", "bad": "Ссылка устарела или неверна."}.get(res, "Ссылка неверна.")
+    html = (f'<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+            f'<title>1+1</title><body style="font:18px system-ui;background:#035352;color:#F3E8BC;display:grid;'
+            f'place-items:center;min-height:90vh;text-align:center;padding:16px"><div><h1>1+1</h1><p>{text}</p>'
+            f'<p><a style="color:#F3E8BC" href="/">К поиску</a></p></div>')
+    return Response(html, media_type="text/html; charset=utf-8")
+
+
+def photo_file(request: Request, body: dict | None = None):
+    """Фото, загруженные агентами (data/photos/<объект>/<имя>). Имя — хеш содержимого, кэшируем надолго."""
+    name = request.path_params["name"]
+    if not re.fullmatch(r"[0-9a-f]{16}\.(?:jpg|png|webp)", name):
+        return _err("не найдено", 404)
+    f = Path(config.PHOTOS_DIR) / str(request.path_params["id"]) / name
+    if not f.is_file():
+        return _err("не найдено", 404)
+    return FileResponse(f, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+def api_admin_edits(request: Request, body: dict | None = None):
+    _, err = _need_admin(request)
+    if err:
+        return err
+    conn = db.get()
+    if request.method == "POST":
+        return JSONResponse({"ok": agent.revert_edit(conn, _num((body or {}).get("id"), int) or 0)})
+    return JSONResponse({"items": agent.edits_for_admin(conn)})
+
+
 # ─── отладка (только админ) ────────────────────────────────────────────────
 def api_parse(request: Request, body: dict | None = None):
     """Проверить разбор текста, ничего не сохраняя."""
@@ -622,7 +735,15 @@ routes = [
     Route("/api/admin/complaints", threaded(api_admin_complaints), methods=["GET", "POST"]),
     Route("/api/parse", threaded(api_parse), methods=["POST"]),
     Route("/api/messages", threaded(api_add_message), methods=["POST"]),
+    Route("/api/agent", threaded(api_agent)),
+    Route("/api/agent/verify", threaded(api_agent_verify), methods=["GET", "POST"]),
+    Route("/api/agent/listings", threaded(api_agent_create), methods=["POST"]),
+    Route("/api/agent/listings/{id:int}", threaded(api_agent_edit), methods=["POST"]),
+    Route("/api/agent/listings/{id:int}/photos", threaded(api_agent_photo), methods=["POST", "DELETE"]),
+    Route("/agent/confirm", threaded(agent_confirm_page)),
+    Route("/api/admin/edits", threaded(api_admin_edits), methods=["GET", "POST"]),
     Mount("/static", StaticFiles(directory=WEB), name="static"),
+    Route("/photos/{id:int}/{name}", threaded(photo_file)),
 ]
 
 app = Starlette(routes=routes)

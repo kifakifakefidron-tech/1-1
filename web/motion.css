@@ -370,3 +370,54 @@ dialog::backdrop { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px
 .cookie p { margin: 0; font-size: 13px; color: var(--ink-2); line-height: 1.45; }
 .cookie a { color: var(--ink); }
 .cookie .pill { padding: 9px 18px; white-space: nowrap; }
+
+/* ─── кабинет агента ─────────────────────────────────────────────────────── */
+.agent-dlg { width: min(720px, calc(100vw - 32px)); }
+.agent-step { background: var(--chip); border-radius: 18px; padding: 14px 16px; margin: 10px 0; }
+.agent-step p { margin: 0 0 10px; }
+.agent-more summary { cursor: pointer; color: var(--ink-2); font-size: 14px; margin: 4px 0 8px; }
+.agent-code { margin-top: 12px; padding: 14px 16px; border: 1px dashed var(--line-2); border-radius: 18px; }
+.agent-code .code { font: 600 24px/1.3 var(--head); letter-spacing: .06em; }
+.agent-code-btns { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
+.agent-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 18px; }
+.agent-head .d-h { margin: 0; }
+.agent-item {
+  display: grid; grid-template-columns: 72px 1fr auto; gap: 12px; align-items: center;
+  padding: 10px; margin: 8px 0; border: 1px solid var(--line); border-radius: 16px; background: var(--paper);
+}
+.agent-item.off { opacity: .55; }
+.agent-item img, .agent-noimg {
+  width: 72px; height: 56px; object-fit: cover; border-radius: 10px; background: var(--chip);
+  display: grid; place-items: center; font-size: 11px; color: var(--ink-3);
+}
+.agent-info { display: flex; flex-direction: column; min-width: 0; }
+.agent-info b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agent-btns { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+.agent-btns .pill, .agent-btns .ghost { padding: 6px 12px; font-size: 13px; }
+.agent-rules { margin-top: 18px; font-size: 13px; }
+.agent-form { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.agent-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--ink-2); }
+.agent-field input, .agent-field select, .agent-field textarea {
+  font: inherit; font-size: 15px; color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: 12px; padding: 9px 12px; width: 100%; box-sizing: border-box;
+}
+.agent-field textarea { resize: vertical; min-height: 110px; }
+.agent-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.agent-photo { position: relative; aspect-ratio: 4 / 3; border-radius: 12px; overflow: hidden; background: var(--chip); }
+.agent-photo img { width: 100%; height: 100%; object-fit: cover; }
+.agent-photo-del {
+  position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border-radius: 50%; border: 0;
+  background: rgba(0, 0, 0, .55); color: #fff; cursor: pointer;
+}
+.agent-photo.add {
+  display: grid; place-items: center; align-content: center; cursor: pointer; font-size: 26px;
+  border: 1px dashed var(--line-2); color: var(--ink-2);
+}
+.agent-photo.add span { font-size: 12px; }
+@media (max-width: 560px) {
+  .agent-item { grid-template-columns: 56px 1fr; }
+  .agent-item img, .agent-noimg { width: 56px; height: 48px; }
+  .agent-btns { grid-column: 1 / -1; flex-direction: row; }
+  .agent-btns > * { flex: 1; }
+}

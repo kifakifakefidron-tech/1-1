@@ -5,7 +5,9 @@ import hashlib
 import json
 import logging
 import sqlite3
+import shutil
 import time
+from pathlib import Path
 
 from . import config, dedupe, parser
 from .rules import TYPE_LABELS, rooms_mask
@@ -116,10 +118,14 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
                   "street", "house", "article"):
             if merged.get(k) in (None, "") and d.get(k) not in (None, ""):
                 merged[k] = d[k]
-        if ts >= cur_d["last_seen"] and d["price"]:
+        # Карточкой управляет агент (кабинет): его цену меняет только более свежий пост, описание не трогаем
+        owned = bool(cur_d.get("owner_user_id"))
+        if ts >= cur_d["last_seen"] and d["price"] and ts > (cur_d.get("owner_edited_at") or 0):
             merged["price"] = d["price"]
-        if len(d["description"] or "") > len(cur_d["description"] or "") * 1.2:
+        if not owned and len(d["description"] or "") > len(cur_d["description"] or "") * 1.2:
             merged["description"] = d["description"]
+        # Агент отметил «продано» — повторы старого поста объект не возвращают (только новый пост через 3 дня)
+        active = 0 if cur_d.get("sold_at") and ts < cur_d["sold_at"] + 3 * 86400 else 1
         if len(d["fragment"] or "") > len(cur_d["fragment"] or ""):
             merged["fragment"] = d["fragment"]
         phones = json.loads(cur_d["phones"] or "[]")
@@ -135,13 +141,13 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
             """UPDATE listings SET rooms=?, area=?, land=?, floor=?, floors=?, price=?, price_m2=?, district=?,
                    complex=?, settlement=?, street=?, house=?, title=?, description=?, fragment=?, phones=?,
                    last_seen=MAX(last_seen, ?), first_seen=MIN(first_seen, ?), seen_count=seen_count+1,
-                   is_active=1, search_text=?, geo_status=CASE WHEN ? THEN 'pending' ELSE geo_status END,
+                   is_active=?, sold_at=CASE WHEN ? THEN NULL ELSE sold_at END, search_text=?, geo_status=CASE WHEN ? THEN 'pending' ELSE geo_status END,
                    room_kind=?, rooms_mask=?, article=?
                WHERE id=?""",
             (merged["rooms"], merged["area"], merged["land"], merged["floor"], merged["floors"], merged["price"],
              _price_m2(merged["price"], merged["area"]), merged["district"], merged["complex"], merged["settlement"],
              merged["street"], merged["house"], merged["title"], merged["description"], merged["fragment"],
-             merged["phones"], ts, ts, merged["search_text"], geo_reset,
+             merged["phones"], ts, ts, active, active, merged["search_text"], geo_reset,
              merged.get("room_kind"), rooms_mask(merged.get("room_kind"), merged["rooms"]), merged.get("article"), lid),
         )
         d["search_text"] = merged["search_text"]
@@ -254,6 +260,7 @@ def cleanup_old(conn: sqlite3.Connection, now: int | None = None) -> dict:
         conn.execute("DELETE FROM listings_fts WHERE rowid = ?", (i,))
         conn.execute("DELETE FROM listing_events WHERE listing_id = ?", (i,))
         conn.execute("DELETE FROM listings WHERE id = ?", (i,))
+        shutil.rmtree(Path(config.PHOTOS_DIR) / str(i), ignore_errors=True)  # фото, загруженные агентом
     cur = conn.execute("DELETE FROM messages WHERE ts < ? AND status != 'new'", (edge,))
     conn.commit()
     return {"listings": len(ids), "messages": cur.rowcount}
