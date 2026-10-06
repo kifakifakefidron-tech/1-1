@@ -17,9 +17,6 @@
 .fx-text { white-space: pre-wrap; word-break: break-word; font: 14px/1.55 var(--body); color: var(--ink-2); background: rgba(0, 0, 0, .12);
   border-radius: 14px; padding: 12px 14px; margin: 14px 0 8px; max-height: 52vh; overflow: auto; }
 .fx-open { font-size: 13px; color: var(--ink-3); }
-.fx-ref { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
-.fx-ref summary { cursor: pointer; font-weight: 600; }
-.fx-ref iframe { width: 100%; height: 560px; border: 0; border-radius: 14px; margin-top: 8px; background: #fff; }
 .fx-form { display: flex; flex-direction: column; gap: 16px; }
 .fx-block { display: flex; flex-direction: column; gap: 8px; }
 .fx-label { font-size: 13px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }

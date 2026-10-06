@@ -475,10 +475,6 @@
   $("chatSearch").addEventListener("submit", (e) => e.preventDefault());
   $("chatQ").addEventListener("input", renderChats);
   $("spQ").addEventListener("input", spRenderList);
-  $("spRef").addEventListener("toggle", () => {
-    const f = $("spRef").querySelector("iframe");
-    if ($("spRef").open && !f.src) f.src = f.dataset.src;
-  });
   $("spNew").addEventListener("submit", async (e) => {
     e.preventDefault();
     const name = e.target.name.value.trim();

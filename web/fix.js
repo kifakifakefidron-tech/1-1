@@ -308,14 +308,6 @@
   });
 
 
-  // Шпаргалка-карта грузится только когда её открыли (и остаётся открытой между объектами)
-  $("fxRef").addEventListener("toggle", () => {
-    const f = $("fxRef").querySelector("iframe");
-    if ($("fxRef").open && !f.src) f.src = f.dataset.src;
-    try { localStorage.setItem("fixRefOpen", $("fxRef").open ? "1" : ""); } catch { /* */ }
-  });
-  try { if (localStorage.getItem("fixRefOpen")) $("fxRef").open = true; } catch { /* */ }
-
   // Старт: можно начать с конкретного объекта (?id=)
   (async () => {
     const startId = Number(sp.get("id"));

@@ -133,7 +133,3 @@ tr.peek td { background: rgba(0, 0, 0, .12); }
   .sp-list { max-height: 40vh; }
   .sp-objs li { grid-template-columns: 1fr auto; }
 }
-
-.sp-ref { margin: 0 0 14px; border-radius: 14px; background: rgba(0,0,0,.12); padding: 10px 14px; }
-.sp-ref summary { cursor: pointer; font-weight: 600; }
-.sp-ref iframe { width: 100%; height: 600px; border: 0; border-radius: 12px; margin-top: 10px; background: #fff; }
