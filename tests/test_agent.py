@@ -152,7 +152,7 @@ def test_own_listing_expires_if_ignored(env):
     c, conn, _ = env
     _login(c, conn)
     _verify(c, conn)
-    lid = c.post("/api/agent/listings", json={"type": "land", "price": "900000", "land": "6"}).json()["id"]
+    lid = c.post("/api/agent/listings", json={"type": "land", "price": "900000", "land": "6", "district": "ФМР"}).json()["id"]
     conn.execute("UPDATE listings SET expires_at = ?, confirm_sent = ? WHERE id = ?",
                  (int(time.time()) - 1, int(time.time()) - 3 * 86400, lid))
     conn.commit()
@@ -187,3 +187,11 @@ def test_own_actuality_notice_backfilled(env):
     assert len(own) == 1 and len(own[0]["actions"]) == 2
     agent.expire_own(conn)
     assert len([n for n in notices.items(conn, u["id"]) if n["kind"] == "own"]) == 1   # без повторов
+
+
+def test_own_listing_needs_place(env):
+    c, conn, _ = env
+    _login(c, conn)
+    _verify(c, conn)
+    r = c.post("/api/agent/listings", json={"type": "flat", "price": "5"})
+    assert r.status_code == 400 and "район" in r.json()["detail"]

@@ -917,8 +917,10 @@
   // ─── новые объекты, пока человек на сайте ───────────────────────────────
   function hideNewPill() { $("newPill").classList.remove("show"); }
 
+  let lastNewCheck = 0;
   async function checkNew() {
-    if (document.hidden || favMode || !loadedAt) return;
+    if (document.hidden || favMode || !loadedAt || Date.now() - lastNewCheck < 20000) return;
+    lastNewCheck = Date.now();
     const r = await call(`/api/listings?${apiParams({ size: 1, since: loadedAt })}`);
     if (r.ok && r.data.total > 0) {
       $("newCount").textContent = num(r.data.total);

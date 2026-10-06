@@ -500,7 +500,11 @@ def api_admin_overview(request: Request, body: dict | None = None):
     one = lambda sql, *p: conn.execute(sql, p).fetchone()[0]  # noqa: E731
     now = int(time.time())
     return JSONResponse({
-        "listings": one("SELECT COUNT(*) FROM listings WHERE is_active=1"),
+        "listings": one(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE}"),
+        "listings_no_place": one("""SELECT COUNT(*) FROM listings WHERE is_active=1 AND district IS NULL AND complex IS NULL
+                                    AND street IS NULL AND settlement IS NULL"""),
+        "listings_no_district": one(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE} AND l.district IS NULL"),
+        "listings_no_map": one(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE} AND l.lat IS NULL"),
         "listings_feed": one("SELECT COUNT(*) FROM listings WHERE is_active=1 AND source='feed'"),
         "queue": one("SELECT COUNT(*) FROM messages WHERE status='new'"),
         "users": one("SELECT COUNT(*) FROM users"),
@@ -1119,9 +1123,9 @@ def api_admin_edits(request: Request, body: dict | None = None):
 
 # ─── отладка (только админ) ────────────────────────────────────────────────
 def api_parse(request: Request, body: dict | None = None):
-    """Проверить разбор текста, ничего не сохраняя."""
+    """Проверить разбор текста, ничего не сохраняя (только админ: тратит запросы к нейросети)."""
     _, err = _need_admin(request)
-    if err and not has_code(request):
+    if err:
         return err
     body = body or {}
     kind, objs = parser.parse(str(body.get("text", ""))[:8000])
@@ -1129,9 +1133,9 @@ def api_parse(request: Request, body: dict | None = None):
 
 
 def api_add_message(request: Request, body: dict | None = None):
-    """Добавить сообщение вручную (например, переслать объект, которого нет в чатах)."""
+    """Добавить сообщение вручную (например, переслать объект, которого нет в чатах). Только админ."""
     _, err = _need_admin(request)
-    if err and not has_code(request):
+    if err:
         return err
     body = body or {}
     conn = db.get()

@@ -224,8 +224,9 @@ def rename_district(conn: sqlite3.Connection, old: str, new: str) -> dict:
     else:
         conn.execute("INSERT OR REPLACE INTO district_renames (old, new, ts) VALUES (?,?,?)", (old, target, now))
         conn.execute("UPDATE district_renames SET new = ? WHERE new = ?", (target, old))   # цепочки
-    # Объекты, правила, подписки — на новое имя
+    # Объекты, правила, подписки, контуры на карте — на новое имя
     n = conn.execute("UPDATE listings SET district = ? WHERE district = ?", (target, old)).rowcount
+    conn.execute("UPDATE district_polygons SET name = ? WHERE name = ? AND kind = 'district'", (target, old))
     for r in conn.execute("SELECT id, extra_districts FROM listings WHERE extra_districts LIKE ?", (f'%"{old}"%',)).fetchall():
         ex = [target if x == old else x for x in json.loads(r["extra_districts"])]
         conn.execute("UPDATE listings SET extra_districts = ? WHERE id = ?", (json.dumps(list(dict.fromkeys(ex)), ensure_ascii=False), r["id"]))
@@ -254,6 +255,8 @@ def rename_district(conn: sqlite3.Connection, old: str, new: str) -> dict:
     conn.commit()
     sync_districts(conn)
     rules(conn, fresh=True)
+    from . import districtmap
+    districtmap._cache["t"] = 0
     return {"listings": n, "name": target}
 
 
@@ -443,8 +446,17 @@ def rename_complex(conn: sqlite3.Connection, old: str, new: str | None) -> dict:
                     ON CONFLICT(kind, key) DO UPDATE SET value = excluded.value, label = excluded.label, n = n + 1, ts = excluded.ts""",
                  (k, json.dumps({"complex": new}, ensure_ascii=False),
                   f"«{old}» → {('ЖК ' + new) if new else 'это не ЖК'}", int(time.time())))
+    if new:
+        conn.execute("UPDATE district_polygons SET name = ? WHERE kind = 'complex' AND name = ?", (new, old))
+    else:
+        conn.execute("DELETE FROM district_polygons WHERE kind = 'complex' AND name = ?", (old,))
     conn.commit()
     rules(conn, fresh=True)
+    try:
+        from . import districtmap
+        districtmap._cache["t"] = 0
+    except ImportError:
+        pass
     # уже собранные — включая поправленные вручную: админ прямо сказал, что это за ЖК
     from .ingest import _reindex, make_search_text
     n = 0

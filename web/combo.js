@@ -71,8 +71,8 @@
       if (list.hidden) return;
       if (e.key === "ArrowDown") { move(1); e.preventDefault(); }
       else if (e.key === "ArrowUp") { move(-1); e.preventDefault(); }
-      else if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); pick(active); }
-      else if (e.key === "Escape") { e.stopPropagation(); close(); }
+      else if (e.key === "Enter") { e.preventDefault(); e.stopImmediatePropagation(); pick(active); }
+      else if (e.key === "Escape") { e.stopImmediatePropagation(); close(); }
       else if (e.key === "Tab") close();
     });
     list.addEventListener("mousedown", (e) => {   // mousedown — раньше, чем поле потеряет фокус

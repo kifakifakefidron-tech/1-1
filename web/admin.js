@@ -25,6 +25,8 @@
     const card = (n, label) => `<div class="adm-card"><b>${esc(n)}</b><span>${esc(label)}</span></div>`;
     $("overview").innerHTML = [
       card(o.listings, "объектов на сайте"), card(o.listings_feed, "из них — СТРЕЛЫ (фид)"),
+      card(o.listings_no_district, "без района (не находятся фильтром)"), card(o.listings_no_map, "без точки на карте"),
+      card(o.listings_no_place, "скрыты: нет адреса, ЖК и района"),
       card(o.queue, "сообщений ждут разбора"), card(o.users, "пользователей"),
       card(o.users_access, "с открытым доступом"), card(o.users_paid, "оплатили подписку"),
       card(o.views_24h, "открытий номеров за сутки"), card(o.complaints_new, "новых жалоб"),

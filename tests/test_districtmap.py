@@ -43,3 +43,10 @@ def test_osm_import_and_admin_polygon(conn):
     districtmap.save_polygon(conn, "ФМР", "district", [[(45.04, 38.99), (45.04, 39.02), (45.06, 39.02), (45.06, 38.99)]])
     districtmap.import_osm(conn, osm)
     assert districtmap.district_at(conn, 45.045, 39.01)[0] == "ФМР"
+
+
+def test_renamed_district_keeps_its_contour(conn):
+    from app import learning
+    districtmap.save_polygon(conn, "ФМР", "district", [[(45.04, 38.99), (45.04, 39.02), (45.06, 39.02), (45.06, 38.99)]])
+    learning.rename_district(conn, "ФМР", "Фестивальный округ")
+    assert districtmap.district_at(conn, 45.05, 39.0)[0] == "Фестивальный округ"

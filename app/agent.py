@@ -230,6 +230,8 @@ def create_own(conn: sqlite3.Connection, user: sqlite3.Row, data: dict) -> tuple
     price = _clean_price(data.get("price"))
     if not t or not price:
         return None, "Укажите тип объекта и цену."
+    if not any(str(data.get(k) or "").strip() for k in ("district", "complex", "street")):
+        return None, "Укажите район, ЖК или улицу — без этого объект не найдут в поиске и на карте."
     now = int(time.time())
     d = {"type": t, "deal": "rent" if data.get("deal") == "rent" else "sale", "rooms": None, "room_kind": None,
          "area": None, "land": None, "floor": None, "floors": None, "price": price, "district": None, "complex": None,
