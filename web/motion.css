@@ -521,3 +521,20 @@ button.link { border: 0; background: none; padding: 0; color: var(--ink); font: 
 .geo-find { margin: 8px 0 0; }
 .geo-find input { flex: 1 1 auto; min-width: 0; }
 .geo-now { margin: 6px 0 0; font-variant-numeric: tabular-nums; }
+.saved-chip { display: inline-flex; align-items: center; flex: 0 0 auto; border: 1px solid var(--line-2); border-radius: 999px;
+  overflow: hidden; transition: background .2s, border-color .2s; }
+.saved-chip.on { background: var(--ink); border-color: var(--ink); }
+.saved-open { border: 0; background: none; color: var(--ink); font: 500 14px var(--body); padding: 7px 4px 7px 14px; cursor: pointer;
+  white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.saved-chip.on .saved-open, .saved-chip.on .saved-x { color: var(--on-accent); }
+.saved-x { border: 0; background: none; color: var(--ink-3); font: 600 18px/1 var(--body); width: 32px; height: 34px; cursor: pointer; }
+.saved-x:hover { color: var(--err); }
+
+/* ─── админ: ЖК и район, «научить сервис» ──────────────────────────────── */
+.place-learn { display: flex; flex-direction: column; gap: 8px; }
+.place-learn .check { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start; justify-items: start;
+  width: 100%; white-space: normal; text-align: left; font-size: 14px; color: var(--ink-2); line-height: 1.4; }
+.place-learn .check input { margin: 2px 0 0; width: 18px; height: 18px; }
+.place-learn .check span { overflow-wrap: anywhere; }
+#placeDlg .dlg-body { overflow-x: hidden; }
+.place-learn b { color: var(--ink); }

@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css?v=4">
-<link rel="stylesheet" href="/static/admin.css?v=3">
+<link rel="stylesheet" href="/static/admin.css?v=4">
 </head>
 <body>
 <header class="top">
@@ -30,6 +30,8 @@
       <button class="seg" data-tab="complaints">Жалобы</button>
       <button class="seg" data-tab="edits">Правки агентов</button>
       <button class="seg" data-tab="chats">Чаты</button>
+      <button class="seg" data-tab="geo">Карта</button>
+      <button class="seg" data-tab="place">ЖК и районы</button>
     </nav>
 
     <section data-pane="overview"><div class="adm-cards" id="overview"></div></section>
@@ -85,12 +87,39 @@
       <div class="adm-table-wrap"><table class="adm-table" id="chats"></table></div>
     </section>
 
+    <section data-pane="geo" hidden>
+      <p class="note">Объекты, которые не попали на карту или стоят примерно. Нажмите «Поставить точку» — откроется карта;
+        после сохранения сразу откроется следующий объект из списка. Каждая правка <b>учит сервис</b>: точка запоминается
+        для этого дома и ЖК, и все объявления с тем же адресом — сейчас и в будущем — встают туда же.</p>
+      <div class="chips chat-filter" id="geoKinds">
+        <button type="button" class="chip on" data-geo-kind="none">Нет на карте</button>
+        <button type="button" class="chip" data-geo-kind="approx">Примерные</button>
+        <button type="button" class="chip" data-geo-kind="pending">Ещё ищем</button>
+        <button type="button" class="chip" data-geo-kind="learned">Выученные адреса</button>
+      </div>
+      <div class="adm-table-wrap"><table class="adm-table" id="geoTable"></table></div>
+    </section>
+
+    <section data-pane="place" hidden>
+      <p class="note">Объекты, которые теряются в фильтрах: без района или квартиры без ЖК. «Поправить» — откроется объект
+        и окно «ЖК и район»; после сохранения — следующий. Отметьте галочки «научить сервис», и правка подействует
+        на все такие объявления — уже собранные и новые. Новые объявления о том же объекте получают исправленные ЖК
+        и район ещё до проверки на дубли, поэтому склеиваются с исправленной карточкой, а не создают новую.</p>
+      <div class="chips chat-filter" id="placeKinds">
+        <button type="button" class="chip on" data-place-kind="nodistrict">Без района</button>
+        <button type="button" class="chip" data-place-kind="nocomplex">Квартиры без ЖК</button>
+        <button type="button" class="chip" data-place-kind="fixed">Поправлено вручную</button>
+        <button type="button" class="chip" data-place-kind="rules">Выученные правила</button>
+      </div>
+      <div class="adm-table-wrap"><table class="adm-table" id="placeTable"></table></div>
+    </section>
+
     <section data-pane="edits" hidden>
       <p class="note">Что агенты меняли в объявлениях. Если правка неверная — «Откатить» вернёт прежнее значение.</p>
       <div class="adm-table-wrap"><table class="adm-table" id="edits"></table></div>
     </section>
   </div>
 </main>
-<script src="/static/admin.js?v=5"></script>
+<script src="/static/admin.js?v=7"></script>
 </body>
 </html>

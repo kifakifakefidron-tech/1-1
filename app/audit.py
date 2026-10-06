@@ -80,7 +80,7 @@ def run(fix: bool = False, conn=None) -> dict:
     # или нейросеть «угадывала») — снимаем, чтобы объект не показывался в чужом ЖК
     cx_wrong = []
     for r in act:
-        if not r["complex"] or r["source"] != "chat":
+        if not r["complex"] or r["source"] != "chat" or r["admin_fixed"]:
             continue
         texts = [r["fragment"] or "", r["description"] or ""] + [m[0] for m in conn.execute(
             """SELECT m.text FROM listing_events e JOIN messages m ON m.id = e.message_id
@@ -105,7 +105,7 @@ def run(fix: bool = False, conn=None) -> dict:
     # Район не проставлен, хотя следует из ЖК, улицы или прямо назван в тексте — при фильтре по району терялся
     no_d = []
     for r in act:
-        if r["district"] or r["source"] == "feed":
+        if r["district"] or r["source"] == "feed" or r["admin_fixed"]:
             continue
         rec = geo.resolve_complex(r["complex"]) if r["complex"] else None
         d = (rec.district if rec else None) or geo.district_by_street(r["street"]) \

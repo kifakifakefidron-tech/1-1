@@ -38,3 +38,12 @@ def add(conn):
         return ingest.process_message(conn, mid, use_llm=False)
 
     return _add
+
+
+@pytest.fixture(autouse=True)
+def _fresh_learning_cache():
+    """Кэш выученных правил — на процесс; в тестах у каждой проверки своя база."""
+    from app import learning
+    learning._cache.update(t=0.0, rules={})
+    yield
+    learning._cache.update(t=0.0, rules={})

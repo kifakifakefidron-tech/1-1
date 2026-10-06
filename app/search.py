@@ -284,6 +284,7 @@ def listing_detail(conn: sqlite3.Connection, listing_id: int, with_contacts: boo
     d["seen_count"] = r["seen_count"] if is_admin else None
     if is_admin:
         d["geo_status"] = r["geo_status"]
+        d["admin_fixed"] = r["admin_fixed"]
     d["chats"] = conn.execute(
         """SELECT COUNT(DISTINCT m.chat_id) FROM listing_events e JOIN messages m ON m.id = e.message_id
            WHERE e.listing_id = ?""", (listing_id,)).fetchone()[0] if is_admin else None

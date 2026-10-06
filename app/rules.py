@@ -114,7 +114,7 @@ def extract_price(text: str, deal: str = "sale", strict: bool = False) -> int | 
         if _PER_M2.match(tail) or re.match(r"\s*(?:м2|м²|кв\.?\s?м|сот|га|эт|этаж|комн|мин|км|год|лет|%)", tail, re.I):
             continue
         before = text[max(0, m.start() - 3): m.start()]
-        if re.search(r"[+\d]$", before):  # кусок телефона/даты
+        if re.search(r"[+\d]\Z", before):  # кусок телефона/даты (\Z: «$» сработал бы и перед переносом строки)
             continue
         # Что написано в строке перед числом: последнее ключевое слово решает.
         # «Обрем: Альфа-банк 2800 млн», «📄 ДКП — 6.5 млн», «Разбивка 6100» — не цена объекта;

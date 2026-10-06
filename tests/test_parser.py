@@ -207,3 +207,8 @@ def test_place_written_as_separate_lines():
     assert place("ЯБЛОНОВКА\nул. Космическая 88/к3\n1к квартира, 34,7м2\nЦена 3 500 000")[1] == "Яблоновский"
     assert place("🏡\nСт-ца Пластуновская\nдом 150 м²\n5 соток\nЦена 6 млн")[4] == "Пластуновская"
     assert geo.place_from_lines("Студия 23\nЭтаж 5\nКухня 12") == {}
+
+
+def test_price_on_next_line_after_floor_fraction():
+    from app import rules
+    assert rules.extract_price("2ккв 72м 16/17\n7550тр") == 7_550_000

@@ -14,7 +14,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
 <link rel="stylesheet" href="/static/style.css?v=10">
-<link rel="stylesheet" href="/static/motion.css?v=22">
+<link rel="stylesheet" href="/static/motion.css?v=25">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -266,7 +266,8 @@
   <span class="grab" aria-hidden="true"></span>
   <div class="dlg-body">
     <h2 id="geoTitle">Объект</h2>
-    <p class="note"><span id="geoAddr"></span><br>Перетащите метку, нажмите на карту в нужном месте или вставьте координаты.</p>
+    <p class="note"><span id="geoAddr"></span><br>Перетащите метку, нажмите на карту в нужном месте или вставьте координаты.
+      Сайт запомнит точку для этого дома и ЖК — другие объявления с тем же адресом встанут сюда же.</p>
     <form class="inline-form geo-find" id="geoFind">
       <input id="geoCoords" autocomplete="off" placeholder="45.0355, 38.9753 или ссылка с Яндекс/Google Карт" aria-label="Координаты">
       <button type="submit" class="pill light">Найти</button>
@@ -277,8 +278,29 @@
       <button type="button" class="ghost" id="geoAuto" title="Забыть ручную точку и искать по адресу">Искать по адресу</button>
       <button type="button" class="ghost" id="geoHide">Убрать с карты</button>
       <button type="button" class="ghost" data-close>Отмена</button>
+      <button type="button" class="ghost" id="geoSkip" hidden>Пропустить →</button>
       <button type="button" class="pill" id="geoSave">Сохранить точку</button>
     </div>
+    <p class="note" id="geoLeft"></p>
+  </div>
+</dialog>
+
+<dialog id="placeDlg" class="small-dlg" aria-labelledby="placeTitle">
+  <span class="grab" aria-hidden="true"></span>
+  <div class="dlg-body">
+    <h2 id="placeTitle">ЖК и район</h2>
+    <p class="note" id="placeInfo"></p>
+    <form id="placeForm" class="agent-form">
+      <label class="agent-field"><span>ЖК (пусто — без ЖК)</span><input name="complex" list="complexList" autocomplete="off"></label>
+      <label class="agent-field"><span>Район</span><select name="district" id="placeDistrict"></select></label>
+      <div class="place-learn" id="placeLearn"></div>
+      <p class="note" id="placeLeft"></p>
+      <div class="dlg-actions">
+        <button type="button" class="ghost" data-close>Отмена</button>
+        <button type="button" class="ghost" id="placeSkip" hidden>Пропустить →</button>
+        <button type="submit" class="pill">Сохранить</button>
+      </div>
+    </form>
   </div>
 </dialog>
 
@@ -287,7 +309,7 @@
   <div class="dlg-body" id="agentBody"></div>
 </dialog>
 
-<script src="/static/app.js?v=31"></script>
+<script src="/static/app.js?v=33"></script>
 <script src="/static/agent.js?v=3"></script>
 </body>
 </html>

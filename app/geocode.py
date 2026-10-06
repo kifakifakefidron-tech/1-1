@@ -10,7 +10,8 @@ import time
 import urllib.parse
 import urllib.request
 
-from . import config
+from . import config, geo
+from .textnorm import words
 
 log = logging.getLogger(__name__)
 
@@ -90,6 +91,70 @@ def lookup(conn: sqlite3.Connection, query: str) -> tuple[float, float] | None:
     return coords
 
 
+# ─── обучение на правках админа ────────────────────────────────────────────
+_STREET_WORDS = r"\b(?:ул|улица|пр кт|проспект|пер|переулок|проезд|бульвар|б р|шоссе|пл|площадь)\b"
+
+
+def _street_key(v: str | None) -> str:
+    import re
+    return " ".join(re.sub(_STREET_WORDS, " ", words(v or "")).split())
+
+
+def learn_keys(row) -> list[tuple[str, str]]:
+    """Ключи адреса объекта: точный дом и ЖК. (ключ, подпись для админки)"""
+    keys = []
+    street, house = _street_key(row["street"]), words(row["house"] or "").replace(" ", "")
+    if street and house:
+        place = words(row["settlement"] or "")
+        keys.append((f"addr:{place}|{street}|{house}", f"{row['street']}, {row['house']}"))
+    if row["complex"]:
+        k = geo.complex_key(row["complex"])
+        if k:
+            keys.append((f"cx:{k}", f"ЖК {row['complex']}"))
+    return keys
+
+
+def learned_point(conn: sqlite3.Connection, row) -> tuple[float, float] | None:
+    """Выученная точка: сначала точный дом, потом ЖК."""
+    for key, _ in learn_keys(row):
+        hit = conn.execute("SELECT lat, lon FROM geo_learned WHERE key = ?", (key,)).fetchone()
+        if hit:
+            return hit["lat"], hit["lon"]
+    return None
+
+
+def learn(conn: sqlite3.Connection, row, lat: float, lon: float) -> int:
+    """Админ поставил точку вручную → запоминаем её для этого дома (точно) и ЖК (среднее по правкам),
+    и сразу переносим на неё остальные объекты с тем же адресом. Возвращает, сколько объектов поправили."""
+    now = int(time.time())
+    for key, label in learn_keys(row):
+        if key.startswith("addr:"):
+            conn.execute("""INSERT INTO geo_learned (key, lat, lon, n, ts, label) VALUES (?,?,?,1,?,?)
+                            ON CONFLICT(key) DO UPDATE SET lat = excluded.lat, lon = excluded.lon, n = n + 1,
+                            ts = excluded.ts""", (key, lat, lon, now, label))
+        else:   # ЖК — среднее по всем правкам его домов
+            conn.execute("""INSERT INTO geo_learned (key, lat, lon, n, ts, label) VALUES (?,?,?,1,?,?)
+                            ON CONFLICT(key) DO UPDATE SET lat = (lat * n + excluded.lat) / (n + 1),
+                            lon = (lon * n + excluded.lon) / (n + 1), n = n + 1, ts = excluded.ts""",
+                         (key, lat, lon, now, label))
+    # Остальные объекты с тем же адресом (кроме поправленных вручную) — на выученную точку
+    fixed = 0
+    for r in conn.execute("""SELECT * FROM listings WHERE is_active = 1 AND id != ? AND geo_status != 'manual'
+                             AND (complex IS NOT NULL OR (street IS NOT NULL AND house IS NOT NULL))""",
+                          (row["id"],)).fetchall():
+        pt = learned_point(conn, r)
+        if pt and (r["lat"], r["lon"]) != pt:
+            conn.execute("UPDATE listings SET lat = ?, lon = ?, geo_status = 'learned' WHERE id = ?", (*pt, r["id"]))
+            fixed += 1
+    # Ответ геокодера для этого адреса был неверным — заменяем его в кэше, чтобы он не вернулся
+    for q, quality in candidates(row):
+        if quality == "ok":
+            conn.execute("INSERT OR REPLACE INTO geocache(query, lat, lon, ts) VALUES (?,?,?,?)", (q, lat, lon, now))
+            break
+    conn.commit()
+    return fixed
+
+
 def run(conn: sqlite3.Connection, limit: int = 30) -> int:
     if config.GEOCODER != "nominatim":
         return 0
@@ -109,6 +174,12 @@ def run(conn: sqlite3.Connection, limit: int = 30) -> int:
     done = 0
     for r in rows:
         coords, status = None, "skip"
+        learned = learned_point(conn, r)   # этот дом/ЖК админ уже поправлял — берём его точку
+        if learned:
+            conn.execute("UPDATE listings SET lat=?, lon=?, geo_status='learned' WHERE id=?", (*learned, r["id"]))
+            conn.commit()
+            done += 1
+            continue
         for q, quality in candidates(r):
             coords = lookup(conn, q)
             if coords:
@@ -129,7 +200,7 @@ def fix_wrong_points(conn: sqlite3.Connection) -> int:
         if (_city_query(q["query"]) and not in_city(q["lat"], q["lon"])) or q["query"].startswith("микрорайон "):
             conn.execute("DELETE FROM geocache WHERE query = ?", (q["query"],))
     for r in conn.execute("""SELECT id, lat, lon, settlement, geo_status FROM listings
-                             WHERE lat IS NOT NULL AND source != 'feed' AND geo_status != 'manual'""").fetchall():
+                             WHERE lat IS NOT NULL AND source != 'feed' AND geo_status NOT IN ('manual', 'learned')""").fetchall():
         wrong = (not r["settlement"] and not in_city(r["lat"], r["lon"])) or \
                 (r["settlement"] and _km(CENTER, (r["lat"], r["lon"])) > MAX_KM)
         if wrong or r["geo_status"] == "approx":

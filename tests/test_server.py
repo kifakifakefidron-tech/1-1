@@ -138,3 +138,38 @@ def test_admin_moves_point_and_it_sticks(tmp_path, monkeypatch):
     assert tuple(conn.execute("SELECT lat, lon, geo_status FROM listings WHERE id = ?", (lid,)).fetchone()) == (45.05, 38.99, "manual")
     conn.close()
     db._local.conn = None
+
+
+def test_admin_point_teaches_other_and_future_listings(tmp_path, monkeypatch):
+    from starlette.testclient import TestClient
+
+    from app import accounts, config, db, geocode, ingest, server
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "t.db"))
+    monkeypatch.setattr(config, "GEOCODER", "nominatim")
+    monkeypatch.setattr(db._local, "conn", None, raising=False)
+    asked = []
+    monkeypatch.setattr(geocode, "lookup", lambda c, q: asked.append(q) or (44.99, 38.94))   # геокодер «ошибается»
+    conn = db.get()
+
+    def add(text, mid):
+        r = ingest.process_message(conn, ingest.add_message(conn, source="manual", text=text, msg_id=mid), use_llm=False)
+        return r["results"][0]["listing_id"]
+    a = add("2-к квартира 50 м², 3/9 эт., ЖК Мозаика, ул. Тургенева 10. 6 млн. 89180000001", "1")
+    b = add("1-к квартира 38 м², 5/9 эт., ул. Тургенева 10. 4 млн. 89180000002", "2")       # тот же дом
+    geocode.run(conn)
+    u = accounts.upsert_email_user(conn, "boss@example.ru")
+    conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (u["id"],))
+    conn.commit()
+    with TestClient(server.app) as c:
+        c.cookies.set(server.SESSION, accounts.create_session(conn, u["id"]))
+        res = c.post(f"/api/admin/listings/{a}/geo", json={"lat": 45.05, "lon": 38.99}).json()
+    assert res["applied"] == 1 and "Тургенева, 10" in res["learned"]
+    assert tuple(conn.execute("SELECT lat, lon, geo_status FROM listings WHERE id = ?", (b,)).fetchone()) == (45.05, 38.99, "learned")
+    # новое объявление по тому же дому — сразу на выученную точку, без геокодера
+    asked.clear()
+    c2 = add("Студия 25 м², 2/9 эт., ул. Тургенева, д. 10. 3 млн. 89180000003", "3")
+    geocode.run(conn)
+    assert tuple(conn.execute("SELECT lat, lon, geo_status FROM listings WHERE id = ?", (c2,)).fetchone()) == (45.05, 38.99, "learned")
+    assert asked == []
+    conn.close()
+    db._local.conn = None

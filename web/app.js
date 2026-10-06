@@ -548,8 +548,10 @@
       ${hist ? `<details class="d-hist-box"><summary>История · ${o.history.length} ${plural(o.history.length, "сообщение", "сообщения", "сообщений")}</summary><ul class="d-hist">${hist}</ul></details>` : ""}
       <p class="d-note">${esc(chats)}Впервые: ${esc(fmtAgo(o.first_seen))}, последний раз: ${esc(fmtAgo(o.last_seen))}.</p>
       ${o.can_edit ? `<div class="d-contact"><button type="button" class="pill light" data-agent-edit="${o.id}">✎ Изменить моё объявление</button></div>` : ""}
+      ${me() && me().is_admin ? `<div class="d-contact"><button type="button" class="pill light" data-place-edit="${o.id}">✎ ЖК и район</button>
+        <span class="note">${o.admin_fixed ? "поправлено вами" : ""}</span></div>` : ""}
       ${me() && me().is_admin ? `<div class="d-contact"><button type="button" class="pill light" data-geo-edit="${o.id}">📍 Поправить точку на карте</button>
-        <span class="note">${o.geo_status === "manual" ? "точка поставлена вручную" : o.lat ? "точка найдена по адресу" : "точки нет"}</span></div>` : ""}
+        <span class="note">${o.geo_status === "manual" ? "точка поставлена вручную" : o.geo_status === "learned" ? "точка из ваших прошлых правок" : o.lat ? "точка найдена по адресу" : "точки нет"}</span></div>` : ""}
       ${reportHTML(o)}
       ${brandLine("поиск объектов Краснодара из риелторских чатов")}`;
   }
@@ -602,6 +604,7 @@
 
   // ─── админ: поправить точку объекта на карте ───────────────────────────
   let geoMap = null, geoMarker = null, geoId = 0;
+  let geoQueue = "";        // разбираем очередь «Нет на карте» из админки
   function openGeoEdit(id) {
     const o = known.get(id) || {};
     geoId = id;
@@ -622,6 +625,8 @@
     }
     geoMarker.setLatLng(start);
     $("geoCoords").value = "";
+    $("geoSkip").hidden = !geoQueue;
+    $("geoLeft").textContent = "";
     showGeoNow();
     // Окно открывается с анимацией — подстраиваем карту под его размер, когда оно раскрылось
     const fit = () => { geoMap.invalidateSize(); geoMap.setView(start, o.lat ? 16 : 12); };
@@ -659,9 +664,76 @@
     const o = known.get(geoId);
     if (o) Object.assign(o, { lat: r.data.lat, lon: r.data.lon, geo_status: r.data.geo_status });
     closeDlg($("geoDlg"));
-    toast(body.auto ? "Точку найдём по адресу заново" : body.hide ? "Объект убран с карты" : "✓ Точка сохранена");
+    const learned = r.data.learned || [];
+    toast(body.auto ? "Точку найдём по адресу заново" : body.hide ? "Объект убран с карты"
+      : `✓ Точка сохранена${learned.length ? ` и запомнена для: ${learned.join(", ")}` : ""}`
+        + (r.data.applied ? `. Поправлено ещё объектов: ${r.data.applied}` : ""), 5000);
+    if (geoQueue) { nextInQueue(); return; }
     if ($("detail").open && openedId === geoId) openDetail(geoId);
     if (state.view === "map") loadMap();
+  }
+  // Следующий объект из очереди админки
+  async function nextInQueue() {
+    const r = await call(`/api/admin/geo-queue?kind=${encodeURIComponent(geoQueue)}`);
+    const next = r.ok && (r.data.items || []).find((o) => o.id !== geoId);
+    if (!next) { toast("Очередь разобрана 🎉"); geoQueue = ""; return; }
+    const left = r.data.counts[geoQueue];
+    await openDetail(next.id);
+    setTimeout(() => { openGeoEdit(next.id); $("geoLeft").textContent = `Осталось в очереди: ${left}`; }, 400);
+  }
+
+  // ─── админ: поправить ЖК и район и научить сервис ──────────────────────
+  let placeId = 0, placeQueue = "";
+  function openPlaceEdit(id) {
+    const o = known.get(id) || {};
+    placeId = id;
+    const f = $("placeForm");
+    f.complex.value = o.complex || "";
+    $("placeDistrict").innerHTML = `<option value="">— не указан —</option>` +
+      (meta.districts || []).map((d) => `<option${d === o.district ? " selected" : ""}>${esc(d)}</option>`).join("");
+    $("placeInfo").textContent = [o.title, address(o)].filter(Boolean).join(" · ");
+    $("placeSkip").hidden = !placeQueue;
+    $("placeLeft").textContent = "";
+    renderPlaceLearn();
+    openDlg($("placeDlg"));
+  }
+  // Чему научить сервис — галочки зависят от того, что есть в объявлении и что поменяли
+  function renderPlaceLearn() {
+    const o = known.get(placeId) || {};
+    const f = $("placeForm");
+    const cx = f.complex.value.trim(), d = f.district.value;
+    const box = [];
+    if (o.street && o.house) box.push(["addr", `Запомнить для дома <b>ул. ${esc(o.street)}, ${esc(o.house)}</b>: ${cx ? "ЖК " + esc(cx) : "без ЖК"}${d ? ", " + esc(d) : ""}`]);
+    if (o.complex && o.complex !== cx) box.push(["alias", cx
+      ? `Везде, где агенты пишут <b>«${esc(o.complex)}»</b>, — это ЖК <b>${esc(cx)}</b>`
+      : `<b>«${esc(o.complex)}»</b> — это не ЖК (больше не считать ЖК)`]);
+    if (cx && d) box.push(["cx_district", `ЖК <b>${esc(cx)}</b> всегда в районе <b>${esc(d)}</b>`]);
+    $("placeLearn").innerHTML = box.length
+      ? `<p class="note">Научить сервис (подействует на все такие объявления — уже собранные и новые):</p>` +
+        box.map(([k, t]) => `<label class="check"><input type="checkbox" name="learn_${k}" checked> <span>${t}</span></label>`).join("")
+      : `<p class="note">Поправим только этот объект.</p>`;
+  }
+  async function savePlace() {
+    const f = $("placeForm");
+    const learn = {};
+    ["addr", "alias", "cx_district"].forEach((k) => { if (f[`learn_${k}`] && f[`learn_${k}`].checked) learn[k] = true; });
+    const r = await call(`/api/admin/listings/${placeId}/place`, { complex: f.complex.value, district: f.district.value, learn });
+    if (!r.ok) { toast(r.data.detail || "Не получилось сохранить"); return; }
+    const o = known.get(placeId);
+    if (o) Object.assign(o, { complex: r.data.complex, district: r.data.district, admin_fixed: 1 });
+    closeDlg($("placeDlg"));
+    toast(`✓ Сохранено${r.data.learned.length ? `. Выучено: ${r.data.learned.join("; ")}` : ""}`
+      + (r.data.applied ? `. Поправлено ещё объектов: ${r.data.applied}` : ""), 6000);
+    if (placeQueue) { nextPlace(); return; }
+    if ($("detail").open && openedId === placeId) openDetail(placeId);
+    reloadList();
+  }
+  async function nextPlace() {
+    const r = await call(`/api/admin/place-queue?kind=${encodeURIComponent(placeQueue)}`);
+    const next = r.ok && (r.data.items || []).find((o) => o.id !== placeId);
+    if (!next) { toast("Очередь разобрана 🎉"); placeQueue = ""; return; }
+    await openDetail(next.id);
+    setTimeout(() => { openPlaceEdit(next.id); $("placeLeft").textContent = `Осталось в очереди: ${r.data.counts[placeQueue]}`; }, 400);
   }
 
   // ─── сохранённые поиски у фильтров ──────────────────────────────────────
@@ -683,7 +755,10 @@
   function renderSaved() {
     $("savedRow").hidden = !savedList.length;
     $("savedChips").innerHTML = savedList.map((s) =>
-      `<button type="button" class="chip${s.id === activeSaved ? " on" : ""}" data-saved="${s.id}" title="${esc(s.title)}">${esc(s.title)}</button>`).join("");
+      `<span class="saved-chip${s.id === activeSaved ? " on" : ""}">
+        <button type="button" class="saved-open" data-saved="${s.id}" title="${esc(s.title)}">${esc(s.title)}</button>
+        <button type="button" class="saved-x" data-unsave-chip="${s.id}" aria-label="Удалить поиск «${esc(s.title)}»" title="Удалить поиск">×</button>
+      </span>`).join("");
   }
   // Применить фильтры сохранённого поиска (из адреса вида «/?rooms=2&district=ФМР»)
   function applySaved(id, since) {
@@ -1160,6 +1235,7 @@
       }
       if (t.dataset.openId) { openDetail(Number(t.dataset.openId), { push: true }); return; }
       if (t.dataset.geoEdit) { openGeoEdit(Number(t.dataset.geoEdit)); return; }
+      if (t.dataset.placeEdit) { openPlaceEdit(Number(t.dataset.placeEdit)); return; }
       if (t.dataset.saved) {
         const id = Number(t.dataset.saved);
         if (activeSaved === id) { activeSaved = 0; setHits(0); renderSaved(); $("resetBtn").click(); return; }
@@ -1167,6 +1243,19 @@
         return;
       }
       if (t.id === "hitOff") { setHits(0); reloadList(); return; }
+      if (t.dataset.unsaveChip) {
+        const id = Number(t.dataset.unsaveChip);
+        const s = savedList.find((x) => x.id === id);
+        if (!confirm(`Больше не следить за поиском «${s ? s.title : ""}»?`)) return;
+        call("/api/saved", { id }, "DELETE").then((r) => {
+          if (!r.ok) { toast("Не получилось удалить"); return; }
+          savedList = savedList.filter((x) => x.id !== id);
+          if (activeSaved === id) { activeSaved = 0; setHits(0); }
+          renderSaved();
+          toast("Поиск удалён — уведомления по нему больше не придут");
+        });
+        return;
+      }
       if (t.dataset.unsave) { call("/api/saved", { id: Number(t.dataset.unsave) }, "DELETE").then(loadSaved); return; }
       if (t.dataset.retry) { openDetail(Number(t.dataset.retry)); return; }
       if (t.hasAttribute("data-refresh-list")) { closeDlg($("detail")); reloadList(); return; }
@@ -1318,6 +1407,11 @@
       saveGeo({ lat: ll.lat, lon: ll.lng });
     });
     $("geoHide").addEventListener("click", () => saveGeo({ hide: true }));
+    $("placeForm").addEventListener("submit", (e) => { e.preventDefault(); savePlace(); });
+    $("placeForm").addEventListener("input", (e) => { if (e.target.name === "complex") renderPlaceLearn(); });
+    $("placeForm").addEventListener("change", (e) => { if (e.target.name === "district" || e.target.name === "complex") renderPlaceLearn(); });
+    $("placeSkip").addEventListener("click", () => { closeDlg($("placeDlg")); nextPlace(); });
+    $("geoSkip").addEventListener("click", () => { closeDlg($("geoDlg")); nextInQueue(); });
     $("geoFind").addEventListener("submit", (e) => {
       e.preventDefault();
       const ll = parseCoords($("geoCoords").value);
@@ -1420,6 +1514,15 @@
     const openId = Number(sp.get("open"));
     if (openId) openDetail(openId);  // ссылка на объект: /?open=123
     // Ссылки со страницы уведомлений: открыть нужный раздел и убрать служебный параметр из адреса
+    // Из админки «Карта»: /?open=ID&geo=none — сразу окно правки точки, после сохранения — следующий объект
+    if (openId && sp.get("place") && me() && me().is_admin) {
+      placeQueue = sp.get("place");
+      setTimeout(() => openPlaceEdit(openId), 700);
+    }
+    if (openId && sp.get("geo") && me() && me().is_admin) {
+      geoQueue = sp.get("geo");
+      setTimeout(() => openGeoEdit(openId), 700);
+    }
     const act = ["login", "fav", "cabinet", "agent"].find((k) => sp.has(k));
     if (act) {
       sp.delete(act);

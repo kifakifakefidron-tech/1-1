@@ -21,7 +21,8 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import accounts, agent, config, db, geo, hooks, ingest, mailer, notices, parser, payments, region, search, tg
+from . import (accounts, agent, config, db, geo, geocode, hooks, ingest, learning, mailer, notices, parser, payments,
+               region, search, tg)
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -819,10 +820,115 @@ def api_admin_geo(request: Request, body: dict | None = None):
             return _err("Точка должна быть в Краснодарском крае.")
         lat, lon, status = round(lat, 6), round(lon, 6), "manual"
     conn.execute("UPDATE listings SET lat = ?, lon = ?, geo_status = ? WHERE id = ?", (lat, lon, status, lid))
+    # Учимся: эта точка — для того же дома и ЖК во всех объявлениях (сейчас и в будущем)
+    applied = 0
+    if lat is not None:
+        full = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
+        applied = geocode.learn(conn, full, lat, lon)
     conn.execute("INSERT INTO listing_edits (listing_id, user_id, ts, field, old, new) VALUES (?,?,?,?,?,?)",
                  (lid, user["id"], int(time.time()), "geo", json.dumps([row["lat"], row["lon"]]), json.dumps([lat, lon])))
     conn.commit()
-    return JSONResponse({"ok": True, "lat": lat, "lon": lon, "geo_status": status})
+    return JSONResponse({"ok": True, "lat": lat, "lon": lon, "geo_status": status, "applied": applied,
+                         "learned": [label for _, label in geocode.learn_keys(full)] if lat is not None else []})
+
+
+_GEO_QUEUE = {
+    # нет на карте: адрес в объявлении есть (иначе объект и на сайте не показывается), но точку не нашли
+    "none": "l.lat IS NULL AND l.geo_status IN ('none', 'skip')",
+    # примерные точки (по улице без дома, по району)
+    "approx": "l.geo_status = 'approx'",
+    # ещё ищем (геокодер не успел)
+    "pending": "l.lat IS NULL AND l.geo_status = 'pending'",
+}
+_VISIBLE = "l.is_active = 1 AND (l.district IS NOT NULL OR l.complex IS NOT NULL OR l.street IS NOT NULL OR l.settlement IS NOT NULL)"
+
+
+def api_admin_place(request: Request, body: dict | None = None):
+    """Админ поправил ЖК/район объекта и (по желанию) научил сервис.
+    {complex, district, learn: {addr, alias, cx_district}}"""
+    from .ingest import _reindex, make_search_text, make_title
+    user, err = _need_admin(request)
+    if err:
+        return err
+    conn = db.get()
+    lid = int(request.path_params["id"])
+    body = body or {}
+    row = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
+    if row is None:
+        return _err("не найдено", 404)
+    cx = str(body.get("complex") or "").strip()[:120] or None
+    if cx:
+        rec = geo.resolve_complex(cx)
+        cx = rec.name if rec else geo.pretty_name(re.sub(r"(?i)^\s*(?:жк|ж/к)\s+", "", cx))
+    district = str(body.get("district") or "").strip() or None
+    if district and not geo.canonical_district(district):
+        return _err("Выберите район из списка.")
+    district = geo.canonical_district(district) if district else None
+    learned = learning.learn(conn, row, cx, district, body.get("learn") or {})
+    d = {**dict(row), "complex": cx, "district": district}
+    d["title"] = make_title(d)
+    d["search_text"] = make_search_text(d)
+    conn.execute("""UPDATE listings SET complex = ?, district = ?, search_text = ?, admin_fixed = 1,
+                    geo_status = CASE WHEN geo_status IN ('manual', 'learned') THEN geo_status ELSE 'pending' END
+                    WHERE id = ?""", (cx, district, d["search_text"], lid))
+    _reindex(conn, lid, d["search_text"])
+    for field, old, new in (("complex", row["complex"], cx), ("district", row["district"], district)):
+        if old != new:
+            conn.execute("INSERT INTO listing_edits (listing_id, user_id, ts, field, old, new) VALUES (?,?,?,?,?,?)",
+                         (lid, user["id"], int(time.time()), field, json.dumps(old, ensure_ascii=False),
+                          json.dumps(new, ensure_ascii=False)))
+    conn.commit()
+    applied = learning.apply_to_existing(conn, skip_id=lid) if learned else 0
+    return JSONResponse({"ok": True, "complex": cx, "district": district, "learned": learned, "applied": applied})
+
+
+_PLACE_QUEUE = {
+    "nodistrict": "l.district IS NULL AND l.settlement IS NULL",
+    "nocomplex": "l.complex IS NULL AND l.type IN ('flat', 'new') AND l.district IS NOT NULL",
+    "fixed": "l.admin_fixed = 1",
+}
+
+
+def api_admin_place_queue(request: Request, body: dict | None = None):
+    """Разбор ЖК/районов: объекты без района, квартиры без ЖК; выученные правила (GET); забыть правило (POST {forget})."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    conn = db.get()
+    if request.method == "POST":
+        learning.forget(conn, _num((body or {}).get("forget"), int) or 0)
+        return JSONResponse({"ok": True})
+    kind = request.query_params.get("kind", "nodistrict")
+    where = _PLACE_QUEUE.get(kind, _PLACE_QUEUE["nodistrict"])
+    counts = {k: conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE} AND {w}").fetchone()[0]
+              for k, w in _PLACE_QUEUE.items()}
+    counts["rules"] = conn.execute("SELECT COUNT(*) FROM learned_rules").fetchone()[0]
+    rows = conn.execute(
+        f"""SELECT l.id, l.title, l.district, l.complex, l.street, l.house, l.settlement,
+                   substr(COALESCE(l.fragment, l.description, ''), 1, 300) AS text
+            FROM listings l WHERE {_VISIBLE} AND {where} ORDER BY l.last_seen DESC LIMIT 200""").fetchall()
+    return JSONResponse({"items": [dict(r) for r in rows], "counts": counts, "rules": learning.list_rules(conn)})
+
+
+def api_admin_geo_queue(request: Request, body: dict | None = None):
+    """Объекты, которые не попали на карту (или стоят примерно), — разбирать по одному и учить сервис."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    conn = db.get()
+    kind = request.query_params.get("kind", "none")
+    where = _GEO_QUEUE.get(kind, _GEO_QUEUE["none"])
+    after = _num(request.query_params.get("after"), int)   # «следующий» после этого объекта
+    counts = {k: conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE} AND {w}").fetchone()[0]
+              for k, w in _GEO_QUEUE.items()}
+    counts["learned"] = conn.execute("SELECT COUNT(*) FROM geo_learned").fetchone()[0]
+    rows = conn.execute(
+        f"""SELECT l.id, l.title, l.price, l.deal, l.district, l.complex, l.street, l.house, l.settlement, l.geo_status,
+                   substr(COALESCE(l.fragment, l.description, ''), 1, 300) AS text
+            FROM listings l WHERE {_VISIBLE} AND {where} {"AND l.id < ?" if after else ""}
+            ORDER BY l.id DESC LIMIT 200""", ([after] if after else [])).fetchall()
+    learned = [dict(r) for r in conn.execute("SELECT key, label, lat, lon, n, ts FROM geo_learned ORDER BY ts DESC LIMIT 200")]
+    return JSONResponse({"items": [dict(r) for r in rows], "counts": counts, "learned": learned})
 
 
 def api_admin_edits(request: Request, body: dict | None = None):
@@ -906,6 +1012,9 @@ routes = [
     Route("/api/admin/edits", threaded(api_admin_edits), methods=["GET", "POST"]),
     Route("/api/admin/chats", threaded(api_admin_chats), methods=["GET", "POST"]),
     Route("/api/admin/listings/{id:int}/geo", threaded(api_admin_geo), methods=["POST"]),
+    Route("/api/admin/geo-queue", threaded(api_admin_geo_queue)),
+    Route("/api/admin/listings/{id:int}/place", threaded(api_admin_place), methods=["POST"]),
+    Route("/api/admin/place-queue", threaded(api_admin_place_queue), methods=["GET", "POST"]),
     Mount("/static", StaticFiles(directory=WEB), name="static"),
     Route("/photos/{id:int}/{name}", threaded(photo_file)),
 ]

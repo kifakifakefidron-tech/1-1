@@ -183,7 +183,66 @@
     }
   }
 
-  const loaders = { overview, users, promos, optouts, complaints, edits, chats };
+  // ─── Карта: объекты без точки — разбирать по одному ──────────────────────
+  let geoKind = "none";
+  async function geo() {
+    const d = await call(`/api/admin/geo-queue?kind=${geoKind === "learned" ? "none" : geoKind}`);
+    const c = d.counts;
+    const label = { none: "Нет на карте", approx: "Примерные", pending: "Ещё ищем", learned: "Выученные адреса" };
+    document.querySelectorAll("#geoKinds .chip").forEach((b) => {
+      const k = b.dataset.geoKind;
+      b.textContent = `${label[k]} · ${c[k] ?? 0}`;
+      b.classList.toggle("on", k === geoKind);
+    });
+    if (geoKind === "learned") {
+      $("geoTable").innerHTML = d.learned.length
+        ? `<tr><th>Адрес / ЖК</th><th>Правок</th><th>Точка</th><th>Когда</th></tr>` + d.learned.map((l) => `<tr>
+            <td>${esc(l.label || l.key)}</td><td>${l.n}</td>
+            <td><a href="https://yandex.ru/maps/?pt=${l.lon},${l.lat}&z=17&l=map" target="_blank">${l.lat.toFixed(5)}, ${l.lon.toFixed(5)} ↗</a></td>
+            <td>${day(l.ts)}</td></tr>`).join("")
+        : `<tr><td class="note">Пока ничего не выучено — поправьте первую точку.</td></tr>`;
+      return;
+    }
+    const addr = (o) => [o.complex && "ЖК " + o.complex, o.district, o.settlement, o.street && `ул. ${o.street}${o.house ? ", " + o.house : ""}`]
+      .filter(Boolean).join(" · ");
+    $("geoTable").innerHTML = d.items.length
+      ? `<tr><th>Объект</th><th>Адрес из объявления</th><th></th></tr>` + d.items.map((o) => `<tr>
+          <td><b>${esc(o.title)}</b><div class="note msg-snip">${esc(o.text)}</div></td>
+          <td>${esc(addr(o)) || '<span class="note">—</span>'}</td>
+          <td class="acts"><a class="btn-link pill-link" href="/?open=${o.id}&geo=${geoKind}">📍 Поставить точку</a></td></tr>`).join("")
+      : `<tr><td class="note">Здесь пусто — всё на карте 🎉</td></tr>`;
+  }
+
+  // ─── ЖК и районы: разбор и выученные правила ───────────────────────────
+  let placeKind = "nodistrict";
+  async function place() {
+    const d = await call(`/api/admin/place-queue?kind=${placeKind === "rules" ? "fixed" : placeKind}`);
+    const label = { nodistrict: "Без района", nocomplex: "Квартиры без ЖК", fixed: "Поправлено вручную", rules: "Выученные правила" };
+    document.querySelectorAll("#placeKinds .chip").forEach((b) => {
+      const k = b.dataset.placeKind;
+      b.textContent = `${label[k]} · ${d.counts[k] ?? 0}`;
+      b.classList.toggle("on", k === placeKind);
+    });
+    if (placeKind === "rules") {
+      const kinds = { addr: "дом", cx_alias: "название ЖК", cx_district: "район ЖК" };
+      $("placeTable").innerHTML = d.rules.length
+        ? `<tr><th>Правило</th><th>Вид</th><th>Раз</th><th>Когда</th><th></th></tr>` + d.rules.map((r) => `<tr>
+            <td>${esc(r.label)}</td><td>${kinds[r.kind] || r.kind}</td><td>${r.n}</td><td>${day(r.ts)}</td>
+            <td class="acts"><button data-forget="${r.id}">Забыть</button></td></tr>`).join("")
+        : `<tr><td class="note">Пока ничего не выучено.</td></tr>`;
+      return;
+    }
+    const addr = (o) => [o.complex && "ЖК " + o.complex, o.district, o.settlement, o.street && `ул. ${o.street}${o.house ? ", " + o.house : ""}`]
+      .filter(Boolean).join(" · ");
+    $("placeTable").innerHTML = d.items.length
+      ? `<tr><th>Объект</th><th>Сейчас</th><th></th></tr>` + d.items.map((o) => `<tr>
+          <td><b>${esc(o.title)}</b><div class="note msg-snip">${esc(o.text)}</div></td>
+          <td>${esc(addr(o)) || '<span class="note">—</span>'}</td>
+          <td class="acts"><a class="btn-link pill-link" href="/?open=${o.id}&place=${placeKind}">✎ Поправить</a></td></tr>`).join("")
+      : `<tr><td class="note">Здесь пусто 🎉</td></tr>`;
+  }
+
+  const loaders = { overview, users, promos, optouts, complaints, edits, chats, geo, place };
 
   function show(tab) {
     document.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
@@ -207,6 +266,16 @@
       } else if (b.dataset.unopt) {
         await call("/api/admin/optouts", { remove: b.dataset.unopt });
         optouts();
+      } else if (b.dataset.placeKind) {
+        placeKind = b.dataset.placeKind;
+        await place();
+      } else if (b.dataset.forget) {
+        if (!confirm("Забыть это правило? Уже поправленные объекты останутся как есть, новые — без этого правила.")) return;
+        await call("/api/admin/place-queue", { forget: Number(b.dataset.forget) });
+        await place();
+      } else if (b.dataset.geoKind) {
+        geoKind = b.dataset.geoKind;
+        await geo();
       } else if (b.dataset.peek) {
         await peek(b.dataset.peek, b);
       } else if (b.dataset.undo) {

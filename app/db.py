@@ -173,6 +173,16 @@ CREATE TABLE IF NOT EXISTS saved_searches (
     title TEXT NOT NULL, params TEXT NOT NULL, created INTEGER NOT NULL, checked_at INTEGER NOT NULL,
     sent_at INTEGER, active INTEGER NOT NULL DEFAULT 1
 );
+-- Выученные точки: админ поправил объект на карте → эта точка для того же дома/ЖК во всех объявлениях
+CREATE TABLE IF NOT EXISTS geo_learned (
+    key TEXT PRIMARY KEY,            -- addr:<посёлок>|<улица>|<дом>  или  cx:<ЖК>
+    lat REAL NOT NULL, lon REAL NOT NULL, n INTEGER NOT NULL DEFAULT 1, ts INTEGER NOT NULL, label TEXT
+);
+-- Выученные правила ЖК/района (app/learning.py)
+CREATE TABLE IF NOT EXISTS learned_rules (
+    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, label TEXT,
+    n INTEGER NOT NULL DEFAULT 1, ts INTEGER NOT NULL, UNIQUE (kind, key)
+);
 CREATE TABLE IF NOT EXISTS notices (
     id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, ts INTEGER NOT NULL,
     kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT, url TEXT, listing_id INTEGER, actions TEXT,
@@ -214,6 +224,7 @@ MIGRATIONS = [
     # Сайт и почта — отдельные отметки «уже сообщили»: письмо не должно «съедать» уведомление на сайте
     ("saved_searches", "notice_checked_at", "INTEGER"),       # до какого момента новые объекты уже показаны на сайте
     ("favorites", "site_price", "INTEGER"),                   # о какой цене уже сообщили на сайте
+    ("listings", "admin_fixed", "INTEGER NOT NULL DEFAULT 0"),  # ЖК/район поправил админ — автоматика не трогает
     ("listings", "hidden_reason", "TEXT"),                    # 'chat' — скрыт, т.к. приходил только из отключённых чатов
 ]
 

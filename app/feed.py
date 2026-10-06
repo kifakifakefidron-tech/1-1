@@ -15,7 +15,7 @@ import time
 import urllib.request
 import xml.etree.ElementTree as ET
 
-from . import config, db, geo, geocode, parser, rules
+from . import config, db, geo, geocode, learning, parser, rules
 from .ingest import _price_m2, _reindex, make_search_text, make_title
 from .rules import rooms_mask
 
@@ -111,6 +111,7 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
         if not d:
             continue
         seen.add(d["ext_id"])
+        learning.apply(conn, d)   # правки админа по ЖК/району действуют и на объекты партнёра
         d["search_text"] = make_search_text(d)
         row = conn.execute("SELECT id, price FROM listings WHERE ext_id = ?", (d["ext_id"],)).fetchone()
         vals = (d["type"], d["deal"], d["rooms"], d["area"], d["land"], d["floor"], d["floors"], d["price"],

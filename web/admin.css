@@ -47,3 +47,7 @@ tr.peek td { background: rgba(0, 0, 0, .12); }
   background: #f3e8bc; color: #035352; padding: 12px 16px; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.3);
   display: flex; gap: 12px; align-items: center; max-width: calc(100vw - 32px); }
 .chat-toast button { border: 0; background: #035352; color: #f3e8bc; border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+
+.msg-snip { max-width: 520px; white-space: pre-line; max-height: 4.5em; overflow: hidden; }
+.pill-link { display: inline-block; padding: 6px 12px; border-radius: 999px; background: #f3e8bc; color: #035352 !important;
+  text-decoration: none; font-weight: 600; white-space: nowrap; }
