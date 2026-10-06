@@ -117,8 +117,6 @@ dialog::backdrop { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px
   transition: transform .2s var(--ease), background-color .2s var(--ease); cursor: pointer; }
 .pin::after { content: ""; position: absolute; left: 50%; bottom: -7px; width: 10px; height: 10px; margin-left: -5px;
   background: inherit; border-right: 2px solid #035352; border-bottom: 2px solid #035352; transform: rotate(45deg); border-radius: 0 0 3px 0; }
-.pin.partner { background: #035352; color: #f3e8bc; border-color: #f3e8bc; }
-.pin.partner::after { border-color: #f3e8bc; }
 .leaflet-marker-icon:hover .pin { transform: translate(-50%, calc(-100% - 11px)) scale(1.08); }
 .cl-wrap { background: none; border: 0; }
 .cl { width: 100%; height: 100%; display: grid; place-items: center; border-radius: 50%; background: #035352; color: #f3e8bc;
@@ -443,6 +441,7 @@ dialog.detail { contain: layout paint; overscroll-behavior: contain; }
 .badge.good { background: rgba(140, 230, 170, .22); color: #c9f5d6; }
 .bar-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; width: 100%; }
 .bar-tools .chip { font-size: 13px; padding: 5px 12px; }
+.bar-tools .reset-chip { border-color: var(--ink); color: var(--ink); font-weight: 600; }
 .d-market { margin: 12px 0; padding: 12px 14px; border-radius: 14px; background: var(--chip); display: flex; flex-direction: column; gap: 2px; }
 .d-market.good { background: rgba(140, 230, 170, .16); }
 .d-market.high { background: rgba(255, 180, 160, .14); }

@@ -18,8 +18,9 @@ def _show(title: str, n: int, examples: list[str] | None = None) -> None:
         print(f"      – {e[:140]}")
 
 
-def run(fix: bool = False) -> dict:
-    conn = db.connect()
+def run(fix: bool = False, conn=None) -> dict:
+    own_conn = conn is None
+    conn = conn or db.connect()
     out: dict = {}
     act = conn.execute("SELECT * FROM listings WHERE is_active = 1").fetchall()
     print(f"\nОбъектов на сайте: {len(act)}")
@@ -72,6 +73,40 @@ def run(fix: bool = False) -> dict:
     bad_d = [r for r in act if r["district"] and geo.canonical_district(r["district"]) != r["district"]]
     _show("районов не из справочника (дубли в фильтре)", len(bad_d), [r["district"] for r in bad_d])
     out["bad_district"] = len(bad_d)
+    # Район не проставлен, хотя следует из ЖК, улицы или прямо назван в тексте — при фильтре по району терялся
+    no_d = []
+    for r in act:
+        if r["district"] or r["source"] == "feed":
+            continue
+        rec = geo.resolve_complex(r["complex"]) if r["complex"] else None
+        d = (rec.district if rec else None) or geo.district_by_street(r["street"]) \
+            or geo.find_district_in_text(r["fragment"] or r["description"] or "")
+        if d:
+            no_d.append((r, d))
+    _show("объектов без района, хотя район понятен из ЖК/улицы/текста", len(no_d),
+          [f"{r['title']} → {d}" for r, d in no_d])
+    out["district_missing"] = len(no_d)
+
+    # ── Аренда ──
+    print("\nАРЕНДА")
+    bad_rent = [r for r in act if r["deal"] == "rent" and r["source"] == "chat"
+                and rules.detect_deal(f"{r['fragment'] or ''} {r['description'] or ''}") != "rent"]
+    _show("в «аренде», хотя в тексте нет «сдам/аренда»", len(bad_rent),
+          [(r["fragment"] or r["title"]).replace("\n", " ") for r in bad_rent])
+    out["bad_rent"] = len(bad_rent)
+
+    # ── Без адреса ──
+    print("\nБЕЗ АДРЕСА, ЖК И РАЙОНА (такие не показываются)")
+    no_place = [r for r in act if not (r["district"] or r["complex"] or r["street"] or r["settlement"])]
+    place_fix = []
+    for r in no_place:
+        pl = geo.place_from_lines(r["fragment"] or r["description"] or "")
+        if pl:
+            place_fix.append((r, pl))
+    _show("всего без адреса", len(no_place))
+    _show("из них адрес найден отдельной строкой («Есенина», «АКВАРЕЛИ-3») — восстановим", len(place_fix),
+          [f"{r['title']} → {', '.join(str(getattr(v, 'name', v)) for v in pl.values() if v)}" for r, pl in place_fix])
+    out["no_place"] = len(no_place)
 
     # ── Карта ──
     print("\nКАРТА")
@@ -112,11 +147,29 @@ def run(fix: bool = False) -> dict:
             _reindex(conn, r["id"], d["search_text"])
         for r in bad_d:
             conn.execute("UPDATE listings SET district = ? WHERE id = ?", (geo.canonical_district(r["district"]), r["id"]))
+        for r, d in no_d:
+            st = make_search_text({**dict(r), "district": d})
+            conn.execute("UPDATE listings SET district = ?, search_text = ? WHERE id = ?", (d, st, r["id"]))
+            _reindex(conn, r["id"], st)
+        for r, pl in place_fix:
+            cx = pl.get("complex")
+            d = {**dict(r), "complex": cx.name if cx else None, "street": pl.get("street"), "house": pl.get("house"),
+                 "settlement": pl.get("settlement")}
+            d["district"] = pl.get("district") or (cx.district if cx else None) or geo.district_by_street(d["street"])
+            d["search_text"] = make_search_text(d)
+            conn.execute("""UPDATE listings SET complex = ?, street = ?, house = ?, settlement = ?, district = ?,
+                            search_text = ?, geo_status = 'pending' WHERE id = ?""",
+                         (d["complex"], d["street"], d["house"], d["settlement"], d["district"], d["search_text"], r["id"]))
+            _reindex(conn, r["id"], d["search_text"])
+        for r in bad_rent:
+            conn.execute("UPDATE listings SET deal = 'sale', title = ? WHERE id = ?",
+                         (make_title({**dict(r), "deal": "sale"}), r["id"]))
         conn.execute("UPDATE listings SET geo_status = 'pending' WHERE is_active = 1 AND lat IS NULL AND geo_status IN ('none','skip')")
         conn.commit()
         print("  других городов скрыто:", region.hide_foreign(conn))
         print("  готово. Точки на карте для оставшихся найдутся за ближайшие часы (≈1 объект в секунду).")
-    conn.close()
+    if own_conn:
+        conn.close()
     return out
 
 

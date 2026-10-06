@@ -210,6 +210,7 @@
     const fc = filtersCount();
     $("filterBadge").hidden = !fc;
     $("filterBadge").textContent = fc;
+    $("resetBtn").hidden = !(fc - (state.deal === "rent" ? 1 : 0)) && !state.q;  // кнопка на виду, когда есть что сбрасывать
   }
 
   // ─── ползунок цены ──────────────────────────────────────────────────────
@@ -413,9 +414,7 @@
     const phones = o.phones && o.phones.length
       ? `<div class="mc-phones">${o.phones.map((ph) => `<a class="mc-call" href="tel:${esc(ph)}">${esc(ph)}</a>
           <a class="mc-wa" href="https://wa.me/${ph.replace(/\D/g, "")}" target="_blank" rel="noopener">WhatsApp</a>`).join("")}</div>`
-      : o.source === "feed" && meta.public_contact
-        ? `<div class="mc-phones"><a class="mc-call" href="${esc(meta.public_contact)}" target="_blank" rel="noopener">${esc(meta.public_contact_label || "Узнать подробности")}</a></div>`
-        : o.phones_masked && o.phones_masked.length
+      : o.phones_masked && o.phones_masked.length
           ? `<div class="mc-phones locked"><span>${esc(o.phones_masked[0])}</span>${me() ? "" : `<button type="button" class="mc-call" data-login>Войти и открыть номер</button>`}</div>` : "";
     // Окошко собираем заново уже с адресом и телефоном (update() вернул бы исходный текст)
     popup.setContent(popupHTML(p, `
@@ -500,7 +499,7 @@
     const contact = contactHTML(o);
     const gallery = o.photos && o.photos.length
       ? `<div class="gallery">${o.photos.map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="" loading="lazy"></a>`).join("")}</div>` : "";
-    const site = o.url ? `<a class="pill light" href="${esc(o.url)}" target="_blank" rel="noopener">Смотреть на сайте СТРЕЛ →</a>` : "";
+    const site = o.url && o.phones && o.phones.length ? `<a class="pill light" href="${esc(o.url)}" target="_blank" rel="noopener">Подробнее у агента →</a>` : "";
 
     const hist = (o.history || []).map((h) => {
       const who = meta.access ? [h.chat, h.sender].filter(Boolean).join(" · ") : "";
@@ -576,10 +575,6 @@
   // Телефон агента: открыт по подписке; иначе — скрыт с понятным следующим шагом
   function contactHTML(o) {
     if (o.loading) return `<div class="d-locked loading"><div class="skel"><i></i></div><p>Загружаем контакты…</p></div>`;
-    if (o.source === "feed") {
-      return meta.public_contact
-        ? `<div class="d-contact"><a class="pill" href="${esc(meta.public_contact)}" target="_blank" rel="noopener">${esc(meta.public_contact_label || "Узнать подробности")} →</a></div>` : "";
-    }
     if (o.phones && o.phones.length) {
       return `<div class="d-contact">${o.phones.map((p) => {
         const digits = p.replace(/\D/g, "");
@@ -1080,8 +1075,9 @@
     $("resetBtn").addEventListener("click", () => {
       Object.assign(state, {
         types: [], rooms: [], priceMin: "", priceMax: "", areaMin: "", areaMax: "", landMin: "", landMax: "",
-        notFirst: false, notLast: false, fresh: "", districts: [], complexes: [],
+        notFirst: false, notLast: false, fresh: "", districts: [], complexes: [], q: "",
       });
+      $("q").value = "";
       syncControls();
       refresh();
     });

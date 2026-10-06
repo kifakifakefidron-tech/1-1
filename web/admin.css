@@ -21,3 +21,6 @@
 .adm-table .acts button { border: 1px solid var(--line-2); background: transparent; border-radius: var(--radius); padding: 4px 10px; font-size: 12px; margin: 2px; }
 .adm-table .acts button:hover { border-color: var(--ink); }
 .ok { color: #9be3b0; } .bad { color: var(--err); }
+
+.adm-table tr.muted td { opacity: .55; }
+#chatShow { border-radius: 999px; padding: 8px 12px; }

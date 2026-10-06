@@ -49,6 +49,14 @@ def main() -> None:
         log.warning("WAPPI_TOKEN / WAPPI_PROFILES не заданы — новые сообщения забираться не будут")
     if not llm.available():
         log.warning("DEEPSEEK_API_KEY не задан — разбор только правилами (хуже для сложных постов)")
+    # Один раз после обновления: исправить в базе то, что раньше терялось при фильтрах (см. app/audit.py)
+    if db.get_state(conn, "audit_fix") != "3":
+        try:
+            from . import audit
+            audit.run(fix=True, conn=conn)
+            db.set_state(conn, "audit_fix", "3")
+        except Exception:  # noqa: BLE001
+            log.exception("исправление базы не удалось")
     while True:
         started = time.time()
         stats: dict = {}

@@ -18,7 +18,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import accounts, agent, config, db, geo, hooks, ingest, mailer, parser, payments, search, tg
+from . import accounts, agent, config, db, geo, hooks, ingest, mailer, parser, payments, region, search, tg
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -184,8 +184,6 @@ def api_meta(request: Request, body: dict | None = None):
         "price": config.SUB_PRICE, "period_days": config.SUB_DAYS, "trial_days": config.TRIAL_DAYS,
         "bot": bot_username(),
         "me": accounts.me(db.get(), user),
-        "public_contact": config.PUBLIC_CONTACT,
-        "public_contact_label": config.PUBLIC_CONTACT_LABEL,
     })
 
 
@@ -237,7 +235,7 @@ def api_listing(request: Request, body: dict | None = None):
     lid = int(request.path_params["id"])
     user = current_user(request)
     access = has_access(request, user)
-    d = search.listing_detail(conn, lid, access)
+    d = search.listing_detail(conn, lid, access, bool(user and user["is_admin"]))
     if not d:
         return _err("не найдено", 404)
     optout = accounts.optout_set(conn)
@@ -716,6 +714,20 @@ def photo_file(request: Request, body: dict | None = None):
     return FileResponse(f, headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
+def api_admin_chats(request: Request, body: dict | None = None):
+    """Чаты: какие берём, какие нет. POST {source, chat_id, blocked} — отключить/включить."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    conn = db.get()
+    if request.method == "POST":
+        body = body or {}
+        res = region.set_blocked(conn, str(body.get("source", ""))[:10], str(body.get("chat_id", ""))[:200],
+                                 bool(body.get("blocked")))
+        return JSONResponse({"ok": True, **res})
+    return JSONResponse({"items": region.chats_for_admin(conn)})
+
+
 def api_admin_edits(request: Request, body: dict | None = None):
     _, err = _need_admin(request)
     if err:
@@ -793,6 +805,7 @@ routes = [
     Route("/api/agent/listings/{id:int}/photos", threaded(api_agent_photo), methods=["POST", "DELETE"]),
     Route("/agent/confirm", threaded(agent_confirm_page)),
     Route("/api/admin/edits", threaded(api_admin_edits), methods=["GET", "POST"]),
+    Route("/api/admin/chats", threaded(api_admin_chats), methods=["GET", "POST"]),
     Mount("/static", StaticFiles(directory=WEB), name="static"),
     Route("/photos/{id:int}/{name}", threaded(photo_file)),
 ]

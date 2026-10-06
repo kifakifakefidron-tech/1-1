@@ -88,7 +88,7 @@ DISTRICTS: list[tuple[str, list[str]]] = [
     ("х. Ленина", ["х ленина", "хутор ленина", "хут ленина"]),
     # Пригород и Адыгея — объекты оттуда идут потоком, держим отдельно.
     ("Новая Адыгея", ["новая адыгея"]),
-    ("Яблоновский", ["яблоновский"]),
+    ("Яблоновский", ["яблоновский", "яблоновка", "яблоновке"]),
     ("Энем", ["энем"]),
     ("Тахтамукай", ["тахтамукай"]),
     ("Новобжегокай", ["новобжегокай"]),
@@ -266,3 +266,95 @@ def complex_key(name: str | None) -> str | None:
     w = re.sub(rf"^{_JK_MARKER}\s+", "", words(name))
     rec = resolve_complex(w)
     return words(rec.name) if rec else w
+
+
+# ─── адрес отдельной строкой (без «ул.» и «ЖК») ─────────────────────────────
+# Агенты часто пишут шапку так:  «АКВАРЕЛИ-3» / «Есенина» / «Очаковская 13» / «Молодежный».
+# Строку принимаем, только если она ЦЕЛИКОМ — название из справочника (ЖК, район, улица),
+# поэтому обычные слова внутри предложений («мозаика на стене») сюда не попадут.
+_LINE_TAIL = re.compile(r"\s+(?:очередь|оч|литер|лит|корпус|корп|секция|дом)(?:\s+\d+\w*)*$|\s+\d+\s*(?:очередь|оч)$")
+_HOUSE_RE = re.compile(r"^(?P<name>.+?)\s+(?P<house>\d{1,3}(?:\s*[а-я](?![а-я\d]))?(?:\s*(?:к|корп|лит)\s*\d+)?(?:\s+\d{1,3}(?:\s*к\s*\d+)?)?)$")
+_STREET_MARK = re.compile(r"^(?:ул|улица|пр кт|проспект|пер|переулок|проезд|бульвар|б р|шоссе)\s+")
+_SETTLEMENT_RE = re.compile(
+    r"(?:^|[\s,(])(?i:ст-ца|ст\.|станица|х\.|хут\.|хутор|пос\.|посёлок|поселок|пгт|аул|село|с\.|п\.|г\.|город)\s*"
+    r"(?P<name>[А-ЯЁ][А-ЯЁа-яё]+(?:[ -][А-ЯЁ][А-ЯЁа-яё]+)?)")
+# «Краеведа Соловьева», «5я Дорожная», «Красных Партизан»: 1–3 слова, последнее — с окончанием улицы
+_STREET_LIKE = re.compile(r"^(?:\d{1,2}\s*я\s+)?(?:[а-я]+\s+){0,2}[а-я]{3,}(?:ая|ой|ий|ый|ого|его|ова|ева|ина|ына|ская|цкая|ского|кого|на|ва|нко)$")
+# Одно слово-фамилия в родительном падеже без номера дома: «Мусоргского», «Дунаевского», «Прокофьева»
+_STREET_SURNAME = re.compile(r"^[а-я]{4,}(?:ского|цкого|ова|ева|ёва|ина|ына)$")
+_NOT_STREET = {"цена", "этаж", "этажей", "тел", "телефон", "площадь", "студия", "квартира", "евро", "кухня", "ремонт",
+               "комнат", "комнатная", "дом", "участок", "литер", "корпус", "секция", "подъезд", "очередь", "сдача",
+               "стоимость", "продажа", "аренда", "собственник", "собственника", "взнос", "ипотека", "задаток", "мин",
+               "минут", "минута", "остановка", "школа", "сад", "кв", "сотка", "сотки", "соток", "года", "год",
+               "общая", "жилая", "полная", "чистовая", "черновая", "предчистовая", "отделка"}
+_SKIP_LINE = {"ремонт", "мебель", "техника", "продажа", "продам", "срочно", "студия", "квартира", "дом", "участок"}
+
+
+def _complex_from_line(w: str) -> Complex | None:
+    w = _LINE_TAIL.sub("", w).strip()
+    if len(w) < 4 or w in _SKIP_LINE:
+        return None
+    for key, cx in _complexes():
+        if w == key:
+            return cx
+    # «Акварели 3»: в справочнике есть «Акварели 1» — та же серия ЖК, другая очередь
+    m = re.match(r"^(.+?)\s+(\d{1,2})$", w)
+    if m and len(m.group(1)) >= 4 and not (set(m.group(1).split()) & (_NOT_STREET | _SKIP_LINE)):
+        base = m.group(1)
+        for key, cx in _complexes():
+            if key == base or key.startswith(base + " "):
+                return Complex(name=pretty_name(w), district=cx.district)
+    return None
+
+
+def _street_from_line(w: str, raw: str) -> tuple[str, str | None] | None:
+    w = _STREET_MARK.sub("", w)
+    m = _HOUSE_RE.match(w)
+    name, house = (m.group("name"), m.group("house")) if m else (w, None)
+    if len(name) < 4 or name in _SKIP_LINE:
+        return None
+    known = any(name == key for key, _ in _streets())
+    # Улицы нет в справочнике, но строка — явно «Название + дом»: «Краеведа Соловьева 2к2», «5я Дорожная 68к1»
+    looks = not (set(name.split()) & _NOT_STREET) and (
+        (bool(house) and bool(_STREET_LIKE.match(name))) or bool(_STREET_SURNAME.match(name)))
+    if not (known or looks):
+        return None
+    # Номер дома — как написано в строке («62/1», «2к2», «1/4к21»), без числа из названия («5я Дорожная»)
+    hm = re.search(r"(?<![\w])\d+(?:/\d+)?(?:\s*[а-яА-Я](?![а-яА-Я]))?(?:\s*/?\s*(?:к|корп\.?|лит\.?)\s*\d+)?\s*$", raw.strip())
+    pretty = re.sub(r"^(\d+)\s*[яЯ]\s+", r"-я ", pretty_name(name))   # «5Я Дорожная» → «5-я Дорожная»
+    return pretty, (hm.group(0).replace(" ", "") if house and hm else None)
+
+
+def place_from_lines(text: str, max_lines: int = 6) -> dict:
+    """ЖК / район / улица / посёлок, записанные отдельной строкой в шапке объявления."""
+    out: dict = {}
+    for raw in [ln for ln in text.splitlines() if ln.strip()][:max_lines]:
+        raw = re.sub(r"^\s*\[[^\]]*\]\s*[^:]{0,40}:\s*", "", raw)   # «[06.10, 10:30] наш офис:»
+        w = words(raw)
+        if not w or len(w) > 40:
+            continue
+        w = re.sub(rf"^{_JK_MARKER}\s+", "", w)
+        # Порядок: район («Молодежный») → улица («Есенина 5») → ЖК («Самолет», «Акварели 3»)
+        if "district" not in out:
+            for alias, canon in _ALIASES:
+                if w == alias:
+                    out["district"] = canon
+                    break
+            if "district" in out:
+                continue
+        if "street" not in out:
+            st = _street_from_line(w, raw)
+            if st:
+                out["street"], out["house"] = st
+                continue
+        if "complex" not in out:
+            cx = _complex_from_line(w)
+            if cx:
+                out["complex"] = cx
+    for m in _SETTLEMENT_RE.finditer(text):
+        name = pretty_name(m.group("name").lower()) if m.group("name").isupper() else m.group("name")
+        if canonical_district(name) or words(name).startswith("краснодар"):
+            continue
+        out["settlement"] = name
+        break
+    return out

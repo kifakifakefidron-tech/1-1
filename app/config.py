@@ -61,12 +61,8 @@ STALE_DAYS = int(os.getenv("STALE_DAYS", "20"))
 # Через столько дней удаляем старые сообщения и давно скрытые объекты
 KEEP_DAYS = int(os.getenv("KEEP_DAYS", "90"))
 
-# Доступ: если задан ACCESS_CODE, телефоны агентов и исходные сообщения видны
-# только после ввода кода (для коллег). Остальные (покупатели) видят
-# контакт из PUBLIC_CONTACT.
+# Код коллег (временно, для теста): вход по коду даёт доступ к телефонам агентов
 ACCESS_CODE = os.getenv("ACCESS_CODE", "")
-PUBLIC_CONTACT = os.getenv("PUBLIC_CONTACT", "")
-PUBLIC_CONTACT_LABEL = os.getenv("PUBLIC_CONTACT_LABEL", "Узнать подробности")
 SITE_TITLE = os.getenv("SITE_TITLE", "1+1 · поиск объектов")
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me")
 
@@ -76,6 +72,8 @@ GEOCODER = os.getenv("GEOCODER", "nominatim")
 # Фид объектов СТРЕЛ (YML с сайта на Тильде); пусто — не загружать
 FEED_URL = os.getenv("FEED_URL", "https://arrowsrealty.ru/tstore/yml/a950e007bd575604e7517f13082cfeba.yml").strip()
 FEED_HOURS = int(os.getenv("FEED_HOURS", "6"))
+# Телефон партнёра для объектов фида (виден только подписчикам, как телефоны агентов)
+FEED_PHONE = os.getenv("FEED_PHONE", "+79618571772").strip()
 
 # Уведомления о сбоях в Telegram: бот от @BotFather и ник, кому писать (без @).
 # Ник должен сам написать боту /start — после этого бот запомнит, куда слать.

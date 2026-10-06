@@ -102,7 +102,32 @@
         <td class="acts">${e.reverted ? "откачено" : revertable.has(e.field) ? `<button data-revert="${e.id}">Откатить</button>` : ""}</td></tr>`).join("");
   }
 
-  const loaders = { overview, users, promos, optouts, complaints, edits };
+  let chatList = [];
+  const SRC = { wa: "WhatsApp", tg: "Telegram", max: "MAX" };
+  async function chats() {
+    chatList = (await call("/api/admin/chats")).items;
+    renderChats();
+  }
+  function renderChats() {
+    const q = $("chatQ").value.trim().toLowerCase();
+    const show = $("chatShow").value;
+    const rows = chatList.filter((c) => {
+      const off = c.blocked || c.foreign;
+      return (!q || (c.name || c.chat_id).toLowerCase().includes(q)) && (!show || (show === "off") === !!off);
+    });
+    $("chats").innerHTML = `<tr><th>Чат</th><th>Где</th><th>Сообщений</th><th>Объектов на сайте</th><th>Последнее</th><th>Статус</th><th></th></tr>` +
+      rows.map((c) => {
+        const status = c.foreign ? "другой город — не берём" : c.blocked ? "<b>не берём</b>" : "берём";
+        const btn = c.foreign ? "" : c.blocked
+          ? `<button data-chat="${esc(c.chat_id)}" data-src="${c.source}" data-block="0">Брать</button>`
+          : `<button data-chat="${esc(c.chat_id)}" data-src="${c.source}" data-block="1">Не брать</button>`;
+        return `<tr${c.blocked || c.foreign ? ' class="muted"' : ""}><td>${esc(c.name || "без названия (" + c.chat_id + ")")}</td>
+          <td>${SRC[c.source] || c.source}</td><td>${c.messages}</td><td>${c.listings}</td><td>${day(c.last_ts)}</td>
+          <td>${status}</td><td class="acts">${btn}</td></tr>`;
+      }).join("");
+  }
+
+  const loaders = { overview, users, promos, optouts, complaints, edits, chats };
 
   function show(tab) {
     document.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
@@ -126,6 +151,12 @@
       } else if (b.dataset.unopt) {
         await call("/api/admin/optouts", { remove: b.dataset.unopt });
         optouts();
+      } else if (b.dataset.chat) {
+        const off = b.dataset.block === "1";
+        if (off && !confirm("Не брать объявления из этого чата? Объекты, которые были только оттуда, пропадут с сайта.")) return;
+        const r = await call("/api/admin/chats", { source: b.dataset.src, chat_id: b.dataset.chat, blocked: off });
+        await chats();
+        if (off) alert(`Готово. Скрыто объектов: ${r.hidden}.`);
       } else if (b.dataset.revert) {
         if (!confirm("Вернуть прежнее значение?")) return;
         await call("/api/admin/edits", { id: Number(b.dataset.revert) });
@@ -138,6 +169,9 @@
   });
 
   $("userSearch").addEventListener("submit", (e) => { e.preventDefault(); users().catch(fail); });
+  $("chatSearch").addEventListener("submit", (e) => e.preventDefault());
+  $("chatQ").addEventListener("input", renderChats);
+  $("chatShow").addEventListener("change", renderChats);
   $("promoNew").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = e.target;

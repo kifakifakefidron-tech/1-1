@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS ix_messages_status ON messages(status);
 CREATE INDEX IF NOT EXISTS ix_messages_hash ON messages(text_hash);
+CREATE INDEX IF NOT EXISTS ix_messages_chat ON messages(source, chat_id);
 
 CREATE TABLE IF NOT EXISTS listings (
     id          INTEGER PRIMARY KEY,
@@ -81,6 +82,7 @@ CREATE TABLE IF NOT EXISTS listing_events (
 );
 CREATE INDEX IF NOT EXISTS ix_events_listing ON listing_events(listing_id);
 CREATE INDEX IF NOT EXISTS ix_events_hash ON listing_events(fragment_hash);
+CREATE INDEX IF NOT EXISTS ix_events_message ON listing_events(message_id);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS listings_fts USING fts5(
     search_text, tokenize = 'unicode61 remove_diacritics 2'
@@ -196,6 +198,8 @@ MIGRATIONS = [
     ("listings", "price_changed_at", "INTEGER"),
     ("favorites", "price_at", "INTEGER"),                     # цена, когда добавили в избранное
     ("favorites", "notified_price", "INTEGER"),               # о какой цене уже написали
+    ("chats", "blocked", "INTEGER NOT NULL DEFAULT 0"),       # админ отключил чат («не брать»)
+    ("listings", "hidden_reason", "TEXT"),                    # 'chat' — скрыт, т.к. приходил только из отключённых чатов
 ]
 
 _local = threading.local()

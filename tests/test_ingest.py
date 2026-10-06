@@ -80,7 +80,7 @@ def test_search_is_by_whole_words(conn, add):
 def test_filters_and_contacts_visibility(conn, add):
     add(AGENT_A)
     add("Студия 24 м2, ЖК Движение, 3/24 этаж, 3 200 000 руб. +7 900 222-33-44")
-    add("Сдам 1-к квартиру, 40 м2, 5/9 эт. 25 000 руб/мес. 89184445566")
+    add("Сдам 1-к квартиру, 40 м2, 5/9 эт., ФМР. 25 000 руб/мес. 89184445566")
     q = search.Query(rooms=[0], price_max=4_000_000)
     res = search.search(conn, q, NOW, with_contacts=False)
     assert res["total"] == 1 and res["items"][0]["rooms"] == 0

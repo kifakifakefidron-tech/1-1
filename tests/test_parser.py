@@ -182,3 +182,28 @@ def test_rooms_ordinal_forms():
     assert rules.extract_rooms("3-ех комн.кв") == 3
     assert rules.extract_rooms("Продам 2 квартиры") is None
     assert rules.extract_rooms("этаж 5 квартира 40м") is None
+
+
+def test_rent_only_with_explicit_words():
+    from app import parser
+    obj = {"lines": [1, 1], "type": "flat", "deal": "rent", "rooms": 2, "price_rub": 10900}
+    o = parser._build(obj, "👉🏽Литер 15,16 2к. 70м (24эт)- 10.900₽", "👉🏽Литер 15,16 2к. 70м (24эт)- 10.900₽", None)
+    assert o.deal == "sale"          # нейросеть сказала «аренда», но в тексте этого нет
+    o = parser._build({}, "2к 50 м², ФМР, 30 000 руб/мес", "Сдаю квартиры:\n2к 50 м², ФМР, 30 000 руб/мес", None)
+    assert o.deal == "rent"          # шапка «Сдаю» относится ко всем объектам подборки
+
+
+def test_place_written_as_separate_lines():
+    from app import geo
+    from app.parser import parse
+
+    def place(t):
+        o = parse(t, use_llm=False)[1][0]
+        return o.complex, o.district, o.street, o.house, o.settlement
+    assert place("АКВАРЕЛИ-3\nСтудия 23м 19/19 *2450тр*\nТел. 89181000164")[0] == "Акварели 3"
+    assert place("🔥 *1 к.кв.\nОчаковская 13\n36 кв.м.\n5/5 этаж\n2600 💰")[2:4] == ("Очаковская", "13")
+    assert place("🔥 *Студия\nМусоргского\n26 м2. 4/12 эт.\n3350 💰")[2] == "Мусоргского"
+    assert place("Музыкальный\nУл. Прокофьева 9\n1 комнатная квартира 32м2\nЦена 3 600 000")[1] == "Музыкальный"
+    assert place("ЯБЛОНОВКА\nул. Космическая 88/к3\n1к квартира, 34,7м2\nЦена 3 500 000")[1] == "Яблоновский"
+    assert place("🏡\nСт-ца Пластуновская\nдом 150 м²\n5 соток\nЦена 6 млн")[4] == "Пластуновская"
+    assert geo.place_from_lines("Студия 23\nЭтаж 5\nКухня 12") == {}

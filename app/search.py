@@ -143,7 +143,9 @@ def _fts_query(q: str) -> str | None:
 
 
 def _where(qr: Query, now: int) -> tuple[str, list]:
-    w = ["l.is_active = 1", "l.deal = ?"]
+    # Без адреса/ЖК/района/посёлка объект не найти ни фильтром, ни на карте — не показываем
+    w = ["l.is_active = 1", "l.deal = ?",
+         "(l.district IS NOT NULL OR l.complex IS NOT NULL OR l.street IS NOT NULL OR l.settlement IS NOT NULL)"]
     p: list = [qr.deal]
     fts, q_rooms = interpret(qr.q) if qr.q else (None, [])
     if q_rooms and not qr.rooms:  # «2к» в строке поиска = фильтр «2 комнаты»
@@ -186,7 +188,7 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
 
 PUBLIC_FIELDS = ("id", "type", "deal", "rooms", "area", "land", "floor", "floors", "price", "price_m2",
                  "district", "complex", "settlement", "street", "house", "title", "description",
-                 "first_seen", "last_seen", "seen_count", "lat", "lon", "source", "url", "room_kind", "article",
+                 "first_seen", "last_seen", "lat", "lon", "source", "url", "room_kind", "article",
                  "is_active", "expires_at",
                  "prev_price", "price_changed_at")
 
@@ -260,7 +262,8 @@ def facets(conn: sqlite3.Connection, qr: Query, now: int) -> dict:
     return {"districts": [dict(r) for r in districts], "complexes": [dict(r) for r in complexes]}
 
 
-def listing_detail(conn: sqlite3.Connection, listing_id: int, with_contacts: bool) -> dict | None:
+def listing_detail(conn: sqlite3.Connection, listing_id: int, with_contacts: bool,
+                   is_admin: bool = False) -> dict | None:
     r = conn.execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
     if r is None:
         return None
@@ -269,14 +272,14 @@ def listing_detail(conn: sqlite3.Connection, listing_id: int, with_contacts: boo
         """SELECT e.ts, e.price, e.match, m.chat_name, m.sender_name, m.source
            FROM listing_events e LEFT JOIN messages m ON m.id = e.message_id
            WHERE e.listing_id = ? ORDER BY e.ts DESC LIMIT 50""", (listing_id,)).fetchall()
+    # Кто и в какой чат присылал — видит только администратор
     history = []
-    for e in ev:
-        h = {"ts": e["ts"], "price": e["price"], "match": e["match"]}
-        if with_contacts:
-            h.update(chat=e["chat_name"], sender=e["sender_name"], source=e["source"])
-        history.append(h)
+    for e in ev if is_admin else []:
+        history.append({"ts": e["ts"], "price": e["price"], "match": e["match"],
+                        "chat": e["chat_name"], "sender": e["sender_name"], "source": e["source"]})
     d["history"] = history
+    d["seen_count"] = r["seen_count"] if is_admin else None
     d["chats"] = conn.execute(
         """SELECT COUNT(DISTINCT m.chat_id) FROM listing_events e JOIN messages m ON m.id = e.message_id
-           WHERE e.listing_id = ?""", (listing_id,)).fetchone()[0]
+           WHERE e.listing_id = ?""", (listing_id,)).fetchone()[0] if is_admin else None
     return d

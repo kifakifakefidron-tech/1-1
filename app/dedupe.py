@@ -140,7 +140,7 @@ def find_match(conn: sqlite3.Connection, o: ParsedObject, frag_hash: str, now: i
         params.append(o.rooms)
     rows = conn.execute(
         f"""SELECT * FROM listings
-            WHERE type IN ({','.join('?' * len(groups))}) AND deal = ? AND last_seen >= ? {cond}
+            WHERE type IN ({','.join('?' * len(groups))}) AND deal = ? AND last_seen >= ? AND source != 'feed' {cond}
             ORDER BY last_seen DESC LIMIT 400""",
         params,
     ).fetchall()

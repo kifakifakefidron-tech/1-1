@@ -15,7 +15,7 @@ import time
 import urllib.request
 import xml.etree.ElementTree as ET
 
-from . import config, db, geo, parser, rules
+from . import config, db, geo, geocode, parser, rules
 from .ingest import _price_m2, _reindex, make_search_text, make_title
 from .rules import rooms_mask
 
@@ -76,6 +76,10 @@ def parse_offer(o: ET.Element, skip_pictures: set[str] | frozenset = frozenset()
     m = re.match(r"\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)", params.get("Координаты", ""))
     if m:
         lat, lon = float(m.group(1)), float(m.group(2))
+        if 37 < lat < 41 and 43 < lon < 47:   # перепутаны местами долгота и широта
+            lat, lon = lon, lat
+        if geocode._km(geocode.CENTER, (lat, lon)) > geocode.MAX_KM:   # явно не Краснодар — ищем по адресу сами
+            lat = lon = None
     d = po.to_dict()
     d.update(type=otype, rooms=rooms, room_kind=kind, price=price, complex=complex_name, deal="sale",
              article=(o.findtext("vendorCode") or "").strip() or rules.extract_article(text),
@@ -136,6 +140,9 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
             lid = cur.lastrowid
             added += 1
         _reindex(conn, lid, d["search_text"])
+    # Телефон партнёра — как у любого агента: виден только с подпиской
+    if config.FEED_PHONE:
+        conn.execute("UPDATE listings SET phones = ? WHERE source = 'feed'", (json.dumps([config.FEED_PHONE]),))
     # Нет в фиде — продано/снято: скрываем
     gone = 0
     for r in conn.execute("SELECT id, ext_id FROM listings WHERE source='feed' AND is_active=1").fetchall():

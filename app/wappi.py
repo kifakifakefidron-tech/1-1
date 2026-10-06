@@ -131,7 +131,7 @@ def _store(conn: sqlite3.Connection, source: str, profile_id: str, m: dict,
     cid = str(chat_id or m.get("chatId") or m.get("chat_id") or "")
     chat_name = (chat_name or m.get("chat_name") or m.get("chatName") or m.get("chat_title")
                  or region.chat_name(conn, source, cid))
-    if region.is_foreign(chat_name):   # чат Сочи/Адлера/… — пока не берём
+    if region.is_excluded(conn, source, cid, chat_name):   # чат другого города или отключён в админке
         return False, ts
     mid = ingest.add_message(
         conn, source=source, text=text, ts=ts or int(time.time()), profile_id=profile_id,

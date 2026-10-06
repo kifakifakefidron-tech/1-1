@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css?v=4">
-<link rel="stylesheet" href="/static/admin.css?v=1">
+<link rel="stylesheet" href="/static/admin.css?v=2">
 </head>
 <body>
 <header class="top">
@@ -29,6 +29,7 @@
       <button class="seg" data-tab="optouts">Скрытые номера</button>
       <button class="seg" data-tab="complaints">Жалобы</button>
       <button class="seg" data-tab="edits">Правки агентов</button>
+      <button class="seg" data-tab="chats">Чаты</button>
     </nav>
 
     <section data-pane="overview"><div class="adm-cards" id="overview"></div></section>
@@ -65,12 +66,23 @@
       <div class="adm-table-wrap"><table class="adm-table" id="complaints"></table></div>
     </section>
 
+    <section data-pane="chats" hidden>
+      <p class="note">Из каких чатов берём объявления. «Не брать» — сообщения из чата перестают разбираться,
+        а объекты, которые присылали только туда, сразу пропадают с сайта. «Брать» — всё возвращается.
+        Чаты других городов (Сочи, Адлер, Сириус, Туапсе…) отключены автоматически.</p>
+      <form class="inline-form adm-search" id="chatSearch">
+        <input id="chatQ" placeholder="Поиск по названию чата">
+        <select id="chatShow"><option value="">все</option><option value="on">берём</option><option value="off">не берём</option></select>
+      </form>
+      <div class="adm-table-wrap"><table class="adm-table" id="chats"></table></div>
+    </section>
+
     <section data-pane="edits" hidden>
       <p class="note">Что агенты меняли в объявлениях. Если правка неверная — «Откатить» вернёт прежнее значение.</p>
       <div class="adm-table-wrap"><table class="adm-table" id="edits"></table></div>
     </section>
   </div>
 </main>
-<script src="/static/admin.js?v=2"></script>
+<script src="/static/admin.js?v=3"></script>
 </body>
 </html>

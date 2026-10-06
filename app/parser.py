@@ -97,7 +97,9 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
     otype = otype or r.type
     if otype == "new":  # отдельного типа «новостройка» нет — это квартира
         otype = "flat"
-    deal = obj.get("deal") if obj.get("deal") in ("sale", "rent") else r.deal
+    # Аренда — только если в тексте прямо написано «сдам», «аренда», «сдаётся»… (нейросеть иногда
+    # ставила аренду обычным продажам). Шапка подборки «Сдаю:» относится ко всем объектам в ней.
+    deal = "rent" if r.deal == "rent" or rules.detect_deal(text) == "rent" else "sale"
 
     area = _num(obj.get("area_m2"))
     land = _num(obj.get("land_sotki"))
@@ -142,16 +144,22 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
             name=geo.pretty_name(re.sub(r"(?i)^\s*(?:жк|ж/к)\s+", "", cx_name)), district=None)
     if complex_rec is None:
         complex_rec = geo.find_complex_in_text(fragment)
+    # Адрес отдельной строкой в шапке: «АКВАРЕЛИ-3», «Есенина», «Очаковская 13», «Молодежный»
+    lines_place = geo.place_from_lines(fragment)
+    if complex_rec is None and lines_place.get("complex"):
+        complex_rec = lines_place["complex"]
 
     street = obj.get("street") if _in_text(obj.get("street"), text_words) else None
     street = street or r.street
     house = obj.get("house") or r.house
     if house and not _in_text(str(house), text_words):
         house = r.house
+    if not street and lines_place.get("street"):
+        street, house = lines_place["street"], house or lines_place.get("house")
 
     # Район: 1) прямо назван в куске; 2) назван нейросетью и есть в тексте;
     # 3) из ЖК по справочнику; 4) из улицы, если улица целиком в одном районе.
-    district = geo.find_district_in_text(fragment)
+    district = geo.find_district_in_text(fragment) or lines_place.get("district")
     if not district and obj.get("district") and _in_text(obj.get("district"), text_words):
         # Только районы из справочника — иначе «Фестивальный», «ФМР», «фестивалка» стали бы разными районами
         district = geo.canonical_district(obj.get("district"))
@@ -161,6 +169,7 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
         district = geo.district_by_street(street)
 
     settlement = obj.get("settlement") if _in_text(obj.get("settlement"), text_words) else None
+    settlement = settlement or lines_place.get("settlement")
 
     phones = r.phones or rules.extract_phones(text)
     if not phones and sender_phone:

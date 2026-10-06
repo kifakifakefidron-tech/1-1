@@ -91,6 +91,6 @@ def test_notes_private(env):
 
 def test_new_today_filter(env):
     c, conn = env
-    _add(conn, "2-к квартира 50 м², 3/9 эт. 6 млн руб. 89180000001", ts=NOW - 5 * 86400)
-    _add(conn, "1-к квартира 35 м², 3/9 эт. 4 млн руб. 89180000002", ts=NOW)
+    _add(conn, "2-к квартира 50 м², 3/9 эт., ФМР. 6 млн руб. 89180000001", ts=NOW - 5 * 86400)
+    _add(conn, "1-к квартира 35 м², 3/9 эт., ФМР. 4 млн руб. 89180000002", ts=NOW)
     assert search.search(conn, search.Query(new_days=1), NOW, False)["total"] == 1

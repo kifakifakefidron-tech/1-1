@@ -86,6 +86,13 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
 - Карта: geocode.candidates — дом → ЖК → улица → посёлок → район (geo_status 'approx', пунктирный ценник).
 - Объекты СТРЕЛ (фид) сортируются вместе со всеми, без вывода вперёд и без метки (решение 07.10).
 - Кэш /api/listings, /api/facets, /api/map — 15 с в памяти; state cache_ver сбрасывает при правках агентов/админа.
+- 07.10 ночь (решения Артёма): аренда только при явных словах (`rules.detect_deal`, нейросети не верим);
+  объекты без района/ЖК/улицы/посёлка не показываются (`search._where`); адрес отдельной строкой —
+  `geo.place_from_lines` (район → улица → ЖК; «Акварели 3» по серии; улица-фамилия «Мусоргского»; «ст-ца/п./г.»);
+  ручное отключение чатов — админка «Чаты» (`chats.blocked`, `region.set_blocked`, hidden_reason='chat');
+  «Узнать подробности» убрана: у фида телефон FEED_PHONE, виден только с подпиской; история сообщений,
+  «присылали N раз» — только админу; геокодер для Краснодара ограничен CITY_BOX (viewbox+bounded);
+  worker один раз запускает `audit.run(fix=True)` (state audit_fix).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

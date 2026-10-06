@@ -89,5 +89,26 @@ def test_map_reports_points_and_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(geocode, "lookup", fake)
     geocode.run(conn)
     res = search.map_points(conn, search.Query(), 0)
-    assert res["total"] == 3 and len(res["points"]) == 2
+    assert res["total"] == 2 and len(res["points"]) == 2   # без адреса/района объект не показывается вовсе
     assert sorted(p["approx"] for p in res["points"]) == [0, 1]   # ФМР — примерная точка по району
+
+
+def test_geocoder_rejects_points_outside_krasnodar(monkeypatch):
+    import json as _json
+
+    from app import db, geocode
+    conn = db.connect(":memory:")
+
+    class R:
+        def __init__(self, data): self.data = data
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return _json.dumps(self.data).encode()
+
+    sochi = [{"lat": "43.58", "lon": "39.72"}]
+    monkeypatch.setattr(geocode.urllib.request, "urlopen", lambda req, timeout: R(sochi))
+    monkeypatch.setattr(geocode.time, "sleep", lambda s: None)
+    assert geocode.lookup(conn, "Краснодар, Ленина 5") is None          # в Сочи — не наш адрес
+    krd = [{"lat": "45.04", "lon": "38.98"}]
+    monkeypatch.setattr(geocode.urllib.request, "urlopen", lambda req, timeout: R(krd))
+    assert geocode.lookup(conn, "Краснодар, Красная 10") == (45.04, 38.98)

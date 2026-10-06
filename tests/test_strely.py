@@ -37,7 +37,7 @@ def test_room_buttons_follow_mini_euro_scheme(conn, add):
                  "1-к квартира 38 м², 3/9 эт. 4,5 млн руб.", "Евро-2 40 м², 4/9 эт. 5 млн руб.",
                  "Мини-2 35 м², 2/9 эт. 4,8 млн руб.", "2-к квартира 56 м², 7/9 эт. 6,5 млн руб.",
                  "Евро-3 60 м², 8/9 эт. 7,5 млн руб."):
-        add(text)
+        add(text + " ФМР.")
 
     def titles(rooms):
         res = search.search(conn, search.Query(rooms=rooms, sort="price_asc"), NOW, False)
@@ -71,11 +71,29 @@ def test_message_without_article_stays_separate(conn, add):
 
 def test_partner_objects_sorted_by_date_like_others(conn, add):
     for i in range(3):
-        add(f"{i + 1}-к квартира {40 + i * 10} м², {i + 2}/9 эт. {4 + i} млн руб. 8918000000{i}")
+        add(f"{i + 1}-к квартира {40 + i * 10} м², {i + 2}/9 эт., ФМР. {4 + i} млн руб. 8918000000{i}")
     xml = FEED.decode().replace("</offers>", "".join(
         f'<offer id="{900 + i}"><vendor>♟СТУДИЯ♟</vendor><vendorCode>{900 + i}</vendorCode><price>{3000 + i}.00</price>'
-        f'<description>♟СТУДИЯ♟&lt;br /&gt;➵ {20 + i}м2, Этаж: {i + 1}/9&lt;br /&gt;Цена - {3000 + i}</description></offer>'
+        f'<description>♟СТУДИЯ♟&lt;br /&gt;ЖК Мозаика&lt;br /&gt;➵ {20 + i}м2, Этаж: {i + 1}/9&lt;br /&gt;Цена - {3000 + i}</description></offer>'
         for i in range(2)) + "</offers>").encode()
     feed.sync(conn, xml, now=NOW - 5000)   # фид загружен раньше сообщений — идёт после них
     items = search.search(conn, search.Query(), NOW, False)["items"]
     assert [i["source"] for i in items] == ["chat", "chat", "chat", "feed", "feed", "feed"]
+
+
+def test_partner_phone_hidden_and_history_admin_only(tmp_path, monkeypatch):
+    from starlette.testclient import TestClient
+
+    from app import config, db, server
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "t.db"))
+    monkeypatch.setattr(config, "ACCESS_CODE", "x")
+    monkeypatch.setattr(db._local, "conn", None, raising=False)
+    conn = db.get()
+    feed.sync(conn, FEED, now=NOW)
+    lid = conn.execute("SELECT id FROM listings WHERE source = 'feed'").fetchone()[0]
+    with TestClient(server.app) as c:
+        d = c.get(f"/api/listings/{lid}").json()
+        assert "phones" not in d and d["phones_masked"] == ["+7 961 •••-••-••"]
+        assert d["history"] == [] and "public_contact" not in c.get("/api/meta").json()
+    conn.close()
+    db._local.conn = None
