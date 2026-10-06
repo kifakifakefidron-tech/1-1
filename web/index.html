@@ -14,7 +14,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
 <link rel="stylesheet" href="/static/style.css?v=10">
-<link rel="stylesheet" href="/static/motion.css?v=17">
+<link rel="stylesheet" href="/static/motion.css?v=18">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -128,6 +128,12 @@
     <div class="sheet-foot"><button type="button" class="pill wide" id="sheetApply" data-sheet-close>Показать</button></div>
   </section>
   <div class="sheet-overlay" id="sheetOverlay" data-sheet-close></div>
+
+  <div class="saved-row" id="savedRow" hidden>
+    <span class="saved-label">🔔 Мои поиски</span>
+    <div class="saved-chips" id="savedChips"></div>
+  </div>
+  <div class="hit-note" id="hitNote" hidden></div>
 
   <div class="bar">
     <div class="count-wrap">
@@ -261,7 +267,7 @@
   <div class="dlg-body" id="agentBody"></div>
 </dialog>
 
-<script src="/static/app.js?v=25"></script>
+<script src="/static/app.js?v=27"></script>
 <script src="/static/agent.js?v=3"></script>
 </body>
 </html>

@@ -209,18 +209,19 @@ def _page_query(q: str) -> str:
     return urllib.parse.urlencode(pairs)
 
 
-def search_url(s) -> str:
-    """Ссылка «показать новые» по подписке: фильтры + «только новые за сегодня»."""
+def search_url(s, since: int | None = None) -> str:
+    """Ссылка на сохранённый поиск (те же фильтры). С since — страница выделит объекты, появившиеся после него."""
     pq = s["page_query"] if "page_query" in s.keys() and s["page_query"] else ""
-    return "/?" + "&".join(x for x in (pq, "fresh=new1") if x)
+    extra = f"saved={s['id']}" + (f"&since={since}" if since else "")
+    return "/?" + "&".join(x for x in (pq, extra) if x)
 
 
 def list_saved(conn: sqlite3.Connection, user_id: int) -> list[dict]:
     out = []
-    for r in conn.execute("""SELECT id, title, params, page_query, created, sent_at FROM saved_searches
+    for r in conn.execute("""SELECT id, title, params, page_query, created, sent_at, notice_checked_at FROM saved_searches
                              WHERE user_id = ? AND active = 1 ORDER BY id DESC""", (user_id,)):
         d = dict(r)
-        d["url"] = "/?" + (r["page_query"] or "")
+        d["url"] = search_url(r)
         out.append(d)
     return out
 
@@ -276,7 +277,7 @@ def check_saved(conn: sqlite3.Connection, send, user_id: int | None = None) -> i
         res = _new_since(conn, s, since, now, size=1)
         if res["total"]:
             n = res["total"]
-            notices.add(conn, s["user_id"], "search", f"Новые объекты по поиску: {n}", s["title"], url=search_url(s),
+            notices.add(conn, s["user_id"], "search", f"Новые объекты по поиску: {n}", s["title"], url=search_url(s, since),
                         listing_id=res["items"][0]["id"] if n == 1 else None, dedup_s=60)
             made += 1
         conn.execute("UPDATE saved_searches SET notice_checked_at = ? WHERE id = ?", (now, s["id"]))

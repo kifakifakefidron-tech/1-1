@@ -31,14 +31,16 @@
   }
 
   function itemHTML(n) {
-    const link = n.url || (n.listing_id ? `/?open=${n.listing_id}` : "");
+    let link = n.url || (n.listing_id ? `/?open=${n.listing_id}` : "");
+    // Выделение новых объектов — только при первом открытии этого уведомления
+    try { if (n.kind === "search" && localStorage.getItem(`seen:${n.id}`)) link = link.replace(/&since=\d+/, ""); } catch { /* */ }
     const acts = (n.actions || []).map((a, i) => `<a class="pill${i ? " light" : ""}" href="${esc(a.url)}">${esc(a.label)}</a>`).join("");
     return `<li class="nt-item${n.read ? "" : " unread"}" data-kind="${esc(n.kind)}">
       <span class="nt-ico k-${esc(n.kind)}">${n.photo ? `<img src="${esc(n.photo)}" alt="" loading="lazy">` : esc(n.icon)}</span>
       <div class="nt-body">
         <b>${esc(n.title)}</b>
         ${n.body ? `<p>${esc(n.body)}</p>` : ""}
-        <div class="nt-meta">${esc(ago(n.ts))}${link ? ` · <a href="${esc(link)}">${n.kind === "search" ? "Показать" : "Открыть"} →</a>` : ""}</div>
+        <div class="nt-meta">${esc(ago(n.ts))}${link ? ` · <a href="${esc(link)}" data-nid="${n.id}">${n.kind === "search" ? "Показать новые" : "Открыть"} →</a>` : ""}</div>
         ${acts ? `<div class="nt-acts">${acts}</div>` : ""}
       </div></li>`;
   }
@@ -78,6 +80,8 @@
   }
 
   document.addEventListener("click", async (e) => {
+    const a = e.target.closest("a[data-nid]");
+    if (a) { try { localStorage.setItem(`seen:${a.dataset.nid}`, "1"); } catch { /* */ } return; }
     const b = e.target.closest("button");
     if (!b) return;
     if (b.dataset.f !== undefined) {

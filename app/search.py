@@ -43,6 +43,7 @@ class Query:
     fresh_days: int | None = None
     new_days: int | None = None   # только впервые появившиеся за N дней («Новое сегодня»)
     since: int | None = None   # только появившиеся позже (кнопка «Обновить»)
+    hl: int | None = None      # из уведомления: появившиеся позже этого — первыми в списке
     sort: str = "new"
     page: int = 1
     size: int = 30
@@ -79,7 +80,7 @@ def query_from_params(qp) -> Query:
         districts=_list(qp, "district"), complexes=_list(qp, "complex"),
         not_first=qp.get("not_first") == "1", not_last=qp.get("not_last") == "1",
         fresh_days=num_param(qp.get("fresh_days"), int), new_days=num_param(qp.get("new_days"), int),
-        since=num_param(qp.get("since"), int),
+        since=num_param(qp.get("since"), int), hl=num_param(qp.get("hl"), int),
         sort=qp.get("sort", "new"),
         page=num_param(qp.get("page"), int) or 1,
         size=num_param(qp.get("size"), int) or 30,
@@ -218,6 +219,8 @@ def search(conn: sqlite3.Connection, qr: Query, now: int, with_contacts: bool) -
     page = max(1, qr.page)
     # Объекты СТРЕЛ сортируются вместе со всеми, без вывода вперёд (решение 07.10)
     order = SORTS.get(qr.sort, SORTS["new"])
+    if qr.hl:   # новое в сохранённом поиске — наверх
+        order = f"(l.first_seen > {int(qr.hl)}) DESC, " + order
     rows = conn.execute(
         f"SELECT * FROM listings l WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
         params + [size, (page - 1) * size],

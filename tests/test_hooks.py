@@ -121,7 +121,7 @@ def test_notices_page_feed(env):
     conn.commit()
     hooks.run(conn, None, every_s=0)
     kinds = {n["kind"]: n for n in c.get("/api/notices").json()["items"]}
-    assert kinds["search"]["url"] == "/?rooms=1&fresh=new1"
+    assert kinds["search"]["url"].startswith("/?rooms=1&saved=") and "&since=" in kinds["search"]["url"]
     assert kinds["price"]["title"].startswith("Цена выросла")
     assert c.get("/api/me").json()["me"]["unread"] == 2
     conn.execute("UPDATE listings SET is_active = 0 WHERE id = ?", (lid,))   # объект сняли

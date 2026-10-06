@@ -14,6 +14,10 @@
     notFirst: false, notLast: false, fresh: "", districts: [], complexes: [],
     sort: "new", view: "list",
   };
+  const DEFAULTS = JSON.parse(JSON.stringify(state));
+  let savedList = [];       // сохранённые поиски («🔔 Следить»)
+  let activeSaved = 0;      // открыт сохранённый поиск
+  let hitSince = 0;         // из уведомления: выделить объекты, появившиеся после этого времени
   let meta = { types: {}, access: false, access_required: false };
   let page = 1;
   let reqSeq = 0;
@@ -134,6 +138,7 @@
     for (const d of state.districts) p.append("district", d);
     for (const c of state.complexes) p.append("complex", c);
     p.set("sort", state.sort);
+    if (hitSince) p.set("hl", hitSince);
     for (const [k, v] of Object.entries(extra)) p.set(k, v);
     return p;
   }
@@ -308,13 +313,14 @@
   }
 
   function itemHTML(o) {
-    const tag = badgesHTML(o);
+    const hit = hitSince && o.first_seen > hitSince;   // новое в этом поиске — выделяем один раз
+    const tag = (hit ? `<div class="marks"><span class="mark hit">Новое в вашем поиске</span></div>` : "") + badgesHTML(o);
     const m2 = o.price_m2 && o.deal !== "rent" ? `<div class="price-m2">${num(o.price_m2)} ₽/м²</div>` : "";
     const photo = o.photos && o.photos[0]
       ? `<div class="item-photo"><img src="${esc(o.photos[0])}" alt="" loading="lazy"></div>` : "";
     const fav = me() && me().favorites.includes(o.id);
     const addr = address(o);
-    return `<li class="item${photo ? " has-photo" : ""}" tabindex="0" data-id="${o.id}">
+    return `<li class="item${photo ? " has-photo" : ""}${hit ? " hit" : ""}" tabindex="0" data-id="${o.id}">
       ${photo}
       <button type="button" class="fav-btn${fav ? " on" : ""}" data-fav="${o.id}" aria-label="${fav ? "Убрать из избранного" : "В избранное"}">${HEART}</button>
       ${headline(o) ? `<h3 class="item-head">${esc(headline(o))}</h3>` : ""}
@@ -474,6 +480,7 @@
   // ─── всё вместе ─────────────────────────────────────────────────────────
   let timer = 0;
   function refresh(delay = 0) {
+    if (activeSaved && !applyingSaved()) { activeSaved = 0; setHits(0); renderSaved(); }
     clearTimeout(timer);
     timer = setTimeout(() => {
       writeUrl();
@@ -589,11 +596,56 @@
     }
   }
 
+  // ─── сохранённые поиски у фильтров ──────────────────────────────────────
+  // Совпадает ли текущий адрес с открытым сохранённым поиском (если человек поменял фильтры — уже нет)
+  function applyingSaved() {
+    const s = savedList.find((x) => x.id === activeSaved);
+    if (!s) return false;
+    const norm = (q) => { const p = new URLSearchParams(q); ["saved", "since", "view", "open", "sort"].forEach((k) => p.delete(k));
+      return [...p.entries()].map((e) => e.join("=")).sort().join("&"); };
+    writeUrl();
+    return norm(location.search.slice(1)) === norm(s.url.split("?")[1] || "");
+  }
+  async function loadSavedSearches() {
+    if (!me()) { savedList = []; renderSaved(); return; }
+    const r = await call("/api/saved");
+    savedList = r.ok ? r.data.items || [] : [];
+    renderSaved();
+  }
+  function renderSaved() {
+    $("savedRow").hidden = !savedList.length;
+    $("savedChips").innerHTML = savedList.map((s) =>
+      `<button type="button" class="chip${s.id === activeSaved ? " on" : ""}" data-saved="${s.id}" title="${esc(s.title)}">${esc(s.title)}</button>`).join("");
+  }
+  // Применить фильтры сохранённого поиска (из адреса вида «/?rooms=2&district=ФМР»)
+  function applySaved(id, since) {
+    const s = savedList.find((x) => x.id === id);
+    if (!s) return;
+    const sp = new URLSearchParams(s.url.split("?")[1] || "");
+    sp.delete("saved"); sp.delete("since");
+    Object.assign(state, JSON.parse(JSON.stringify(DEFAULTS)), { view: state.view });
+    history.replaceState(null, "", sp.toString() ? `?${sp}` : location.pathname);
+    readUrl();
+    $("q").value = state.q;
+    activeSaved = id;
+    setHits(since || 0, s.title);
+    if (favMode) setFavMode(false);
+    syncControls();
+    renderSaved();
+    refresh();
+  }
+  function setHits(since, title) {
+    hitSince = since;
+    $("hitNote").hidden = !since;
+    if (since) $("hitNote").innerHTML = `Новые объекты по поиску «${esc(title || "")}» выделены
+      <button type="button" class="chip" id="hitOff">Понятно</button>`;
+  }
+
   async function watchSearch() {
     if (!me()) { openLogin("Чтобы получать уведомления о новых объектах по этому поиску, войдите."); return; }
     const r = await call("/api/saved", { query: apiParams().toString(), page: location.search });
     toast(r.data.text || r.data.detail || "Не получилось.", 3500);
-    if (r.ok) reloadMeta();
+    if (r.ok) { reloadMeta(); loadSavedSearches(); activeSaved = r.data.saved.id; }
   }
 
   // Телефон агента: открыт по подписке; иначе — скрыт с понятным следующим шагом
@@ -875,6 +927,7 @@
   async function afterLogin() {
     if ($("loginDlg").open) closeDlg($("loginDlg"));
     await reloadMeta();
+    loadSavedSearches();
     toast("Вы вошли");
     refresh();
     if ($("detail").open && openedId) openDetail(openedId);
@@ -1038,6 +1091,13 @@
         return;
       }
       if (t.dataset.openId) { openDetail(Number(t.dataset.openId), { push: true }); return; }
+      if (t.dataset.saved) {
+        const id = Number(t.dataset.saved);
+        if (activeSaved === id) { activeSaved = 0; setHits(0); renderSaved(); $("resetBtn").click(); return; }
+        applySaved(id);
+        return;
+      }
+      if (t.id === "hitOff") { setHits(0); reloadList(); return; }
       if (t.dataset.unsave) { call("/api/saved", { id: Number(t.dataset.unsave) }, "DELETE").then(loadSaved); return; }
       if (t.dataset.retry) { openDetail(Number(t.dataset.retry)); return; }
       if (t.hasAttribute("data-refresh-list")) { closeDlg($("detail")); reloadList(); return; }
@@ -1263,6 +1323,16 @@
     setTab(state.view === "map" ? "map" : "list");
     refresh();
     const sp = new URLSearchParams(location.search);
+    await loadSavedSearches();
+    const savedId = Number(sp.get("saved"));
+    if (savedId) {
+      const since = Number(sp.get("since")) || 0;
+      if (savedList.some((s) => s.id === savedId)) applySaved(savedId, since);
+      else {
+        sp.delete("saved"); sp.delete("since");
+        history.replaceState(null, "", sp.toString() ? `?${sp}` : location.pathname);
+      }
+    }
     const openId = Number(sp.get("open"));
     if (openId) openDetail(openId);  // ссылка на объект: /?open=123
     // Ссылки со страницы уведомлений: открыть нужный раздел и убрать служебный параметр из адреса

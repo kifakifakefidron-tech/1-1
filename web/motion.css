@@ -492,3 +492,14 @@ button.link { border: 0; background: none; padding: 0; color: var(--ink); font: 
 .bell-dot { position: absolute; top: 8px; right: 9px; width: 9px; height: 9px; border-radius: 50%; background: #ff8a7a;
   box-shadow: 0 0 0 2px var(--bg); }
 @media (max-width: 640px) { .bell-mobile:not([hidden]) { display: grid; } }
+
+/* ─── сохранённые поиски у фильтров; новое в поиске ───────────────────── */
+.saved-row { display: flex; align-items: center; gap: 10px; margin: 12px 0 0; overflow-x: auto; scrollbar-width: none; }
+.saved-row::-webkit-scrollbar { display: none; }
+.saved-label { flex: 0 0 auto; font-size: 13px; color: var(--ink-3); }
+.saved-chips { display: flex; gap: 6px; flex-wrap: nowrap; }
+.saved-chips .chip { white-space: nowrap; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+.hit-note { margin: 10px 0 0; padding: 10px 14px; border-radius: 14px; background: rgba(155, 232, 184, .14);
+  border: 1px solid #9be8b8; font-size: 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.item.hit { border-color: #9be8b8; box-shadow: 0 0 0 2px #9be8b8, 0 14px 34px rgba(0, 0, 0, .25); }
+.mark.hit { background: #9be8b8; color: #063b2c; }
