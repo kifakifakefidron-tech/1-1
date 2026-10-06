@@ -357,3 +357,16 @@ dialog::backdrop { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px
 .mc-extra .skel i { height: 10px; background-color: #e3ecea; }
 .mc-extra .skel i:first-child { width: 80%; height: 10px; border-radius: 5px; }
 .mc-extra .skel i:last-child { width: 55%; }
+
+/* ─── согласие и cookie ──────────────────────────────────────────────── */
+.consent { color: var(--ink-3); font-size: 12px; line-height: 1.45; margin: 12px 0 0; }
+.consent a { color: var(--ink-2); }
+.cookie { position: fixed; z-index: 85; left: 50%; bottom: calc(16px + var(--tabbar-h)); transform: translateX(-50%);
+  width: min(560px, calc(100vw - 24px)); display: flex; gap: 14px; align-items: center; padding: 14px 16px;
+  border-radius: 18px; background: rgba(10, 94, 92, .92); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--line); box-shadow: 0 16px 40px rgba(0, 0, 0, .3); animation: riseIn .6s var(--spring) .8s both;
+  transition: opacity .35s var(--ease), transform .35s var(--ease); }
+.cookie.bye { opacity: 0; transform: translate(-50%, 20px); }
+.cookie p { margin: 0; font-size: 13px; color: var(--ink-2); line-height: 1.45; }
+.cookie a { color: var(--ink); }
+.cookie .pill { padding: 9px 18px; white-space: nowrap; }

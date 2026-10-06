@@ -1,0 +1,21 @@
+/* Текстовые страницы: «Как это работает», политика, соглашение */
+.doc { max-width: 760px; margin: 0 auto; padding: 24px 16px 80px; animation: riseIn .6s var(--spring, ease) both; }
+.doc h1 { font: 600 clamp(30px, 5vw, 44px)/1.1 var(--head); letter-spacing: .01em; margin: 10px 0 12px; }
+.doc .lead { font-size: 18px; color: var(--ink-2); margin: 0 0 28px; }
+.doc h2 { font: 600 24px/1.2 var(--head); margin: 40px 0 10px; letter-spacing: .01em; }
+.doc h3 { font: 600 17px var(--body); margin: 22px 0 6px; }
+.doc p, .doc li { color: var(--ink-2); font-size: 16px; line-height: 1.6; }
+.doc b, .doc strong { color: var(--ink); }
+.doc a { color: var(--ink); }
+.doc ul, .doc ol { padding-left: 22px; }
+.doc .meta { color: var(--ink-3); font-size: 13px; }
+.doc .steps3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0 8px; padding: 0; list-style: none; }
+.doc .steps3 li { background: var(--paper); border: 1px solid var(--line); border-radius: 18px; padding: 16px; }
+.doc .steps3 b { display: block; font: 600 30px var(--head); margin-bottom: 4px; }
+.doc .note-box { background: var(--chip); border-radius: 16px; padding: 14px 16px; margin: 16px 0; }
+.doc details { border-top: 1px solid var(--line); padding: 12px 0; }
+.doc details summary { cursor: pointer; font-weight: 600; color: var(--ink); list-style: none; }
+.doc details summary::after { content: " +"; color: var(--ink-3); }
+.doc details[open] summary::after { content: " −"; }
+.doc .cta { display: inline-block; margin-top: 18px; text-decoration: none; }
+@media (max-width: 640px) { .doc .steps3 { grid-template-columns: 1fr; } }

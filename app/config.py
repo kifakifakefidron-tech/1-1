@@ -111,6 +111,12 @@ SMTP_USER = os.getenv("SMTP_USER", "").strip()
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").strip()
 SMTP_FROM = os.getenv("SMTP_FROM", "").strip() or SMTP_USER
 
+# Данные для политики конфиденциальности и соглашения (страницы /privacy, /terms, /how)
+OPERATOR_NAME = os.getenv("OPERATOR_NAME", "").strip() or "[ФИО самозанятого — впишите OPERATOR_NAME в .env]"
+OPERATOR_INN = os.getenv("OPERATOR_INN", "").strip() or "[ИНН — впишите OPERATOR_INN в .env]"
+CONTACT_EMAIL = os.getenv("CONTACT_EMAIL", "").strip() or ALERT_EMAIL or next(iter(sorted(ADMIN_EMAILS)), "")
+POLICY_DATE = os.getenv("POLICY_DATE", "07.10.2026").strip()
+
 # Оплата ЮKassa — подготовлена, но выключена, пока PAYMENTS_ENABLED не true
 PAYMENTS_ENABLED = _bool("PAYMENTS_ENABLED", False)
 YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "").strip()

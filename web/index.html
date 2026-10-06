@@ -14,7 +14,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
 <link rel="stylesheet" href="/static/style.css?v=9">
-<link rel="stylesheet" href="/static/motion.css?v=7">
+<link rel="stylesheet" href="/static/motion.css?v=8">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -37,6 +37,7 @@
       <button type="button" class="nav-link on" data-tab="list">Объекты</button>
       <button type="button" class="nav-link" data-tab="map">Карта</button>
       <button type="button" class="nav-link" data-tab="fav" id="favBtn">Избранное</button>
+      <a class="nav-link" href="/how">Как это работает</a>
       <a class="nav-link" href="/admin" id="adminLink" hidden>Админка</a>
       <button type="button" class="nav-cta" id="accountBtn">Войти</button>
     </nav>
@@ -174,6 +175,9 @@
 
 <footer class="foot">
   <span>1+1 · поиск объектов Краснодара</span>
+  <a href="/how">Как это работает</a>
+  <a href="/privacy">Политика конфиденциальности</a>
+  <a href="/terms">Пользовательское соглашение</a>
   <a id="optoutLink" href="#" target="_blank" rel="noopener">Агентам: убрать свой номер с сайта</a>
 </footer>
 
@@ -223,9 +227,17 @@
         </form>
       </details>
     </div>
+    <p class="consent">Входя, вы принимаете <a href="/terms" target="_blank">пользовательское соглашение</a>
+      и даёте согласие на обработку персональных данных по <a href="/privacy" target="_blank">политике</a>.</p>
     <div class="dlg-actions"><button type="button" class="ghost" data-close>Закрыть</button></div>
   </div>
 </dialog>
+
+<div class="cookie" id="cookieBar" hidden>
+  <p>Мы используем только необходимые cookie — чтобы вы оставались в аккаунте. Рекламных и аналитических нет.
+    <a href="/privacy#cookie">Подробнее</a></p>
+  <button type="button" class="pill" id="cookieOk">Понятно</button>
+</div>
 
 <dialog id="cabinetDlg" class="small-dlg" aria-labelledby="cabTitle">
   <span class="grab" aria-hidden="true"></span>
@@ -234,6 +246,6 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
-<script src="/static/app.js?v=14"></script>
+<script src="/static/app.js?v=15"></script>
 </body>
 </html>

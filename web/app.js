@@ -981,6 +981,13 @@
       }, { rootMargin: "900px 0px" }).observe(document.querySelector(".more-results"));  // контейнер виден всегда, кнопка — нет
     }
     $("filterBtn").addEventListener("click", openSheet);
+    // Уведомление о cookie — один раз, запоминаем в браузере
+    try { if (!localStorage.getItem("cookieOk")) $("cookieBar").hidden = false; } catch { /* приватный режим */ }
+    $("cookieOk").addEventListener("click", () => {
+      try { localStorage.setItem("cookieOk", "1"); } catch { /* приватный режим */ }
+      $("cookieBar").classList.add("bye");
+      setTimeout(() => { $("cookieBar").hidden = true; }, 400);
+    });
     const onScroll = () => $("nav").classList.toggle("scrolled", window.scrollY > 8);
     window.addEventListener("scroll", onScroll, { passive: true });
     onScroll();

@@ -149,3 +149,13 @@ def test_llm_merged_objects_are_split_by_rules(monkeypatch):
         {"lines": [1, 15], "type": "flat", "deal": "sale", "rooms": 0, "area_m2": 21, "price_rub": 3600000}]})
     _, objs = parser.parse(PORTYANKA, use_llm=True)
     assert len(objs) == 2
+
+
+def test_phones_not_sent_to_llm(monkeypatch):
+    from app import llm
+    seen = {}
+    monkeypatch.setattr(llm, "parse_message", lambda text: seen.update(text=text) or {"kind": "listing", "objects": [
+        {"lines": [1, 1], "type": "flat", "deal": "sale", "rooms": 1, "area_m2": 38, "price_rub": 4500000}]})
+    _, [o] = parser.parse("1-к 38 м², 5/9 эт. 4,5 млн руб. Тел 8 918 111-22-33", use_llm=True)
+    assert "111-22-33" not in seen["text"] and "[телефон]" in seen["text"]
+    assert o.phones == ["+79181112233"]

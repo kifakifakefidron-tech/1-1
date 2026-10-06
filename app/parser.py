@@ -213,7 +213,10 @@ def parse(text: str, sender_phone: str | None = None, use_llm: bool | None = Non
 
     if use_llm:
         try:
-            res = llm.parse_message(text)
+            # Номера телефонов в нейросеть не отправляем (DeepSeek — зарубежный сервис, это была бы
+            # трансграничная передача персональных данных). Номера достаём сами правилами.
+            # Замена построчная — номера строк для ответа нейросети не сдвигаются.
+            res = llm.parse_message(rules._PHONE_RE.sub("[телефон]", text))
         except llm.LLMError as e:
             log.warning("Нейросеть недоступна, разбираю правилами: %s", e)
         else:

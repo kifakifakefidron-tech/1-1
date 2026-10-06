@@ -167,6 +167,31 @@ def index(request: Request, body: dict | None = None):
     return FileResponse(WEB / "index.html", headers={"Cache-Control": "no-cache"})
 
 
+def _page(name: str) -> Response:
+    """Текстовая страница с подстановкой данных оператора и условий подписки."""
+    html = (WEB / name).read_text(encoding="utf-8")
+    for key, val in {
+        "OPERATOR_NAME": config.OPERATOR_NAME, "OPERATOR_INN": config.OPERATOR_INN,
+        "CONTACT_EMAIL": config.CONTACT_EMAIL or "почту из раздела «Контакты»", "POLICY_DATE": config.POLICY_DATE,
+        "SITE_URL": config.SITE_URL, "TRIAL_DAYS": config.TRIAL_DAYS, "SUB_PRICE": config.SUB_PRICE,
+        "SUB_DAYS": config.SUB_DAYS, "STALE_DAYS": config.STALE_DAYS,
+    }.items():
+        html = html.replace("{{" + key + "}}", str(val))
+    return Response(html, media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
+
+
+def how_page(request: Request, body: dict | None = None):
+    return _page("how.html")
+
+
+def privacy_page(request: Request, body: dict | None = None):
+    return _page("privacy.html")
+
+
+def terms_page(request: Request, body: dict | None = None):
+    return _page("terms.html")
+
+
 def admin_page(request: Request, body: dict | None = None):
     return FileResponse(WEB / "admin.html", headers={"Cache-Control": "no-cache"})
 
@@ -567,6 +592,9 @@ def api_add_message(request: Request, body: dict | None = None):
 routes = [
     Route("/", threaded(index)),
     Route("/admin", threaded(admin_page)),
+    Route("/how", threaded(how_page)),
+    Route("/privacy", threaded(privacy_page)),
+    Route("/terms", threaded(terms_page)),
     Route("/api/meta", threaded(api_meta)),
     Route("/api/listings", threaded(api_listings)),
     Route("/api/listings/{id:int}", threaded(api_listing)),

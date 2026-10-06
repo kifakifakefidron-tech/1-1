@@ -66,3 +66,9 @@ def test_since_counts_only_new(client):
     total = client.get("/api/listings").json()["total"]
     assert client.get(f"/api/listings?since={int(time.time()) - 3600}").json()["total"] == total
     assert client.get(f"/api/listings?since={int(time.time()) + 60}").json()["total"] == 0
+
+
+def test_info_pages(client):
+    for path, word in (("/how", "Как работает 1+1"), ("/privacy", "152-ФЗ"), ("/terms", "Пользовательское соглашение")):
+        r = client.get(path)
+        assert r.status_code == 200 and word in r.text and "{{" not in r.text
