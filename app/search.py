@@ -14,7 +14,6 @@ from dataclasses import dataclass, field
 from . import geo
 from .textnorm import norm, words
 
-FEED_FIRST = "l.source = 'feed' DESC, "
 SORTS = {
     "new": "l.last_seen DESC, l.id DESC",
     "price_asc": "l.price IS NULL, l.price ASC, l.id DESC",
@@ -41,6 +40,7 @@ class Query:
     not_first: bool = False
     not_last: bool = False
     fresh_days: int | None = None
+    since: int | None = None   # только появившиеся позже (кнопка «Обновить»)
     sort: str = "new"
     page: int = 1
     size: int = 30
@@ -132,6 +132,8 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
         w.append("(l.floor IS NULL OR l.floors IS NULL OR l.floor < l.floors)")
     if qr.fresh_days:
         w.append("l.last_seen >= ?"); p.append(now - qr.fresh_days * 86400)
+    if qr.since:
+        w.append("l.first_seen > ?"); p.append(qr.since)
     if fts:
         w.append("l.id IN (SELECT rowid FROM listings_fts WHERE listings_fts MATCH ?)"); p.append(fts)
     return " AND ".join(w), p
@@ -165,9 +167,14 @@ def search(conn: sqlite3.Connection, qr: Query, now: int, with_contacts: bool) -
     total = conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {where}", params).fetchone()[0]
     size = max(1, min(qr.size, 100))
     page = max(1, qr.page)
-    order = FEED_FIRST + SORTS.get(qr.sort, SORTS["new"])
+    # Объекты партнёра (фид СТРЕЛ) — через один с остальными: партнёр, чат, партнёр, чат…
+    # Внутри каждой группы — выбранная сортировка; когда одна группа кончилась, идёт другая.
+    order = SORTS.get(qr.sort, SORTS["new"])
     rows = conn.execute(
-        f"SELECT l.* FROM listings l WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
+        f"""SELECT * FROM (
+                SELECT l.*, ROW_NUMBER() OVER (PARTITION BY l.source = 'feed' ORDER BY {order}) AS rn
+                FROM listings l WHERE {where})
+            ORDER BY rn * 2 + (source != 'feed'), id DESC LIMIT ? OFFSET ?""",
         params + [size, (page - 1) * size],
     ).fetchall()
     return {

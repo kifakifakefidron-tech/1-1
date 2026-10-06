@@ -132,6 +132,7 @@ def query_from(request: Request) -> search.Query:
         districts=_list(request, "district"), complexes=_list(request, "complex"),
         not_first=qp.get("not_first") == "1", not_last=qp.get("not_last") == "1",
         fresh_days=_num(qp.get("fresh_days"), int),
+        since=_num(qp.get("since"), int),
         sort=qp.get("sort", "new"),
         page=_num(qp.get("page"), int) or 1,
         size=_num(qp.get("size"), int) or 30,
@@ -227,10 +228,14 @@ async def api_login(request: Request):
     body = await _body(request)
     code = str(body.get("code", "")).strip().encode()  # bytes: код может быть по-русски
     if config.ACCESS_CODE and hmac.compare_digest(code, config.ACCESS_CODE.encode()):
-        resp = JSONResponse({"ok": True})
+        conn = db.get()
+        user = current_user(request) or accounts.create_promo_user(conn)
+        token = accounts.create_session(conn, user["id"], request.headers.get("user-agent", ""))
+        resp = _session_response(request, {"ok": True, "me": accounts.me(conn, accounts.get_user(conn, user["id"]))},
+                                 token)
         resp.set_cookie(COOKIE, _sign(config.ACCESS_CODE), max_age=180 * 86400, httponly=True, samesite="lax")
         return resp
-    return JSONResponse({"ok": False}, status_code=403)
+    return JSONResponse({"ok": False, "detail": "Код не подошёл. Проверьте и введите ещё раз."}, status_code=403)
 
 
 # ─── вход через Telegram ───────────────────────────────────────────────────
@@ -298,6 +303,7 @@ async def api_logout(request: Request):
     accounts.end_session(db.get(), request.cookies.get(SESSION))
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(SESSION)
+    resp.delete_cookie(COOKIE)  # и вход по коду коллег
     return resp
 
 

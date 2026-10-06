@@ -67,3 +67,15 @@ def test_message_without_article_stays_separate(conn, add):
     add("Евро-2 60м2, Этаж: 13/22, ЖК Достояние. Цена 11,9 млн. 89618571772")
     assert search.search(conn, search.Query(), NOW, False)["total"] == 2
     assert ingest.make_title({"type": "flat", "rooms": 2, "room_kind": "mini", "area": 35}) == "Мини-2, 35 м²"
+
+
+def test_partner_objects_interleaved(conn, add):
+    for i in range(3):
+        add(f"{i + 1}-к квартира {40 + i * 10} м², {i + 2}/9 эт. {4 + i} млн руб. 8918000000{i}")
+    xml = FEED.decode().replace("</offers>", "".join(
+        f'<offer id="{900 + i}"><vendor>♟СТУДИЯ♟</vendor><vendorCode>{900 + i}</vendorCode><price>{3000 + i}.00</price>'
+        f'<description>♟СТУДИЯ♟&lt;br /&gt;➵ {20 + i}м2, Этаж: {i + 1}/9&lt;br /&gt;Цена - {3000 + i}</description></offer>'
+        for i in range(2)) + "</offers>").encode()
+    feed.sync(conn, xml, now=NOW)
+    items = search.search(conn, search.Query(), NOW, False)["items"]
+    assert [i["source"] for i in items] == ["feed", "chat", "feed", "chat", "feed", "chat"]

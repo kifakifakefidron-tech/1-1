@@ -33,7 +33,8 @@ def test_public_sees_no_phones_until_login(client):
     assert "phones" not in client.get(f"/api/listings/{lid}").json()
 
     assert client.post("/api/login", json={"code": "не тот"}).status_code == 403
-    assert client.post("/api/login", json={"code": "секрет"}).json() == {"ok": True}
+    r = client.post("/api/login", json={"code": "секрет"}).json()
+    assert r["ok"] and r["me"]["access"]  # вход по коду — обычный аккаунт с кабинетом
 
     d = client.get(f"/api/listings/{lid}").json()
     assert d["phones"] == ["+79181112233"]
@@ -48,3 +49,20 @@ def test_facets_and_missing_listing(client):
 
 def test_manual_add_needs_code(client):
     assert client.post("/api/messages", json={"text": "Студия 24 м2, 3 200 000 руб."}).status_code == 403
+
+
+def test_promo_login_has_cabinet_and_logout(client):
+    me = client.post("/api/login", json={"code": "секрет"}).json()["me"]
+    lid = client.get("/api/listings").json()["items"][0]["id"]
+    assert client.post(f"/api/favorites/{lid}").json() == {"favorite": True}
+    assert client.get("/api/me").json()["me"]["favorites"] == [lid]
+    client.post("/api/auth/logout")
+    assert client.get("/api/me").json()["me"] is None
+    assert "phones" not in client.get(f"/api/listings/{lid}").json()
+
+
+def test_since_counts_only_new(client):
+    import time
+    total = client.get("/api/listings").json()["total"]
+    assert client.get(f"/api/listings?since={int(time.time()) - 3600}").json()["total"] == total
+    assert client.get(f"/api/listings?since={int(time.time()) + 60}").json()["total"] == 0

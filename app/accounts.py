@@ -108,6 +108,15 @@ def upsert_email_user(conn: sqlite3.Connection, email: str) -> sqlite3.Row:
     return get_user(conn, cur.lastrowid)
 
 
+def create_promo_user(conn: sqlite3.Connection) -> sqlite3.Row:
+    """Вход по коду коллег (временно): обычный аккаунт с доступом на PROMO_LOGIN_DAYS дней."""
+    now = int(time.time())
+    cur = conn.execute("INSERT INTO users (name, created, last_seen, paid_until) VALUES (?,?,?,?)",
+                       ("Коллега (по коду)", now, now, now + config.PROMO_LOGIN_DAYS * DAY))
+    conn.commit()
+    return get_user(conn, cur.lastrowid)
+
+
 def link_telegram(conn: sqlite3.Connection, user_id: int, tg_id: int, username: str | None,
                   phone: str | None) -> tuple[bool, str]:
     """Привязать Telegram (и номер) к уже существующему аккаунту (вошёл по почте)."""
