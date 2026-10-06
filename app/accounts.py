@@ -239,8 +239,9 @@ def toggle_favorite(conn: sqlite3.Connection, user_id: int, listing_id: int) -> 
     if cur.rowcount:
         conn.commit()
         return False
-    conn.execute("INSERT INTO favorites (user_id, listing_id, created) VALUES (?,?,?)",
-                 (user_id, listing_id, int(time.time())))
+    conn.execute("""INSERT INTO favorites (user_id, listing_id, created, price_at)
+                    VALUES (?,?,?, (SELECT price FROM listings WHERE id = ?))""",
+                 (user_id, listing_id, int(time.time()), listing_id))
     conn.commit()
     return True
 

@@ -18,7 +18,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import accounts, agent, config, db, geo, ingest, mailer, parser, payments, search, tg
+from . import accounts, agent, config, db, geo, hooks, ingest, mailer, parser, payments, search, tg
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -128,44 +128,13 @@ def threaded(fn):
 
 
 # ─── разбор параметров ─────────────────────────────────────────────────────
-def _num(v: str | None, cast=float):
-    if v in (None, ""):
-        return None
-    try:
-        return cast(str(v).replace(" ", "").replace(",", "."))
-    except ValueError:
-        return None
-
-
-def _list(request: Request, key: str) -> list[str]:
-    vals: list[str] = []
-    for v in request.query_params.getlist(key):
-        vals += [x for x in v.split(",") if x]
-    return vals
+_num = search.num_param
 
 
 def query_from(request: Request) -> search.Query:
-    qp = request.query_params
-    rooms = [int(x) for x in _list(request, "rooms") if x.isdigit()]
-    return search.Query(
-        q=qp.get("q", "")[:200],
-        types=[t for t in _list(request, "type") if t in TYPE_LABELS],
-        deal="rent" if qp.get("deal") == "rent" else "sale",
-        rooms=rooms,
-        price_min=_num(qp.get("price_min"), int), price_max=_num(qp.get("price_max"), int),
-        area_min=_num(qp.get("area_min")), area_max=_num(qp.get("area_max")),
-        land_min=_num(qp.get("land_min")), land_max=_num(qp.get("land_max")),
-        districts=_list(request, "district"), complexes=_list(request, "complex"),
-        not_first=qp.get("not_first") == "1", not_last=qp.get("not_last") == "1",
-        fresh_days=_num(qp.get("fresh_days"), int),
-        since=_num(qp.get("since"), int),
-        sort=qp.get("sort", "new"),
-        page=_num(qp.get("page"), int) or 1,
-        size=_num(qp.get("size"), int) or 30,
-    )
+    return search.query_from_params(request.query_params)
 
 
-# ─── страницы и поиск ──────────────────────────────────────────────────────
 def index(request: Request, body: dict | None = None):
     # no-cache: после обновления сайта браузер сразу берёт новую страницу (и новые ?v= у стилей/скриптов)
     return FileResponse(WEB / "index.html", headers={"Cache-Control": "no-cache"})
@@ -255,6 +224,7 @@ def api_listings(request: Request, body: dict | None = None):
     def compute():
         now = int(time.time())
         res = search.search(db.get(), query_from(request), now, False)
+        hooks.annotate(db.get(), res["items"])   # «ниже рынка на N %»
         res["now"] = now  # от этого момента страница считает «новые объекты»
         return res
     if request.query_params.get("since"):
@@ -279,8 +249,11 @@ def api_listing(request: Request, body: dict | None = None):
         d["phones_limit"] = why == "limit"
         if d.get("fragment"):
             d["fragment"] = parser.strip_phones(d["fragment"])
-    d["can_edit"] = bool(user) and agent.can_edit(conn, user, conn.execute(
-        "SELECT * FROM listings WHERE id = ?", (lid,)).fetchone())[0]
+    row = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
+    d["can_edit"] = bool(user) and agent.can_edit(conn, user, row)[0]
+    d["market"] = hooks.market_for(conn, d)
+    d["same"] = hooks.same_elsewhere(conn, row)
+    d["note"] = hooks.get_note(conn, user["id"], lid) if user else None
     d["favorite"] = bool(user and conn.execute(
         "SELECT 1 FROM favorites WHERE user_id = ? AND listing_id = ?", (user["id"], lid)).fetchone())
     return JSONResponse(d)
@@ -605,6 +578,44 @@ def api_admin_complaints(request: Request, body: dict | None = None):
     return JSONResponse({"items": [dict(r) for r in rows]})
 
 
+# ─── заметки и подписки на поиск ───────────────────────────────────────────
+def api_note(request: Request, body: dict | None = None):
+    user, err = _need_user(request)
+    if err:
+        return err
+    hooks.set_note(db.get(), user["id"], int(request.path_params["id"]), str((body or {}).get("text", "")))
+    return JSONResponse({"ok": True})
+
+
+def api_saved(request: Request, body: dict | None = None):
+    user, err = _need_user(request)
+    if err:
+        return err
+    conn = db.get()
+    body = body or {}
+    if request.method == "POST":
+        if _too_often(request, "saved", 30, 3600):
+            return _err("Слишком часто — попробуйте позже.", 429)
+        res, why = hooks.save_search(conn, user, str(body.get("query", ""))[:2000], TYPE_LABELS)
+        if res is None:
+            return _err(why)
+        return JSONResponse({"saved": res, "text": why, "items": hooks.list_saved(conn, user["id"])})
+    if request.method == "DELETE":
+        hooks.delete_saved(conn, user["id"], _num(body.get("id"), int) or 0)
+    return JSONResponse({"items": hooks.list_saved(conn, user["id"])})
+
+
+def saved_off_page(request: Request, body: dict | None = None):
+    q = request.query_params
+    ok = hooks.unsubscribe(db.get(), _num(q.get("s"), int) or 0, q.get("t", ""))
+    text = "Готово — письма по этому поиску больше не придут." if ok else "Ссылка устарела или неверна."
+    html = (f'<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+            f'<title>1+1</title><body style="font:18px system-ui;background:#035352;color:#F3E8BC;display:grid;'
+            f'place-items:center;min-height:90vh;text-align:center;padding:16px"><div><h1>1+1</h1><p>{text}</p>'
+            f'<p><a style="color:#F3E8BC" href="/">К поиску</a></p></div>')
+    return Response(html, media_type="text/html; charset=utf-8")
+
+
 # ─── кабинет агента ────────────────────────────────────────────────────────
 def _agent_items(conn, user) -> list[dict]:
     out = []
@@ -772,6 +783,9 @@ routes = [
     Route("/api/admin/complaints", threaded(api_admin_complaints), methods=["GET", "POST"]),
     Route("/api/parse", threaded(api_parse), methods=["POST"]),
     Route("/api/messages", threaded(api_add_message), methods=["POST"]),
+    Route("/api/notes/{id:int}", threaded(api_note), methods=["POST"]),
+    Route("/api/saved", threaded(api_saved), methods=["GET", "POST", "DELETE"]),
+    Route("/saved/off", threaded(saved_off_page)),
     Route("/api/agent", threaded(api_agent)),
     Route("/api/agent/verify", threaded(api_agent_verify), methods=["GET", "POST"]),
     Route("/api/agent/listings", threaded(api_agent_create), methods=["POST"]),

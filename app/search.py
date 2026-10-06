@@ -12,6 +12,7 @@ import sqlite3
 from dataclasses import dataclass, field
 
 from . import geo
+from .rules import TYPE_LABELS
 from .textnorm import norm, words
 
 SORTS = {
@@ -40,12 +41,52 @@ class Query:
     not_first: bool = False
     not_last: bool = False
     fresh_days: int | None = None
+    new_days: int | None = None   # только впервые появившиеся за N дней («Новое сегодня»)
     since: int | None = None   # только появившиеся позже (кнопка «Обновить»)
     sort: str = "new"
     page: int = 1
     size: int = 30
 
 
+# ─── разбор параметров адреса ──────────────────────────────────────────────
+def num_param(v: str | None, cast=float):
+    if v in (None, ""):
+        return None
+    try:
+        return cast(str(v).replace(" ", "").replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _list(qp, key: str) -> list[str]:
+    vals: list[str] = []
+    for v in qp.getlist(key):
+        vals += [x for x in v.split(",") if x]
+    return vals
+
+
+def query_from_params(qp) -> Query:
+    """Параметры адреса (?q=…&rooms=1,2…) → Query. qp — QueryParams Starlette."""
+    rooms = [int(x) for x in _list(qp, "rooms") if x.isdigit()]
+    return Query(
+        q=qp.get("q", "")[:200],
+        types=[t for t in _list(qp, "type") if t in TYPE_LABELS],
+        deal="rent" if qp.get("deal") == "rent" else "sale",
+        rooms=rooms,
+        price_min=num_param(qp.get("price_min"), int), price_max=num_param(qp.get("price_max"), int),
+        area_min=num_param(qp.get("area_min")), area_max=num_param(qp.get("area_max")),
+        land_min=num_param(qp.get("land_min")), land_max=num_param(qp.get("land_max")),
+        districts=_list(qp, "district"), complexes=_list(qp, "complex"),
+        not_first=qp.get("not_first") == "1", not_last=qp.get("not_last") == "1",
+        fresh_days=num_param(qp.get("fresh_days"), int), new_days=num_param(qp.get("new_days"), int),
+        since=num_param(qp.get("since"), int),
+        sort=qp.get("sort", "new"),
+        page=num_param(qp.get("page"), int) or 1,
+        size=num_param(qp.get("size"), int) or 30,
+    )
+
+
+# ─── страницы и поиск ──────────────────────────────────────────────────────
 def _stem(t: str) -> str:
     """Окончания: «мозаике» → «мозаик» (ищем по началу слова)."""
     if len(t) > 5 and not t.isdigit():
@@ -134,6 +175,8 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
         w.append("(l.floor IS NULL OR l.floors IS NULL OR l.floor < l.floors)")
     if qr.fresh_days:
         w.append("l.last_seen >= ?"); p.append(now - qr.fresh_days * 86400)
+    if qr.new_days:
+        w.append("l.first_seen >= ?"); p.append(now - qr.new_days * 86400)
     if qr.since:
         w.append("l.first_seen > ?"); p.append(qr.since)
     if fts:
@@ -144,7 +187,8 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
 PUBLIC_FIELDS = ("id", "type", "deal", "rooms", "area", "land", "floor", "floors", "price", "price_m2",
                  "district", "complex", "settlement", "street", "house", "title", "description",
                  "first_seen", "last_seen", "seen_count", "lat", "lon", "source", "url", "room_kind", "article",
-                 "is_active", "expires_at")
+                 "is_active", "expires_at",
+                 "prev_price", "price_changed_at")
 
 
 def mask_phone(p: str) -> str:

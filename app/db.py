@@ -165,6 +165,16 @@ CREATE TABLE IF NOT EXISTS listing_edits (
 );
 CREATE INDEX IF NOT EXISTS ix_listing_edits ON listing_edits(listing_id);
 CREATE INDEX IF NOT EXISTS ix_listing_edits_user ON listing_edits(user_id, ts);
+-- ─── фишки: подписки на поиск, заметки ───────────────────────────────────
+CREATE TABLE IF NOT EXISTS saved_searches (
+    id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL, params TEXT NOT NULL, created INTEGER NOT NULL, checked_at INTEGER NOT NULL,
+    sent_at INTEGER, active INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS notes (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
+    text TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)
+);
 """
 
 # Новые поля в уже существующих таблицах (база на сервере обновится сама при запуске)
@@ -182,6 +192,10 @@ MIGRATIONS = [
     ("listings", "expires_at", "INTEGER"),                    # свой объект: снять после этого времени
     ("listings", "confirm_sent", "INTEGER"),                  # когда отправили письмо «ещё актуален?»
     ("listings", "sold_at", "INTEGER"),                       # агент отметил «продано/снято»
+    ("listings", "prev_price", "INTEGER"),                    # прошлая цена (для «цена снизилась»)
+    ("listings", "price_changed_at", "INTEGER"),
+    ("favorites", "price_at", "INTEGER"),                     # цена, когда добавили в избранное
+    ("favorites", "notified_price", "INTEGER"),               # о какой цене уже написали
 ]
 
 _local = threading.local()
@@ -197,6 +211,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 if "duplicate column" not in str(e):
                     raise
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_listings_ext ON listings(ext_id) WHERE ext_id IS NOT NULL")
+    # Любая смена цены (чаты, фид, правка агента) запоминает прошлую цену
+    conn.execute("""CREATE TRIGGER IF NOT EXISTS trg_price_change AFTER UPDATE OF price ON listings
+                    WHEN OLD.price IS NOT NULL AND NEW.price IS NOT NULL AND NEW.price != OLD.price
+                    BEGIN UPDATE listings SET prev_price = OLD.price, price_changed_at = CAST(strftime('%s','now') AS INTEGER)
+                          WHERE id = NEW.id; END""")
     conn.commit()
 
 

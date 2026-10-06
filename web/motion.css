@@ -227,7 +227,8 @@ dialog::backdrop { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px
 .more-results { min-height: 1px; }
 
 /* ═══ Стиль Apple: шапка, логотип, пружинные окна, избранное (v5) ═══════════ */
-:root { --spring: cubic-bezier(.32, .72, 0, 1); }   /* кривая «как у iOS» */
+:root { --spring: cubic-bezier(.32, .72, 0, 1);    /* кривая «как у iOS» */
+        --glide: cubic-bezier(.22, 1, .36, 1); }     /* мягкое замедление без отскока — для окон */
 
 /* ─── шапка-меню: прозрачное стекло, уплотняется при прокрутке ─────────── */
 .nav { position: sticky; top: 0; z-index: 40; background: rgba(3, 83, 82, .62);
@@ -297,16 +298,18 @@ dialog::backdrop { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px
 
 /* ─── окна: пружинное появление и размытие фона (компьютер) ──────────── */
 @media (min-width: 641px) {
-  dialog[open] { animation: dlgSpring .5s var(--spring); }
-  dialog[open]::backdrop { animation: fadeIn .4s var(--ease); }
-  dialog::backdrop { background: rgba(0, 20, 20, .45); backdrop-filter: blur(10px) saturate(1.2); -webkit-backdrop-filter: blur(10px) saturate(1.2); }
-  dialog.closing { animation: dlgAway .24s var(--ease-in) forwards; }
-  @keyframes dlgSpring { from { opacity: 0; transform: translateY(24px) scale(.94); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
-  @keyframes dlgAway { to { opacity: 0; transform: translateY(10px) scale(.97); filter: blur(2px); } }
+  /* Плавность: анимируем только прозрачность и сдвиг (их видеокарта считает сама); размытие
+     фона — лёгкое и без анимации самого размытия, иначе на слабых компьютерах окно «дёргается» */
+  dialog[open] { animation: dlgSpring .42s var(--glide); will-change: transform, opacity; }
+  dialog[open]::backdrop { animation: fadeIn .32s var(--ease); }
+  dialog::backdrop { background: rgba(0, 20, 20, .5); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+  dialog.closing { animation: dlgAway .22s var(--ease-in) forwards; }
+  @keyframes dlgSpring { from { opacity: 0; transform: translate3d(0, 18px, 0) scale(.975); } to { opacity: 1; transform: none; } }
+  @keyframes dlgAway { to { opacity: 0; transform: translate3d(0, 8px, 0) scale(.985); } }
   .item:hover { transform: translateY(-4px); box-shadow: 0 18px 40px rgba(0, 20, 20, .32); }
 }
 @media (max-width: 640px) {
-  dialog[open] { animation: sheetUp .5s var(--spring); }
+  dialog[open] { animation: sheetUp .44s var(--glide); will-change: transform; }
   .d-tools { margin-top: 18px; }
 }
 
@@ -426,3 +429,32 @@ dialog::backdrop { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px
 .pin.approx { opacity: .82; border-style: dashed; }
 .mc-approx { font-size: 11px; color: var(--ink-3, #6b7b7a); margin-top: 2px; }
 .map-note { margin: 8px 2px 0; font-size: 13px; color: var(--ink-3); }
+
+/* окно объекта: место под фото занято заранее — содержимое не прыгает, пока фото грузятся */
+.gallery img { width: 293px; max-width: 80vw; }
+@media (max-width: 640px) { .gallery img { width: 227px; } }
+dialog.detail { contain: layout paint; overscroll-behavior: contain; }
+
+/* ─── фишки: отметки, рынок, другие агенты, заметки, подписки ──────────── */
+.badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.badge { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--chip); color: var(--ink); }
+.badge.new { background: var(--ink); color: var(--on-accent); }
+.badge.down { background: #ffd27a; color: #3b2a00; }
+.badge.good { background: rgba(140, 230, 170, .22); color: #c9f5d6; }
+.bar-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; width: 100%; }
+.bar-tools .chip { font-size: 13px; padding: 5px 12px; }
+.d-market { margin: 12px 0; padding: 12px 14px; border-radius: 14px; background: var(--chip); display: flex; flex-direction: column; gap: 2px; }
+.d-market.good { background: rgba(140, 230, 170, .16); }
+.d-market.high { background: rgba(255, 180, 160, .14); }
+.d-market small { color: var(--ink-3); }
+.d-same, .d-note-box { margin: 12px 0; border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; }
+.d-same summary, .d-note-box summary { cursor: pointer; font-weight: 600; }
+.d-same ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.d-same li { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 14px; }
+.d-same li span { color: var(--ink-3); }
+button.link { border: 0; background: none; padding: 0; color: var(--ink); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+.d-note-text { width: 100%; box-sizing: border-box; margin-top: 8px; font: inherit; font-size: 15px; color: var(--ink);
+  background: var(--paper); border: 1px solid var(--line-2); border-radius: 12px; padding: 9px 12px; resize: vertical; }
+.saved-list { list-style: none; padding: 0; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
+.saved-list li { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 14px; }
+.saved-list a { color: var(--ink); }

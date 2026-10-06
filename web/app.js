@@ -128,7 +128,8 @@
     }
     if (state.notFirst) p.set("not_first", "1");
     if (state.notLast) p.set("not_last", "1");
-    if (state.fresh) p.set("fresh_days", state.fresh);
+    if (state.fresh === "new1") p.set("new_days", "1");   // «Новое сегодня»: впервые появились за сутки
+    else if (state.fresh) p.set("fresh_days", state.fresh);
     for (const d of state.districts) p.append("district", d);
     for (const c of state.complexes) p.append("complex", c);
     p.set("sort", state.sort);
@@ -200,6 +201,8 @@
     $("notFirst").checked = state.notFirst;
     $("notLast").checked = state.notLast;
     $("fresh").value = state.fresh;
+    $("newTodayBtn").classList.toggle("on", state.fresh === "new1");
+    $("newTodayBtn").setAttribute("aria-pressed", state.fresh === "new1");
     $("sort").value = state.sort;
     const rent = state.deal === "rent";
     setSliderFromState();
@@ -282,8 +285,20 @@
   }
 
   // ─── результаты ─────────────────────────────────────────────────────────
+  // Отметки на карточке: новое за сутки, цена снизилась (за 2 недели), заметно ниже рынка
+  function badgesHTML(o) {
+    const now = loadedAt || Date.now() / 1000;
+    const b = [];
+    if (o.first_seen > now - 86400) b.push(`<span class="badge new">Новое</span>`);
+    if (o.prev_price && o.price && o.prev_price > o.price && o.price_changed_at > now - 14 * 86400) {
+      b.push(`<span class="badge down">↓ ${esc(fmtShortPrice(o.prev_price - o.price, o.deal))}</span>`);
+    }
+    if (o.market_diff != null) b.push(`<span class="badge good">ниже рынка на ${Math.abs(o.market_diff)}%</span>`);
+    return b.length ? `<div class="badges">${b.join("")}</div>` : "";
+  }
+
   function itemHTML(o) {
-    const tag = "";
+    const tag = badgesHTML(o);
     const m2 = o.price_m2 && o.deal !== "rent" ? `<div class="price-m2">${num(o.price_m2)} ₽/м²</div>` : "";
     const photo = o.photos && o.photos[0]
       ? `<div class="item-photo"><img src="${esc(o.photos[0])}" alt="" loading="lazy"></div>` : "";
@@ -294,7 +309,8 @@
       <button type="button" class="fav-btn${fav ? " on" : ""}" data-fav="${o.id}" aria-label="${fav ? "Убрать из избранного" : "В избранное"}">${HEART}</button>
       ${headline(o) ? `<h3 class="item-head">${esc(headline(o))}</h3>` : ""}
       <div class="item-price"><div class="price">${esc(fmtPrice(o.price, o.deal))}</div>${m2}</div>
-      <div class="item-title">${esc(o.title)}${tag}</div>
+      <div class="item-title">${esc(o.title)}</div>
+      ${tag}
       ${addr ? `<div class="item-place">${esc(addr)}</div>` : ""}
       ${o.description ? `<p class="item-desc">${esc(o.description)}</p>` : ""}
       <div class="item-meta">${esc(fmtAgo(o.last_seen))}</div>
@@ -502,14 +518,59 @@
       <p class="d-price">${esc(fmtPrice(o.price, o.deal))}</p>
       <p class="d-price-m2">${o.price_m2 && o.deal !== "rent" ? esc(num(o.price_m2)) + " ₽/м²" : "&nbsp;"}</p>
       <dl class="d-facts">${facts}</dl>
+      ${badgesHTML(o)}
+      ${marketHTML(o)}
       ${o.description ? `<h3 class="d-h">Описание</h3><p class="d-desc">${esc(o.description)}</p>` : ""}
       ${contact}
+      ${sameHTML(o)}
+      ${noteHTML(o)}
+      <div class="d-contact"><button type="button" class="pill light" data-share="${o.id}">Поделиться</button></div>
       ${site ? `<div class="d-contact">${site}</div>` : ""}
       ${meta.access && o.fragment ? `<h3 class="d-h">Исходное сообщение</h3><pre class="d-source">${esc(o.fragment)}</pre>` : ""}
       ${hist ? `<details class="d-hist-box"><summary>История · ${o.history.length} ${plural(o.history.length, "сообщение", "сообщения", "сообщений")}</summary><ul class="d-hist">${hist}</ul></details>` : ""}
       <p class="d-note">${esc(chats)}Впервые: ${esc(fmtAgo(o.first_seen))}, последний раз: ${esc(fmtAgo(o.last_seen))}.</p>
       ${o.can_edit ? `<div class="d-contact"><button type="button" class="pill light" data-agent-edit="${o.id}">✎ Изменить моё объявление</button></div>` : ""}
       ${reportHTML(o)}`;
+  }
+
+  function marketHTML(o) {
+    const m = o.market;
+    if (!m) return "";
+    const word = m.diff <= -3 ? `дешевле рынка на <b>${-m.diff}%</b>` : m.diff >= 3 ? `дороже рынка на <b>${m.diff}%</b>` : "<b>по рынку</b>";
+    const cls = m.diff <= -3 ? "good" : m.diff >= 3 ? "high" : "";
+    return `<div class="d-market ${cls}"><span>${word}</span>
+      <small>средняя цена м² — ${esc(num(m.median))} ₽, ${esc(m.base)}, по ${m.n} ${plural(m.n, "объекту", "объектам", "объектам")}</small></div>`;
+  }
+
+  function sameHTML(o) {
+    if (!o.same || !o.same.length) return "";
+    const n = o.same.length;
+    return `<details class="d-same"><summary>Этот объект продают ещё ${n} ${plural(n, "агент", "агента", "агентов")}</summary>
+      <ul>${o.same.map((s) => `<li><button type="button" class="link" data-open-id="${s.id}">${esc(fmtPrice(s.price, o.deal))}</button>
+        <span>${esc(s.title)} · ${esc(fmtAgo(s.last_seen))}</span></li>`).join("")}</ul></details>`;
+  }
+
+  function noteHTML(o) {
+    if (!me() || o.loading) return "";
+    return `<details class="d-note-box"${o.note ? " open" : ""}><summary>Моя заметка${o.note ? "" : " (видите только вы)"}</summary>
+      <textarea class="d-note-text" data-note="${o.id}" rows="3" maxlength="2000"
+        placeholder="Например: звонил 12.10, собственник готов торговаться">${esc(o.note || "")}</textarea>
+      <span class="note d-note-saved" hidden>Сохранено</span></details>`;
+  }
+
+  // Поделиться: на телефоне — системное меню (WhatsApp, Telegram…), на компьютере — копируем ссылку
+  async function share(url, title) {
+    if (navigator.share) {
+      try { await navigator.share({ url, title }); return; } catch (e) { if (e && e.name === "AbortError") return; }
+    }
+    try { await navigator.clipboard.writeText(url); toast("Ссылка скопирована — вставьте её в WhatsApp"); }
+    catch { prompt("Скопируйте ссылку:", url); }
+  }
+
+  async function watchSearch() {
+    if (!me()) { openLogin("Чтобы получать письма о новых объектах по этому поиску, войдите по почте."); return; }
+    const r = await call("/api/saved", { query: apiParams().toString() });
+    toast(r.data.text || r.data.detail || "Не получилось.");
   }
 
   // Телефон агента: открыт по подписке; иначе — скрыт с понятным следующим шагом
@@ -671,7 +732,11 @@
     const r = await call(`/api/listings/${id}`);  // тихие повторы — внутри call()
     if (openedId !== id) return;  // пока грузилось, открыли другой объект
     if (r.ok) {
+      // Подменяем содержимое без прыжка: та же прокрутка, мягкое проявление догруженного
+      const top = dlg.scrollTop;
+      known.set(id, { ...(known.get(id) || {}), ...r.data });
       $("detailBody").innerHTML = detailHTML(r.data);
+      dlg.scrollTop = top;
       const fb = $("detailFav");
       if (!fb.innerHTML) fb.innerHTML = HEART;
       fb.dataset.fav = id;
@@ -798,6 +863,7 @@
         <button type="submit" class="pill light">Применить</button>
       </form>
       <p class="note" id="promoMsg" hidden></p>
+      <div class="cab-saved" id="cabSaved"></div>
       <div class="dlg-actions cab-actions">
         <button type="button" class="ghost" id="cabFav">♡ Избранное (${u.favorites.length})</button>
         <button type="button" class="ghost" data-agent>Я агент: мои объявления</button>
@@ -807,6 +873,19 @@
       </div>`;
     openDlg($("cabinetDlg"));
     if (u.is_admin) loadAdminStats();
+    loadSaved();
+  }
+
+  // Подписки на поиск: письмо, когда появились новые объекты
+  async function loadSaved() {
+    const r = await call("/api/saved");
+    const box = $("cabSaved");
+    if (!box || !r.ok) return;
+    const items = r.data.items || [];
+    box.innerHTML = `<h3 class="d-h">Слежу за поисками · ${items.length}</h3>` + (items.length
+      ? `<ul class="saved-list">${items.map((x) => `<li><a href="/?${esc(x.params)}">${esc(x.title)}</a>
+          <button type="button" class="ghost" data-unsave="${x.id}" aria-label="Не следить">✕</button></li>`).join("")}</ul>`
+      : `<p class="note">Настройте фильтры и нажмите «🔔 Следить» — пришлём письмо, когда появятся новые объекты.</p>`);
   }
 
   // Сводка для администратора прямо в кабинете
@@ -904,6 +983,13 @@
       if (!t) return;
       if (t.dataset.fav) { e.stopPropagation(); toggleFavorite(Number(t.dataset.fav)); return; }
       if (t.hasAttribute("data-login")) { openLogin(); return; }
+      if (t.dataset.share) {
+        const o = known.get(Number(t.dataset.share));
+        share(`${location.origin}/?open=${t.dataset.share}`, o ? `${o.title} — ${fmtPrice(o.price, o.deal)}` : "Объект на 1+1");
+        return;
+      }
+      if (t.dataset.openId) { openDetail(Number(t.dataset.openId)); return; }
+      if (t.dataset.unsave) { call("/api/saved", { id: Number(t.dataset.unsave) }, "DELETE").then(loadSaved); return; }
       if (t.dataset.retry) { openDetail(Number(t.dataset.retry)); return; }
       if (t.hasAttribute("data-refresh-list")) { closeDlg($("detail")); reloadList(); return; }
       if (t.hasAttribute("data-sheet-close")) { closeSheet(); return; }
@@ -952,6 +1038,25 @@
       syncControls();
       refresh();
     });
+
+    let noteTimer = 0;
+    document.addEventListener("input", (e) => {
+      const t = e.target;
+      if (!t.dataset || !t.dataset.note) return;
+      clearTimeout(noteTimer);
+      noteTimer = setTimeout(async () => {
+        const r = await call(`/api/notes/${t.dataset.note}`, { text: t.value });
+        const s = t.parentElement.querySelector(".d-note-saved");
+        if (s && r.ok) { s.hidden = false; setTimeout(() => { s.hidden = true; }, 1500); }
+      }, 700);
+    });
+    $("newTodayBtn").addEventListener("click", () => {
+      state.fresh = state.fresh === "new1" ? "" : "new1";
+      syncControls();
+      refresh();
+    });
+    $("watchBtn").addEventListener("click", watchSearch);
+    $("shareSearchBtn").addEventListener("click", () => share(location.href, "Подборка объектов на 1+1"));
 
     $("psMin").addEventListener("input", () => onSlider("min"));
     $("psMax").addEventListener("input", () => onSlider("max"));

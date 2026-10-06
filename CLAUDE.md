@@ -75,6 +75,17 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   OWN_LISTING_DAYS, за 3 дня письмо со ссылками /agent/confirm (HMAC), «нет» — снят сразу, игнор — по сроку.
   Журнал listing_edits, откат в админке. Фото: браузер сжимает до 1600 px → data/photos/<id>/<hash>.jpg.
   Повтор поста из чата не перетирает цену/описание владельца и не возвращает «продано» (3 дня).
+- `app/hooks.py` — фишки: подписки на поиск (saved_searches, письмо раз в ≤3 ч, отписка /saved/off),
+  снижение цены в избранном (favorites.price_at/notified_price; триггер trg_price_change пишет prev_price),
+  «продают ещё N агентов» (same_elsewhere), медиана ₽/м² по ЖК/району (market_for, «ниже рынка» ≤ −7 %), заметки.
+- `app/region.py` — пока только Краснодар: BLOCKED_PLACES (Сочи, Адлер, Сириус, Туапсе…) по названию чата
+  и населённому пункту; названия групп WA — `wappi.refresh_chat_names` раз в 6 ч (таблица chats).
+- `app/audit.py` — отчёт о потерях (комнаты, ЖК, районы, карта, чужие города), `--fix` исправляет.
+  `scripts/loadtest.py` — нагрузка. Локально (ПК Артёма, 2 воркера): 100 пользователей — ответ 0,02 с.
+- Фильтр ЖК — по `cxkey()` (SQLite-функция = geo.complex_key): разные написания одного ЖК совпадают.
+- Карта: geocode.candidates — дом → ЖК → улица → посёлок → район (geo_status 'approx', пунктирный ценник).
+- Объекты СТРЕЛ (фид) сортируются вместе со всеми, без вывода вперёд и без метки (решение 07.10).
+- Кэш /api/listings, /api/facets, /api/map — 15 с в памяти; state cache_ver сбрасывает при правках агентов/админа.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
