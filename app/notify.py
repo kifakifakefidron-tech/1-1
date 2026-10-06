@@ -13,23 +13,18 @@ import time
 import urllib.error
 import urllib.request
 
-from . import config, db
+from . import config, db, tg
 
 log = logging.getLogger(__name__)
 
-API = "https://api.telegram.org/bot{token}/{method}"
 
 
 def _api(method: str, payload: dict) -> dict | None:
     if not config.TELEGRAM_BOT_TOKEN:
         return None
-    req = urllib.request.Request(
-        API.format(token=config.TELEGRAM_BOT_TOKEN, method=method),
-        data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            return json.loads(resp.read())
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+        return tg.call(method, payload, timeout=20)
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
         log.warning("Telegram %s: %s", method, e)
         return None
 

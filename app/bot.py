@@ -15,10 +15,9 @@ import time
 import urllib.error
 import urllib.request
 
-from . import accounts, config, db, rules
+from . import accounts, config, db, rules, tg
 
 log = logging.getLogger("bot")
-API = "https://api.telegram.org/bot{token}/{method}"
 
 PHONE_KB = {"keyboard": [[{"text": "📱 Поделиться номером", "request_contact": True}]],
             "resize_keyboard": True, "one_time_keyboard": True}
@@ -26,14 +25,11 @@ NO_KB = {"remove_keyboard": True}
 
 
 def api(method: str, payload: dict, timeout: int = 20) -> dict | None:
-    req = urllib.request.Request(API.format(token=config.TELEGRAM_BOT_TOKEN, method=method),
-                                 data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"},
-                                 method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read())
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
-        log.warning("Telegram %s: %s", method, e)
+        return tg.call(method, payload, timeout=timeout)
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+        log.warning("Telegram %s: %s%s", method, e, " — сервер не видит Telegram: нужен доступ у хостинга "
+                    "или TELEGRAM_PROXY / TELEGRAM_API_BASE в .env" if "unreachable" in str(e) or "timed out" in str(e) else "")
         return None
 
 

@@ -81,6 +81,9 @@ FEED_HOURS = int(os.getenv("FEED_HOURS", "6"))
 # Ник должен сам написать боту /start — после этого бот запомнит, куда слать.
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_ADMIN = os.getenv("TELEGRAM_ADMIN", "ArtemAndreevic1").strip().lstrip("@")
+# Если хостинг не пускает к api.telegram.org — посредник (см. app/tg.py)
+TELEGRAM_API_BASE = os.getenv("TELEGRAM_API_BASE", "").strip() or "https://api.telegram.org"
+TELEGRAM_PROXY = os.getenv("TELEGRAM_PROXY", "").strip()
 # Тревога, если новых сообщений нет столько часов (при включённом сборе)
 ALERT_SILENCE_HOURS = int(os.getenv("ALERT_SILENCE_HOURS", "3"))
 

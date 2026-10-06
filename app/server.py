@@ -6,7 +6,6 @@ import hashlib
 import hmac
 import json
 import time
-import urllib.request
 from collections import defaultdict, deque
 from pathlib import Path
 
@@ -17,7 +16,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import accounts, config, db, geo, ingest, mailer, parser, payments, search
+from . import accounts, config, db, geo, ingest, mailer, parser, payments, search, tg
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -90,9 +89,7 @@ def bot_username() -> str | None:
     if _bot_name is None and config.TELEGRAM_BOT_TOKEN and time.time() - _bot_tried > 600:
         _bot_tried = time.time()
         try:
-            url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/getMe"
-            with urllib.request.urlopen(url, timeout=5) as resp:
-                _bot_name = json.loads(resp.read())["result"]["username"]
+            _bot_name = tg.call("getMe", timeout=5)["result"]["username"]
         except Exception:  # noqa: BLE001
             return None
     return _bot_name
