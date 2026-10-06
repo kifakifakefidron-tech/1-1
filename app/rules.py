@@ -15,7 +15,6 @@ from .textnorm import norm
 TYPES = ("flat", "new", "room", "house", "land", "commercial")
 TYPE_LABELS = {
     "flat": "Квартира",
-    "new": "Новостройка",
     "room": "Комната",
     "house": "Дом",
     "land": "Участок",

@@ -38,8 +38,6 @@ def make_title(o: dict) -> str:
             head = f"Мини-{rooms}"
         else:
             head = f"{rooms}-к квартира" if rooms else "Квартира"
-        if t == "new":
-            head += " (новостройка)"
         parts.append(head)
     elif t == "room":
         parts.append("Комната")
@@ -232,6 +230,7 @@ def process_pending(conn: sqlite3.Connection, limit: int = 200, use_llm: bool | 
     for i in ids:
         process_message(conn, i, use_llm=use_llm)
         done += 1
+        time.sleep(0.01)  # уступаем процессор сайту, пока разбираем большую очередь
         if budget_s is not None and time.monotonic() - started > budget_s:
             break
     return done

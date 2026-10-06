@@ -11,6 +11,7 @@ from collections import defaultdict, deque
 from pathlib import Path
 
 from starlette.applications import Starlette
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
@@ -77,16 +78,20 @@ def _too_often(request: Request, key: str, limit: int, per_s: int) -> bool:
 
 
 _bot_name: str | None = None
+_bot_tried = 0.0
 
 
 def bot_username() -> str | None:
-    global _bot_name
+    """Ник бота. Спрашиваем у Telegram один раз (при неудаче — не чаще раза в 10 минут),
+    чтобы недоступный Telegram не тормозил сайт."""
+    global _bot_name, _bot_tried
     if config.TELEGRAM_BOT_USERNAME:
         return config.TELEGRAM_BOT_USERNAME
-    if _bot_name is None and config.TELEGRAM_BOT_TOKEN:
+    if _bot_name is None and config.TELEGRAM_BOT_TOKEN and time.time() - _bot_tried > 600:
+        _bot_tried = time.time()
         try:
             url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/getMe"
-            with urllib.request.urlopen(url, timeout=10) as resp:
+            with urllib.request.urlopen(url, timeout=5) as resp:
                 _bot_name = json.loads(resp.read())["result"]["username"]
         except Exception:  # noqa: BLE001
             return None
@@ -162,7 +167,7 @@ async def api_meta(request: Request):
         "email_login": mailer.available(),
         "payments": payments.available(),
         "price": config.SUB_PRICE, "period_days": config.SUB_DAYS, "trial_days": config.TRIAL_DAYS,
-        "bot": bot_username(),
+        "bot": await run_in_threadpool(bot_username),
         "me": accounts.me(db.get(), user),
         "public_contact": config.PUBLIC_CONTACT,
         "public_contact_label": config.PUBLIC_CONTACT_LABEL,
@@ -243,7 +248,7 @@ async def api_login(request: Request):
 
 # ─── вход через Telegram ───────────────────────────────────────────────────
 async def api_tg_start(request: Request):
-    if not config.TELEGRAM_BOT_TOKEN or not bot_username():
+    if not config.TELEGRAM_BOT_TOKEN or not await run_in_threadpool(bot_username):
         return _err("Вход через Telegram пока не настроен.", 503)
     if _too_often(request, "tg", 20, 600):
         return _err("Слишком много попыток — подождите немного.", 429)
@@ -253,7 +258,7 @@ async def api_tg_start(request: Request):
     if purpose == "link" and user is None:
         return _err("Сначала войдите.", 401)
     token = accounts.new_tg_token(db.get(), purpose, user["id"] if purpose == "link" else None)
-    return JSONResponse({"token": token, "url": f"https://t.me/{bot_username()}?start={purpose}_{token}"})
+    return JSONResponse({"token": token, "url": f"https://t.me/{_bot_name or config.TELEGRAM_BOT_USERNAME}?start={purpose}_{token}"})
 
 
 async def api_tg_status(request: Request):
@@ -281,8 +286,9 @@ async def api_email_start(request: Request):
     code, err = accounts.new_email_code(db.get(), email)
     if err:
         return _err(err)
-    if not mailer.send_code(email.strip().lower(), code):
-        return _err("Письмо не отправилось — попробуйте ещё раз или войдите через Telegram.", 502)
+    # Отправка письма — в фоне: пока почта отвечает, сайт для остальных не подвисает
+    if not await run_in_threadpool(mailer.send_code, email.strip().lower(), code):
+        return _err("Письмо не отправилось. Попробуйте ещё раз через минуту или войдите через Telegram.", 502)
     return JSONResponse({"ok": True})
 
 

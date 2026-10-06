@@ -108,8 +108,9 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
     if q_rooms and not qr.rooms:  # «2к» в строке поиска = фильтр «2 комнаты»
         qr = Query(**{**qr.__dict__, "rooms": q_rooms})
     if qr.types:
-        w.append(f"l.type IN ({','.join('?' * len(qr.types))})")
-        p += qr.types
+        types = list(qr.types) + (["new"] if "flat" in qr.types else [])  # старые записи «новостройка» = квартиры
+        w.append(f"l.type IN ({','.join('?' * len(types))})")
+        p += types
     if qr.rooms:
         mask = 0
         for r in qr.rooms:

@@ -12,8 +12,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
-<link rel="stylesheet" href="/static/style.css?v=7">
-<link rel="stylesheet" href="/static/motion.css?v=2">
+<link rel="stylesheet" href="/static/style.css?v=8">
+<link rel="stylesheet" href="/static/motion.css?v=3">
 </head>
 <body>
 <header class="top">
@@ -59,10 +59,14 @@
         <button type="button" data-room="3" class="chip">3</button>
         <button type="button" data-room="4" class="chip">4+</button>
       </div>
-      <div class="range">
-        <span class="range-label">Цена, млн</span>
-        <input id="priceMin" inputmode="decimal" placeholder="от" aria-label="Цена от, млн">
-        <input id="priceMax" inputmode="decimal" placeholder="до" aria-label="Цена до, млн">
+      <div class="price-slider" id="priceSlider">
+        <div class="ps-top"><span class="range-label">Цена</span><b id="priceValue">любая</b></div>
+        <div class="ps-track">
+          <div class="ps-fill" id="psFill"></div>
+          <input type="range" id="psMin" min="0" max="10" step="1" value="0" aria-label="Цена от">
+          <input type="range" id="psMax" min="0" max="10" step="1" value="10" aria-label="Цена до">
+        </div>
+        <input type="hidden" id="priceMin"><input type="hidden" id="priceMax">
       </div>
       <button type="button" class="more-btn" id="moreBtn" aria-expanded="false">Ещё фильтры</button>
     </div>
@@ -198,6 +202,6 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
-<script src="/static/app.js?v=7"></script>
+<script src="/static/app.js?v=8"></script>
 </body>
 </html>

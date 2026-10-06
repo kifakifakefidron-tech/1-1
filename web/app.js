@@ -177,14 +177,57 @@
     $("fresh").value = state.fresh;
     $("sort").value = state.sort;
     const rent = state.deal === "rent";
-    const lbl = document.querySelector(".range .range-label");
-    lbl.textContent = rent ? "Цена, тыс. ₽/мес" : "Цена, млн";
-    $("priceMin").setAttribute("aria-label", rent ? "Цена от, тысяч рублей в месяц" : "Цена от, млн");
-    $("priceMax").setAttribute("aria-label", rent ? "Цена до, тысяч рублей в месяц" : "Цена до, млн");
+    setSliderFromState();
     renderComplexChosen();
     const fc = filtersCount();
     $("filterBadge").hidden = !fc;
     $("filterBadge").textContent = fc;
+  }
+
+  // ─── ползунок цены ──────────────────────────────────────────────────────
+  // Шаги: мелкие там, где большинство цен, крупные — дальше. Края — «без ограничения».
+  function range(from, to, step) { const a = []; for (let x = from; x <= to + 1e-9; x += step) a.push(+x.toFixed(2)); return a; }
+  const STEPS = {
+    sale: [...range(0, 10, 0.5), ...range(11, 20, 1), ...range(22, 40, 2), ...range(45, 60, 5), ...range(70, 100, 10)],
+    rent: [...range(0, 60, 5), ...range(70, 150, 10), ...range(175, 300, 25)],
+  };
+  const steps = () => STEPS[state.deal === "rent" ? "rent" : "sale"];
+  const nearest = (v) => { const st = steps(); let best = 0; st.forEach((x, i) => { if (Math.abs(x - v) < Math.abs(st[best] - v)) best = i; }); return best; };
+
+  function priceText() {
+    const unit = state.deal === "rent" ? "тыс. ₽/мес" : "млн";
+    const a = toNum(state.priceMin), b = toNum(state.priceMax);
+    const f = (x) => num(x, 1);
+    if (a == null && b == null) return "любая";
+    if (a != null && b != null) return `${f(a)} – ${f(b)} ${unit}`;
+    return a != null ? `от ${f(a)} ${unit}` : `до ${f(b)} ${unit}`;
+  }
+
+  function paintSlider() {
+    const max = steps().length - 1;
+    const lo = +$("psMin").value, hi = +$("psMax").value;
+    $("psFill").style.left = `${(lo / max) * 100}%`;
+    $("psFill").style.right = `${100 - (hi / max) * 100}%`;
+    $("priceValue").textContent = priceText();
+  }
+
+  function setSliderFromState() {
+    const st = steps(), max = st.length - 1;
+    $("psMin").max = $("psMax").max = max;
+    const a = toNum(state.priceMin), b = toNum(state.priceMax);
+    $("psMin").value = a == null ? 0 : nearest(a);
+    $("psMax").value = b == null ? max : nearest(b);
+    paintSlider();
+  }
+
+  function onSlider(which) {
+    const st = steps(), max = st.length - 1;
+    let lo = +$("psMin").value, hi = +$("psMax").value;
+    if (lo > hi) { if (which === "min") lo = hi; else hi = lo; $("psMin").value = lo; $("psMax").value = hi; }
+    state.priceMin = lo > 0 ? String(st[lo]) : "";
+    state.priceMax = hi < max ? String(st[hi]) : "";
+    paintSlider();
+    refresh(350);
   }
 
   function renderTypes() {
@@ -215,7 +258,7 @@
 
   // ─── результаты ─────────────────────────────────────────────────────────
   function itemHTML(o) {
-    const tag = o.type === "new" ? `<span class="tag">новостройка</span>` : "";
+    const tag = "";
     const m2 = o.price_m2 && o.deal !== "rent" ? `<div class="price-m2">${num(o.price_m2)} ₽/м²</div>` : "";
     const photo = o.photos && o.photos[0]
       ? `<div class="item-photo"><img src="${esc(o.photos[0])}" alt="" loading="lazy"></div>` : "";
@@ -535,11 +578,18 @@
     $("detailBody").innerHTML = `<p class="d-place">Загрузка…</p>`;
     openDlg(dlg);
     dlg.scrollTop = 0;
-    try {
-      const o = await getJSON(`/api/listings/${id}`);
-      $("detailBody").innerHTML = detailHTML(o);
-    } catch {
-      $("detailBody").innerHTML = `<p class="d-place">Объект не найден — возможно, его уже убрали из базы.</p>`;
+    let r = await call(`/api/listings/${id}`);
+    if (!r.ok && r.status !== 404) r = await call(`/api/listings/${id}`);  // одна тихая повторная попытка
+    if (openedId !== id) return;  // пока грузилось, открыли другой объект
+    if (r.ok) {
+      $("detailBody").innerHTML = detailHTML(r.data);
+    } else if (r.status === 404) {
+      $("detailBody").innerHTML = `<p class="d-place">Этот объект уже сняли с продажи или обновили. Обновите список — он покажет актуальное.</p>
+        <button type="button" class="pill" data-refresh-list>Обновить список</button>`;
+      document.querySelectorAll(`.item[data-id="${id}"]`).forEach((el) => el.remove());
+    } else {
+      $("detailBody").innerHTML = `<p class="d-place">Не получилось загрузить объект — похоже, пропала связь.</p>
+        <button type="button" class="pill" data-retry="${id}">Повторить</button>`;
     }
   }
 
@@ -720,6 +770,8 @@
       if (!t) return;
       if (t.dataset.fav) { e.stopPropagation(); toggleFavorite(Number(t.dataset.fav)); return; }
       if (t.hasAttribute("data-login")) { openLogin(); return; }
+      if (t.dataset.retry) { openDetail(Number(t.dataset.retry)); return; }
+      if (t.hasAttribute("data-refresh-list")) { closeDlg($("detail")); reloadList(); return; }
       if (t.hasAttribute("data-sheet-close")) { closeSheet(); return; }
       if (t.dataset.tab) {
         const tab = t.dataset.tab;
@@ -763,7 +815,9 @@
       refresh();
     });
 
-    for (const k of ["priceMin", "priceMax", "areaMin", "areaMax", "landMin", "landMax"]) {
+    $("psMin").addEventListener("input", () => onSlider("min"));
+    $("psMax").addEventListener("input", () => onSlider("max"));
+    for (const k of ["areaMin", "areaMax", "landMin", "landMax"]) {
       $(k).addEventListener("input", () => { state[k] = $(k).value; refresh(500); });
     }
     $("notFirst").addEventListener("change", () => { state.notFirst = $("notFirst").checked; refresh(); });
@@ -831,11 +885,18 @@
     $("emailForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       const email = $("emailInput").value.trim();
-      if (!email) return;
-      const r = await call("/api/auth/email/start", { email });
-      if (!r.ok) { loginError(r.data.detail || "Не получилось отправить код."); return; }
+      if (!email) { loginError("Впишите почту."); return; }
+      const btn = $("emailForm").querySelector("button");
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Отправляем код…";
       $("loginErr").hidden = true;
+      const r = await call("/api/auth/email/start", { email });
+      btn.disabled = false;
+      btn.textContent = label;
+      if (!r.ok) { loginError(r.data.detail || "Не получилось отправить код. Попробуйте ещё раз."); return; }
       $("codeForm").hidden = false;
+      $("loginLead").innerHTML = `Код отправлен на <b>${esc(email)}</b>. Проверьте и папку «Спам».`;
       $("codeInput").focus();
     });
     $("codeForm").addEventListener("submit", async (e) => {

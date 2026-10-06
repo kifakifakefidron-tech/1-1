@@ -10,6 +10,8 @@ from . import config
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
+PRAGMA synchronous=NORMAL;
+PRAGMA busy_timeout=10000;
 PRAGMA foreign_keys=ON;
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -161,7 +163,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for table, col, decl in MIGRATIONS:
         cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
         if col not in cols:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+            except sqlite3.OperationalError as e:  # другой процесс (сайт/worker/бот) успел добавить
+                if "duplicate column" not in str(e):
+                    raise
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_listings_ext ON listings(ext_id) WHERE ext_id IS NOT NULL")
     conn.commit()
 

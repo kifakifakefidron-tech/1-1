@@ -39,7 +39,7 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
-    command: ["python", "-m", "app.worker"]
+    command: ["nice", "-n", "10", "python", "-m", "app.worker"]  # ниже приоритет — сайт важнее
     volumes:
       - ./data:/app/data
 

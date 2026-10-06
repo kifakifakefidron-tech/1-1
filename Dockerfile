@@ -15,4 +15,4 @@ RUN useradd --create-home --uid 1000 strely && mkdir -p /app/data && chown strel
 USER strely
 
 EXPOSE 8090
-CMD ["uvicorn", "app.server:app", "--host", "0.0.0.0", "--port", "8090", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["uvicorn", "app.server:app", "--host", "0.0.0.0", "--port", "8090", "--workers", "2", "--proxy-headers", "--forwarded-allow-ips", "*"]

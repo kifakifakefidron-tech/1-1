@@ -95,6 +95,8 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
 
     otype = obj.get("type") if obj.get("type") in rules.TYPES else None
     otype = otype or r.type
+    if otype == "new":  # отдельного типа «новостройка» нет — это квартира
+        otype = "flat"
     deal = obj.get("deal") if obj.get("deal") in ("sale", "rent") else r.deal
 
     area = _num(obj.get("area_m2"))
