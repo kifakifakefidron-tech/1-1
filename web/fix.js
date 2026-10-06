@@ -15,7 +15,8 @@
   let item = null, left = 0, districts = [];
   let map = null, marker = null;
   let chosenDistrict = null;
-  let complexesLoaded = false;
+  let extraDistricts = [];
+  let complexes = [];
 
   // Состояние сессии разбора: разобранные, пропущенные (в конец очереди), история для «Назад»
   const key = () => `fix:${mode}:${kind}`;
@@ -56,10 +57,7 @@
     if (!r.ok) { toast(r.data.detail || "Не получилось загрузить"); return null; }
     left = r.data.left;
     districts = r.data.districts || districts;
-    if (r.data.complexes && !complexesLoaded) {   // все ЖК по алфавиту: справочник + встречавшиеся в объявлениях
-      complexesLoaded = true;
-      $("fxComplexList").innerHTML = r.data.complexes.map((c) => `<option value="${esc(c)}">`).join("");
-    }
+    if (r.data.complexes) complexes = r.data.complexes;   // все ЖК по алфавиту: справочник + встречавшиеся
     return r.data.item;
   }
   async function next() {
@@ -100,7 +98,7 @@
     $("fxPrice").textContent = price(it.price, it.deal);
     $("fxNow").innerHTML = [
       it.complex ? `ЖК <b>${esc(it.complex)}</b>` : "ЖК —",
-      it.district ? `район <b>${esc(it.district)}</b>` : "район —",
+      it.district ? `район <b>${esc([it.district, ...(it.extra_districts || [])].join(", "))}</b>` : "район —",
       it.street ? `ул. ${esc(it.street)}${it.house ? ", " + esc(it.house) : ""}` : "",
       it.settlement ? esc(it.settlement) : "",
     ].filter(Boolean).join(" · ");
@@ -115,17 +113,24 @@
     window.scrollTo({ top: 0 });
   }
 
+  function renderExtra() {
+    $("fxExtraChips").innerHTML = extraDistricts.map((d) =>
+      `<span class="chip on extra-chip">${esc(d)}<button type="button" data-extra-del="${esc(d)}" aria-label="Убрать">×</button></span>`).join("");
+    renderLearn();
+  }
   function showPlace(it) {
     chosenDistrict = it.district || null;
+    extraDistricts = [...(it.extra_districts || [])];
+    $("fxExtraInput").value = "";
     const sug = it.suggest || { districts: [], complexes: [] };
     $("fxDistricts").innerHTML = sug.districts.map((d, i) =>
       `<button type="button" class="chip${d.name === chosenDistrict ? " on" : ""}" data-district="${esc(d.name)}"
         title="${esc(d.why)}"><span class="kbd">${i + 1}</span> ${esc(d.name)} <small>${esc(d.why)}</small></button>`).join("")
       + `<button type="button" class="chip${chosenDistrict ? "" : " on"}" data-district="">без района</button>`;
-    renderDistrictList();
     $("fxDistrictInput").value = chosenDistrict && !sug.districts.some((d) => d.name === chosenDistrict) ? chosenDistrict : "";
-    $("fxDistrictAdd").hidden = true;
     $("fxComplex").value = it.complex || "";
+    $("fxExtraChips").innerHTML = extraDistricts.map((d) =>
+      `<span class="chip on extra-chip">${esc(d)}<button type="button" data-extra-del="${esc(d)}" aria-label="Убрать">×</button></span>`).join("");
     $("fxComplexes").innerHTML = sug.complexes.map((c) =>
       `<button type="button" class="chip" data-complex="${esc(c.name)}" title="${esc(c.why)}">ЖК ${esc(c.name)} <small>${esc(c.why)}</small></button>`).join("")
       + `<button type="button" class="chip" data-complex="">без ЖК</button>`;
@@ -134,7 +139,8 @@
 
   function renderLearn() {
     if (!item) return;
-    const cx = $("fxComplex").value.trim(), d = chosenDistrict;
+    const cx = $("fxComplex").value.trim();
+    const d = [chosenDistrict, ...extraDistricts].filter(Boolean).join(", ") || null;
     const rows = [];
     if (item.street && d) rows.push(["street", `Улица <b>${esc(item.street)}</b> → район <b>${esc(d)}</b> (для её объявлений без своего района)`]);
     if (item.street && item.house) rows.push(["addr", `Дом <b>ул. ${esc(item.street)}, ${esc(item.house)}</b> → ${cx ? "ЖК " + esc(cx) : "без ЖК"}${d ? ", " + esc(d) : ""}`]);
@@ -157,7 +163,6 @@
     } else if (!chosenDistrict || document.querySelector(`#fxDistricts .chip.on[data-district]`)) {
       $("fxDistrictInput").value = "";
     }
-    $("fxDistrictAdd").hidden = true;
     renderLearn();
   }
 
@@ -206,7 +211,8 @@
     if (mode === "place") {
       const learn = {};
       document.querySelectorAll("#fxLearn input").forEach((i) => { if (i.checked) learn[i.name] = true; });
-      r = await call(`/api/admin/listings/${item.id}/place`, { complex: $("fxComplex").value, district: chosenDistrict || "", learn });
+      r = await call(`/api/admin/listings/${item.id}/place`, {
+        complex: $("fxComplex").value, district: chosenDistrict || "", extra: extraDistricts, learn });
     } else {
       const ll = marker.getLatLng();
       r = await call(`/api/admin/listings/${item.id}/geo`, extra || { lat: ll.lat, lon: ll.lng });
@@ -246,29 +252,32 @@
     else if (b.id === "fxSkip") skip();
     else if (b.id === "fxBack") back();
     else if (b.id === "fxHide") submit({ hide: true });
+    else if (b.dataset.extraDel) { extraDistricts = extraDistricts.filter((x) => x !== b.dataset.extraDel); renderExtra(); }
   });
-  // Поиск района: подсказки по алфавиту; точное совпадение — выбрать; нет такого — предложить добавить
-  function renderDistrictList() {
-    $("fxDistrictList").innerHTML = districts.map((d) => `<option value="${esc(d)}">`).join("");
-  }
-  const findDistrict = (v) => districts.find((d) => d.toLowerCase().replace("ё", "е") === v.trim().toLowerCase().replace("ё", "е"));
-  $("fxDistrictInput").addEventListener("input", (e) => {
-    const v = e.target.value.trim();
-    const hit = findDistrict(v);
-    if (hit) { pickDistrict(hit); return; }
-    $("fxDistrictAdd").hidden = v.length < 2;
-    $("fxDistrictAdd").textContent = `+ Добавить район «${v}»`;
+  // Район и ЖК — выпадающие списки с поиском; нет такого района — «+ Добавить район»
+  Combo($("fxDistrictInput"), {
+    options: () => districts,
+    onPick: (v) => pickDistrict(v),
+    newLabel: (v) => `+ Добавить новый район «${v}»`,
+    onNew: async (name) => {
+      if (!confirm(`Добавить новый район «${name}»? Он появится в фильтрах и будет узнаваться в объявлениях.`)) return;
+      const r = await call("/api/admin/districts", { name });
+      if (!r.ok) { toast(r.data.detail || "Не получилось добавить"); return; }
+      districts = r.data.districts;
+      pickDistrict(r.data.name);
+      $("fxDistrictInput").value = r.data.name;
+      toast(`Район «${r.data.name}» добавлен`);
+    },
   });
-  $("fxDistrictAdd").addEventListener("click", async () => {
-    const name = $("fxDistrictInput").value.trim();
-    if (!confirm(`Добавить новый район «${name}»? Он появится в фильтрах и будет узнаваться в объявлениях.`)) return;
-    const r = await call("/api/admin/districts", { name });
-    if (!r.ok) { toast(r.data.detail || "Не получилось добавить"); return; }
-    districts = r.data.districts;
-    renderDistrictList();
-    pickDistrict(r.data.name);
-    $("fxDistrictInput").value = r.data.name;
-    toast(`Район «${r.data.name}» добавлен`);
+  Combo($("fxComplex"), { options: () => complexes, onPick: () => renderLearn() });
+  Combo($("fxExtraInput"), {
+    options: () => districts.filter((d) => d !== chosenDistrict && !extraDistricts.includes(d)),
+    onPick: (v) => {
+      if (!chosenDistrict) pickDistrict(v);       // основного ещё нет — пусть будет основным
+      else if (!extraDistricts.includes(v)) extraDistricts.push(v);
+      $("fxExtraInput").value = "";
+      renderExtra();
+    },
   });
   $("fxComplex").addEventListener("input", renderLearn);
   $("fxPlace").addEventListener("submit", (e) => { e.preventDefault(); submit(); });

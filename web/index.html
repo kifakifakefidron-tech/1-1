@@ -14,7 +14,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
 <link rel="stylesheet" href="/static/style.css?v=10">
-<link rel="stylesheet" href="/static/motion.css?v=25">
+<link rel="stylesheet" href="/static/motion.css?v=27">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -120,8 +120,7 @@
       </div>
       <div class="field wide">
         <label class="range-label" for="complexInput">ЖК</label>
-        <input id="complexInput" list="complexList" placeholder="Начните вводить название ЖК">
-        <datalist id="complexList"></datalist>
+        <input id="complexInput" placeholder="Начните вводить название ЖК">
         <div class="chips" id="complexChosen"></div>
       </div>
     </div>
@@ -291,8 +290,8 @@
     <h2 id="placeTitle">ЖК и район</h2>
     <p class="note" id="placeInfo"></p>
     <form id="placeForm" class="agent-form">
-      <label class="agent-field"><span>ЖК (пусто — без ЖК)</span><input name="complex" list="complexList" autocomplete="off"></label>
-      <label class="agent-field"><span>Район</span><select name="district" id="placeDistrict"></select></label>
+      <label class="agent-field"><span>ЖК (пусто — без ЖК)</span><input name="complex" id="placeComplex" autocomplete="off" placeholder="Название ЖК"></label>
+      <label class="agent-field"><span>Район</span><input name="district" id="placeDistrict" placeholder="Найти район…"></label>
       <div class="place-learn" id="placeLearn"></div>
       <p class="note" id="placeLeft"></p>
       <div class="dlg-actions">
@@ -309,7 +308,8 @@
   <div class="dlg-body" id="agentBody"></div>
 </dialog>
 
-<script src="/static/app.js?v=34"></script>
+<script src="/static/combo.js?v=1"></script>
+<script src="/static/app.js?v=35"></script>
 <script src="/static/agent.js?v=3"></script>
 </body>
 </html>

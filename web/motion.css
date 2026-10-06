@@ -538,3 +538,18 @@ button.link { border: 0; background: none; padding: 0; color: var(--ink); font: 
 .place-learn .check span { overflow-wrap: anywhere; }
 #placeDlg .dlg-body { overflow-x: hidden; }
 .place-learn b { color: var(--ink); }
+
+/* ─── выпадающий список с поиском (web/combo.js) ───────────────────────── */
+.combo { position: relative; width: 100%; flex: 1 1 220px; min-width: 0; }
+.combo > input { width: 100%; box-sizing: border-box; }
+.combo-list { position: absolute; z-index: 60; left: 0; right: 0; top: calc(100% + 6px); max-height: 300px; overflow-y: auto;
+  background: #0b4544; border: 1px solid var(--line-2); border-radius: 14px; padding: 6px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .4); animation: comboIn .16s var(--ease); scrollbar-width: thin; }
+@keyframes comboIn { from { opacity: 0; transform: translateY(-4px); } }
+.combo-item { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 9px 12px;
+  border-radius: 10px; cursor: pointer; color: var(--ink); font-size: 15px; line-height: 1.3; }
+.combo-item small { color: var(--ink-3); font-size: 12px; white-space: nowrap; }
+.combo-item.on, .combo-item:hover { background: rgba(243, 232, 188, .12); }
+.combo-item mark { background: none; color: #ffd86b; font-weight: 700; }
+.combo-item.new { color: #9be8b8; font-weight: 600; border-top: 1px solid var(--line); margin-top: 4px; }
+.combo-empty { padding: 10px 12px; color: var(--ink-3); font-size: 14px; }

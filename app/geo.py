@@ -114,15 +114,26 @@ class Complex:
 
 
 _CUSTOM: list[tuple[str, list[str]]] = []   # районы, добавленные админом (таблица custom_districts)
+_RENAMES: dict[str, str] = {}                 # переименованные районы справочника: старое → новое
+
+
+def display_district(name: str | None) -> str | None:
+    """Имя района с учётом переименований (цепочки тоже: А → Б → В)."""
+    seen = set()
+    while name in _RENAMES and name not in seen:
+        seen.add(name)
+        name = _RENAMES[name]
+    return name
 
 
 def _alias_table() -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     for canon, aliases in DISTRICTS + _CUSTOM:
-        for a in aliases + [canon]:
+        shown = display_district(canon)
+        for a in aliases + [canon, shown]:
             w = words(a)
             if w:
-                out.append((w, canon))
+                out.append((w, shown))
     # длинные алиасы раньше коротких: «зип 2» раньше «зип»
     out.sort(key=lambda x: -len(x[0]))
     return out
@@ -260,17 +271,20 @@ def district_by_street(street: str | None) -> str | None:
 
 def all_district_names() -> list[str]:
     """Все районы по алфавиту (включая добавленные админом)."""
-    return sorted({d for d, _ in DISTRICTS + _CUSTOM}, key=lambda x: x.lower().replace("ё", "е"))
+    return sorted({display_district(d) for d, _ in DISTRICTS + _CUSTOM}, key=lambda x: x.lower().replace("ё", "е"))
 
 
-def set_custom_districts(items: list[tuple[str, list[str]]]) -> None:
-    """Подключить районы, добавленные админом: они сразу узнаются в тексте, фильтре и поиске."""
-    global _CUSTOM, _ALIASES
+def set_custom_districts(items: list[tuple[str, list[str]]], renames: dict[str, str] | None = None) -> None:
+    """Подключить районы, добавленные админом, и переименования: сразу узнаются в тексте, фильтре и поиске."""
+    global _CUSTOM, _ALIASES, _RENAMES
     known = {d for d, _ in DISTRICTS}
     new = [(n, a) for n, a in items if n not in known]
-    if new != _CUSTOM:
-        _CUSTOM = new
+    renames = dict(renames or {})
+    if new != _CUSTOM or renames != _RENAMES:
+        _CUSTOM, _RENAMES = new, renames
         _ALIASES = _alias_table()
+        _complexes.cache_clear()   # районы ЖК и улиц из справочника — уже под новыми именами
+        _streets.cache_clear()
 
 
 def complex_key(name: str | None) -> str | None:

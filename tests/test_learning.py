@@ -110,3 +110,52 @@ def test_street_learns_district_and_custom_district(env):
     assert search.search(conn, search.Query(districts=["Новые Сады"]), NOW, False)["total"] == 2
     item = c.get(f"/api/admin/fix?mode=place&kind=nodistrict&id={b}").json()
     assert "Новые Сады" in item["districts"] and item["complexes"]
+
+
+def test_rename_move_and_several_districts(env):
+    from app import geo
+    c, conn = env
+    a = add(conn, "2-к квартира 50 м², 3/9 эт., ФМР, ул. Тургенева 10. 6 млн. 89180000031")["listing_id"]
+    b = add(conn, "1-к квартира 38 м², 5/9 эт., ЖК Мозаика, ФМР. 4 млн. 89180000032")["listing_id"]
+    # объект на границе: основной ФМР + ещё ЦМР — находится по фильтру любого из них
+    c.post(f"/api/admin/listings/{a}/place", json={"district": "ФМР", "extra": ["ЦМР"], "learn": {}})
+    assert a in [i["id"] for i in search.search(conn, search.Query(districts=["ЦМР"]), NOW, False)["items"]]
+    facets = {f["name"]: f["n"] for f in search.facets(conn, search.Query(), NOW)["districts"]}
+    assert facets["ЦМР"] == 1 and facets["ФМР"] == 2
+    # перенести ЖК в другой район — сразу и для будущих объявлений
+    assert c.post("/api/admin/districts", json={"action": "move", "kind": "complex", "name": "Мозаика",
+                                                "from": "ФМР", "to": "ЮМР"}).json()["listings"] == 1
+    assert row(conn, b)["district"] == "ЮМР"
+    b2 = add(conn, "Студия 25 м², 2/9 эт., ЖК Мозаика. 3 млн. 89180000033")["listing_id"]
+    assert row(conn, b2)["district"] == "ЮМР"
+    # перенести улицу: объекты этой улицы из ФМР — в ГМР
+    c.post("/api/admin/districts", json={"action": "move", "kind": "street", "name": "Тургенева", "from": "ФМР", "to": "ГМР"})
+    assert row(conn, a)["district"] == "ГМР"
+    detail = c.get("/api/admin/districts?name=ГМР").json()
+    assert detail["streets"][0]["name"] == "Тургенева"
+    # переименовать район: объекты, фильтр, текст («юмр» всё ещё узнаётся)
+    r = c.post("/api/admin/districts", json={"action": "rename", "old": "ЮМР", "new": "Юбилейный"}).json()
+    assert r["listings"] == 2 and "Юбилейный" in r["districts"] and "ЮМР" not in r["districts"]
+    assert row(conn, b)["district"] == "Юбилейный"
+    assert geo.canonical_district("юмр") == "Юбилейный"
+    b3 = add(conn, "Студия 26 м², 3/9 эт., ЖК Мозаика. 3,1 млн. 89180000034")["listing_id"]
+    assert row(conn, b3)["district"] == "Юбилейный"          # правило «ЖК → район» тоже переименовалось
+
+
+def test_directory_lists_and_admin_only(env):
+    c, conn = env
+    add(conn, "2-к квартира 50 м², 3/9 эт., ЖК Мозаика, ФМР. 6 млн. 89180000041")
+    add(conn, "1-к квартира 38 м², 5/9 эт., ул. Тургенева 12, ФМР. 4 млн. 89180000042")
+    cx = c.get("/api/admin/districts?dir=complex").json()["items"]
+    moz = next(x for x in cx if x["name"] == "Мозаика")
+    assert moz["count"] == 1 and moz["districts"][0][0] == "ФМР"
+    st = c.get("/api/admin/districts?dir=street").json()["items"]
+    assert st[0]["street"] == "Тургенева"
+    # всё это — только для администратора
+    c.cookies.clear()
+    for url in ("/api/admin/districts?dir=complex", "/api/admin/fix?mode=place", "/api/admin/place-queue",
+                "/api/admin/geo-queue"):
+        assert c.get(url).status_code in (401, 403)
+    assert c.post("/api/admin/districts", json={"action": "rename", "old": "ФМР", "new": "X"}).status_code in (401, 403)
+    assert c.post("/api/admin/listings/1/place", json={"district": "ЦМР"}).status_code in (401, 403)
+    assert c.post("/api/admin/listings/1/geo", json={"lat": 45.0, "lon": 39.0}).status_code in (401, 403)

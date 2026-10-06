@@ -27,6 +27,10 @@
 .fx-block select, .fx-block input, #fxCoords {
   font: inherit; font-size: 15px; color: var(--ink); background: var(--bg); border: 1px solid var(--line-2);
   border-radius: 12px; padding: 10px 12px; width: 100%; box-sizing: border-box; }
+.fx-extra { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.fx-extra small { text-transform: none; letter-spacing: 0; opacity: .8; }
+.extra-chip { display: inline-flex; align-items: center; gap: 6px; padding-right: 6px; }
+.extra-chip button { border: 0; background: none; color: inherit; font: 600 16px/1 var(--body); cursor: pointer; padding: 0 2px; }
 .fx-dsearch { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .fx-dsearch input { flex: 1 1 220px; }
 #fxDistrictAdd { border-color: #9be8b8; color: #9be8b8; }

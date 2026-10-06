@@ -866,13 +866,18 @@ def api_admin_place(request: Request, body: dict | None = None):
     if district and not geo.canonical_district(district):
         return _err("Выберите район из списка.")
     district = geo.canonical_district(district) if district else None
-    learned = learning.learn(conn, row, cx, district, body.get("learn") or {})
+    extra = []
+    for x in body.get("extra") or []:
+        x = geo.canonical_district(str(x))
+        if x and x != district and x not in extra:
+            extra.append(x)
+    learned = learning.learn(conn, row, cx, district, body.get("learn") or {}, extra)
     d = {**dict(row), "complex": cx, "district": district}
     d["title"] = make_title(d)
     d["search_text"] = make_search_text(d)
-    conn.execute("""UPDATE listings SET complex = ?, district = ?, search_text = ?, admin_fixed = 1,
+    conn.execute("""UPDATE listings SET complex = ?, district = ?, extra_districts = ?, search_text = ?, admin_fixed = 1,
                     geo_status = CASE WHEN geo_status IN ('manual', 'learned') THEN geo_status ELSE 'pending' END
-                    WHERE id = ?""", (cx, district, d["search_text"], lid))
+                    WHERE id = ?""", (cx, district, json.dumps(extra, ensure_ascii=False), d["search_text"], lid))
     _reindex(conn, lid, d["search_text"])
     for field, old, new in (("complex", row["complex"], cx), ("district", row["district"], district)):
         if old != new:
@@ -881,7 +886,8 @@ def api_admin_place(request: Request, body: dict | None = None):
                           json.dumps(new, ensure_ascii=False)))
     conn.commit()
     applied = learning.apply_to_existing(conn, skip_id=lid) if learned else 0
-    return JSONResponse({"ok": True, "complex": cx, "district": district, "learned": learned, "applied": applied})
+    return JSONResponse({"ok": True, "complex": cx, "district": district, "extra": extra, "learned": learned,
+                         "applied": applied})
 
 
 _PLACE_QUEUE = {
@@ -922,6 +928,7 @@ def _fix_item(conn, lid: int) -> dict | None:
                               "district", "street", "house", "settlement", "lat", "lon", "geo_status", "admin_fixed",
                               "source")} | {
         "text": text, "photo": photos[0] if photos else None,
+        "extra_districts": json.loads(r["extra_districts"] or "[]"),
         "suggest": geo.suggestions(text, r["street"], r["complex"]),
         "learned": [label for _, label in geocode.learn_keys(r)],
     }
@@ -934,14 +941,34 @@ def api_admin_districts(request: Request, body: dict | None = None):
         return err
     conn = db.get()
     learning.sync_districts(conn)
+    body = body or {}
+    if request.method == "POST" and body.get("action") == "rename":
+        res = learning.rename_district(conn, str(body.get("old", "")), str(body.get("new", "")))
+        return JSONResponse({**res, "districts": geo.all_district_names()})
+    if request.method == "POST" and body.get("action") == "move":
+        res = learning.move(conn, "complex" if body.get("kind") == "complex" else "street", str(body.get("name", "")),
+                            body.get("from") or None, str(body.get("to", "")),
+                            [x for x in (body.get("extra") or []) if geo.canonical_district(x)])
+        return JSONResponse(res)
     if request.method == "POST":
-        body = body or {}
         aliases = [a.strip() for a in str(body.get("aliases", "")).split(",") if a.strip()]
         name = learning.add_district(conn, str(body.get("name", "")), aliases)
         if not name:
             return _err("Напишите название района.")
         return JSONResponse({"name": name, "districts": geo.all_district_names()})
-    return JSONResponse({"districts": geo.all_district_names()})
+    if request.query_params.get("name"):
+        return JSONResponse(learning.district_detail(conn, request.query_params["name"]))
+    if request.query_params.get("dir") in ("complex", "street"):
+        return JSONResponse({"items": learning.directory(conn, request.query_params["dir"]),
+                             "districts": geo.all_district_names()})
+    counts = dict(conn.execute("""SELECT name, COUNT(*) FROM (
+                                      SELECT district AS name FROM listings WHERE is_active = 1 AND district IS NOT NULL
+                                      UNION ALL SELECT j.value FROM listings, json_each(listings.extra_districts) j
+                                      WHERE is_active = 1) GROUP BY name""").fetchall())
+    custom = {r[0] for r in conn.execute("SELECT name FROM custom_districts")}
+    names = geo.all_district_names()
+    return JSONResponse({"districts": names,
+                         "items": [{"name": n, "count": counts.get(n, 0), "custom": n in custom} for n in names]})
 
 
 def api_admin_fix(request: Request, body: dict | None = None):

@@ -101,12 +101,14 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         cur = conn.execute(
             """INSERT INTO listings (type, deal, rooms, area, land, floor, floors, price, price_m2,
                    district, complex, settlement, street, house, title, description, fragment, phones,
-                   first_seen, last_seen, seen_count, is_active, search_text, room_kind, rooms_mask, article)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,1,?,?,?,?)""",
+                   first_seen, last_seen, seen_count, is_active, search_text, room_kind, rooms_mask, article,
+                   extra_districts)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,1,?,?,?,?,?)""",
             (d["type"], d["deal"], d["rooms"], d["area"], d["land"], d["floor"], d["floors"], d["price"],
              _price_m2(d["price"], d["area"]), d["district"], d["complex"], d["settlement"], d["street"],
              d["house"], d["title"], d["description"], d["fragment"], json.dumps(d["phones"], ensure_ascii=False),
-             ts, ts, d["search_text"], d["room_kind"], rooms_mask(d["room_kind"], d["rooms"]), d["article"]),
+             ts, ts, d["search_text"], d["room_kind"], rooms_mask(d["room_kind"], d["rooms"]), d["article"],
+             json.dumps(d.get("extra_districts") or [], ensure_ascii=False)),
         )
         lid = cur.lastrowid
         why = "new"
@@ -151,13 +153,15 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
                    complex=?, settlement=?, street=?, house=?, title=?, description=?, fragment=?, phones=?,
                    last_seen=MAX(last_seen, ?), first_seen=MIN(first_seen, ?), seen_count=seen_count+1,
                    is_active=?, sold_at=CASE WHEN ? THEN NULL ELSE sold_at END, search_text=?, geo_status=CASE WHEN ? AND geo_status != 'manual' THEN 'pending' ELSE geo_status END,
-                   room_kind=?, rooms_mask=?, article=?
+                   room_kind=?, rooms_mask=?, article=?, extra_districts=?
                WHERE id=?""",
             (merged["rooms"], merged["area"], merged["land"], merged["floor"], merged["floors"], merged["price"],
              _price_m2(merged["price"], merged["area"]), merged["district"], merged["complex"], merged["settlement"],
              merged["street"], merged["house"], merged["title"], merged["description"], merged["fragment"],
              merged["phones"], ts, ts, active, active, merged["search_text"], geo_reset,
-             merged.get("room_kind"), rooms_mask(merged.get("room_kind"), merged["rooms"]), merged.get("article"), lid),
+             merged.get("room_kind"), rooms_mask(merged.get("room_kind"), merged["rooms"]), merged.get("article"),
+             json.dumps(list(dict.fromkeys(json.loads(cur_d.get("extra_districts") or "[]") + (d.get("extra_districts") or []))),
+                        ensure_ascii=False), lid),
         )
         d["search_text"] = merged["search_text"]
     _reindex(conn, lid, d["search_text"])

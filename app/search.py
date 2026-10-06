@@ -167,8 +167,10 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
             w.append(f"l.{col} >= ?"); p.append(lo)
         if hi is not None:
             w.append(f"l.{col} <= ?"); p.append(hi)
-    if qr.districts:
-        w.append(f"l.district IN ({','.join('?' * len(qr.districts))})"); p += qr.districts
+    if qr.districts:   # основной район или один из дополнительных (объект на границе районов)
+        q = ",".join("?" * len(qr.districts))
+        w.append(f"(l.district IN ({q}) OR EXISTS (SELECT 1 FROM json_each(l.extra_districts) j WHERE j.value IN ({q})))")
+        p += qr.districts + qr.districts
     if qr.complexes:
         keys = sorted({geo.complex_key(c) for c in qr.complexes if geo.complex_key(c)})
         w.append(f"cxkey(l.complex) IN ({','.join('?' * len(keys))})"); p += keys
@@ -203,6 +205,7 @@ def mask_phone(p: str) -> str:
 def row_to_item(r: sqlite3.Row, with_contacts: bool) -> dict:
     d = {k: r[k] for k in PUBLIC_FIELDS}
     d["photos"] = json.loads(r["photos"] or "[]")
+    d["extra_districts"] = json.loads(r["extra_districts"] or "[]")
     phones = json.loads(r["phones"] or "[]")
     if with_contacts:
         d["phones"] = phones
@@ -252,8 +255,12 @@ def facets(conn: sqlite3.Connection, qr: Query, now: int) -> dict:
     base = Query(**{**qr.__dict__, "districts": [], "complexes": []})
     where, params = _where(base, now)
     districts = conn.execute(
-        f"SELECT l.district AS name, COUNT(*) AS n FROM listings l WHERE {where} AND l.district IS NOT NULL GROUP BY 1 ORDER BY n DESC",
-        params).fetchall()
+        f"""SELECT name, COUNT(*) AS n FROM (
+                SELECT l.district AS name FROM listings l WHERE {where} AND l.district IS NOT NULL
+                UNION ALL
+                SELECT j.value FROM listings l, json_each(l.extra_districts) j WHERE {where})
+            GROUP BY 1 ORDER BY n DESC""",
+        params + params).fetchall()
     # Разные написания одного ЖК — одна строка в фильтре (самое частое написание)
     complexes = conn.execute(
         f"""SELECT name, n FROM (

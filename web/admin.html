@@ -10,8 +10,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=4">
-<link rel="stylesheet" href="/static/admin.css?v=4">
+<link rel="stylesheet" href="/static/style.css?v=10">
+<link rel="stylesheet" href="/static/motion.css?v=27">
+<link rel="stylesheet" href="/static/admin.css?v=5">
 </head>
 <body>
 <header class="top">
@@ -32,6 +33,7 @@
       <button class="seg" data-tab="chats">Чаты</button>
       <button class="seg" data-tab="geo">Карта</button>
       <button class="seg" data-tab="place">ЖК и районы</button>
+      <button class="seg" data-tab="districts">Справочник</button>
     </nav>
 
     <section data-pane="overview"><div class="adm-cards" id="overview"></div></section>
@@ -116,12 +118,39 @@
       <div class="adm-table-wrap"><table class="adm-table" id="placeTable"></table></div>
     </section>
 
+    <section data-pane="districts" hidden>
+      <div class="chips chat-filter" id="dirKinds">
+        <button type="button" class="chip on" data-dir="districts">Районы</button>
+        <button type="button" class="chip" data-dir="complex">ЖК</button>
+        <button type="button" class="chip" data-dir="street">Улицы</button>
+      </div>
+      <div id="dirDistricts">
+      <p class="note">Все районы по алфавиту. Нажмите на район — увидите его улицы и ЖК; любую улицу или ЖК можно
+        перенести в другой район (сразу для всех объявлений и на будущее). Район можно переименовать — старое название
+        продолжит узнаваться в объявлениях; если назвать так же, как другой район, — они сольются в один.</p>
+      <div class="dist-bar">
+        <input id="distQ" placeholder="Найти район…">
+        <form class="inline-form" id="distNew"><input name="name" placeholder="Новый район"><button class="pill light">+ Добавить</button></form>
+      </div>
+      <div class="dist-grid">
+        <ul class="dist-list" id="distList"></ul>
+        <div class="dist-detail" id="distDetail"><p class="note">Выберите район слева.</p></div>
+      </div>
+      </div>
+      <div id="dirTable" hidden>
+        <p class="note" id="dirNote"></p>
+        <div class="dist-bar"><input id="dirQ" placeholder="Найти…"></div>
+        <div class="adm-table-wrap"><table class="adm-table" id="dirRows"></table></div>
+      </div>
+    </section>
+
     <section data-pane="edits" hidden>
       <p class="note">Что агенты меняли в объявлениях. Если правка неверная — «Откатить» вернёт прежнее значение.</p>
       <div class="adm-table-wrap"><table class="adm-table" id="edits"></table></div>
     </section>
   </div>
 </main>
-<script src="/static/admin.js?v=8"></script>
+<script src="/static/combo.js?v=1"></script>
+<script src="/static/admin.js?v=9"></script>
 </body>
 </html>

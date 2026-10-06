@@ -35,6 +35,7 @@ class ParsedObject:
     phones: list[str] = field(default_factory=list)
     room_kind: str | None = None      # studio | classic | euro | mini
     article: str | None = None        # «Артикул: 337» — объект есть на сайте СТРЕЛ
+    extra_districts: list[str] = field(default_factory=list)   # ещё районы (правила админа: объект на границе)
 
     def to_dict(self) -> dict:
         return asdict(self)

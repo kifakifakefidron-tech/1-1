@@ -180,6 +180,8 @@ CREATE TABLE IF NOT EXISTS geo_learned (
 );
 -- Районы, добавленные админом (в дополнение к справочнику geo.DISTRICTS)
 CREATE TABLE IF NOT EXISTS custom_districts (name TEXT PRIMARY KEY, aliases TEXT NOT NULL DEFAULT '[]', ts INTEGER NOT NULL);
+-- Переименованные районы справочника: старое имя → новое (старое продолжает узнаваться в тексте)
+CREATE TABLE IF NOT EXISTS district_renames (old TEXT PRIMARY KEY, new TEXT NOT NULL, ts INTEGER NOT NULL);
 -- Выученные правила ЖК/района (app/learning.py)
 CREATE TABLE IF NOT EXISTS learned_rules (
     id INTEGER PRIMARY KEY, kind TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, label TEXT,
@@ -227,6 +229,7 @@ MIGRATIONS = [
     ("saved_searches", "notice_checked_at", "INTEGER"),       # до какого момента новые объекты уже показаны на сайте
     ("favorites", "site_price", "INTEGER"),                   # о какой цене уже сообщили на сайте
     ("listings", "admin_fixed", "INTEGER NOT NULL DEFAULT 0"),  # ЖК/район поправил админ — автоматика не трогает
+    ("listings", "extra_districts", "TEXT NOT NULL DEFAULT '[]'"),  # ещё районы (объект на границе районов)
     ("listings", "hidden_reason", "TEXT"),                    # 'chat' — скрыт, т.к. приходил только из отключённых чатов
 ]
 

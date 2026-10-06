@@ -242,7 +242,104 @@
       : `<tr><td class="note">Здесь пусто 🎉</td></tr>`;
   }
 
-  const loaders = { overview, users, promos, optouts, complaints, edits, chats, geo, place };
+  // ─── Районы: список, улицы и ЖК района, перенос, переименование ─────────
+  let distItems = [], distNames = [], distOpen = "";
+  async function districts() {
+    const d = await call("/api/admin/districts");
+    distItems = d.items; distNames = d.districts;
+    renderDistList();
+    if (distOpen) openDistrict(distOpen);
+  }
+  function renderDistList() {
+    const q = ($("distQ").value || "").trim().toLowerCase().replace(/ё/g, "е");
+    $("distList").innerHTML = distItems.filter((x) => !q || x.name.toLowerCase().replace(/ё/g, "е").includes(q)).map((x) =>
+      `<li><button type="button" class="dist-item${x.name === distOpen ? " on" : ""}" data-dist="${esc(x.name)}">
+        <span>${esc(x.name)}${x.custom ? ' <small class="note">свой</small>' : ""}</span><b>${x.count}</b></button></li>`).join("")
+      || `<li class="note">Ничего не нашлось</li>`;
+  }
+  async function openDistrict(name) {
+    distOpen = name;
+    renderDistList();
+    const d = await call(`/api/admin/districts?name=${encodeURIComponent(name)}`);
+    const row = (kind, x) => `<li><span>${esc(x.name)} <small class="note">${x.n}</small></span>
+        <button type="button" class="chip" data-move="${kind}" data-name="${esc(x.name)}">Перенести в…</button></li>`;
+    $("distDetail").innerHTML = `
+      <div class="dist-head"><h3>${esc(name)}</h3>
+        <button type="button" class="chip" data-rename="${esc(name)}">✎ Переименовать</button></div>
+      <div class="dist-cols">
+        <div><h4>ЖК · ${d.complexes.length}</h4><ul class="dist-sub">${d.complexes.map((x) => row("complex", x)).join("") || '<li class="note">нет</li>'}</ul></div>
+        <div><h4>Улицы (без ЖК) · ${d.streets.length}</h4><ul class="dist-sub">${d.streets.map((x) => row("street", x)).join("") || '<li class="note">нет</li>'}</ul></div>
+      </div>`;
+  }
+  // Перенос: под строкой — поле с выпадающим списком районов
+  function askMove(btn) {
+    document.querySelectorAll(".move-box").forEach((x) => x.remove());
+    const li = btn.closest("li");
+    li.insertAdjacentHTML("beforeend", `<div class="move-box"><input placeholder="В какой район…"></div>`);
+    const input = li.querySelector(".move-box input");
+    Combo(input, {
+      options: () => distNames.filter((n) => n !== distOpen),
+      onPick: async (to) => {
+        const kind = btn.dataset.move, name = btn.dataset.name;
+        const r = await call("/api/admin/districts", { action: "move", kind, name, from: distOpen, to });
+        alert(`${kind === "complex" ? "ЖК" : "Улица"} «${name}» → ${to}. Перенесено объектов: ${r.listings}. Новые объявления тоже пойдут туда.`);
+        districts();
+      },
+    });
+    input.focus();
+  }
+  async function renameDistrict(old) {
+    const name = prompt(`Новое название района «${old}»:\n(если указать название другого района — они сольются в один)`, old);
+    if (!name || name.trim() === old) return;
+    const r = await call("/api/admin/districts", { action: "rename", old, new: name.trim() });
+    distOpen = r.name || name.trim();
+    alert(`Готово: «${old}» → «${distOpen}». Объектов: ${r.listings}.`);
+    districts();
+  }
+
+  // ─── Справочник: все ЖК / улицы и их районы, с изменением ──────────────
+  let dirKind = "districts", dirItems = [];
+  async function showDir(kind) {
+    dirKind = kind;
+    document.querySelectorAll("#dirKinds .chip").forEach((b) => b.classList.toggle("on", b.dataset.dir === kind));
+    $("dirDistricts").hidden = kind !== "districts";
+    $("dirTable").hidden = kind === "districts";
+    if (kind === "districts") { await districts(); return; }
+    $("dirNote").innerHTML = kind === "complex"
+      ? "Все ЖК: где их объекты сейчас, район из справочника и ваше правило. «Изменить» — перенести ЖК в район (все его объекты и новые объявления)."
+      : "Все улицы из объявлений: в каких районах их объекты. «Изменить» — все объекты улицы (без ЖК) и новые объявления — в выбранный район.";
+    const d = await call(`/api/admin/districts?dir=${kind}`);
+    dirItems = d.items; distNames = d.districts;
+    renderDir();
+  }
+  function renderDir() {
+    const q = ($("dirQ").value || "").trim().toLowerCase().replace(/ё/g, "е");
+    const rows = dirItems.filter((x) => !q || x.name.toLowerCase().replace(/ё/g, "е").includes(q)).slice(0, 400);
+    $("dirRows").innerHTML = `<tr><th>${dirKind === "complex" ? "ЖК" : "Улица"}</th><th>Объектов</th><th>Сейчас в районах</th>
+        <th>Справочник</th><th>Ваше правило</th><th></th></tr>` + rows.map((x) => `<tr>
+        <td><b>${esc(x.name)}</b></td><td>${x.count}</td>
+        <td>${x.districts.map(([n, c]) => `${esc(n)} <small class="note">${c}</small>`).join(", ") || '<span class="note">—</span>'}</td>
+        <td>${esc(x.kb_district || "—")}</td><td>${x.rule ? `<b>${esc(x.rule)}</b>` : '<span class="note">—</span>'}</td>
+        <td class="acts"><button type="button" data-dir-edit="${esc(dirKind === "complex" ? x.name : x.street)}">Изменить</button></td></tr>`).join("");
+  }
+  function dirEdit(btn) {
+    document.querySelectorAll(".move-box").forEach((x) => x.closest("tr")?.remove());
+    const tr = btn.closest("tr");
+    tr.insertAdjacentHTML("afterend", `<tr><td colspan="6"><div class="move-box"><input placeholder="В какой район…"></div></td></tr>`);
+    const input = tr.nextElementSibling.querySelector("input");
+    Combo(input, {
+      options: () => distNames,
+      onPick: async (to) => {
+        const name = btn.dataset.dirEdit;
+        const r = await call("/api/admin/districts", { action: "move", kind: dirKind === "complex" ? "complex" : "street", name, to });
+        alert(`«${name}» → ${to}. Объектов перенесено: ${r.listings}. Новые объявления тоже пойдут туда.`);
+        showDir(dirKind);
+      },
+    });
+    input.focus();
+  }
+
+  const loaders = { overview, users, promos, optouts, complaints, edits, chats, geo, place, districts: () => showDir(dirKind) };
 
   function show(tab) {
     document.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
@@ -266,6 +363,16 @@
       } else if (b.dataset.unopt) {
         await call("/api/admin/optouts", { remove: b.dataset.unopt });
         optouts();
+      } else if (b.dataset.dir) {
+        await showDir(b.dataset.dir);
+      } else if (b.dataset.dirEdit) {
+        dirEdit(b);
+      } else if (b.dataset.dist) {
+        await openDistrict(b.dataset.dist);
+      } else if (b.dataset.move) {
+        askMove(b);
+      } else if (b.dataset.rename) {
+        await renameDistrict(b.dataset.rename);
       } else if (b.dataset.placeKind) {
         placeKind = b.dataset.placeKind;
         await place();
@@ -299,6 +406,19 @@
   $("userSearch").addEventListener("submit", (e) => { e.preventDefault(); users().catch(fail); });
   $("chatSearch").addEventListener("submit", (e) => e.preventDefault());
   $("chatQ").addEventListener("input", renderChats);
+  $("distQ").addEventListener("input", renderDistList);
+  $("dirQ").addEventListener("input", renderDir);
+  $("distNew").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = e.target.name.value.trim();
+    if (!name) return;
+    try {
+      const r = await call("/api/admin/districts", { name });
+      e.target.name.value = "";
+      distOpen = r.name;
+      await districts();
+    } catch (err) { fail(err); }
+  });
   document.addEventListener("change", (e) => {
     const t = e.target;
     if (t.dataset && t.dataset.toggle) setChat(t.dataset.toggle, !t.checked);

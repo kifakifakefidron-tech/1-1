@@ -51,3 +51,25 @@ tr.peek td { background: rgba(0, 0, 0, .12); }
 .msg-snip { max-width: 520px; white-space: pre-line; max-height: 4.5em; overflow: hidden; }
 .pill-link { display: inline-block; padding: 6px 12px; border-radius: 999px; background: #f3e8bc; color: #035352 !important;
   text-decoration: none; font-weight: 600; white-space: nowrap; }
+
+/* районы */
+.dist-bar { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 14px; }
+.dist-bar > input, .dist-bar input[name=name], .move-box input { padding: 9px 12px; border-radius: 12px; border: 1px solid rgba(243,232,188,.3);
+  background: #0b4544; color: #f3e8bc; font: inherit; }
+.dist-bar > input { flex: 1 1 220px; }
+.dist-grid { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 16px; align-items: start; }
+.dist-list { list-style: none; margin: 0; padding: 6px; max-height: 70vh; overflow: auto; border-radius: 16px; background: rgba(0,0,0,.12); }
+.dist-item { width: 100%; display: flex; justify-content: space-between; gap: 10px; padding: 9px 12px; border: 0; border-radius: 10px;
+  background: none; color: #f3e8bc; font: inherit; cursor: pointer; text-align: left; }
+.dist-item:hover, .dist-item.on { background: rgba(243,232,188,.12); }
+.dist-item b { opacity: .7; font-weight: 600; }
+.dist-detail { border-radius: 16px; background: rgba(0,0,0,.12); padding: 14px 16px; min-height: 200px; }
+.dist-head { display: flex; align-items: center; gap: 12px; }
+.dist-head h3 { margin: 0; font: 600 22px var(--head, sans-serif); }
+.dist-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+.dist-sub { list-style: none; padding: 0; margin: 6px 0; display: flex; flex-direction: column; gap: 4px; max-height: 60vh; overflow: auto; }
+.dist-sub li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 10px; }
+.dist-sub li:hover { background: rgba(243,232,188,.06); }
+.move-box { width: 100%; }
+.move-box .combo { width: 100%; }
+@media (max-width: 760px) { .dist-grid, .dist-cols { grid-template-columns: 1fr; } }

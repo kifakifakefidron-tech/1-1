@@ -16,6 +16,7 @@
   };
   const DEFAULTS = JSON.parse(JSON.stringify(state));
   let savedList = [];       // сохранённые поиски («🔔 Следить»)
+  let facetComplexes = [];  // ЖК с числом объектов — для выпадающих списков
   let activeSaved = 0;      // открыт сохранённый поиск
   let hitSince = 0;         // из уведомления: выделить объекты, появившиеся после этого времени
   let meta = { types: {}, access: false, access_required: false };
@@ -72,7 +73,8 @@
   function address(o) {
     const head = headline(o);
     const street = o.street ? `ул. ${o.street}${o.house ? ", " + o.house : ""}` : "";
-    return [o.district, o.settlement, street].filter((x) => x && x !== head).join(" · ");
+    const ds = [o.district, ...(o.extra_districts || [])].filter(Boolean).join(" / ");
+    return [ds, o.settlement, street].filter((x) => x && x !== head).join(" · ");
   }
   function place(o) {
     const street = o.street ? `ул. ${o.street}${o.house ? ", " + o.house : ""}` : "";
@@ -296,7 +298,7 @@
           return `<button type="button" class="chip${on ? " on" : ""}" data-district="${esc(n)}" aria-pressed="${on}">${esc(n)}<span class="n">${counts.get(n) ?? 0}</span></button>`;
         }).join("")
       : `<span class="range-label">Пока нет объектов с районом</span>`;
-    $("complexList").innerHTML = f.complexes.map((c) => `<option value="${esc(c.name)}">${esc(c.n)}</option>`).join("");
+    facetComplexes = f.complexes;   // для выпадающего списка ЖК
   }
 
   // ─── результаты ─────────────────────────────────────────────────────────
@@ -693,8 +695,7 @@
     placeId = id;
     const f = $("placeForm");
     f.complex.value = o.complex || "";
-    $("placeDistrict").innerHTML = `<option value="">— не указан —</option>` +
-      (meta.districts || []).map((d) => `<option${d === o.district ? " selected" : ""}>${esc(d)}</option>`).join("");
+    $("placeDistrict").value = o.district || "";
     $("placeInfo").textContent = [o.title, address(o)].filter(Boolean).join(" · ");
     $("placeSkip").hidden = !placeQueue;
     $("placeLeft").textContent = "";
@@ -1342,8 +1343,15 @@
     $("fresh").addEventListener("change", () => { state.fresh = $("fresh").value; refresh(); });
     $("sort").addEventListener("change", () => { state.sort = $("sort").value; refresh(); });
 
-    $("complexInput").addEventListener("change", addComplex);
+    // ЖК в фильтре — выпадающий список с поиском и числом объектов
+    Combo($("complexInput"), {
+      options: () => facetComplexes.map((c) => ({ value: c.name, meta: `${c.n}` })),
+      onPick: () => addComplex(),
+    });
     $("complexInput").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addComplex(); } });
+    // Окно «ЖК и район» (админ)
+    Combo($("placeDistrict"), { options: () => meta.districts || [], onPick: () => renderPlaceLearn() });
+    Combo($("placeComplex"), { options: () => facetComplexes.map((c) => c.name), onPick: () => renderPlaceLearn() });
 
     $("moreBtn").addEventListener("click", () => {
       const open = $("more").hidden;
@@ -1415,7 +1423,7 @@
     });
     $("geoHide").addEventListener("click", () => saveGeo({ hide: true }));
     $("placeForm").addEventListener("submit", (e) => { e.preventDefault(); savePlace(); });
-    $("placeForm").addEventListener("input", (e) => { if (e.target.name === "complex") renderPlaceLearn(); });
+    $("placeForm").addEventListener("input", (e) => { if (e.target.name === "complex" || e.target.name === "district") renderPlaceLearn(); });
     $("placeForm").addEventListener("change", (e) => { if (e.target.name === "district" || e.target.name === "complex") renderPlaceLearn(); });
     $("placeSkip").addEventListener("click", () => { closeDlg($("placeDlg")); nextPlace(); });
     $("geoSkip").addEventListener("click", () => { closeDlg($("geoDlg")); nextInQueue(); });

@@ -12,8 +12,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="/static/style.css?v=10">
-<link rel="stylesheet" href="/static/motion.css?v=25">
-<link rel="stylesheet" href="/static/fix.css?v=2">
+<link rel="stylesheet" href="/static/motion.css?v=27">
+<link rel="stylesheet" href="/static/fix.css?v=3">
 </head>
 <body>
 <header class="nav"><div class="nav-in">
@@ -56,16 +56,18 @@
           <div class="fx-label">Район <span class="kbd">1–9</span></div>
           <div class="chips" id="fxDistricts"></div>
           <div class="fx-dsearch">
-            <input id="fxDistrictInput" list="fxDistrictList" placeholder="Найти район по названию…">
-            <datalist id="fxDistrictList"></datalist>
-            <button type="button" class="chip" id="fxDistrictAdd" hidden></button>
+            <input id="fxDistrictInput" placeholder="Найти район по названию…">
+          </div>
+          <div class="fx-extra">
+            <span class="fx-label">Ещё районы <small>(объект на границе — найдётся по любому)</small></span>
+            <div class="chips" id="fxExtraChips"></div>
+            <input id="fxExtraInput" placeholder="+ добавить ещё район">
           </div>
         </div>
         <div class="fx-block">
           <div class="fx-label">ЖК</div>
           <div class="chips" id="fxComplexes"></div>
-          <input id="fxComplex" list="fxComplexList" placeholder="Название ЖК — или пусто, если ЖК нет">
-          <datalist id="fxComplexList"></datalist>
+          <input id="fxComplex" placeholder="Название ЖК — или пусто, если ЖК нет">
         </div>
         <div class="fx-block fx-learn" id="fxLearn"></div>
       </form>
@@ -92,6 +94,7 @@
 </main>
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="/static/fix.js?v=2"></script>
+<script src="/static/combo.js?v=1"></script>
+<script src="/static/fix.js?v=4"></script>
 </body>
 </html>
