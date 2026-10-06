@@ -178,6 +178,12 @@ CREATE TABLE IF NOT EXISTS geo_learned (
     key TEXT PRIMARY KEY,            -- addr:<посёлок>|<улица>|<дом>  или  cx:<ЖК>
     lat REAL NOT NULL, lon REAL NOT NULL, n INTEGER NOT NULL DEFAULT 1, ts INTEGER NOT NULL, label TEXT
 );
+-- Контуры районов для сверки (карта районов neagent.info — с активной ссылкой на источник; не публикуем)
+CREATE TABLE IF NOT EXISTS district_polygons (
+    id INTEGER PRIMARY KEY, name TEXT NOT NULL, source_name TEXT, kind TEXT NOT NULL DEFAULT 'district',
+    source TEXT NOT NULL, polys TEXT NOT NULL, area REAL, lat_min REAL, lat_max REAL, lon_min REAL, lon_max REAL, ts INTEGER
+);
+CREATE TABLE IF NOT EXISTS reconcile_ignore (key TEXT PRIMARY KEY, ts INTEGER);
 -- Районы, добавленные админом (в дополнение к справочнику geo.DISTRICTS)
 CREATE TABLE IF NOT EXISTS custom_districts (name TEXT PRIMARY KEY, aliases TEXT NOT NULL DEFAULT '[]', ts INTEGER NOT NULL);
 -- Переименованные районы справочника: старое имя → новое (старое продолжает узнаваться в тексте)

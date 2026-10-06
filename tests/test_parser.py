@@ -212,3 +212,12 @@ def test_place_written_as_separate_lines():
 def test_price_on_next_line_after_floor_fraction():
     from app import rules
     assert rules.extract_price("2ккв 72м 16/17\n7550тр") == 7_550_000
+
+
+def test_new_district_names_not_confused_with_complexes():
+    from app import geo
+    assert geo.canonical_district("9 км") == "9-й километр"
+    assert geo.find_district_in_text("2к квартира СХИ 5 млн") == "СХИ"
+    assert geo.find_district_in_text("2к квартира ЖК Аврора 5 млн") is None        # ЖК, а не район
+    assert geo.find_district_in_text("2к квартира мкр Аврора 5 млн") == "Аврора"
+    assert geo.find_district_in_text("ЖК Катюша, студия") is None

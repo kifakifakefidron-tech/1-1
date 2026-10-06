@@ -21,8 +21,8 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import (accounts, agent, config, db, geo, geocode, hooks, ingest, learning, mailer, notices, parser, payments,
-               region, search, tg)
+from . import (accounts, agent, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
+               payments, region, search, tg)
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -1003,6 +1003,34 @@ def api_admin_dir(request: Request, body: dict | None = None):
     return JSONResponse({**res, "districts": geo.all_district_names()})
 
 
+def api_admin_reconcile(request: Request, body: dict | None = None):
+    """Сверка с картой районов: GET — расхождения; POST {action: import|accept|ignore|fill_empty}."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    conn = db.get()
+    learning.sync_districts(conn)
+    body = body or {}
+    action = body.get("action")
+    try:
+        if action == "import":   # файл карты районов (YMapsML/KML-подобный), полученный с разрешения владельца
+            if not body.get("xml"):
+                return _err("Нужен файл карты районов.")
+            res = districtmap.import_map(conn, str(body["xml"]).encode("utf-8"))
+            return JSONResponse({**res, **districtmap.reconcile(conn)})
+        if action == "accept":
+            res = districtmap.accept(conn, body.get("kind", ""), str(body.get("name", "")), body.get("district"))
+            return JSONResponse(res)
+        if action == "ignore":
+            districtmap.ignore(conn, str(body.get("key", "")))
+            return JSONResponse({"ok": True})
+        if action == "fill_empty":
+            return JSONResponse({"listings": districtmap.fill_empty(conn)})
+    except (ValueError, OSError) as e:
+        return _err(f"Не получилось: {e}")
+    return JSONResponse(districtmap.reconcile(conn))
+
+
 def api_admin_fix(request: Request, body: dict | None = None):
     """Экран разбора /fix: следующий объект очереди (без уже разобранных и пропущенных в этой сессии)
     или конкретный объект (?id=). mode: place (ЖК/район) | geo (карта)."""
@@ -1141,6 +1169,7 @@ routes = [
     Route("/api/admin/geo-queue", threaded(api_admin_geo_queue)),
     Route("/api/admin/fix", threaded(api_admin_fix)),
     Route("/api/admin/dir", threaded(api_admin_dir), methods=["GET", "POST"]),
+    Route("/api/admin/reconcile", threaded(api_admin_reconcile), methods=["GET", "POST"]),
     Route("/api/admin/districts", threaded(api_admin_districts), methods=["GET", "POST"]),
     Route("/fix", threaded(fix_page)),
     Route("/api/admin/listings/{id:int}/place", threaded(api_admin_place), methods=["POST"]),

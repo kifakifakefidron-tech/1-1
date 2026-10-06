@@ -155,6 +155,19 @@ def learn(conn: sqlite3.Connection, row, lat: float, lon: float) -> int:
     return fixed
 
 
+def _district_from_map(conn: sqlite3.Connection, r, coords) -> None:
+    """Района в объявлении нет, а точная точка есть — район по карте районов."""
+    from . import districtmap
+    if not districtmap.auto_enabled():
+        return
+    hit = districtmap.district_at(conn, *coords)
+    if hit and hit[1] == "district":
+        from .ingest import _reindex, make_search_text
+        st = make_search_text({**dict(r), "district": hit[0]})
+        conn.execute("UPDATE listings SET district = ?, search_text = ? WHERE id = ? AND district IS NULL", (hit[0], st, r["id"]))
+        _reindex(conn, r["id"], st)
+
+
 def run(conn: sqlite3.Connection, limit: int = 30) -> int:
     if config.GEOCODER != "nominatim":
         return 0
@@ -177,6 +190,8 @@ def run(conn: sqlite3.Connection, limit: int = 30) -> int:
         learned = learned_point(conn, r)   # этот дом/ЖК админ уже поправлял — берём его точку
         if learned:
             conn.execute("UPDATE listings SET lat=?, lon=?, geo_status='learned' WHERE id=?", (*learned, r["id"]))
+            if not r["district"]:
+                _district_from_map(conn, r, learned)
             conn.commit()
             done += 1
             continue
@@ -188,6 +203,8 @@ def run(conn: sqlite3.Connection, limit: int = 30) -> int:
             status = "none"
         conn.execute("UPDATE listings SET lat=?, lon=?, geo_status=? WHERE id=?",
                      (coords[0] if coords else None, coords[1] if coords else None, status, r["id"]))
+        if coords and status == "ok" and not r["district"]:
+            _district_from_map(conn, r, coords)
         conn.commit()
         done += 1
     return done
