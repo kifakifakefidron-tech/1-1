@@ -250,6 +250,8 @@ def _poll_by_chats(conn, profile, source, profile_id, token, cursor) -> tuple[in
         chat_name = c.get("name") or c.get("title") or c.get("chat_name")
         if not chat_id:
             continue
+        if not c.get("_personal") and region.is_excluded(conn, source, chat_id, chat_name):
+            continue   # чат отключён или другого города — сообщения даже не скачиваем
         for page in range(MAX_PAGES):
             params = {"profile_id": profile_id, "chat_id": chat_id, "limit": CHAT_PAGE,
                       "offset": page * CHAT_PAGE, "date": _since(cursor), "order": "desc", "mark_all": "false"}

@@ -109,6 +109,7 @@
       else if (v !== "" && !(k === "deal" && v === "sale") && !(k === "sort" && v === "new")
                && !(k === "view" && v === "list")) sp.set(u, v);
     }
+    if (openedId && $("detail").open) sp.set("open", openedId);   // открытый объект остаётся ссылкой в адресе
     const s = sp.toString();
     history.replaceState(null, "", s ? `?${s}` : location.pathname);
   }
@@ -181,6 +182,14 @@
     }
   }
   const me = () => meta.me || null;
+  // Логотип «1+1» (план квартиры) — показываем почаще, чтобы нас запоминали
+  const LOGO = `<svg class="logo" viewBox="0 0 100 100" aria-hidden="true">
+    <g class="walls" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+      <path pathLength="1" d="M4 40V4h92v92H4V60"/><path pathLength="1" d="M49 4v12"/>
+      <path pathLength="1" d="M49 27v13h47"/><path pathLength="1" d="M49 59h13"/>
+      <path pathLength="1" d="M72 59h24"/><path pathLength="1" d="M49 59v37"/></g>
+    <text class="logo-txt" x="27" y="56.5" text-anchor="middle">1+1</text></svg>`;
+  const brandLine = (text) => `<div class="brand-line">${LOGO}<span><b>1+1</b> · ${text}</span></div>`;
   const HEART = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.3s-7.6-4.7-9.3-9.6C1.5 7.1 4 3.9 7.4 3.9c2 0 3.6 1.2 4.6 2.8 1-1.6 2.6-2.8 4.6-2.8 3.4 0 5.9 3.2 4.7 6.8-1.7 4.9-9.3 9.6-9.3 9.6z"/></svg>`;
   const fmtDay = (ts) => new Date(ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
 
@@ -358,8 +367,8 @@
     const html = data.items.map((o, i) => itemHTML(o).replace('<li class="item', `<li style="--d:${Math.min(i, 12) * 35}ms" class="item`)).join("");
     if (append) $("results").insertAdjacentHTML("beforeend", html);
     else $("results").innerHTML = html || (favMode
-      ? `<li class="empty"><b>Пока пусто</b>Нажмите ♡ на объекте, чтобы сохранить его сюда.</li>`
-      : `<li class="empty"><b>Ничего не нашлось</b>Попробуйте убрать часть фильтров или изменить запрос.</li>`);
+      ? `<li class="empty"><span class="empty-logo">${LOGO}</span><b>Пока пусто</b>Нажмите ♡ на объекте, чтобы сохранить его сюда.</li>`
+      : `<li class="empty"><span class="empty-logo">${LOGO}</span><b>Ничего не нашлось</b>Попробуйте убрать часть фильтров или изменить запрос.</li>`);
     $("loadMore").hidden = state.view !== "list" || data.page >= data.pages;
   }
 
@@ -401,6 +410,7 @@
         ${p.approx ? `<div class="mc-approx">Точка примерная — точного адреса в объявлении нет</div>` : ""}
         <div class="mc-extra">${extra ?? `<div class="skel"><i></i><i></i></div>`}</div>
         <span class="mc-more" data-open="${p.id}">Подробнее →</span>
+        <span class="mc-logo" aria-hidden="true">${LOGO}</span>
       </div></div>`;
   }
 
@@ -529,7 +539,8 @@
       ${hist ? `<details class="d-hist-box"><summary>История · ${o.history.length} ${plural(o.history.length, "сообщение", "сообщения", "сообщений")}</summary><ul class="d-hist">${hist}</ul></details>` : ""}
       <p class="d-note">${esc(chats)}Впервые: ${esc(fmtAgo(o.first_seen))}, последний раз: ${esc(fmtAgo(o.last_seen))}.</p>
       ${o.can_edit ? `<div class="d-contact"><button type="button" class="pill light" data-agent-edit="${o.id}">✎ Изменить моё объявление</button></div>` : ""}
-      ${reportHTML(o)}`;
+      ${reportHTML(o)}
+      ${brandLine("поиск объектов Краснодара из риелторских чатов")}`;
   }
 
   function marketHTML(o) {
@@ -742,7 +753,7 @@
     openedId = id;
     $("detailBack").hidden = !detailStack.length;
     setOpenParam(id);
-    $("detailBody").innerHTML = `<p class="d-place">Загрузка…</p>`;
+    $("detailBody").innerHTML = `<div class="d-loading">${LOGO}<p>Открываем объект…</p></div>`;
     // Сразу показываем то, что уже знаем (фото, цена, описание), номер и история догрузятся
     const pre = known.get(id);
     if (pre) $("detailBody").innerHTML = detailHTML({ ...pre, phones_masked: null, history: [], loading: true });
@@ -870,6 +881,7 @@
     const pay = u.is_admin ? "" : `<div class="cab-row"><div><b>Подписка</b><br><span class="note">${meta.price} ₽ за ${meta.period_days} дней</span></div>
       ${meta.payments ? `<button type="button" class="pill" data-pay>Оплатить</button>` : `<span class="note">Оплата появится скоро</span>`}</div>`;
     $("cabinetBody").innerHTML = `
+      <div class="dlg-logo">${LOGO}</div>
       <h2 id="cabTitle">${u.is_admin ? "Кабинет администратора" : "Личный кабинет"}</h2>
       <p class="note">${esc(who)}</p>
       <p>${status}</p>${views}
@@ -1238,7 +1250,7 @@
 
   // Кабинет агента (web/agent.js) пользуется общими помощниками страницы
   window.OnePlus = {
-    call, esc, num, toast, openDlg, closeDlg, fmtPrice, fmtDay, me, openDetail, openLogin, reloadList,
+    call, esc, num, toast, openDlg, closeDlg, fmtPrice, fmtDay, me, openDetail, openLogin, reloadList, LOGO,
     meta: () => meta,
   };
 

@@ -118,7 +118,7 @@
       : `<label class="switch" title="${off ? "Не берём — включить" : "Берём — выключить"}">
            <input type="checkbox" data-toggle="${esc(chatKey(c))}"${off ? "" : " checked"}><span></span></label>`;
     return `<tr class="${off ? "muted" : ""}" data-row="${esc(chatKey(c))}">
-      <td><b>${esc(name)}</b><div class="note">${SRC[c.source] || c.source} · сообщений ${c.messages}
+      <td><b>${esc(name)}</b><div class="note">${SRC[c.source] || c.source} · ${c.purged ? "сообщения удалены" : "сообщений " + c.messages}
         ${c.last_ts ? " · последнее " + day(c.last_ts) : ""}</div></td>
       <td class="num">${c.listings}<div class="note">на сайте</div></td>
       <td class="acts">
@@ -172,7 +172,8 @@
       const r = await call("/api/admin/chats", { source, chat_id, blocked });
       const name = esc(c.name || "чат");
       chatToast(blocked
-        ? `«${name}» — не берём. Скрыто объектов: ${r.hidden || 0}. <button data-undo="${esc(key)}">Отменить</button>`
+        ? `«${name}» — не берём. Скрыто объектов: ${r.hidden || 0} (те, что были и в других чатах, остаются).
+           Сообщения чата удалятся через 10 минут. <button data-undo="${esc(key)}">Отменить</button>`
         : `«${name}» — снова берём. Вернулось объектов: ${r.returned || 0}.`);
       chats();
     } catch (err) {

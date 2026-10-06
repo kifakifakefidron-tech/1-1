@@ -112,9 +112,11 @@ def set_blocked(conn: sqlite3.Connection, source: str, chat_id: str, blocked: bo
     """Админ отключил/включил чат. Пересчитываются только объекты этого чата — быстро."""
     def work() -> dict:
         try:
-            conn.execute("""INSERT INTO chats (source, chat_id, blocked) VALUES (?,?,?)
-                            ON CONFLICT(source, chat_id) DO UPDATE SET blocked = excluded.blocked""",
-                         (source, chat_id, int(blocked)))
+            now = int(time.time())
+            conn.execute("""INSERT INTO chats (source, chat_id, blocked, blocked_at) VALUES (?,?,?,?)
+                            ON CONFLICT(source, chat_id) DO UPDATE SET blocked = excluded.blocked,
+                            blocked_at = excluded.blocked_at, purged_at = NULL""",
+                         (source, chat_id, int(blocked), now if blocked else None))
             bl = blocked_set(conn, fresh=True)
             # Объекты, которые хоть раз приходили из этого чата
             ids = [r[0] for r in conn.execute(
@@ -172,6 +174,7 @@ def chats_for_admin(conn: sqlite3.Connection) -> list[dict]:
         n, last, msg_name = stats.get(k, (0, None, None))
         name = r["name"] or msg_name
         out.append({"source": r["source"], "chat_id": r["chat_id"], "name": name, "blocked": r["blocked"],
+                    "purged": bool(r["purged_at"]),
                     "foreign": is_foreign(name), "messages": n, "last_ts": last, "listings": objs.get(k, 0),
                     "link": _link(r["source"], r["chat_id"], r["link"] if "link" in r.keys() else None)})
     out.sort(key=lambda c: (-c["listings"], -c["messages"], c["name"] or "я"))
@@ -188,3 +191,49 @@ def chat_preview(conn: sqlite3.Connection, source: str, chat_id: str) -> dict:
            JOIN messages m ON m.id = e.message_id JOIN listings l ON l.id = e.listing_id
            WHERE m.source = ? AND m.chat_id = ? ORDER BY l.last_seen DESC LIMIT 20""", (source, chat_id))]
     return {"messages": msgs, "listings": objs}
+
+
+PURGE_AFTER_S = 600   # 10 минут на «Отменить», потом сообщения отключённого чата удаляются
+
+
+def purge_blocked(conn: sqlite3.Connection, now: int | None = None) -> dict:
+    """Чистка отключённых чатов (из фонового цикла).
+
+    Удаляем сообщения отключённого чата, которые НЕ повторялись в других (включённых) чатах.
+    Объекты, которые присылали и в другие чаты, остаются — их сообщения из других чатов не трогаем.
+    Объекты, которые были ТОЛЬКО в отключённых чатах, удаляются вместе с историей."""
+    now = int(now or time.time())
+    bl = blocked_set(conn, fresh=True)
+    done = {"chats": 0, "messages": 0, "listings": 0}
+    for ch in conn.execute("""SELECT source, chat_id FROM chats WHERE blocked = 1 AND purged_at IS NULL
+                              AND COALESCE(blocked_at, 0) < ?""", (now - PURGE_AFTER_S,)).fetchall():
+        src, cid = ch["source"], ch["chat_id"]
+        # Объекты, которые были только в отключённых чатах — удаляем совсем
+        for (lid,) in conn.execute("""SELECT DISTINCT e.listing_id FROM listing_events e JOIN messages m ON m.id = e.message_id
+                                       WHERE m.source = ? AND m.chat_id = ?""", (src, cid)).fetchall():
+            srcs = conn.execute("""SELECT m.source, m.chat_id, m.chat_name FROM listing_events e
+                                   JOIN messages m ON m.id = e.message_id WHERE e.listing_id = ?""", (lid,)).fetchall()
+            row = conn.execute("SELECT source, owner_user_id FROM listings WHERE id = ?", (lid,)).fetchone()
+            if row is None or row["source"] != "chat" or row["owner_user_id"]:
+                continue   # фид партнёра и объекты, которыми управляет агент, не трогаем
+            if all(is_foreign(r[2]) or (r[0], r[1] or "") in bl for r in srcs):
+                conn.execute("DELETE FROM listings_fts WHERE rowid = ?", (lid,))
+                conn.execute("DELETE FROM listing_events WHERE listing_id = ?", (lid,))
+                conn.execute("DELETE FROM favorites WHERE listing_id = ?", (lid,))
+                conn.execute("DELETE FROM listings WHERE id = ?", (lid,))
+                done["listings"] += 1
+        # Сообщения этого чата, текст которых не встречался в других включённых чатах
+        ids = [r[0] for r in conn.execute(
+            """SELECT m.id FROM messages m WHERE m.source = ? AND m.chat_id = ?
+               AND NOT EXISTS (SELECT 1 FROM messages o WHERE o.text_hash = m.text_hash AND o.id != m.id
+                               AND NOT (o.source = m.source AND o.chat_id = m.chat_id))""", (src, cid))]
+        for i in range(0, len(ids), 500):
+            part = ids[i:i + 500]
+            q = ",".join("?" * len(part))
+            conn.execute(f"UPDATE listing_events SET message_id = NULL WHERE message_id IN ({q})", part)
+            conn.execute(f"DELETE FROM messages WHERE id IN ({q})", part)
+        done["messages"] += len(ids)
+        conn.execute("UPDATE chats SET purged_at = ? WHERE source = ? AND chat_id = ?", (now, src, cid))
+        done["chats"] += 1
+    conn.commit()
+    return done

@@ -439,13 +439,13 @@ dialog.detail { contain: layout paint; overscroll-behavior: contain; }
   background: var(--chip); color: var(--ink); white-space: nowrap; }
 .mark.new { background: var(--ink); color: var(--on-accent); }
 .mark.down { background: #ffd27a; color: #3b2a00; }
-.mark.good { background: rgba(140, 230, 170, .22); color: #c9f5d6; }
+.mark.good { background: #9be8b8; color: #063b2c; }
 .d-back { font-size: 20px; font-weight: 600; }
 .bar-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; width: 100%; }
 .bar-tools .chip { font-size: 13px; padding: 5px 12px; }
 .bar-tools .reset-chip { border-color: var(--ink); color: var(--ink); font-weight: 600; }
 .d-market { margin: 12px 0; padding: 12px 14px; border-radius: 14px; background: var(--chip); display: flex; flex-direction: column; gap: 2px; }
-.d-market.good { background: rgba(140, 230, 170, .16); }
+.d-market.good { background: rgba(155, 232, 184, .14); border: 1px solid #9be8b8; }
 .d-market.high { background: rgba(255, 180, 160, .14); }
 .d-market small { color: var(--ink-3); }
 .d-same, .d-note-box { margin: 12px 0; border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; }
@@ -459,3 +459,18 @@ button.link { border: 0; background: none; padding: 0; color: var(--ink); font: 
 .saved-list { list-style: none; padding: 0; margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
 .saved-list li { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 14px; }
 .saved-list a { color: var(--ink); }
+
+/* ─── логотип чаще: окно объекта, загрузка, пустой список, карта ───────── */
+.brand-line { display: flex; align-items: center; gap: 10px; margin: 26px 0 4px; padding-top: 16px;
+  border-top: 1px solid var(--line); color: var(--ink-3); font-size: 13px; }
+.brand-line .logo { width: 44px; height: 44px; flex: 0 0 auto; color: var(--ink); }
+.brand-line b { color: var(--ink); font: 600 16px var(--head); letter-spacing: .03em; }
+.d-loading { display: grid; place-items: center; gap: 10px; padding: 70px 0; color: var(--ink-3); }
+.d-loading .logo { width: 64px; height: 64px; color: var(--ink); }
+.d-loading .logo .walls path { animation: draw 1.1s var(--ease) infinite alternate; }
+.empty-logo { display: block; width: 60px; height: 60px; margin: 0 auto 12px; color: var(--ink); opacity: .9; }
+.empty-logo .logo { width: 100%; height: 100%; }
+.map-card { position: relative; }
+.mc-logo { position: absolute; right: 10px; bottom: 8px; width: 22px; height: 22px; color: #035352; opacity: .55; }
+.mc-logo .logo { width: 100%; height: 100%; }
+.mc-logo .walls path, .mc-logo .logo-txt { animation: none; stroke-dashoffset: 0; opacity: 1; }

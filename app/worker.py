@@ -17,6 +17,9 @@ def tick(conn) -> dict:
         stats_r = region.hide_foreign(conn)   # чаты Сочи/Адлера/… — не показываем
         log.info("другие города: %s", stats_r)
     stats = {"new_messages": wappi.poll_all(conn) if config.WAPPI_ENABLED else "пауза"}
+    purged = region.purge_blocked(conn)   # отключённые чаты: удалить их сообщения и объекты только оттуда
+    if purged["chats"]:
+        stats["purged"] = purged
     llm.failures = 0
     stats["processed"] = ingest.process_pending(conn, limit=300, budget_s=60)
     stats["queue"] = conn.execute("SELECT COUNT(*) FROM messages WHERE status='new'").fetchone()[0]

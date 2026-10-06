@@ -200,6 +200,8 @@ MIGRATIONS = [
     ("favorites", "notified_price", "INTEGER"),               # о какой цене уже написали
     ("chats", "blocked", "INTEGER NOT NULL DEFAULT 0"),       # админ отключил чат («не брать»)
     ("chats", "link", "TEXT"),                                # ссылка на чат, если мессенджер её отдаёт
+    ("chats", "blocked_at", "INTEGER"),                       # когда отключили (через 10 мин — чистка сообщений)
+    ("chats", "purged_at", "INTEGER"),                        # когда удалили сообщения этого чата
     ("listings", "hidden_reason", "TEXT"),                    # 'chat' — скрыт, т.к. приходил только из отключённых чатов
 ]
 

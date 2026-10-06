@@ -52,3 +52,16 @@ def test_chat_preview_and_counts(conn, add):
     assert len(p["messages"]) == 1 and len(p["listings"]) == 1
     assert region.set_blocked(conn, "wa", cid, True) == {"hidden": 1}
     assert region.set_blocked(conn, "wa", cid, False) == {"returned": 1}
+
+
+def test_purge_blocked_chat_keeps_objects_from_other_chats(conn, add):
+    add(AD, chat="Флудилка")                                   # объект только из отключаемого чата
+    add("Студия 25 м², 3/9 эт., ФМР, 3,1 млн. 89180000001", chat="Флудилка")
+    add("Студия 25 м², 3/9 эт., ФМР, 3,1 млн. 89180000001", chat="Риелторы")   # тот же текст — в другом чате
+    flood = conn.execute("SELECT chat_id FROM messages WHERE chat_name = 'Флудилка'").fetchone()[0]
+    region.set_blocked(conn, "wa", flood, True)
+    assert region.purge_blocked(conn)["chats"] == 0              # 10 минут на «Отменить»
+    res = region.purge_blocked(conn, now=NOW + 3600)
+    assert res == {"chats": 1, "messages": 1, "listings": 1}    # повтор из «Риелторов» не удалён
+    titles = [i["title"] for i in search.search(conn, search.Query(), NOW, False)["items"]]
+    assert titles == ["Студия, 25 м², 3/9 эт."]
