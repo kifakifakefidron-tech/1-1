@@ -14,7 +14,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
 <link rel="stylesheet" href="/static/style.css?v=10">
-<link rel="stylesheet" href="/static/motion.css?v=18">
+<link rel="stylesheet" href="/static/motion.css?v=21">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -262,12 +262,32 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
+<dialog id="geoDlg" class="small-dlg geo-dlg" aria-labelledby="geoTitle">
+  <span class="grab" aria-hidden="true"></span>
+  <div class="dlg-body">
+    <h2 id="geoTitle">Объект</h2>
+    <p class="note"><span id="geoAddr"></span><br>Перетащите метку, нажмите на карту в нужном месте или вставьте координаты.</p>
+    <form class="inline-form geo-find" id="geoFind">
+      <input id="geoCoords" autocomplete="off" placeholder="45.0355, 38.9753 или ссылка с Яндекс/Google Карт" aria-label="Координаты">
+      <button type="submit" class="pill light">Найти</button>
+    </form>
+    <p class="note geo-now" id="geoNow"></p>
+    <div id="geoMap" class="geo-map"></div>
+    <div class="dlg-actions geo-actions">
+      <button type="button" class="ghost" id="geoAuto" title="Забыть ручную точку и искать по адресу">Искать по адресу</button>
+      <button type="button" class="ghost" id="geoHide">Убрать с карты</button>
+      <button type="button" class="ghost" data-close>Отмена</button>
+      <button type="button" class="pill" id="geoSave">Сохранить точку</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="agentDlg" class="small-dlg agent-dlg" aria-labelledby="agentTitle">
   <span class="grab" aria-hidden="true"></span>
   <div class="dlg-body" id="agentBody"></div>
 </dialog>
 
-<script src="/static/app.js?v=27"></script>
+<script src="/static/app.js?v=30"></script>
 <script src="/static/agent.js?v=3"></script>
 </body>
 </html>

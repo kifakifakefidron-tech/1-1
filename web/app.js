@@ -304,6 +304,7 @@
   function badgesHTML(o) {
     const now = loadedAt || Date.now() / 1000;
     const b = [];
+    if (o.source === "feed") b.push(`<span class="mark partner">Партнёр</span>`);
     if (o.first_seen > now - 86400) b.push(`<span class="mark new">Новое</span>`);
     if (o.prev_price && o.price && o.prev_price > o.price && o.price_changed_at > now - 14 * 86400) {
       b.push(`<span class="mark down">Цена ↓ ${esc(fmtShortPrice(o.prev_price - o.price, o.deal))}</span>`);
@@ -416,6 +417,7 @@
         ${p.approx ? `<div class="mc-approx">Точка примерная — точного адреса в объявлении нет</div>` : ""}
         <div class="mc-extra">${extra ?? `<div class="skel"><i></i><i></i></div>`}</div>
         <span class="mc-more" data-open="${p.id}">Подробнее →</span>
+        ${me() && me().is_admin ? `<button type="button" class="mc-geo" data-geo-edit="${p.id}">📍 поправить</button>` : ""}
         <span class="mc-logo" aria-hidden="true">${LOGO}</span>
       </div></div>`;
   }
@@ -546,6 +548,8 @@
       ${hist ? `<details class="d-hist-box"><summary>История · ${o.history.length} ${plural(o.history.length, "сообщение", "сообщения", "сообщений")}</summary><ul class="d-hist">${hist}</ul></details>` : ""}
       <p class="d-note">${esc(chats)}Впервые: ${esc(fmtAgo(o.first_seen))}, последний раз: ${esc(fmtAgo(o.last_seen))}.</p>
       ${o.can_edit ? `<div class="d-contact"><button type="button" class="pill light" data-agent-edit="${o.id}">✎ Изменить моё объявление</button></div>` : ""}
+      ${me() && me().is_admin ? `<div class="d-contact"><button type="button" class="pill light" data-geo-edit="${o.id}">📍 Поправить точку на карте</button>
+        <span class="note">${o.geo_status === "manual" ? "точка поставлена вручную" : o.lat ? "точка найдена по адресу" : "точки нет"}</span></div>` : ""}
       ${reportHTML(o)}
       ${brandLine("поиск объектов Краснодара из риелторских чатов")}`;
   }
@@ -594,6 +598,70 @@
     if (navigator.share && window.matchMedia("(pointer: coarse)").matches) {
       try { await navigator.share({ url, title }); } catch { /* закрыли меню */ }
     }
+  }
+
+  // ─── админ: поправить точку объекта на карте ───────────────────────────
+  let geoMap = null, geoMarker = null, geoId = 0;
+  function openGeoEdit(id) {
+    const o = known.get(id) || {};
+    geoId = id;
+    const dlg = $("geoDlg");
+    $("geoTitle").textContent = o.title || "Объект";
+    $("geoAddr").textContent = address(o) || "адрес не указан";
+    openDlg(dlg);
+    if (!window.L) { toast("Карта не загрузилась"); return; }
+    const start = o.lat ? [o.lat, o.lon] : [45.035, 38.975];
+    if (!geoMap) {
+      geoMap = L.map("geoMap", { zoomControl: true, attributionControl: false });
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(geoMap);
+      const icon = L.divIcon({ className: "geo-pin-wrap", iconSize: [36, 46], iconAnchor: [18, 44],
+        html: `<div class="geo-pin">${LOGO}</div>` });
+      geoMarker = L.marker(start, { draggable: true, icon }).addTo(geoMap);
+      geoMap.on("click", (e) => { geoMarker.setLatLng(e.latlng); showGeoNow(); });   // нажали на карту — точка переезжает туда
+      geoMarker.on("dragend", showGeoNow);
+    }
+    geoMarker.setLatLng(start);
+    $("geoCoords").value = "";
+    showGeoNow();
+    // Окно открывается с анимацией — подстраиваем карту под его размер, когда оно раскрылось
+    const fit = () => { geoMap.invalidateSize(); geoMap.setView(start, o.lat ? 16 : 12); };
+    fit();
+    setTimeout(fit, 120);
+    setTimeout(fit, 500);
+  }
+  // Координаты из любого вида: «45.0355, 38.9753», «45,0355 38,9753», ссылка Яндекс Карт (ll=долгота,широта)
+  // или Google Карт (@широта,долгота). Перепутанный порядок (долгота первой) исправляем сами.
+  function parseCoords(text) {
+    let t = String(text || "").trim();
+    try { t = decodeURIComponent(t); } catch { /* не ссылка */ }
+    let a, b;
+    const ya = t.match(/[?&](?:ll|pt|whatshere%5Bpoint%5D|whatshere\[point\])=(-?\d+\.\d+),(-?\d+\.\d+)/);
+    const gm = t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (ya) { a = +ya[2]; b = +ya[1]; }            // Яндекс: сначала долгота
+    else if (gm) { a = +gm[1]; b = +gm[2]; }       // Google: сначала широта
+    else {
+      const nums = t.replace(/(\d),(\d)/g, "$1.$2").match(/-?\d+(?:\.\d+)?/g) || [];
+      if (nums.length < 2) return null;
+      a = +nums[0]; b = +nums[1];
+    }
+    if (a > 36 && a < 42 && b > 42 && b < 48) [a, b] = [b, a];
+    if (!(a > 40 && a < 50 && b > 35 && b < 45)) return null;
+    return [a, b];
+  }
+  function showGeoNow() {
+    const ll = geoMarker.getLatLng();
+    $("geoNow").textContent = `Сейчас: ${ll.lat.toFixed(6)}, ${ll.lng.toFixed(6)}`;
+  }
+
+  async function saveGeo(body) {
+    const r = await call(`/api/admin/listings/${geoId}/geo`, body);
+    if (!r.ok) { toast(r.data.detail || "Не получилось сохранить"); return; }
+    const o = known.get(geoId);
+    if (o) Object.assign(o, { lat: r.data.lat, lon: r.data.lon, geo_status: r.data.geo_status });
+    closeDlg($("geoDlg"));
+    toast(body.auto ? "Точку найдём по адресу заново" : body.hide ? "Объект убран с карты" : "✓ Точка сохранена");
+    if ($("detail").open && openedId === geoId) openDetail(geoId);
+    if (state.view === "map") loadMap();
   }
 
   // ─── сохранённые поиски у фильтров ──────────────────────────────────────
@@ -1091,6 +1159,7 @@
         return;
       }
       if (t.dataset.openId) { openDetail(Number(t.dataset.openId), { push: true }); return; }
+      if (t.dataset.geoEdit) { openGeoEdit(Number(t.dataset.geoEdit)); return; }
       if (t.dataset.saved) {
         const id = Number(t.dataset.saved);
         if (activeSaved === id) { activeSaved = 0; setHits(0); renderSaved(); $("resetBtn").click(); return; }
@@ -1244,6 +1313,21 @@
 
     const detail = $("detail");
     $("closeDetail").addEventListener("click", () => closeDlg(detail));
+    $("geoSave").addEventListener("click", () => {
+      const ll = geoMarker.getLatLng();
+      saveGeo({ lat: ll.lat, lon: ll.lng });
+    });
+    $("geoHide").addEventListener("click", () => saveGeo({ hide: true }));
+    $("geoFind").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const ll = parseCoords($("geoCoords").value);
+      if (!ll) { toast("Не понял координаты. Пример: 45.0355, 38.9753"); return; }
+      geoMarker.setLatLng(ll);
+      geoMap.setView(ll, 17);
+      showGeoNow();
+      toast("Метка перенесена — проверьте и нажмите «Сохранить точку»");
+    });
+    $("geoAuto").addEventListener("click", () => saveGeo({ auto: true }));
     $("detailBack").addEventListener("click", () => {
       const prev = detailStack.pop();
       if (prev) openDetail(prev);

@@ -123,7 +123,10 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
             conn.execute(
                 """UPDATE listings SET type=?, deal=?, rooms=?, area=?, land=?, floor=?, floors=?, price=?, price_m2=?,
                        district=?, complex=?, settlement=?, street=?, house=?, title=?, description=?, fragment=?,
-                       search_text=?, photos=?, url=?, lat=?, lon=?, geo_status=?, room_kind=?, rooms_mask=?,
+                       search_text=?, photos=?, url=?,
+                       lat=CASE WHEN geo_status = 'manual' THEN lat ELSE ? END,
+                       lon=CASE WHEN geo_status = 'manual' THEN lon ELSE ? END,
+                       geo_status=CASE WHEN geo_status = 'manual' THEN 'manual' ELSE ? END, room_kind=?, rooms_mask=?,
                        article=?, is_active=1,
                        last_seen=CASE WHEN price_changed THEN ? ELSE last_seen END
                    WHERE id=?""".replace("price_changed", "1" if row["price"] != d["price"] else "0"),

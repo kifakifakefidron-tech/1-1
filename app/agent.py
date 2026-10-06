@@ -198,7 +198,7 @@ def edit_listing(conn: sqlite3.Connection, user: sqlite3.Row, listing_id: int, d
                       _price_m2(merged["price"], merged["area"]), user["id"], now, listing_id])
         _reindex(conn, listing_id, merged["search_text"])
         if changes.keys() & {"street", "house", "complex", "district"}:   # адрес поменялся — точку на карте ищем заново
-            conn.execute("UPDATE listings SET geo_status = 'pending' WHERE id = ?", (listing_id,))
+            conn.execute("UPDATE listings SET geo_status = 'pending' WHERE id = ? AND geo_status != 'manual'", (listing_id,))
         for k, v in changes.items():
             _log(conn, listing_id, user["id"], k, row[k], v)
     if status in ("sold", "active"):

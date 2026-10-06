@@ -797,6 +797,34 @@ def api_admin_chats(request: Request, body: dict | None = None):
         return _err("Сайт сейчас обновляет базу — попробуйте ещё раз через минуту.", 503)
 
 
+def api_admin_geo(request: Request, body: dict | None = None):
+    """Админ поправил точку объекта на карте. {lat, lon} — поставить; {hide: true} — убрать с карты;
+    {auto: true} — вернуть автоматический поиск по адресу."""
+    user, err = _need_admin(request)
+    if err:
+        return err
+    conn = db.get()
+    lid = int(request.path_params["id"])
+    body = body or {}
+    row = conn.execute("SELECT lat, lon, geo_status FROM listings WHERE id = ?", (lid,)).fetchone()
+    if row is None:
+        return _err("не найдено", 404)
+    if body.get("auto"):
+        lat, lon, status = None, None, "pending"
+    elif body.get("hide"):
+        lat, lon, status = None, None, "manual"
+    else:
+        lat, lon = _num(body.get("lat")), _num(body.get("lon"))
+        if lat is None or lon is None or not (40 < lat < 50 and 35 < lon < 45):
+            return _err("Точка должна быть в Краснодарском крае.")
+        lat, lon, status = round(lat, 6), round(lon, 6), "manual"
+    conn.execute("UPDATE listings SET lat = ?, lon = ?, geo_status = ? WHERE id = ?", (lat, lon, status, lid))
+    conn.execute("INSERT INTO listing_edits (listing_id, user_id, ts, field, old, new) VALUES (?,?,?,?,?,?)",
+                 (lid, user["id"], int(time.time()), "geo", json.dumps([row["lat"], row["lon"]]), json.dumps([lat, lon])))
+    conn.commit()
+    return JSONResponse({"ok": True, "lat": lat, "lon": lon, "geo_status": status})
+
+
 def api_admin_edits(request: Request, body: dict | None = None):
     _, err = _need_admin(request)
     if err:
@@ -877,6 +905,7 @@ routes = [
     Route("/agent/confirm", threaded(agent_confirm_page)),
     Route("/api/admin/edits", threaded(api_admin_edits), methods=["GET", "POST"]),
     Route("/api/admin/chats", threaded(api_admin_chats), methods=["GET", "POST"]),
+    Route("/api/admin/listings/{id:int}/geo", threaded(api_admin_geo), methods=["POST"]),
     Mount("/static", StaticFiles(directory=WEB), name="static"),
     Route("/photos/{id:int}/{name}", threaded(photo_file)),
 ]

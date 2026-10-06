@@ -503,3 +503,19 @@ button.link { border: 0; background: none; padding: 0; color: var(--ink); font: 
   border: 1px solid #9be8b8; font-size: 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .item.hit { border-color: #9be8b8; box-shadow: 0 0 0 2px #9be8b8, 0 14px 34px rgba(0, 0, 0, .25); }
 .mark.hit { background: #9be8b8; color: #063b2c; }
+
+/* ─── «Партнёр» и правка точки (админ) ─────────────────────────────────── */
+.mark.partner { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-2); }
+.geo-dlg { width: min(760px, calc(100vw - 32px)); }
+.geo-map { height: min(60vh, 460px); border-radius: 16px; overflow: hidden; margin: 10px 0; }
+.geo-actions { flex-wrap: wrap; }
+.mc-geo { margin-left: 8px; border: 0; background: none; color: #035352; font: 600 12px var(--body); cursor: pointer;
+  text-decoration: underline; padding: 0; }
+.geo-pin-wrap { background: none; border: 0; }
+.geo-pin { width: 36px; height: 36px; border-radius: 50% 50% 50% 4px; transform: rotate(-45deg); background: #035352;
+  border: 3px solid #f3e8bc; box-shadow: 0 6px 16px rgba(0, 0, 0, .35); display: grid; place-items: center; }
+.geo-pin .logo { width: 22px; height: 22px; color: #f3e8bc; transform: rotate(45deg); }
+.geo-pin .walls path, .geo-pin .logo-txt { animation: none; stroke-dashoffset: 0; opacity: 1; }
+.geo-find { margin: 8px 0 0; }
+.geo-find input { flex: 1 1 auto; min-width: 0; }
+.geo-now { margin: 6px 0 0; font-variant-numeric: tabular-nums; }

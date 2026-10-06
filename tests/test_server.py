@@ -112,3 +112,29 @@ def test_geocoder_rejects_points_outside_krasnodar(monkeypatch):
     krd = [{"lat": "45.04", "lon": "38.98"}]
     monkeypatch.setattr(geocode.urllib.request, "urlopen", lambda req, timeout: R(krd))
     assert geocode.lookup(conn, "Краснодар, Красная 10") == (45.04, 38.98)
+
+
+def test_admin_moves_point_and_it_sticks(tmp_path, monkeypatch):
+    from starlette.testclient import TestClient
+
+    from app import accounts, config, db, geocode, ingest, server
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "t.db"))
+    monkeypatch.setattr(db._local, "conn", None, raising=False)
+    conn = db.get()
+    text = "2-к квартира 50 м², 3/9 эт., ул. Красная 10. 6 млн. 89180000001"
+    lid = ingest.process_message(conn, ingest.add_message(conn, source="manual", text=text), use_llm=False)["results"][0]["listing_id"]
+    u = accounts.upsert_email_user(conn, "boss@example.ru")
+    conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (u["id"],))
+    conn.commit()
+    with TestClient(server.app) as c:
+        assert c.post(f"/api/admin/listings/{lid}/geo", json={"lat": 45.05, "lon": 38.99}).status_code == 403
+        c.cookies.set(server.SESSION, accounts.create_session(conn, u["id"]))
+        assert c.post(f"/api/admin/listings/{lid}/geo", json={"lat": 55.7, "lon": 37.6}).status_code == 400  # Москва
+        assert c.post(f"/api/admin/listings/{lid}/geo", json={"lat": 45.05, "lon": 38.99}).json()["geo_status"] == "manual"
+        assert c.get(f"/api/listings/{lid}").json()["geo_status"] == "manual"
+    # повтор объявления с изменённым адресом и пересчёт точек не трогают ручную точку
+    ingest.process_message(conn, ingest.add_message(conn, source="manual", text=text + " дом 12", msg_id="2"), use_llm=False)
+    geocode.fix_wrong_points(conn)
+    assert tuple(conn.execute("SELECT lat, lon, geo_status FROM listings WHERE id = ?", (lid,)).fetchone()) == (45.05, 38.99, "manual")
+    conn.close()
+    db._local.conn = None

@@ -129,14 +129,15 @@ def fix_wrong_points(conn: sqlite3.Connection) -> int:
         if (_city_query(q["query"]) and not in_city(q["lat"], q["lon"])) or q["query"].startswith("микрорайон "):
             conn.execute("DELETE FROM geocache WHERE query = ?", (q["query"],))
     for r in conn.execute("""SELECT id, lat, lon, settlement, geo_status FROM listings
-                             WHERE lat IS NOT NULL AND source != 'feed'""").fetchall():
+                             WHERE lat IS NOT NULL AND source != 'feed' AND geo_status != 'manual'""").fetchall():
         wrong = (not r["settlement"] and not in_city(r["lat"], r["lon"])) or \
                 (r["settlement"] and _km(CENTER, (r["lat"], r["lon"])) > MAX_KM)
         if wrong or r["geo_status"] == "approx":
             conn.execute("UPDATE listings SET lat = NULL, lon = NULL, geo_status = 'pending' WHERE id = ?", (r["id"],))
             bad += wrong
     # Фид партнёра: координаты из фида; явно чужие (дальше 70 км) — не показываем
-    for r in conn.execute("SELECT id, lat, lon FROM listings WHERE lat IS NOT NULL AND source = 'feed'").fetchall():
+    for r in conn.execute("SELECT id, lat, lon FROM listings WHERE lat IS NOT NULL AND source = 'feed' "
+                          "AND geo_status != 'manual'").fetchall():
         if _km(CENTER, (r["lat"], r["lon"])) > MAX_KM:
             conn.execute("UPDATE listings SET lat = NULL, lon = NULL, geo_status = 'pending' WHERE id = ?", (r["id"],))
             bad += 1
