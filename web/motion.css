@@ -108,6 +108,41 @@ dialog::backdrop { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px
 .ps-track input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px rgba(243, 232, 188, .3); }
 @media (max-width: 640px) { .price-slider { width: 100%; } .ps-track input[type=range]::-webkit-slider-thumb { width: 30px; height: 30px; } }
 
+/* ─── карта ──────────────────────────────────────────────────────────────── */
+.map .map-tiles { filter: saturate(.55) contrast(.95) brightness(1.03); }   /* приглушаем подложку — метки ярче */
+.pin-wrap { background: none; border: 0; }
+.pin { position: relative; transform: translate(-50%, calc(-100% - 8px)); display: inline-block; white-space: nowrap;
+  padding: 5px 10px; border-radius: 999px; background: #f3e8bc; color: #035352; font: 600 13px/1.1 var(--head);
+  letter-spacing: .02em; box-shadow: 0 4px 12px rgba(0, 30, 30, .35); border: 2px solid #035352;
+  transition: transform .2s var(--ease), background-color .2s var(--ease); cursor: pointer; }
+.pin::after { content: ""; position: absolute; left: 50%; bottom: -7px; width: 10px; height: 10px; margin-left: -5px;
+  background: inherit; border-right: 2px solid #035352; border-bottom: 2px solid #035352; transform: rotate(45deg); border-radius: 0 0 3px 0; }
+.pin.partner { background: #035352; color: #f3e8bc; border-color: #f3e8bc; }
+.pin.partner::after { border-color: #f3e8bc; }
+.leaflet-marker-icon:hover .pin { transform: translate(-50%, calc(-100% - 11px)) scale(1.08); }
+.cl-wrap { background: none; border: 0; }
+.cl { width: 100%; height: 100%; display: grid; place-items: center; border-radius: 50%; background: #035352; color: #f3e8bc;
+  font: 600 15px var(--head); border: 3px solid #f3e8bc; box-shadow: 0 0 0 6px rgba(3, 83, 82, .25), 0 6px 16px rgba(0, 30, 30, .35);
+  transition: transform .2s var(--ease); }
+.leaflet-marker-icon:hover .cl { transform: scale(1.08); }
+/* всплывающая карточка */
+.map-pop .leaflet-popup-content-wrapper { padding: 0; border-radius: 16px; overflow: hidden; box-shadow: 0 12px 32px rgba(0, 30, 30, .35); }
+.map-pop .leaflet-popup-content { margin: 0; width: 240px !important; }
+.map-pop .leaflet-popup-tip { box-shadow: none; }
+.map-card { cursor: pointer; color: #12302f; font: 14px/1.35 var(--body); }
+.map-card img { display: block; width: 100%; height: 130px; object-fit: cover; }
+.mc-body { padding: 10px 14px 12px; display: grid; gap: 2px; }
+.mc-head { font: 500 12px var(--head); letter-spacing: .04em; text-transform: uppercase; color: #3d5f5d; }
+.mc-head .tag { color: #035352; border-color: #035352; }
+.mc-price { font: 600 20px var(--head); color: #035352; }
+.mc-title { font-size: 13px; }
+.mc-more { margin-top: 6px; font-weight: 600; color: #035352; font-size: 13px; }
+/* кнопки масштаба и подпись */
+.leaflet-bar a { width: 36px !important; height: 36px !important; line-height: 36px !important; border: 0 !important;
+  background: var(--paper) !important; color: var(--ink) !important; font-size: 20px !important; }
+.leaflet-bar { border: 0 !important; border-radius: 12px !important; overflow: hidden; box-shadow: 0 4px 14px rgba(0, 30, 30, .3) !important; }
+.leaflet-control-attribution { background: rgba(255, 255, 255, .6) !important; font-size: 10px !important; border-radius: 6px 0 0 0; }
+
 /* Шторка фильтров и нижняя панель — только на телефоне */
 .sheet-head, .sheet-foot, .sheet-overlay, .tabbar, .sheet-deal { display: none; }
 
@@ -154,7 +189,7 @@ dialog::backdrop { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px
   .bar .view { display: none; }
   .bar-right { width: auto; }
   .count { font-size: 16px; }
-  .map { height: calc(100dvh - 200px - var(--tabbar-h)); border-radius: 16px; }
+  .map { height: calc(100dvh - 150px - var(--tabbar-h)); border-radius: 16px; }
 
   /* окна — снизу, во всю ширину */
   dialog.detail, dialog.small-dlg { width: 100%; max-width: 100%; max-height: 92dvh; margin: auto 0 0;

@@ -189,7 +189,9 @@ def search(conn: sqlite3.Connection, qr: Query, now: int, with_contacts: bool) -
 def map_points(conn: sqlite3.Connection, qr: Query, now: int) -> list[dict]:
     where, params = _where(qr, now)
     rows = conn.execute(
-        f"SELECT l.id, l.lat, l.lon, l.price, l.title FROM listings l WHERE {where} AND l.lat IS NOT NULL LIMIT 5000",
+        f"""SELECT l.id, l.lat, l.lon, l.price, l.title, l.source, l.complex, l.district, l.street,
+                   json_extract(l.photos, '$[0]') AS photo
+            FROM listings l WHERE {where} AND l.lat IS NOT NULL LIMIT 5000""",
         params,
     ).fetchall()
     return [dict(r) for r in rows]

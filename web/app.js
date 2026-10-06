@@ -324,16 +324,40 @@
   // ─── карта ──────────────────────────────────────────────────────────────
   function ensureMap() {
     if (map || !window.L) return;
-    map = L.map("mapBox", { scrollWheelZoom: true }).setView([45.035, 38.975], 11);
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    }).addTo(map);
-    cluster = L.markerClusterGroup ? L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 50 }) : L.layerGroup();
+    map = L.map("mapBox", { scrollWheelZoom: true, zoomControl: false, attributionControl: false })
+      .setView([45.035, 38.975], 11);
+    L.control.zoom({ position: "bottomright" }).addTo(map);
+    // Подпись источника карты обязательна по условиям OpenStreetMap — оставляем маленькой, без флага и «Leaflet»
+    L.control.attribution({ prefix: false, position: "bottomleft" })
+      .addAttribution('© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>')
+      .addTo(map);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, className: "map-tiles" }).addTo(map);
+    // Группы объектов — круглые значки с числом; чем больше объектов, тем крупнее
+    cluster = L.markerClusterGroup ? L.markerClusterGroup({
+      showCoverageOnHover: false, maxClusterRadius: 55, spiderfyOnMaxZoom: true,
+      iconCreateFunction: (c) => {
+        const n = c.getChildCount();
+        const size = n < 10 ? 40 : n < 50 ? 48 : 58;
+        return L.divIcon({ className: "cl-wrap", iconSize: [size, size], html: `<div class="cl"><span>${n}</span></div>` });
+      },
+    }) : L.layerGroup();
     map.addLayer(cluster);
     $("mapBox").addEventListener("click", (e) => {
       const b = e.target.closest("[data-open]");
       if (b) openDetail(Number(b.dataset.open));
     });
+  }
+
+  function popupHTML(p) {
+    const head = p.complex ? `ЖК ${p.complex}` : (p.district || (p.street ? `ул. ${p.street}` : ""));
+    return `<div class="map-card" data-open="${p.id}">
+      ${p.photo ? `<img src="${esc(p.photo)}" alt="" loading="lazy">` : ""}
+      <div class="mc-body">
+        ${head ? `<div class="mc-head">${esc(head)}${p.source === "feed" ? ` <span class="tag tag-strely">Партнёр</span>` : ""}</div>` : ""}
+        <div class="mc-price">${esc(fmtPrice(p.price, state.deal))}</div>
+        <div class="mc-title">${esc(p.title)}</div>
+        <span class="mc-more">Подробнее →</span>
+      </div></div>`;
   }
 
   async function loadMap() {
@@ -345,12 +369,15 @@
     if (seq !== reqSeq) return;
     cluster.clearLayers();
     const markers = pts.map((p) => {
-      const icon = L.divIcon({ className: "", html: `<div class="pin">${esc(fmtShortPrice(p.price, state.deal))}</div>`, iconSize: null });
-      return L.marker([p.lat, p.lon], { icon }).bindPopup(
-        `<div class="map-pop"><b>${esc(fmtPrice(p.price, state.deal))}</b>${esc(p.title)}<br><button type="button" data-open="${p.id}">Подробнее</button></div>`);
+      const icon = L.divIcon({
+        className: "pin-wrap", iconSize: null,
+        html: `<div class="pin${p.source === "feed" ? " partner" : ""}">${esc(fmtShortPrice(p.price, state.deal))}</div>`,
+      });
+      return L.marker([p.lat, p.lon], { icon, riseOnHover: true })
+        .bindPopup(popupHTML(p), { closeButton: false, className: "map-pop", offset: [0, -30], maxWidth: 260, minWidth: 220 });
     });
     if (cluster.addLayers) cluster.addLayers(markers); else markers.forEach((m) => cluster.addLayer(m));
-    if (markers.length) map.fitBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lon])).pad(0.1), { maxZoom: 15 });
+    if (markers.length) map.flyToBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lon])).pad(0.1), { maxZoom: 15, duration: 0.6 });
     setTimeout(() => map.invalidateSize(), 0);
   }
 

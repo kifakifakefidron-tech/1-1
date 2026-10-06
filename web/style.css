@@ -177,13 +177,8 @@ button { cursor: pointer; }
   margin-top: 6px; border: 0; background: #035352; color: #f3e8bc;
   border-radius: var(--radius); padding: 5px 12px; font-size: 13px;
 }
-.marker-cluster div { background: #035352 !important; color: #f3e8bc; font: 600 13px var(--head); }
-.marker-cluster { background: rgba(3, 83, 82, .3) !important; }
-.pin {
-  background: #035352; color: #f3e8bc; border-radius: var(--radius);
-  font: 500 12px/22px var(--head); padding: 0 8px; white-space: nowrap; text-align: center;
-  box-shadow: 0 1px 4px rgba(0,0,0,.3);
-}
+
+
 
 /* ─── карточка объекта ──────────────────────────────────────────────────── */
 dialog {
