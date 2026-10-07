@@ -44,6 +44,7 @@ class Query:
     new_days: int | None = None   # только впервые появившиеся за N дней («Новое сегодня»)
     since: int | None = None   # только появившиеся позже (кнопка «Обновить»)
     hl: int | None = None      # из уведомления: появившиеся позже этого — первыми в списке
+    hot: bool = False          # «🔥 Горячее»: цена снизилась за неделю, ниже рынка, «срочно»
     sort: str = "new"
     page: int = 1
     size: int = 30
@@ -80,7 +81,7 @@ def query_from_params(qp) -> Query:
         districts=_list(qp, "district"), complexes=_list(qp, "complex"),
         not_first=qp.get("not_first") == "1", not_last=qp.get("not_last") == "1",
         fresh_days=num_param(qp.get("fresh_days"), int), new_days=num_param(qp.get("new_days"), int),
-        since=num_param(qp.get("since"), int), hl=num_param(qp.get("hl"), int),
+        since=num_param(qp.get("since"), int), hl=num_param(qp.get("hl"), int), hot=qp.get("hot") == "1",
         sort=qp.get("sort", "new"),
         page=num_param(qp.get("page"), int) or 1,
         size=num_param(qp.get("size"), int) or 30,
@@ -143,6 +144,9 @@ def _fts_query(q: str) -> str | None:
     return interpret(q)[0]
 
 
+HOT_MARKET = -12   # «Горячее»: на 12 % и больше дешевле медианы м² (отметка «ниже рынка» на карточке — от 7 %)
+
+
 def _where(qr: Query, now: int) -> tuple[str, list]:
     # Без адреса/ЖК/района/посёлка объект не найти ни фильтром, ни на карте — не показываем
     w = ["l.is_active = 1", "l.deal = ?",
@@ -184,6 +188,10 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
         w.append("l.first_seen >= ?"); p.append(now - qr.new_days * 86400)
     if qr.since:
         w.append("l.first_seen > ?"); p.append(qr.since)
+    if qr.hot:
+        w.append(f"""((l.prev_price > l.price AND l.price_changed_at >= ?) OR l.market_diff <= {HOT_MARKET}
+                     OR l.search_text LIKE '%срочн%')""")
+        p.append(now - 7 * 86400)
     if fts:
         w.append("l.id IN (SELECT rowid FROM listings_fts WHERE listings_fts MATCH ?)"); p.append(fts)
     return " AND ".join(w), p
@@ -288,6 +296,8 @@ def listing_detail(conn: sqlite3.Connection, listing_id: int, with_contacts: boo
         history.append({"ts": e["ts"], "price": e["price"], "match": e["match"],
                         "chat": e["chat_name"], "sender": e["sender_name"], "source": e["source"]})
     d["history"] = history
+    d["price_history"] = [{"ts": h[0], "price": h[1]} for h in conn.execute(
+        "SELECT ts, price FROM price_history WHERE listing_id = ? ORDER BY ts, rowid LIMIT 100", (listing_id,))]
     d["seen_count"] = r["seen_count"] if is_admin else None
     if is_admin:
         d["geo_status"] = r["geo_status"]

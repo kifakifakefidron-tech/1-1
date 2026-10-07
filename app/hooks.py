@@ -80,6 +80,19 @@ def market_for(conn: sqlite3.Connection, o: dict) -> dict | None:
     return {"base": base, "median": median, "n": n, "diff": diff}
 
 
+def update_market_diff(conn: sqlite3.Connection) -> int:
+    """Записать в listings.market_diff разницу с рынком (для фильтра «🔥 Горячее»). Меняем только изменившееся."""
+    changed = []
+    for r in conn.execute("SELECT id, type, deal, complex, district, price_m2, market_diff FROM listings WHERE is_active = 1"):
+        mk = market_for(conn, dict(r))
+        diff = mk["diff"] if mk else None
+        if diff != r["market_diff"]:
+            changed.append((diff, r["id"]))
+    conn.executemany("UPDATE listings SET market_diff = ? WHERE id = ?", changed)
+    conn.commit()
+    return len(changed)
+
+
 def annotate(conn: sqlite3.Connection, items: list[dict]) -> list[dict]:
     """Для карточек в списке: «ниже рынка на N %» (только заметная разница)."""
     for it in items:
@@ -153,7 +166,7 @@ def noted_ids(conn: sqlite3.Connection, user_id: int) -> list[int]:
 
 # ─── подписки на поиск ─────────────────────────────────────────────────────
 _KEEP = ("q", "deal", "type", "rooms", "price_min", "price_max", "area_min", "area_max", "land_min", "land_max",
-         "district", "complex", "not_first", "not_last")
+         "district", "complex", "not_first", "not_last", "hot")
 
 
 def clean_params(query: str) -> str:
@@ -181,6 +194,8 @@ def describe(params: str, types: dict) -> str:
         parts.append(f"до {fmt(p['price_max'])}")
     if p.get("q"):
         parts.append(f"«{p['q']}»")
+    if p.get("hot"):
+        parts.append("🔥 горячее")
     return " · ".join(parts)[:200]
 
 
@@ -229,7 +244,7 @@ def page_from_params(params: str) -> str:
         if one(api).isdigit():
             out.append((page, f"{int(one(api)) / (1000 if rent else 1e6):g}"))
     for api, page in (("area_min", "amin"), ("area_max", "amax"), ("land_min", "lmin"), ("land_max", "lmax"),
-                      ("not_first", "nf"), ("not_last", "nl")):
+                      ("not_first", "nf"), ("not_last", "nl"), ("hot", "hot")):
         if one(api):
             out.append((page, one(api)))
     for k in ("district", "complex"):
@@ -408,6 +423,7 @@ def run(conn: sqlite3.Connection, send, every_s: int = 300) -> dict | None:
         return None
     db.set_state(conn, "hooks_at", str(int(time.time())))
     fmt_day = lambda ts: time.strftime("%d.%m", time.localtime(ts))  # noqa: E731
+    update_market_diff(conn)
     out = {"saved": check_saved(conn, send), "favorites": check_favorites(conn, send),
            "subscriptions": notices.check_subscriptions(conn, fmt_day)}
     notices.cleanup(conn)

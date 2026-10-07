@@ -11,7 +11,7 @@
   const state = {
     q: "", deal: "sale", types: [], rooms: [],
     priceMin: "", priceMax: "", areaMin: "", areaMax: "", landMin: "", landMax: "",
-    notFirst: false, notLast: false, fresh: "", districts: [], complexes: [],
+    notFirst: false, notLast: false, fresh: "", hot: false, districts: [], complexes: [],
     sort: "new", view: "list",
   };
   const DEFAULTS = JSON.parse(JSON.stringify(state));
@@ -91,7 +91,7 @@
   const URL_KEYS = {
     q: "q", deal: "deal", types: "type", rooms: "rooms", priceMin: "pmin", priceMax: "pmax",
     areaMin: "amin", areaMax: "amax", landMin: "lmin", landMax: "lmax", notFirst: "nf",
-    notLast: "nl", fresh: "fresh", districts: "district", complexes: "complex", sort: "sort", view: "view",
+    notLast: "nl", fresh: "fresh", hot: "hot", districts: "district", complexes: "complex", sort: "sort", view: "view",
   };
   function readUrl() {
     const sp = new URLSearchParams(location.search);
@@ -135,6 +135,7 @@
     }
     if (state.notFirst) p.set("not_first", "1");
     if (state.notLast) p.set("not_last", "1");
+    if (state.hot) p.set("hot", "1");   // «🔥 Горячее»
     if (state.fresh === "new1") p.set("new_days", "1");   // «Новое сегодня»: впервые появились за сутки
     else if (state.fresh) p.set("fresh_days", state.fresh);
     for (const d of state.districts) p.append("district", d);
@@ -219,6 +220,8 @@
     $("fresh").value = state.fresh;
     $("newTodayBtn").classList.toggle("on", state.fresh === "new1");
     $("newTodayBtn").setAttribute("aria-pressed", state.fresh === "new1");
+    $("hotBtn").classList.toggle("on", state.hot);
+    $("hotBtn").setAttribute("aria-pressed", state.hot);
     $("sort").value = state.sort;
     const rent = state.deal === "rent";
     setSliderFromState();
@@ -312,8 +315,13 @@
       b.push(`<span class="mark down">Цена ↓ ${esc(fmtShortPrice(o.prev_price - o.price, o.deal))}</span>`);
     }
     if (o.market_diff != null) b.push(`<span class="mark good">ниже рынка на ${Math.abs(o.market_diff)}%</span>`);
+    if (/срочн/i.test(o.description || "")) b.push(`<span class="mark hot">🔥 Срочно</span>`);
     return b.length ? `<div class="marks">${b.join("")}</div>` : "";
   }
+
+  // Сколько дней объект в продаже (с первого появления у нас)
+  const daysOnSale = (o) => Math.max(0, Math.floor(((loadedAt || Date.now() / 1000) - o.first_seen) / 86400));
+  const daysText = (n) => (n < 1 ? "меньше суток" : `${n} ${plural(n, "день", "дня", "дней")}`);
 
   function itemHTML(o) {
     const hit = hitSince && o.first_seen > hitSince;   // новое в этом поиске — выделяем один раз
@@ -332,7 +340,7 @@
       ${tag}
       ${addr ? `<div class="item-place">${esc(addr)}</div>` : ""}
       ${o.description ? `<p class="item-desc">${esc(o.description)}</p>` : ""}
-      <div class="item-meta">${esc(fmtAgo(o.last_seen))}</div>
+      <div class="item-meta"><span class="on-sale${daysOnSale(o) >= 30 ? " long" : ""}">в продаже ${esc(daysText(daysOnSale(o)))}</span> · ${esc(fmtAgo(o.last_seen))}</div>
     </li>`;
   }
 
@@ -540,7 +548,9 @@
       <p class="d-price-m2">${o.price_m2 && o.deal !== "rent" ? esc(num(o.price_m2)) + " ₽/м²" : "&nbsp;"}</p>
       <dl class="d-facts">${facts}</dl>
       ${badgesHTML(o)}
+      ${saleHTML(o)}
       ${marketHTML(o)}
+      ${priceChartHTML(o)}
       ${o.description ? `<h3 class="d-h">Описание</h3><p class="d-desc">${esc(o.description)}</p>` : ""}
       ${contact}
       ${sameHTML(o)}
@@ -557,6 +567,41 @@
         <span class="note">${o.geo_status === "manual" ? "точка поставлена вручную" : o.geo_status === "learned" ? "точка из ваших прошлых правок" : o.geo_status === "feed" ? "точка из фида СТРЕЛ" : o.lat ? "точка найдена по адресу" : "точки нет"}</span></div>` : ""}
       ${reportHTML(o)}
       ${brandLine("поиск объектов Краснодара из риелторских чатов")}`;
+  }
+
+  function saleHTML(o) {
+    if (!o.first_seen) return "";
+    const n = daysOnSale(o);
+    return `<div class="d-sale${n >= 30 ? " long" : ""}">⏳ В продаже <b>${esc(daysText(n))}</b>${n >= 30
+      ? " — долго продаётся, можно торговаться" : ""}<small>считаем с первого появления на 1+1</small></div>`;
+  }
+
+  // График цены: ступеньки по датам смены цены, до сегодня
+  function priceChartHTML(o) {
+    // смены цены в пределах 10 минут — это одно сообщение, разобранное повторно: берём последнюю
+    const h = [];
+    for (const x of (o.price_history || []).filter((p) => p.price > 0)) {
+      if (h.length && x.ts - h[h.length - 1].ts < 600) h[h.length - 1] = { ts: h[h.length - 1].ts, price: x.price };
+      else if (!h.length || h[h.length - 1].price !== x.price) h.push(x);
+    }
+    if (h.length < 2) return "";
+    const end = Math.max(loadedAt || Date.now() / 1000, h[h.length - 1].ts + 1);
+    const pts = [...h, { ts: end, price: h[h.length - 1].price }];
+    const t0 = pts[0].ts, t1 = pts[pts.length - 1].ts;
+    const ps = pts.map((x) => x.price), lo = Math.min(...ps), hi = Math.max(...ps);
+    const W = 320, H = 110, P = 8;
+    const x = (t) => P + ((t - t0) / Math.max(1, t1 - t0)) * (W - 2 * P);
+    const y = (p) => (hi === lo ? H / 2 : P + (1 - (p - lo) / (hi - lo)) * (H - 2 * P));
+    let d = `M${x(pts[0].ts).toFixed(1)},${y(pts[0].price).toFixed(1)}`;
+    for (let i = 1; i < pts.length; i++) d += ` H${x(pts[i].ts).toFixed(1)} V${y(pts[i].price).toFixed(1)}`;
+    const dots = h.map((p) => `<circle cx="${x(p.ts).toFixed(1)}" cy="${y(p.price).toFixed(1)}" r="3.5"><title>${esc(fmtDate(p.ts))}: ${esc(fmtPrice(p.price, o.deal))}</title></circle>`).join("");
+    const first = h[0].price, last = h[h.length - 1].price;
+    const diff = last - first;
+    const word = diff < 0 ? `снизилась на ${esc(fmtShortPrice(-diff, o.deal))}` : diff > 0 ? `выросла на ${esc(fmtShortPrice(diff, o.deal))}` : "вернулась к первой";
+    const rows = h.slice().reverse().map((p) => `<li><span>${esc(fmtDate(p.ts))}</span><b>${esc(fmtPrice(p.price, o.deal))}</b></li>`).join("");
+    return `<details class="d-chart" open><summary>📈 Цена ${word} · ${h.length} ${plural(h.length, "изменение", "изменения", "изменений")}</summary>
+      <svg viewBox="0 0 ${W} ${H}" class="d-chart-svg" role="img" aria-label="График цены"><path d="${d}"/>${dots}</svg>
+      <ul class="d-chart-list">${rows}</ul></details>`;
   }
 
   function marketHTML(o) {
@@ -956,7 +1001,7 @@
   function filtersCount() {
     return state.types.length + state.rooms.length + state.districts.length + state.complexes.length
       + ["priceMin", "priceMax", "areaMin", "areaMax", "landMin", "landMax", "fresh"].filter((k) => state[k]).length
-      + (state.notFirst ? 1 : 0) + (state.notLast ? 1 : 0) + (state.deal === "rent" ? 1 : 0);
+      + (state.notFirst ? 1 : 0) + (state.notLast ? 1 : 0) + (state.hot ? 1 : 0) + (state.deal === "rent" ? 1 : 0);
   }
 
   // ─── нижняя панель (телефон) ────────────────────────────────────────────
@@ -1343,6 +1388,12 @@
       state.fresh = state.fresh === "new1" ? "" : "new1";
       syncControls();
       refresh();
+    });
+    $("hotBtn").addEventListener("click", () => {
+      state.hot = !state.hot;
+      syncControls();
+      refresh();
+      if (state.hot) toast("🔥 Цена снизилась за неделю, ниже рынка или «срочно»", 3200);
     });
     $("watchBtn").addEventListener("click", watchSearch);
     $("shareSearchBtn").addEventListener("click", () => share(location.href, "Подборка объектов на 1+1"));

@@ -199,6 +199,11 @@ CREATE TABLE IF NOT EXISTS notices (
     read INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS ix_notices_user ON notices(user_id, read);
+-- История цены объекта (для графика): пишут триггеры при появлении объекта и при каждой смене цены
+CREATE TABLE IF NOT EXISTS price_history (
+    listing_id INTEGER NOT NULL REFERENCES listings(id) ON DELETE CASCADE, ts INTEGER NOT NULL, price INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_price_history ON price_history(listing_id, ts);
 CREATE TABLE IF NOT EXISTS notes (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
     text TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)
@@ -239,6 +244,7 @@ MIGRATIONS = [
     ("listings", "hidden_reason", "TEXT"),                    # 'chat' — скрыт, т.к. приходил только из отключённых чатов
     ("listings", "removed_at", "INTEGER"),                    # когда сняли с сайта (для статистики; ставит триггер)
     ("listings", "removed_reason", "TEXT"),                   # stale | sold | feed | chat | expired | other
+    ("listings", "market_diff", "INTEGER"),                   # % к медиане м² по ЖК/району (hooks.update_market_diff)
 ]
 
 _local = threading.local()
@@ -259,6 +265,16 @@ def _migrate(conn: sqlite3.Connection) -> None:
                     WHEN OLD.price IS NOT NULL AND NEW.price IS NOT NULL AND NEW.price != OLD.price
                     BEGIN UPDATE listings SET prev_price = OLD.price, price_changed_at = CAST(strftime('%s','now') AS INTEGER)
                           WHERE id = NEW.id; END""")
+    # История цены: первая цена объекта и каждая её смена (чаты, фид, правка агента)
+    conn.execute("""CREATE TRIGGER IF NOT EXISTS trg_price_hist_ins AFTER INSERT ON listings WHEN NEW.price IS NOT NULL
+                    BEGIN INSERT INTO price_history (listing_id, ts, price) VALUES (NEW.id, NEW.first_seen, NEW.price); END""")
+    conn.execute("""CREATE TRIGGER IF NOT EXISTS trg_price_hist_upd AFTER UPDATE OF price ON listings
+                    WHEN NEW.price IS NOT NULL AND NEW.price IS NOT OLD.price
+                    BEGIN INSERT INTO price_history (listing_id, ts, price)
+                          VALUES (NEW.id, CAST(strftime('%s','now') AS INTEGER), NEW.price); END""")
+    if not conn.execute("SELECT 1 FROM state WHERE key = 'price_hist_v1'").fetchone():
+        _backfill_prices(conn)
+        conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('price_hist_v1', '1')")
     # Сняли с сайта (любым путём) — запомнить когда и почему; вернули — забыть
     conn.execute("""CREATE TRIGGER IF NOT EXISTS trg_removed AFTER UPDATE OF is_active ON listings
                     WHEN OLD.is_active != NEW.is_active
@@ -282,6 +298,32 @@ def _migrate(conn: sqlite3.Connection) -> None:
                         WHERE is_active = 0 AND removed_at IS NULL""", (config.STALE_DAYS * 86400,))
         conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('removed_backfill', '1')")
     conn.commit()
+
+
+def _backfill_prices(conn: sqlite3.Connection) -> None:
+    """Один раз: история цен из уже присланных сообщений (цена в каждом повторе), иначе — текущая цена."""
+    have = {r[0] for r in conn.execute("SELECT DISTINCT listing_id FROM price_history")}
+    ev: dict[int, list] = {}
+    for r in conn.execute("SELECT listing_id, ts, price FROM listing_events WHERE price IS NOT NULL ORDER BY listing_id, ts"):
+        ev.setdefault(r[0], []).append((r[1], r[2]))
+    rows = []
+    for r in conn.execute("SELECT id, first_seen, price, prev_price, price_changed_at FROM listings WHERE price IS NOT NULL"):
+        if r["id"] in have:
+            continue
+        pts = ev.get(r["id"]) or []
+        if not pts and r["prev_price"] and r["price_changed_at"]:
+            pts = [(r["first_seen"], r["prev_price"]), (r["price_changed_at"], r["price"])]
+        if not pts or pts[-1][1] != r["price"]:
+            pts.append((max(r["first_seen"], pts[-1][0]) if pts else r["first_seen"], r["price"]))
+        last = None
+        for ts, price in pts:
+            if rows and rows[-1][0] == r["id"] and ts - rows[-1][1] < 600:   # одно сообщение разобрано повторно
+                rows[-1] = (r["id"], rows[-1][1], price)
+                last = price
+            elif price != last:
+                rows.append((r["id"], ts, price))
+                last = price
+    conn.executemany("INSERT INTO price_history (listing_id, ts, price) VALUES (?,?,?)", rows)
 
 
 def connect(path: str | None = None) -> sqlite3.Connection:

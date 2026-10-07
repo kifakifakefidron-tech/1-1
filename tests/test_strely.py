@@ -132,3 +132,17 @@ def test_feed_without_coords_keeps_found_point(conn):
     # Координаты появились на сайте — берём их
     feed.sync(conn, _feed_with("45.1, 39.0"), now=NOW + 20)
     assert tuple(conn.execute("SELECT lat, geo_status FROM listings WHERE source = 'feed'").fetchone()) == (45.1, "feed")
+
+
+def test_price_history_and_hot_filter(conn, add):
+    from app import search as s
+    r = add("Студия 25 м², 3/9 эт., ЖК Мозаика. 3,2 млн руб. 89181112233", ts=NOW - 5000)
+    lid = r["results"][0]["listing_id"]
+    add("Студия 25 м², 3/9 эт., ЖК Мозаика. 2,9 млн руб. 89181112233", ts=NOW - 100)
+    hist = [h["price"] for h in s.listing_detail(conn, lid, False)["price_history"]]
+    assert hist == [3_200_000, 2_900_000]
+    import time as _t
+    hot = s.search(conn, s.Query(hot=True), int(_t.time()), False)
+    assert lid in [i["id"] for i in hot["items"]]   # цена снизилась за неделю
+    add("СРОЧНО! 1-к квартира 38 м², 2/5 эт., ул. Ставропольская 10. 4 млн. 89184445566")
+    assert hot["total"] + 1 == s.search(conn, s.Query(hot=True), int(_t.time()), False)["total"]

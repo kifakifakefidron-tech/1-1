@@ -340,3 +340,17 @@ a.access-btn { text-decoration: none; color: var(--ink); display: inline-block; 
   font: 600 13px/1.2 system-ui, sans-serif; text-decoration: none; box-shadow: 0 6px 18px rgba(0,0,0,.25); white-space: nowrap; }
 .ya-sel[hidden] { display: none; }
 .d-place .ya-link { margin-left: 6px; white-space: nowrap; font-size: .92em; }
+
+/* дни в продаже, «срочно», график цены */
+.item-meta .on-sale.long { color: #ffd86b; }
+.mark.hot { background: #ff9f8a; color: #4a120a; }
+.d-sale { margin: 10px 0; padding: 10px 12px; border-radius: 12px; background: rgba(0,0,0,.14); font-size: 15px; }
+.d-sale.long { background: rgba(255,216,107,.14); }
+.d-sale small { display: block; color: var(--ink-3); font-size: 12px; margin-top: 2px; }
+.d-chart { margin: 10px 0; padding: 10px 12px; border-radius: 12px; background: rgba(0,0,0,.14); }
+.d-chart summary { cursor: pointer; font-weight: 600; }
+.d-chart-svg { display: block; width: 100%; height: 120px; margin: 8px 0 4px; }
+.d-chart-svg path { fill: none; stroke: #ffd86b; stroke-width: 2.5; stroke-linejoin: round; }
+.d-chart-svg circle { fill: #035352; stroke: #ffd86b; stroke-width: 2; }
+.d-chart-list { list-style: none; margin: 0; padding: 0; font-size: 14px; display: grid; gap: 2px; }
+.d-chart-list li { display: flex; justify-content: space-between; border-top: 1px solid var(--line); padding: 4px 0; }
