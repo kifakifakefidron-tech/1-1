@@ -145,6 +145,11 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   СВОЯ карта: /admin/map (web/districts.*, Leaflet + Geoman): «Загрузить из OpenStreetMap» (districtmap.import_osm:
   place=suburb|neighbourhood|… → ~29 районов и ~194 ЖК контуров, ODbL — подпись «© OpenStreetMap»), остальные
   районы админ обводит сам (source='admin', OSM их не перезаписывает); сверка объектов/ЖК/улиц и «проставить район».
+- 07.10 вечер: «База занята» лечится так: перед ЛЮБЫМ ожиданием сети (Wappi, SMTP, Telegram, Nominatim) —
+  `db.flush(conn)` (закончить запись); IntegrityError → rollback; server.threaded откатывает недописанную запись;
+  admin/fix/districts.js повторяют запрос при 503. Проверка по карте (/admin/map): группы с галочками по объектам
+  (districtmap.reconcile → items), action set_districts {items, remember_complex}; при выбранном районе — только
+  вопросы по нему. lower() в SQLite не понимает кириллицу — сравнивать улицы в Python.
 - Объекты фида снова с отметкой «Партнёр» (.mark.partner) — только отметка, без вывода вперёд (решение 07.10, ночь).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)

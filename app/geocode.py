@@ -10,7 +10,7 @@ import time
 import urllib.parse
 import urllib.request
 
-from . import config, geo
+from . import config, db, geo
 from .textnorm import words
 
 log = logging.getLogger(__name__)
@@ -68,6 +68,7 @@ def lookup(conn: sqlite3.Connection, query: str) -> tuple[float, float] | None:
     hit = conn.execute("SELECT lat, lon FROM geocache WHERE query = ?", (query,)).fetchone()
     if hit is not None:
         return (hit["lat"], hit["lon"]) if hit["lat"] is not None else None
+    db.flush(conn)   # не держать базу, пока ждём ответа геокодера
     params = {"q": query, "format": "json", "limit": 1, "countrycodes": "ru", "accept-language": "ru"}
     if _city_query(query):   # ищем только внутри Краснодара — не в Сочи и не в Ростове
         params.update(viewbox=f"{CITY_BOX[1]},{CITY_BOX[2]},{CITY_BOX[3]},{CITY_BOX[0]}", bounded=1)

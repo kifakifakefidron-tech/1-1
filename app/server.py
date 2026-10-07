@@ -120,10 +120,21 @@ async def _body(request: Request) -> dict:
 def threaded(fn):
     """Обработчик выполняется в отдельном потоке: медленная операция с базой или почтой
     у одного посетителя не задерживает ответы всем остальным."""
+    def guarded(request, body):
+        try:
+            return fn(request, body)
+        finally:
+            conn = getattr(db._local, "conn", None)
+            if conn is not None and conn.in_transaction:
+                try:
+                    conn.rollback()   # недописанная запись (ошибка посередине) не должна держать базу
+                except Exception:  # noqa: BLE001
+                    pass
+
     async def endpoint(request: Request):
         t0 = time.perf_counter()
         body = await _body(request) if request.method in ("POST", "PUT", "DELETE", "PATCH") else None
-        resp = await run_in_threadpool(fn, request, body)
+        resp = await run_in_threadpool(guarded, request, body)
         if request.method != "GET" and resp.status_code < 400 and request.url.path.startswith(("/api/agent", "/api/admin")):
             await run_in_threadpool(_bump_cache)
         resp.headers["Server-Timing"] = f"app;dur={(time.perf_counter() - t0) * 1000:.0f}"
@@ -1043,6 +1054,8 @@ def api_admin_reconcile(request: Request, body: dict | None = None):
             return JSONResponse({"ok": True})
         if action == "fill_empty":
             return JSONResponse({"listings": districtmap.fill_empty(conn)})
+        if action == "set_districts":   # выбранные галочками объекты → район по карте
+            return JSONResponse(districtmap.set_districts(conn, body.get("items") or [], body.get("remember_complex")))
     except (ValueError, OSError) as e:
         return _err(f"Не получилось: {e}")
     if request.query_params.get("polygons"):

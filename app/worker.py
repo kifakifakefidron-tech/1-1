@@ -12,6 +12,17 @@ from . import agent, config, db, feed, geocode, hooks, ingest, llm, mailer, noti
 log = logging.getLogger("worker")
 
 
+def _mail(conn):
+    """Отправка письма: сначала закончить запись в базу (SMTP может думать секунды)."""
+    if not mailer.available():
+        return None
+
+    def send(*a, **kw):
+        db.flush(conn)
+        return mailer.send_text(*a, **kw)
+    return send
+
+
 def tick(conn) -> dict:
     if config.WAPPI_ENABLED and wappi.refresh_chat_names(conn) is not None:
         stats_r = region.hide_foreign(conn)   # чаты Сочи/Адлера/… — не показываем
@@ -25,11 +36,11 @@ def tick(conn) -> dict:
     stats["queue"] = conn.execute("SELECT COUNT(*) FROM messages WHERE status='new'").fetchone()[0]
     stats["geocoded"] = geocode.run(conn, limit=40)
     stats["archived"] = ingest.archive_stale(conn)
-    own = agent.expire_own(conn, mailer.send_text if mailer.available() else None)
+    own = agent.expire_own(conn, _mail(conn))
     if any(own.values()):
         stats["own"] = own
     # подписки на поиск, избранное (цена, снят с сайта), окончание доступа — на сайте и письмом
-    sent = hooks.run(conn, mailer.send_text if mailer.available() else None)
+    sent = hooks.run(conn, _mail(conn))
     if sent and any(sent.values()):
         stats["notices"] = sent
     synced = feed.maybe_sync(conn)
@@ -65,9 +76,14 @@ def main() -> None:
         stats: dict = {}
         try:
             stats = tick(conn)
+            db.flush(conn)
             log.info("цикл: %s", stats)
         except Exception as e:  # noqa: BLE001
             log.exception("ошибка цикла")
+            try:
+                conn.rollback()
+            except Exception:  # noqa: BLE001
+                pass
             try:
                 notify.alert(conn, "worker", f"Ошибка в фоновой работе сайта: {e!r}"[:500], every_s=3600)
             except Exception:  # noqa: BLE001

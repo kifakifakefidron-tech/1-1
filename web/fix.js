@@ -39,7 +39,12 @@
   async function call(url, body) {
     const opts = { credentials: "same-origin", method: body ? "POST" : "GET" };
     if (body) { opts.headers = { "Content-Type": "application/json" }; opts.body = JSON.stringify(body); }
-    const r = await fetch(url, opts);
+    // База на секунду занята фоновой работой (503) — тихо повторяем, а не показываем ошибку
+    let r = await fetch(url, opts);
+    for (let i = 0; i < 4 && r.status === 503; i++) {
+      await new Promise((res) => setTimeout(res, 1500 * (i + 1)));
+      r = await fetch(url, opts);
+    }
     let d = {};
     try { d = await r.json(); } catch { /* */ }
     return { ok: r.ok, status: r.status, data: d };

@@ -187,6 +187,7 @@ def add_message(conn: sqlite3.Connection, *, source: str, text: str, ts: int | N
         conn.commit()
         return cur.lastrowid
     except sqlite3.IntegrityError:
+        conn.rollback()   # неудачная вставка оставляет открытую запись — иначе база занята для всех
         return None
 
 

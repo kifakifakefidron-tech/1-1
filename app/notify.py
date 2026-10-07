@@ -35,6 +35,7 @@ def _chat_id(conn: sqlite3.Connection) -> str | None:
 
 def send(conn: sqlite3.Connection, text: str) -> bool:
     """Сначала Telegram; если он недоступен или чат не известен — письмо на почту владельца."""
+    db.flush(conn)
     chat = _chat_id(conn)
     if chat and _api("sendMessage", {"chat_id": chat, "text": text, "disable_web_page_preview": True}):
         return True

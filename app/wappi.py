@@ -198,6 +198,7 @@ def _poll_all_messages(conn, profile, source, profile_id, token, cursor) -> tupl
     for page in range(MAX_PAGES):
         params = {"profile_id": profile_id, "limit": PAGE, "offset": page * PAGE,
                   "date": _since(cursor), "order": "desc"}
+        db.flush(conn)
         payload = _call(profile, f"{PREFIX[source]}/messages/all/get", params, token)
         if payload is None:
             break
@@ -221,6 +222,7 @@ def _poll_by_chats(conn, profile, source, profile_id, token, cursor) -> tuple[in
     for page in range(10):
         params = {"profile_id": profile_id, "limit": CHATS_PAGE, "offset": page * CHATS_PAGE,
                   "show_all": "true", "order": "desc"}
+        db.flush(conn)
         payload = _call(profile, f"{PREFIX[source]}/chats/get", params, token)
         if payload is None:
             return 0, 0, cursor
@@ -255,6 +257,7 @@ def _poll_by_chats(conn, profile, source, profile_id, token, cursor) -> tuple[in
         for page in range(MAX_PAGES):
             params = {"profile_id": profile_id, "chat_id": chat_id, "limit": CHAT_PAGE,
                       "offset": page * CHAT_PAGE, "date": _since(cursor), "order": "desc", "mark_all": "false"}
+            db.flush(conn)
             payload = _call(profile, f"{PREFIX[source]}/messages/get", params, token)
             if payload is None:
                 break
@@ -312,6 +315,7 @@ def refresh_chat_names(conn: sqlite3.Connection, every_h: int = 6) -> int | None
         if source != "wa" or not token:
             continue
         for page in range(20):
+            db.flush(conn)
             payload = _call(profile, f"{PREFIX[source]}/chats/get",
                             {"profile_id": profile_id, "limit": CHATS_PAGE, "offset": page * CHATS_PAGE, "show_all": "true"},
                             token)

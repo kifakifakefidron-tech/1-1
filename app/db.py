@@ -282,6 +282,13 @@ def get() -> sqlite3.Connection:
     return conn
 
 
+def flush(conn: sqlite3.Connection) -> None:
+    """Закончить начатую запись. ОБЯЗАТЕЛЬНО перед любым ожиданием сети (Wappi, почта, геокодер):
+    пока запись открыта, база занята для всех — сайт и админка получают «база занята»."""
+    if conn is not None and conn.in_transaction:
+        conn.commit()
+
+
 def get_state(conn: sqlite3.Connection, key: str, default: str | None = None) -> str | None:
     row = conn.execute("SELECT value FROM state WHERE key=?", (key,)).fetchone()
     return row["value"] if row else default

@@ -149,14 +149,16 @@ def reconcile(conn: sqlite3.Connection) -> dict:
                           "addr": " · ".join(x for x in (r["complex"] and "ЖК " + r["complex"],
                                                           r["street"] and f"ул. {r['street']}{', ' + r['house'] if r['house'] else ''}") if x)})
         if r["complex"]:
-            g = by_cx.setdefault(geo.complex_key(r["complex"]), {"name": r["complex"], "ours": {}, "map": {}, "ids": []})
+            g = by_cx.setdefault(geo.complex_key(r["complex"]), {"name": r["complex"], "ours": {}, "map": {}, "ids": [], "items": []})
         elif r["street"]:
-            g = by_st.setdefault(r["street"].lower(), {"name": r["street"], "ours": {}, "map": {}, "ids": []})
+            g = by_st.setdefault(r["street"].lower(), {"name": r["street"], "ours": {}, "map": {}, "ids": [], "items": []})
         else:
             continue
         g["ours"][r["district"] or "—"] = g["ours"].get(r["district"] or "—", 0) + 1
         g["map"][theirs] = g["map"].get(theirs, 0) + 1
         g["ids"].append(r["id"])
+        g["items"].append({"id": r["id"], "title": r["title"], "ours": r["district"], "map": theirs,
+                           "addr": r["street"] and f"ул. {r['street']}{', ' + r['house'] if r['house'] else ''}"})
 
     def diffs(groups, kind):
         out = []
@@ -170,7 +172,9 @@ def reconcile(conn: sqlite3.Connection) -> dict:
                 continue
             out.append({"kind": kind, "name": g["name"], "key": key, "map": top_map,
                         "map_all": sorted(g["map"].items(), key=lambda x: -x[1]),
-                        "ours": sorted(g["ours"].items(), key=lambda x: -x[1]), "count": len(g["ids"])})
+                        "ours": sorted(g["ours"].items(), key=lambda x: -x[1]), "count": len(g["ids"]),
+                        # объекты, у которых наш район не совпадает с картой — их и предлагаем перенести
+                        "items": [i for i in g["items"] if i["ours"] != i["map"]][:200]})
         return sorted(out, key=lambda x: -x["count"])
     return {"complexes": diffs(by_cx, "complex"), "streets": diffs(by_st, "street"),
             "empty": empty[:500], "empty_total": len(empty), "checked": len(rows), "loaded": loaded(conn),
@@ -185,8 +189,10 @@ def accept(conn: sqlite3.Connection, kind: str, name: str, district: str | None 
     if kind == "complex":
         return learning.move(conn, "complex", name, None, district)
     n = 0
-    for r in conn.execute(f"""SELECT * FROM listings WHERE is_active = 1 AND lat IS NOT NULL AND {_EXACT}
-                              AND lower(street) = ? AND complex IS NULL""", (name.lower(),)).fetchall():
+    rows = [r for r in conn.execute(f"""SELECT * FROM listings WHERE is_active = 1 AND lat IS NOT NULL AND {_EXACT}
+                                        AND street IS NOT NULL AND complex IS NULL""").fetchall()
+            if r["street"].lower() == name.lower()]   # lower() в SQLite не понимает русские буквы — сравниваем здесь
+    for r in rows:
         hit = district_at(conn, r["lat"], r["lon"])
         if hit and hit[1] == "district" and hit[0] != r["district"]:
             d = {**dict(r), "district": hit[0]}
@@ -384,3 +390,34 @@ def delete_polygon(conn: sqlite3.Connection, pid: int) -> None:
 def all_polygons(conn: sqlite3.Connection) -> list[dict]:
     return [{"id": r["id"], "name": r["name"], "kind": r["kind"], "source": r["source"],
              "polys": json.loads(r["polys"])} for r in conn.execute("SELECT * FROM district_polygons ORDER BY area DESC")]
+
+
+def set_districts(conn: sqlite3.Connection, items: list[dict], remember_complex: dict | None = None) -> dict:
+    """Проставить район выбранным объектам: [{id, district}]. remember_complex={name, district} —
+    ещё и правило «ЖК → район» для новых объявлений."""
+    from . import learning
+    from .ingest import _reindex, make_search_text
+    learning.sync_districts(conn)
+    n = 0
+    for it in items[:2000]:
+        d = geo.canonical_district(str(it.get("district") or "")) or None
+        r = conn.execute("SELECT * FROM listings WHERE id = ?", (int(it.get("id") or 0),)).fetchone()
+        if r is None or not d or r["district"] == d:
+            continue
+        row = {**dict(r), "district": d}
+        row["search_text"] = make_search_text(row)
+        conn.execute("UPDATE listings SET district = ?, search_text = ? WHERE id = ?", (d, row["search_text"], r["id"]))
+        _reindex(conn, r["id"], row["search_text"])
+        n += 1
+    conn.commit()
+    if remember_complex and remember_complex.get("name") and remember_complex.get("district"):
+        k = learning.cx_key(remember_complex["name"])
+        if k:
+            d = geo.canonical_district(remember_complex["district"]) or remember_complex["district"]
+            conn.execute("""INSERT INTO learned_rules (kind, key, value, label, n, ts) VALUES ('cx_district', ?, ?, ?, 1, ?)
+                            ON CONFLICT(kind, key) DO UPDATE SET value = excluded.value, label = excluded.label,
+                            n = n + 1, ts = excluded.ts""",
+                         (k, json.dumps({"district": d}, ensure_ascii=False), f"ЖК {remember_complex['name']} → {d}", int(time.time())))
+            conn.commit()
+            learning.rules(conn, fresh=True)
+    return {"listings": n}

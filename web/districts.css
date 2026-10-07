@@ -41,3 +41,27 @@
   .dm-map { height: 70vh; order: -1; }
   .dm-side { border-right: 0; }
 }
+
+/* проверка по карте: группы с галочками */
+.dm-sub { margin: 14px 0 6px; font: 600 15px var(--body); color: var(--ink-2); }
+.dm-grp { border-radius: 12px; background: rgba(0,0,0,.14); margin: 6px 0; }
+.dm-grp summary { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; padding: 9px 12px;
+  cursor: pointer; font-size: 14px; list-style: none; }
+.dm-grp summary::-webkit-details-marker { display: none; }
+.dm-grp summary span { display: flex; flex-direction: column; gap: 2px; }
+.dm-grp summary small { color: var(--ink-3); font-size: 12px; }
+.dm-grp summary em { font-style: normal; font-weight: 600; background: rgba(243,232,188,.12); border-radius: 999px; padding: 0 8px; }
+.dm-grp[open] summary { border-bottom: 1px solid var(--line); }
+.dm-grp-body { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 4px; max-height: 55vh; overflow-y: auto; }
+.dm-obj { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: start; padding: 6px 6px; border-radius: 8px;
+  font-size: 13px; cursor: pointer; }
+.dm-obj:hover { background: rgba(243,232,188,.06); }
+.dm-obj input, .dm-all input, .dm-remember input { accent-color: #f3e8bc; margin-top: 2px; }
+.dm-obj span { display: flex; flex-direction: column; min-width: 0; }
+.dm-obj small { color: var(--ink-3); }
+.dm-obj a { color: var(--ink); text-decoration: none; padding: 0 4px; }
+.dm-all, .dm-remember { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--ink-2); padding: 4px 6px; }
+.dm-remember { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 8px; }
+.dm-grp-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.dm-grp-acts .pill, .dm-grp-acts .ghost { font-size: 13px; padding: 7px 12px; }
+.linkish { border: 0; background: none; color: #ffd86b; font: inherit; text-decoration: underline; cursor: pointer; padding: 0; }
