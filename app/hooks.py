@@ -144,20 +144,40 @@ def same_elsewhere(conn: sqlite3.Connection, row: sqlite3.Row, limit: int = 10) 
 
 
 # ─── заметки ───────────────────────────────────────────────────────────────
+# Статусы по объекту — простая CRM агента (видит только он сам)
+NOTE_STATUSES = ("call", "show", "think", "refuse", "deal")
+
+
 def get_note(conn: sqlite3.Connection, user_id: int, listing_id: int) -> str:
     r = conn.execute("SELECT text FROM notes WHERE user_id = ? AND listing_id = ?", (user_id, listing_id)).fetchone()
     return r[0] if r else ""
 
 
-def set_note(conn: sqlite3.Connection, user_id: int, listing_id: int, text: str) -> None:
-    text = (text or "").strip()[:2000]
-    if text:
-        conn.execute("""INSERT INTO notes (user_id, listing_id, text, ts) VALUES (?,?,?,?)
-                        ON CONFLICT(user_id, listing_id) DO UPDATE SET text = excluded.text, ts = excluded.ts""",
-                     (user_id, listing_id, text, int(time.time())))
+def get_status(conn: sqlite3.Connection, user_id: int, listing_id: int) -> str | None:
+    r = conn.execute("SELECT status FROM notes WHERE user_id = ? AND listing_id = ?", (user_id, listing_id)).fetchone()
+    return r[0] if r else None
+
+
+def set_note(conn: sqlite3.Connection, user_id: int, listing_id: int, text: str | None = None,
+             status: str | None = "keep") -> None:
+    """Заметка и/или статус. text=None — не трогать текст; status='keep' — не трогать статус, None/'' — снять."""
+    old = conn.execute("SELECT text, status FROM notes WHERE user_id = ? AND listing_id = ?", (user_id, listing_id)).fetchone()
+    text = (old["text"] if old else "") if text is None else (text or "").strip()[:2000]
+    if status == "keep":
+        status = old["status"] if old else None
+    status = status if status in NOTE_STATUSES else None
+    if text or status:
+        conn.execute("""INSERT INTO notes (user_id, listing_id, text, ts, status) VALUES (?,?,?,?,?)
+                        ON CONFLICT(user_id, listing_id) DO UPDATE SET text = excluded.text, ts = excluded.ts,
+                        status = excluded.status""", (user_id, listing_id, text, int(time.time()), status))
     else:
         conn.execute("DELETE FROM notes WHERE user_id = ? AND listing_id = ?", (user_id, listing_id))
     conn.commit()
+
+
+def statuses(conn: sqlite3.Connection, user_id: int) -> dict:
+    return {r[0]: r[1] for r in conn.execute(
+        "SELECT listing_id, status FROM notes WHERE user_id = ? AND status IS NOT NULL", (user_id,))}
 
 
 def noted_ids(conn: sqlite3.Connection, user_id: int) -> list[int]:

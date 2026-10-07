@@ -301,6 +301,7 @@ def api_listing(request: Request, body: dict | None = None):
     d["market"] = hooks.market_for(conn, d)
     d["same"] = hooks.same_elsewhere(conn, row)
     d["note"] = hooks.get_note(conn, user["id"], lid) if user else None
+    d["status"] = hooks.get_status(conn, user["id"], lid) if user else None
     d["favorite"] = bool(user and conn.execute(
         "SELECT 1 FROM favorites WHERE user_id = ? AND listing_id = ?", (user["id"], lid)).fetchone())
     return JSONResponse(d)
@@ -432,9 +433,20 @@ def api_favorites(request: Request, body: dict | None = None):
     user, err = _need_user(request)
     if err:
         return err
-    rows = db.get().execute("""SELECT l.* FROM favorites f JOIN listings l ON l.id = f.listing_id
-                               WHERE f.user_id = ? ORDER BY f.created DESC""", (user["id"],)).fetchall()
-    return JSONResponse({"items": [search.row_to_item(r, False) for r in rows]})
+    # Избранное и объекты «в работе» (со статусом) — вместе: это рабочий список агента
+    rows = db.get().execute("""
+        SELECT l.*, n.status AS crm_status, n.text AS crm_note, COALESCE(n.ts, f.created) AS crm_ts
+        FROM listings l
+        LEFT JOIN favorites f ON f.listing_id = l.id AND f.user_id = ?
+        LEFT JOIN notes n ON n.listing_id = l.id AND n.user_id = ?
+        WHERE f.user_id IS NOT NULL OR n.status IS NOT NULL
+        ORDER BY crm_ts DESC""", (user["id"], user["id"])).fetchall()
+    items = []
+    for r in rows:
+        it = search.row_to_item(r, False)
+        it.update(status=r["crm_status"], note=r["crm_note"] or "", favorite=True)
+        items.append(it)
+    return JSONResponse({"items": items})
 
 
 def api_favorite_toggle(request: Request, body: dict | None = None):
@@ -642,7 +654,10 @@ def api_note(request: Request, body: dict | None = None):
     user, err = _need_user(request)
     if err:
         return err
-    hooks.set_note(db.get(), user["id"], int(request.path_params["id"]), str((body or {}).get("text", "")))
+    body = body or {}
+    hooks.set_note(db.get(), user["id"], int(request.path_params["id"]),
+                   str(body["text"]) if "text" in body else None,
+                   str(body.get("status") or "") if "status" in body else "keep")
     return JSONResponse({"ok": True})
 
 

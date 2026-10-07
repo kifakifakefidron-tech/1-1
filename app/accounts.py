@@ -187,6 +187,8 @@ def me(conn: sqlite3.Connection, user: sqlite3.Row | None) -> dict | None:
         "access": has_access(user, now), "access_until": access_until(user),
         "trial_until": user["trial_until"], "paid_until": user["paid_until"], "trial_used": used_trial,
         "favorites": fav, "views_today": views_today(conn, user["id"]),
+        "statuses": {r[0]: r[1] for r in conn.execute(
+            "SELECT listing_id, status FROM notes WHERE user_id = ? AND status IS NOT NULL", (user["id"],))},
         "unread": conn.execute("SELECT COUNT(*) FROM notices WHERE user_id = ? AND read = 0", (user["id"],)).fetchone()[0],
         "views_limit": None if user["is_admin"] or config.PHONE_VIEWS_PER_DAY <= 0 else config.PHONE_VIEWS_PER_DAY,
     }

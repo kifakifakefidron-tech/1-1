@@ -244,7 +244,8 @@ MIGRATIONS = [
     ("listings", "hidden_reason", "TEXT"),                    # 'chat' — скрыт, т.к. приходил только из отключённых чатов
     ("listings", "removed_at", "INTEGER"),                    # когда сняли с сайта (для статистики; ставит триггер)
     ("listings", "removed_reason", "TEXT"),                   # stale | sold | feed | chat | expired | other
-    ("listings", "market_diff", "INTEGER"),                   # % к медиане м² по ЖК/району (hooks.update_market_diff)
+    ("listings", "market_diff", "INTEGER"),
+    ("notes", "status", "TEXT"),                              # статус агента по объекту: call | show | think | refuse | deal                   # % к медиане м² по ЖК/району (hooks.update_market_diff)
 ]
 
 _local = threading.local()

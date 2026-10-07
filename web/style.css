@@ -354,3 +354,14 @@ a.access-btn { text-decoration: none; color: var(--ink); display: inline-block; 
 .d-chart-svg circle { fill: #035352; stroke: #ffd86b; stroke-width: 2; }
 .d-chart-list { list-style: none; margin: 0; padding: 0; font-size: 14px; display: grid; gap: 2px; }
 .d-chart-list li { display: flex; justify-content: space-between; border-top: 1px solid var(--line); padding: 4px 0; }
+
+/* статусы по объекту (CRM агента) */
+.d-crm { margin: 14px 0 6px; }
+.d-crm-label { display: block; font-weight: 600; margin-bottom: 6px; }
+.d-crm-label small { font-weight: 400; color: var(--ink-3); }
+.d-crm .chip { font-size: 13px; }
+.mark.crm { background: rgba(243,232,188,.16); color: var(--ink); }
+.mark.crm-deal { background: #9be8b8; color: #063b2c; }
+.mark.crm-refuse { background: rgba(255,159,138,.25); }
+.crm-chips { margin-top: 10px; }
+.crm-chips .chip b { font-weight: 600; opacity: .75; margin-left: 2px; }

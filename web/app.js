@@ -304,11 +304,18 @@
     facetComplexes = f.complexes;   // для выпадающего списка ЖК
   }
 
+  // Статусы по объекту — простая CRM агента (видит только он)
+  const STATUSES = { call: "📞 Звонил", show: "👀 Показ", think: "🤔 Думает", refuse: "❌ Отказ", deal: "✅ Сделка" };
+  let favItems = [], favStatus = "";
+  const myStatus = (id) => (me() && me().statuses ? me().statuses[id] : null);
+
   // ─── результаты ─────────────────────────────────────────────────────────
   // Отметки на карточке: новое за сутки, цена снизилась (за 2 недели), заметно ниже рынка
   function badgesHTML(o) {
     const now = loadedAt || Date.now() / 1000;
     const b = [];
+    const st = myStatus(o.id);
+    if (st) b.push(`<span class="mark crm crm-${st}">${STATUSES[st]}</span>`);
     if (o.source === "feed") b.push(`<span class="mark partner">Партнёр</span>`);
     if (o.first_seen > now - 86400) b.push(`<span class="mark new">Новое</span>`);
     if (o.prev_price && o.price && o.prev_price > o.price && o.price_changed_at > now - 14 * 86400) {
@@ -348,7 +355,7 @@
     return Array.from({ length: n }, () => `<li class="item skel" aria-hidden="true"><i></i><i></i><i></i><i></i></li>`).join("");
   }
 
-  async function loadList(append = false) {
+  async function loadList(append = false, keepFav = false) {
     const seq = append ? reqSeq : ++reqSeq;
     if (!append) {
       page = 1;
@@ -359,8 +366,9 @@
     let data;
     try {
       if (favMode) {
-        const fav = await getJSON("/api/favorites");
-        data = { total: fav.items.length, page: 1, pages: 1, items: fav.items };
+        if (!keepFav || !favItems.length) favItems = (await getJSON("/api/favorites")).items;   // фильтр по статусу — без запроса
+        const items = favStatus ? favItems.filter((o) => (favStatus === "none" ? !o.status : o.status === favStatus)) : favItems;
+        data = { total: items.length, page: 1, pages: 1, items };
       } else {
         data = await getJSON(`/api/listings?${apiParams({ page, size: PAGE_SIZE })}`);
       }
@@ -377,7 +385,7 @@
     }
     $("sheetApply").textContent = data.total ? `Показать ${num(data.total)} ${plural(data.total, "объект", "объекта", "объектов")}` : "Ничего не нашлось";
     $("count").innerHTML = favMode
-      ? `Избранное: ${num(data.total)} <button type="button" class="link-btn" id="favExit">← ко всем объектам</button>`
+      ? `Избранное и в работе: ${num(data.total)} <button type="button" class="link-btn" id="favExit">← ко всем объектам</button>${crmChips()}`
       : esc(data.total ? `${num(data.total)} ${plural(data.total, "объект", "объекта", "объектов")}` : "Ничего не нашлось");
     // Карточки появляются волной: у каждой своя небольшая задержка
     data.items.forEach((o) => known.set(o.id, o));
@@ -387,6 +395,16 @@
       ? `<li class="empty"><span class="empty-logo">${LOGO}</span><b>Пока пусто</b>Нажмите ♡ на объекте, чтобы сохранить его сюда.</li>`
       : `<li class="empty"><span class="empty-logo">${LOGO}</span><b>Ничего не нашлось</b>Попробуйте убрать часть фильтров или изменить запрос.</li>`);
     $("loadMore").hidden = state.view !== "list" || data.page >= data.pages;
+  }
+
+  // Фильтр «Избранного» по статусам: сколько объектов в каждом
+  function crmChips() {
+    const n = (k) => favItems.filter((o) => (k === "none" ? !o.status : o.status === k)).length;
+    const chip = (k, label) => `<button type="button" class="chip${favStatus === k ? " on" : ""}" data-crm-filter="${k}">${label} <b>${n(k) || ""}</b></button>`;
+    const used = Object.keys(STATUSES).filter((k) => n(k));
+    if (!used.length) return "";
+    return `<div class="chips crm-chips"><button type="button" class="chip${favStatus ? "" : " on"}" data-crm-filter="">Все</button>
+      ${used.map((k) => chip(k, STATUSES[k])).join("")}${n("none") ? chip("none", "Без статуса") : ""}</div>`;
   }
 
   // ─── карта ──────────────────────────────────────────────────────────────
@@ -625,7 +643,11 @@
 
   function noteHTML(o) {
     if (!me() || o.loading) return "";
-    return `<details class="d-note-box"${o.note ? " open" : ""}><summary>Моя заметка${o.note ? "" : " (видите только вы)"}</summary>
+    const st = o.status || myStatus(o.id);
+    const chips = Object.entries(STATUSES).map(([k, v]) =>
+      `<button type="button" class="chip${st === k ? " on" : ""}" data-crm="${k}" data-id="${o.id}">${v}</button>`).join("");
+    return `<div class="d-crm"><span class="d-crm-label">Мой статус <small>(видите только вы)</small></span><div class="chips">${chips}</div></div>
+      <details class="d-note-box"${o.note ? " open" : ""}><summary>Моя заметка${o.note ? "" : " (видите только вы)"}</summary>
       <textarea class="d-note-text" data-note="${o.id}" rows="3" maxlength="2000"
         placeholder="Например: звонил 12.10, собственник готов торговаться">${esc(o.note || "")}</textarea>
       <span class="note d-note-saved" hidden>Сохранено</span></details>`;
@@ -1214,6 +1236,22 @@
     ].join("");
   }
 
+  // Статус по объекту: нажали тот же — сняли
+  async function setCrm(id, status, btn) {
+    const cur = myStatus(id);
+    const next = cur === status ? "" : status;
+    const r = await call(`/api/notes/${id}`, { status: next });
+    if (!r.ok) { toast("Не получилось сохранить статус"); return; }
+    if (me()) { me().statuses = me().statuses || {}; if (next) me().statuses[id] = next; else delete me().statuses[id]; }
+    const o = known.get(id);
+    if (o) o.status = next || null;
+    btn.parentElement.querySelectorAll("[data-crm]").forEach((b) => b.classList.toggle("on", b.dataset.crm === next));
+    const card = document.querySelector(`.item[data-id="${id}"]`);
+    if (card && o) card.outerHTML = itemHTML(o);
+    favItems = [];
+    toast(next ? `Статус: ${STATUSES[next]}` : "Статус снят", 1800);
+  }
+
   async function toggleFavorite(id) {
     if (!me()) { openLogin("Чтобы сохранять объекты в избранное, войдите."); return; }
     const r = await call(`/api/favorites/${id}`, {});
@@ -1294,6 +1332,8 @@
       const t = e.target.closest("button");
       if (!t) return;
       if (t.dataset.fav) { e.stopPropagation(); toggleFavorite(Number(t.dataset.fav)); return; }
+      if (t.dataset.crm) { setCrm(Number(t.dataset.id), t.dataset.crm, t); return; }
+      if (t.dataset.crmFilter !== undefined) { favStatus = t.dataset.crmFilter; loadList(false, true); return; }
       if (t.hasAttribute("data-login")) { openLogin(); return; }
       if (t.dataset.share) {
         const o = known.get(Number(t.dataset.share));

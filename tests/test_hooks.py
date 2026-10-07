@@ -174,3 +174,17 @@ def test_old_saved_search_url_rebuilt_from_params():
     assert q["deal"] == ["rent"] and q["pmax"] == ["35"]
     # служебные отметки из адреса страницы не попадают в ссылку
     assert hooks.search_url({"id": 9, "page_query": "rooms=2&open=5&saved=3&since=1", "params": ""}) == "/?rooms=2&saved=9"
+
+
+def test_note_status_crm(conn, add):
+    from app import accounts, hooks
+    lid = add("2-к квартира 58 м², 7/16 эт., ЖК Мозаика. 7,5 млн руб. 89181112233")["results"][0]["listing_id"]
+    u = accounts.upsert_email_user(conn, "crm@example.ru")
+    hooks.set_note(conn, u["id"], lid, status="call")
+    hooks.set_note(conn, u["id"], lid, text="перезвонить в пятницу")   # текст не сбрасывает статус
+    assert hooks.get_status(conn, u["id"], lid) == "call" and hooks.get_note(conn, u["id"], lid) == "перезвонить в пятницу"
+    assert accounts.me(conn, accounts.get_user(conn, u["id"]))["statuses"] == {lid: "call"}
+    hooks.set_note(conn, u["id"], lid, status="bogus")
+    assert hooks.get_status(conn, u["id"], lid) is None
+    hooks.set_note(conn, u["id"], lid, text="")
+    assert conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0] == 0   # ни текста, ни статуса — запись убрана
