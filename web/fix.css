@@ -54,3 +54,7 @@
 }
 .ya-link { color: #ffd86b; font-weight: 600; text-decoration: none; }
 .ya-link:hover { text-decoration: underline; }
+.ya-sel { position: fixed; z-index: 2147483000; padding: 7px 12px; border-radius: 999px; background: #ffd86b; color: #035352;
+  font: 600 13px/1.2 system-ui, sans-serif; text-decoration: none; box-shadow: 0 6px 18px rgba(0,0,0,.25); white-space: nowrap; }
+.ya-sel[hidden] { display: none; }
+.d-place .ya-link { margin-left: 6px; white-space: nowrap; font-size: .92em; }

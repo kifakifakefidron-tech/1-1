@@ -317,6 +317,7 @@
   });
 
 
+  if (window.yaSelect) window.yaSelect(true);   // выделил адрес в тексте → «В Яндекс Картах»
   // Старт: можно начать с конкретного объекта (?id=)
   (async () => {
     const startId = Number(sp.get("id"));

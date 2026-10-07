@@ -534,7 +534,8 @@
     return `
       ${gallery}
       <h2 class="d-title" id="dTitle">${esc(headline(o) || o.title)}</h2>
-      <p class="d-place">${esc([headline(o) ? o.title : "", address(o)].filter(Boolean).join(" · "))}</p>
+      <p class="d-place">${esc([headline(o) ? o.title : "", address(o)].filter(Boolean).join(" · "))}
+        ${address(o) ? `<a class="ya-link" href="https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(yaQuery(o))}" target="_blank" rel="noopener">на Яндекс Картах ↗</a>` : ""}</p>
       <p class="d-price">${esc(fmtPrice(o.price, o.deal))}</p>
       <p class="d-price-m2">${o.price_m2 && o.deal !== "rent" ? esc(num(o.price_m2)) + " ₽/м²" : "&nbsp;"}</p>
       <dl class="d-facts">${facts}</dl>
@@ -1018,6 +1019,7 @@
     const n = u ? u.favorites.length : 0;
     $("favBtn").innerHTML = `Избранное${n ? `<i class="nav-badge">${n}</i>` : ""}`;
     $("adminLink").hidden = !(u && u.is_admin);
+    if (window.yaSelect) window.yaSelect(!!(u && u.is_admin));   // выделил адрес → «В Яндекс Картах»
     const unread = u ? u.unread || 0 : 0;
     $("bellLink").hidden = $("bellMobile").hidden = !u;
     $("bellBadge").hidden = $("bellDot").hidden = !unread;
