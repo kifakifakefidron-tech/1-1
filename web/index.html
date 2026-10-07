@@ -13,7 +13,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
-<link rel="stylesheet" href="/static/style.css?v=14">
+<link rel="stylesheet" href="/static/style.css?v=15">
 <link rel="stylesheet" href="/static/motion.css?v=27">
 </head>
 <body>
@@ -172,6 +172,9 @@
 
 <button type="button" class="new-pill" id="newPill" hidden>↑ Новые объекты: <b id="newCount"></b></button>
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
+<div class="cmp-bar" id="cmpBar" hidden><span id="cmpText"></span>
+  <button type="button" class="pill" id="cmpOpen">Сравнить</button>
+  <button type="button" class="ghost" id="cmpClear" aria-label="Очистить сравнение">✕</button></div>
 
 <nav class="tabbar" aria-label="Разделы">
   <button type="button" data-tab="list" class="on">
@@ -204,6 +207,14 @@
     <button class="close" id="closeDetail" aria-label="Закрыть">✕</button>
   </div>
   <div id="detailBody"></div>
+</dialog>
+
+<dialog id="cmpDlg" class="small-dlg cmp-dlg" aria-labelledby="cmpTitle">
+  <span class="grab" aria-hidden="true"></span>
+  <div class="dlg-body">
+    <div class="cmp-head"><h2 id="cmpTitle">Сравнение объектов</h2><button type="button" class="close" data-close aria-label="Закрыть">✕</button></div>
+    <div id="cmpBody"></div>
+  </div>
 </dialog>
 
 <dialog id="loginDlg" class="small-dlg" aria-labelledby="loginTitle">
@@ -314,7 +325,7 @@
 
 <script src="/static/combo.js?v=2"></script>
 <script src="/static/yasel.js?v=1"></script>
-<script src="/static/app.js?v=44"></script>
+<script src="/static/app.js?v=47"></script>
 <script src="/static/agent.js?v=4"></script>
 </body>
 </html>

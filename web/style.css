@@ -365,3 +365,32 @@ a.access-btn { text-decoration: none; color: var(--ink); display: inline-block; 
 .mark.crm-refuse { background: rgba(255,159,138,.25); }
 .crm-chips { margin-top: 10px; }
 .crm-chips .chip b { font-weight: 600; opacity: .75; margin-left: 2px; }
+
+/* проверенный агент, сравнение */
+.mark.verified { background: #9be8b8; color: #063b2c; }
+.item { position: relative; }
+.cmp-btn { position: absolute; right: 12px; bottom: 10px; z-index: 2; width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid var(--line-2); background: rgba(0,0,0,.18); color: var(--ink); font-size: 16px; cursor: pointer; }
+.cmp-btn.on, .cmp-btn-d.on { background: #ffd86b; color: #035352; border-color: #ffd86b; }
+.cmp-bar { position: fixed; z-index: 60; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center;
+  gap: 10px; padding: 8px 8px 8px 16px; border-radius: 999px; background: rgba(10,94,92,.95); border: 1px solid #ffd86b;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35); white-space: nowrap; }
+.cmp-bar[hidden] { display: none; }
+.cmp-bar .pill { padding: 8px 16px; font-size: 14px; }
+.cmp-bar .pill:disabled { opacity: .5; }
+.cmp-bar .ghost { padding: 6px 10px; }
+@media (max-width: 767px) { .cmp-bar { bottom: calc(var(--tabbar-h, 64px) + 12px); } }
+.cmp-dlg { width: min(1040px, 96vw); max-width: 96vw; }
+.cmp-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.cmp-head .close { position: static; }
+.cmp-wrap { overflow-x: auto; margin: 8px -4px 0; }
+.cmp-t { border-collapse: collapse; width: 100%; min-width: 520px; font-size: 14px; }
+.cmp-t th { text-align: left; color: var(--ink-3); font-weight: 500; padding: 7px 8px; white-space: nowrap; vertical-align: top; }
+.cmp-t td { padding: 7px 8px; border-top: 1px solid var(--line); vertical-align: top; width: 30%; }
+.cmp-t thead td { border-top: 0; position: relative; }
+.cmp-t thead img, .cmp-nophoto { width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: 12px; display: block; margin-bottom: 6px;
+  background: rgba(0,0,0,.15); }
+.cmp-nophoto { display: grid; place-items: center; } .cmp-nophoto svg { width: 40%; opacity: .5; }
+.cmp-t td.best { color: #ffd86b; font-weight: 600; }
+.cmp-x { position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; border-radius: 50%; border: 0;
+  background: rgba(0,0,0,.45); color: #fff; cursor: pointer; }

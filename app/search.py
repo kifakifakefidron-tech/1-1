@@ -197,6 +197,9 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
     return " AND ".join(w), p
 
 
+# Агент подтвердил свой номер в 1+1 (код со своего номера) — объявление с этим номером «от проверенного агента»
+VERIFIED = """(l.source = 'own' OR EXISTS (SELECT 1 FROM json_each(l.phones) j JOIN agent_phones a ON a.phone = j.value))"""
+
 PUBLIC_FIELDS = ("id", "type", "deal", "rooms", "area", "land", "floor", "floors", "price", "price_m2",
                  "district", "complex", "settlement", "street", "house", "title", "description",
                  "first_seen", "last_seen", "lat", "lon", "source", "url", "room_kind", "article",
@@ -212,6 +215,7 @@ def mask_phone(p: str) -> str:
 
 def row_to_item(r: sqlite3.Row, with_contacts: bool) -> dict:
     d = {k: r[k] for k in PUBLIC_FIELDS}
+    d["verified"] = bool(r["verified"]) if "verified" in r.keys() else None
     d["photos"] = json.loads(r["photos"] or "[]")
     d["extra_districts"] = json.loads(r["extra_districts"] or "[]")
     phones = json.loads(r["phones"] or "[]")
@@ -233,7 +237,7 @@ def search(conn: sqlite3.Connection, qr: Query, now: int, with_contacts: bool) -
     if qr.hl:   # новое в сохранённом поиске — наверх
         order = f"(l.first_seen > {int(qr.hl)}) DESC, " + order
     rows = conn.execute(
-        f"SELECT * FROM listings l WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
+        f"SELECT l.*, {VERIFIED} AS verified FROM listings l WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
         params + [size, (page - 1) * size],
     ).fetchall()
     return {
@@ -282,7 +286,7 @@ def facets(conn: sqlite3.Connection, qr: Query, now: int) -> dict:
 
 def listing_detail(conn: sqlite3.Connection, listing_id: int, with_contacts: bool,
                    is_admin: bool = False) -> dict | None:
-    r = conn.execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    r = conn.execute(f"SELECT l.*, {VERIFIED} AS verified FROM listings l WHERE l.id = ?", (listing_id,)).fetchone()
     if r is None:
         return None
     d = row_to_item(r, with_contacts)

@@ -304,6 +304,70 @@
     facetComplexes = f.complexes;   // для выпадающего списка ЖК
   }
 
+  // ─── сравнение 2–3 объектов ─────────────────────────────────────────────
+  const CMP_MAX = 3;
+  let cmp = [];
+  try { cmp = JSON.parse(localStorage.getItem("cmp") || "[]").filter(Number.isInteger).slice(0, CMP_MAX); } catch { cmp = []; }
+  const cmpSave = () => { try { localStorage.setItem("cmp", JSON.stringify(cmp)); } catch { /* приватный режим */ } };
+  function toggleCompare(id) {
+    if (cmp.includes(id)) cmp = cmp.filter((x) => x !== id);
+    else {
+      if (cmp.length >= CMP_MAX) { toast(`Сравнить можно до ${CMP_MAX} объектов — уберите один`); return; }
+      cmp.push(id);
+    }
+    cmpSave();
+    document.querySelectorAll(`[data-cmp="${id}"]`).forEach((b) => b.classList.toggle("on", cmp.includes(id)));
+    renderCmpBar();
+    if (cmp.length === 1 && cmp.includes(id)) toast("Добавлено к сравнению — выберите ещё 1–2 объекта", 2600);
+  }
+  function renderCmpBar() {
+    $("cmpBar").hidden = !cmp.length;
+    $("cmpText").textContent = `⚖ К сравнению: ${cmp.length} из ${CMP_MAX}`;
+    $("cmpOpen").disabled = cmp.length < 2;
+  }
+  async function openCompare() {
+    const dlg = $("cmpDlg");
+    $("cmpBody").innerHTML = `<p class="note">Загружаем…</p>`;
+    openDlg(dlg);
+    const list = (await Promise.all(cmp.map((id) => getJSON(`/api/listings/${id}`).catch(() => null)))).filter(Boolean);
+    list.forEach((o) => known.set(o.id, o));
+    const best = (vals, low = true) => {
+      const xs = vals.filter((v) => v != null);
+      if (xs.length < 2 || xs.every((v) => v === xs[0])) return null;   // всё одинаково — подсвечивать нечего
+      return low ? Math.min(...xs) : Math.max(...xs);
+    };
+    const row = (label, get, fmt, pick) => {
+      const vals = list.map(get);
+      if (vals.every((v) => v == null || v === "")) return "";   // у всех пусто — строку не показываем
+      const b = pick ? best(vals, pick === "low") : null;
+      return `<tr><th>${esc(label)}</th>${vals.map((v) => `<td${b != null && v === b ? ' class="best"' : ""}>${v == null || v === "" ? "—" : esc(fmt ? fmt(v) : v)}</td>`).join("")}</tr>`;
+    };
+    const rooms = (o) => (o.rooms == null ? null : o.rooms === 0 ? "студия" : `${o.rooms}`);
+    const floor = (o) => (o.floor ? `${o.floor}${o.floors ? " из " + o.floors : ""}` : null);
+    $("cmpBody").innerHTML = `<div class="cmp-wrap"><table class="cmp-t">
+      <thead><tr><th></th>${list.map((o) => `<td>
+        ${o.photos && o.photos[0] ? `<img src="${esc(o.photos[0])}" alt="" loading="lazy">` : `<div class="cmp-nophoto">${LOGO}</div>`}
+        <button type="button" class="link" data-open-id="${o.id}">${esc(headline(o) || o.title)}</button>
+        <button type="button" class="cmp-x" data-cmp-del="${o.id}" aria-label="Убрать из сравнения">✕</button></td>`).join("")}</tr></thead>
+      <tbody>
+        ${row("Цена", (o) => o.price, (v) => fmtPrice(v, list[0].deal), "low")}
+        ${row("Цена за м²", (o) => (o.deal !== "rent" ? o.price_m2 : null), (v) => `${num(v)} ₽`, "low")}
+        ${row("Рынок", (o) => (o.market ? o.market.diff : null), (v) => (v < 0 ? `дешевле на ${-v}%` : v > 0 ? `дороже на ${v}%` : "по рынку"), "low")}
+        ${row("Что", (o) => o.title)}
+        ${row("Комнат", rooms)}
+        ${row("Площадь", (o) => o.area, (v) => `${num(v, 1)} м²`, "high")}
+        ${row("Участок", (o) => o.land, (v) => `${num(v, 1)} сот.`, "high")}
+        ${row("Этаж", floor)}
+        ${row("ЖК", (o) => o.complex)}
+        ${row("Район", (o) => o.district)}
+        ${row("Адрес", (o) => (o.street ? `ул. ${o.street}${o.house ? ", " + o.house : ""}` : o.settlement))}
+        ${row("В продаже", (o) => daysOnSale(o), (v) => daysText(v), "high")}
+        ${row("Цена менялась", (o) => (o.price_history && o.price_history.length > 1 ? o.price_history.length - 1 : null), (v) => `${v} раз`)}
+        ${row("Фото", (o) => (o.photos ? o.photos.length : 0) || null, (v) => `${v}`)}
+      </tbody></table></div>
+      <p class="note">Подсвечено лучшее значение в строке. Нажмите на название — откроется объект.</p>`;
+  }
+
   // Статусы по объекту — простая CRM агента (видит только он)
   const STATUSES = { call: "📞 Звонил", show: "👀 Показ", think: "🤔 Думает", refuse: "❌ Отказ", deal: "✅ Сделка" };
   let favItems = [], favStatus = "";
@@ -317,6 +381,7 @@
     const st = myStatus(o.id);
     if (st) b.push(`<span class="mark crm crm-${st}">${STATUSES[st]}</span>`);
     if (o.source === "feed") b.push(`<span class="mark partner">Партнёр</span>`);
+    if (o.verified && o.source !== "feed") b.push(`<span class="mark verified" title="Агент подтвердил свой номер в 1+1">✓ Проверенный агент</span>`);
     if (o.first_seen > now - 86400) b.push(`<span class="mark new">Новое</span>`);
     if (o.prev_price && o.price && o.prev_price > o.price && o.price_changed_at > now - 14 * 86400) {
       b.push(`<span class="mark down">Цена ↓ ${esc(fmtShortPrice(o.prev_price - o.price, o.deal))}</span>`);
@@ -347,6 +412,7 @@
       ${tag}
       ${addr ? `<div class="item-place">${esc(addr)}</div>` : ""}
       ${o.description ? `<p class="item-desc">${esc(o.description)}</p>` : ""}
+      <button type="button" class="cmp-btn${cmp.includes(o.id) ? " on" : ""}" data-cmp="${o.id}" title="Сравнить" aria-label="Добавить к сравнению">⚖</button>
       <div class="item-meta"><span class="on-sale${daysOnSale(o) >= 30 ? " long" : ""}">в продаже ${esc(daysText(daysOnSale(o)))}</span> · ${esc(fmtAgo(o.last_seen))}</div>
     </li>`;
   }
@@ -573,7 +639,8 @@
       ${contact}
       ${sameHTML(o)}
       ${noteHTML(o)}
-      <div class="d-contact"><button type="button" class="pill light" data-share="${o.id}">Поделиться</button></div>
+      <div class="d-contact"><button type="button" class="pill light" data-share="${o.id}">Поделиться</button>
+        <button type="button" class="pill light cmp-btn-d${cmp.includes(o.id) ? " on" : ""}" data-cmp="${o.id}">⚖ Сравнить</button></div>
       ${site ? `<div class="d-contact">${site}</div>` : ""}
       ${meta.access && o.fragment ? `<h3 class="d-h">Исходное сообщение</h3><pre class="d-source">${esc(o.fragment)}</pre>` : ""}
       ${hist ? `<details class="d-hist-box"><summary>История · ${o.history.length} ${plural(o.history.length, "сообщение", "сообщения", "сообщений")}</summary><ul class="d-hist">${hist}</ul></details>` : ""}
@@ -1333,6 +1400,10 @@
       if (!t) return;
       if (t.dataset.fav) { e.stopPropagation(); toggleFavorite(Number(t.dataset.fav)); return; }
       if (t.dataset.crm) { setCrm(Number(t.dataset.id), t.dataset.crm, t); return; }
+      if (t.dataset.cmp) { e.stopPropagation(); toggleCompare(Number(t.dataset.cmp)); return; }
+      if (t.dataset.cmpDel) { toggleCompare(Number(t.dataset.cmpDel)); if (cmp.length >= 2) openCompare(); else closeDlg($("cmpDlg")); return; }
+      if (t.id === "cmpOpen") { openCompare(); return; }
+      if (t.id === "cmpClear") { const ids = cmp; cmp = []; cmpSave(); ids.forEach((id) => document.querySelectorAll(`[data-cmp="${id}"]`).forEach((b) => b.classList.remove("on"))); renderCmpBar(); return; }
       if (t.dataset.crmFilter !== undefined) { favStatus = t.dataset.crmFilter; loadList(false, true); return; }
       if (t.hasAttribute("data-login")) { openLogin(); return; }
       if (t.dataset.share) {
@@ -1508,10 +1579,11 @@
     document.addEventListener("load", (e) => {
       if (e.target.tagName === "IMG") e.target.classList.add("loaded");
     }, true);
-    ["detail", "loginDlg", "cabinetDlg"].forEach((id) => swipeToClose($(id)));
+    ["detail", "loginDlg", "cabinetDlg", "cmpDlg"].forEach((id) => swipeToClose($(id)));
+    renderCmpBar();
 
     $("results").addEventListener("click", (e) => {
-      if (e.target.closest("[data-fav]")) return;
+      if (e.target.closest("[data-fav], [data-cmp]")) return;
       const li = e.target.closest(".item");
       if (li) openDetail(Number(li.dataset.id));
     });

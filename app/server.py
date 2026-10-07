@@ -434,8 +434,9 @@ def api_favorites(request: Request, body: dict | None = None):
     if err:
         return err
     # Избранное и объекты «в работе» (со статусом) — вместе: это рабочий список агента
-    rows = db.get().execute("""
-        SELECT l.*, n.status AS crm_status, n.text AS crm_note, COALESCE(n.ts, f.created) AS crm_ts
+    rows = db.get().execute(f"""
+        SELECT l.*, n.status AS crm_status, n.text AS crm_note, COALESCE(n.ts, f.created) AS crm_ts,
+               {search.VERIFIED} AS verified
         FROM listings l
         LEFT JOIN favorites f ON f.listing_id = l.id AND f.user_id = ?
         LEFT JOIN notes n ON n.listing_id = l.id AND n.user_id = ?
