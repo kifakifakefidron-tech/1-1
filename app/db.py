@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS listings (
     is_active   INTEGER NOT NULL DEFAULT 1,
     lat         REAL,
     lon         REAL,
-    geo_status  TEXT DEFAULT 'pending', -- pending | ok | none | skip
+    geo_status  TEXT DEFAULT 'pending', -- pending | ok | approx | none | skip | manual | learned | feed (точка из фида)
     search_text TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS ix_listings_main ON listings(is_active, type, deal, price);

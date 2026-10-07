@@ -891,7 +891,7 @@ def api_admin_place(request: Request, body: dict | None = None):
     d["title"] = make_title(d)
     d["search_text"] = make_search_text(d)
     conn.execute("""UPDATE listings SET complex = ?, district = ?, extra_districts = ?, search_text = ?, admin_fixed = 1,
-                    geo_status = CASE WHEN geo_status IN ('manual', 'learned') THEN geo_status ELSE 'pending' END
+                    geo_status = CASE WHEN geo_status IN ('manual', 'learned', 'feed') THEN geo_status ELSE 'pending' END
                     WHERE id = ?""", (cx, district, json.dumps(extra, ensure_ascii=False), d["search_text"], lid))
     _reindex(conn, lid, d["search_text"])
     for field, old, new in (("complex", row["complex"], cx), ("district", row["district"], district)):

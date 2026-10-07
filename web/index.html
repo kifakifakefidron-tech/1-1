@@ -13,7 +13,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
-<link rel="stylesheet" href="/static/style.css?v=10">
+<link rel="stylesheet" href="/static/style.css?v=11">
 <link rel="stylesheet" href="/static/motion.css?v=27">
 </head>
 <body>
@@ -271,6 +271,8 @@
       <input id="geoCoords" autocomplete="off" placeholder="45.0355, 38.9753 или ссылка с Яндекс/Google Карт" aria-label="Координаты">
       <button type="submit" class="pill light">Найти</button>
     </form>
+    <p class="note"><a id="geoYa" class="ya-link" target="_blank" rel="noopener">🔎 Найти адрес в Яндекс Картах ↗</a>
+      — найдите дом, нажмите на него, скопируйте ссылку из адресной строки и вставьте сюда.</p>
     <p class="note geo-now" id="geoNow"></p>
     <div id="geoMap" class="geo-map"></div>
     <div class="dlg-actions geo-actions">
@@ -309,7 +311,7 @@
 </dialog>
 
 <script src="/static/combo.js?v=2"></script>
-<script src="/static/app.js?v=36"></script>
+<script src="/static/app.js?v=38"></script>
 <script src="/static/agent.js?v=3"></script>
 </body>
 </html>

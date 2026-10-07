@@ -334,3 +334,5 @@ a.access-btn { text-decoration: none; color: var(--ink); display: inline-block; 
 .item:not(.has-photo) .item-price { padding-right: 0; }
 .item-title { font-size: 14px; font-weight: 600; margin: 0; line-height: 1.3; }
 @media (max-width: 640px) { .item-head { font-size: 13px; padding-right: 30px; } .item-title { font-size: 12px; } }
+.ya-link { color: #ffd86b; font-weight: 600; text-decoration: none; }
+.ya-link:hover { text-decoration: underline; }

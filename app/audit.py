@@ -141,7 +141,7 @@ def run(fix: bool = False, conn=None) -> dict:
     print("\nКАРТА")
     for r in conn.execute("""SELECT geo_status, COUNT(*) n, SUM(lat IS NOT NULL) g FROM listings
                              WHERE is_active = 1 GROUP BY 1 ORDER BY 2 DESC"""):
-        label = {"ok": "точный адрес", "approx": "примерно (улица/район)", "pending": "ещё ищем",
+        label = {"ok": "точный адрес", "approx": "примерно (улица/район)", "pending": "ещё ищем", "feed": "из фида СТРЕЛ",
                  "none": "адрес не нашёлся", "skip": "в объявлении нет адреса"}.get(r["geo_status"], r["geo_status"])
         print(f"  {label}: {r['n']} (на карте {r['g'] or 0})")
     no_geo = sum(1 for r in act if r["lat"] is None)
@@ -182,7 +182,7 @@ def run(fix: bool = False, conn=None) -> dict:
             drop_d = rec and rec.district == r["district"] and not geo.find_district_in_text(r["fragment"] or "")
             d = {**dict(r), "complex": None, "district": None if drop_d else r["district"]}
             d["search_text"] = make_search_text(d)
-            conn.execute("UPDATE listings SET complex = NULL, district = ?, search_text = ?, geo_status = 'pending' "
+            conn.execute("UPDATE listings SET complex = NULL, district = ?, search_text = ?, geo_status = CASE WHEN geo_status = 'feed' THEN 'feed' ELSE 'pending' END "
                          "WHERE id = ?", (d["district"], d["search_text"], r["id"]))
             _reindex(conn, r["id"], d["search_text"])
         for r, d in no_d:
@@ -196,7 +196,7 @@ def run(fix: bool = False, conn=None) -> dict:
             d["district"] = pl.get("district") or (cx.district if cx else None) or geo.district_by_street(d["street"])
             d["search_text"] = make_search_text(d)
             conn.execute("""UPDATE listings SET complex = ?, street = ?, house = ?, settlement = ?, district = ?,
-                            search_text = ?, geo_status = 'pending' WHERE id = ?""",
+                            search_text = ?, geo_status = CASE WHEN geo_status = 'feed' THEN 'feed' ELSE 'pending' END WHERE id = ?""",
                          (d["complex"], d["street"], d["house"], d["settlement"], d["district"], d["search_text"], r["id"]))
             _reindex(conn, r["id"], d["search_text"])
         for r in bad_rent:

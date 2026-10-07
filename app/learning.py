@@ -185,7 +185,7 @@ def apply_to_existing(conn: sqlite3.Connection, skip_id: int | None = None) -> i
             d["search_text"] = make_search_text(d)
             extra = d["extra_districts"] if isinstance(d["extra_districts"], list) else json.loads(d["extra_districts"] or "[]")
             conn.execute("""UPDATE listings SET complex = ?, district = ?, extra_districts = ?, search_text = ?,
-                            geo_status = CASE WHEN geo_status IN ('manual', 'learned') THEN geo_status ELSE 'pending' END
+                            geo_status = CASE WHEN geo_status IN ('manual', 'learned', 'feed') THEN geo_status ELSE 'pending' END
                             WHERE id = ?""", (d["complex"], d["district"], json.dumps(extra, ensure_ascii=False),
                                               d["search_text"], r["id"]))
             _reindex(conn, r["id"], d["search_text"])

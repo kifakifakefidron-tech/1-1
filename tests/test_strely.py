@@ -97,3 +97,38 @@ def test_partner_phone_hidden_and_history_admin_only(tmp_path, monkeypatch):
         assert d["history"] == [] and "public_contact" not in c.get("/api/meta").json()
     conn.close()
     db._local.conn = None
+
+
+def _feed_with(coords: str) -> bytes:
+    return FEED.decode().replace('<param name="Жилой комплекс">',
+                                 f'<param name="Координаты">{coords}</param><param name="Жилой комплекс">').encode()
+
+
+def test_feed_coords_inside_garbage_and_protected(conn, monkeypatch):
+    from app import config, geocode, learning
+    feed.sync(conn, _feed_with("Загружаетсф45.082744, 39.016366я"), now=NOW)
+    r = conn.execute("SELECT id, lat, lon, geo_status FROM listings WHERE source = 'feed'").fetchone()
+    assert (r["lat"], r["lon"], r["geo_status"]) == (45.082744, 39.016366, "feed")
+    # Правило админа по ЖК/району не отправляет точку фида искать заново, геокодер её не трогает
+    conn.execute("""INSERT INTO learned_rules (kind, key, value, label, n, ts)
+                    VALUES ('cx_district', ?, '{"district": "ФМР"}', 'x', 1, 0)""", (learning.cx_key("Достояние"),))
+    conn.commit()
+    learning.rules(conn, fresh=True)
+    assert learning.apply_to_existing(conn) == 1
+    monkeypatch.setattr(config, "GEOCODER", "nominatim")
+    monkeypatch.setattr(geocode, "lookup", lambda c, q: (45.0, 39.0))
+    geocode.run(conn)
+    r = conn.execute("SELECT lat, lon, geo_status FROM listings WHERE source = 'feed'").fetchone()
+    assert (r["lat"], r["lon"], r["geo_status"]) == (45.082744, 39.016366, "feed")
+
+
+def test_feed_without_coords_keeps_found_point(conn):
+    feed.sync(conn, _feed_with("Загружается"), now=NOW)
+    conn.execute("UPDATE listings SET lat = 45.05, lon = 38.98, geo_status = 'learned' WHERE source = 'feed'")
+    conn.commit()
+    feed.sync(conn, _feed_with("Загружается"), now=NOW + 10)
+    r = conn.execute("SELECT lat, lon, geo_status FROM listings WHERE source = 'feed'").fetchone()
+    assert (r["lat"], r["lon"], r["geo_status"]) == (45.05, 38.98, "learned")
+    # Координаты появились на сайте — берём их
+    feed.sync(conn, _feed_with("45.1, 39.0"), now=NOW + 20)
+    assert tuple(conn.execute("SELECT lat, geo_status FROM listings WHERE source = 'feed'").fetchone()) == (45.1, "feed")

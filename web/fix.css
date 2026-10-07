@@ -52,3 +52,5 @@
   .fx-actions { position: sticky; bottom: 0; background: var(--paper); margin: 18px -18px -18px; padding: 12px 18px;
     border-radius: 0 0 20px 20px; }
 }
+.ya-link { color: #ffd86b; font-weight: 600; text-decoration: none; }
+.ya-link:hover { text-decoration: underline; }

@@ -128,7 +128,7 @@ def loaded(conn: sqlite3.Connection) -> int:
 
 
 # ─── сверка ────────────────────────────────────────────────────────────────
-_EXACT = "geo_status IN ('ok', 'manual', 'learned')"   # только точные точки, не «примерно по району»
+_EXACT = "geo_status IN ('ok', 'manual', 'learned', 'feed')"   # только точные точки, не «примерно по району»
 
 
 def reconcile(conn: sqlite3.Connection) -> dict:

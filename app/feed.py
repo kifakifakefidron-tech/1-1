@@ -73,7 +73,7 @@ def parse_offer(o: ET.Element, skip_pictures: set[str] | frozenset = frozenset()
     cx = re.sub(r"(?i)^\s*(?:жк|ж/к)\s+", "", cx).strip()
     complex_name = (geo.resolve_complex(cx).name if geo.resolve_complex(cx) else geo.pretty_name(cx)) if cx else po.complex
     lat = lon = None
-    m = re.match(r"\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)", params.get("Координаты", ""))
+    m = re.search(r"(-?\d{2}\.\d+)\s*,\s*(-?\d{2}\.\d+)", params.get("Координаты", ""))
     if m:
         lat, lon = float(m.group(1)), float(m.group(2))
         if 37 < lat < 41 and 43 < lon < 47:   # перепутаны местами долгота и широта
@@ -113,12 +113,17 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
         seen.add(d["ext_id"])
         learning.apply(conn, d)   # правки админа по ЖК/району действуют и на объекты партнёра
         d["search_text"] = make_search_text(d)
-        row = conn.execute("SELECT id, price FROM listings WHERE ext_id = ?", (d["ext_id"],)).fetchone()
+        row = conn.execute("SELECT id, price, lat, lon, geo_status FROM listings WHERE ext_id = ?", (d["ext_id"],)).fetchone()
+        # точка из фида — отметка 'feed': её не перезаписывают ни геокодер, ни правки ЖК/района
+        geo_st = "feed" if d["lat"] else "pending"
+        if row and not d["lat"] and row["lat"] is not None and row["geo_status"] in ("learned", "ok", "approx"):
+            # в фиде координат нет («Загружается»), а точку уже нашли или выучили — оставляем её
+            d["lat"], d["lon"], geo_st = row["lat"], row["lon"], row["geo_status"]
         vals = (d["type"], d["deal"], d["rooms"], d["area"], d["land"], d["floor"], d["floors"], d["price"],
                 _price_m2(d["price"], d["area"]), d["district"], d["complex"], d["settlement"], d["street"],
                 d["house"], d["title"], d["description"], d["fragment"], d["search_text"],
                 json.dumps(d["photos"], ensure_ascii=False), d["url"], d["lat"], d["lon"],
-                "ok" if d["lat"] else "pending", d["room_kind"], rooms_mask(d["room_kind"], d["rooms"]), d["article"])
+                geo_st, d["room_kind"], rooms_mask(d["room_kind"], d["rooms"]), d["article"])
         if row:
             lid = row["id"]
             conn.execute(
@@ -167,6 +172,9 @@ def maybe_sync(conn: sqlite3.Connection) -> dict | None:
     if not config.FEED_URL:
         return None
     last = int(db.get_state(conn, "feed_synced") or 0)
+    if not db.get_state(conn, "feed_geo_v2"):   # один раз после обновления: вернуть точки из фида (отметка 'feed')
+        db.set_state(conn, "feed_geo_v2", "1")
+        last = 0
     if time.time() - last < config.FEED_HOURS * 3600:
         return None
     try:

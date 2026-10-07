@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="/static/style.css?v=10">
 <link rel="stylesheet" href="/static/motion.css?v=27">
-<link rel="stylesheet" href="/static/fix.css?v=3">
+<link rel="stylesheet" href="/static/fix.css?v=4">
 </head>
 <body>
 <header class="nav"><div class="nav-in">
@@ -79,6 +79,8 @@
           <input id="fxCoords" placeholder="Координаты или ссылка с Яндекс/Google Карт">
           <button type="submit" class="pill light">Найти</button>
         </form>
+        <p class="note"><a id="fxYa" class="ya-link" target="_blank" rel="noopener">🔎 Найти адрес в Яндекс Картах ↗</a>
+          — найдите дом, нажмите на него, скопируйте ссылку из адресной строки и вставьте в поле выше.</p>
         <p class="note" id="fxGeoNow"></p>
         <p class="note">Точка запомнится для этого дома и ЖК — объявления с тем же адресом встанут сюда же.</p>
       </div>
@@ -95,6 +97,6 @@
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="/static/combo.js?v=2"></script>
-<script src="/static/fix.js?v=6"></script>
+<script src="/static/fix.js?v=7"></script>
 </body>
 </html>

@@ -553,7 +553,7 @@
       ${me() && me().is_admin ? `<div class="d-contact"><button type="button" class="pill light" data-place-edit="${o.id}">✎ ЖК и район</button>
         <span class="note">${o.admin_fixed ? "поправлено вами" : ""}</span></div>` : ""}
       ${me() && me().is_admin ? `<div class="d-contact"><button type="button" class="pill light" data-geo-edit="${o.id}">📍 Поправить точку на карте</button>
-        <span class="note">${o.geo_status === "manual" ? "точка поставлена вручную" : o.geo_status === "learned" ? "точка из ваших прошлых правок" : o.lat ? "точка найдена по адресу" : "точки нет"}</span></div>` : ""}
+        <span class="note">${o.geo_status === "manual" ? "точка поставлена вручную" : o.geo_status === "learned" ? "точка из ваших прошлых правок" : o.geo_status === "feed" ? "точка из фида СТРЕЛ" : o.lat ? "точка найдена по адресу" : "точки нет"}</span></div>` : ""}
       ${reportHTML(o)}
       ${brandLine("поиск объектов Краснодара из риелторских чатов")}`;
   }
@@ -608,12 +608,20 @@
   let geoMap = null, geoMarker = null, geoId = 0;
   let geoQueue = "";        // разбираем очередь «Нет на карте» из админки
   const geoSkipped = new Set();
+  // Что искать в Яндекс Картах: дом → ЖК → улица → район
+  function yaQuery(o) {
+    const place = o.settlement || "Краснодар";
+    if (o.street) return `${place}, ${o.street}${o.house ? " " + o.house : ""}`;
+    if (o.complex) return `ЖК ${o.complex}, Краснодар`;
+    return `${o.district || ""} ${place}`.trim();
+  }
   function openGeoEdit(id) {
     const o = known.get(id) || {};
     geoId = id;
     const dlg = $("geoDlg");
     $("geoTitle").textContent = o.title || "Объект";
     $("geoAddr").textContent = address(o) || "адрес не указан";
+    $("geoYa").href = `https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(yaQuery(o))}`;
     openDlg(dlg);
     if (!window.L) { toast("Карта не загрузилась"); return; }
     const start = o.lat ? [o.lat, o.lon] : [45.035, 38.975];
@@ -643,7 +651,8 @@
     let t = String(text || "").trim();
     try { t = decodeURIComponent(t); } catch { /* не ссылка */ }
     let a, b;
-    const ya = t.match(/[?&](?:ll|pt|whatshere%5Bpoint%5D|whatshere\[point\])=(-?\d+\.\d+),(-?\d+\.\d+)/);
+    const ya = t.match(/[?&](?:pt|whatshere%5Bpoint%5D|whatshere\[point\])=(-?\d+\.\d+),(-?\d+\.\d+)/)   // метка
+      || t.match(/[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/);                                                      // центр карты
     const gm = t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
     if (ya) { a = +ya[2]; b = +ya[1]; }            // Яндекс: сначала долгота
     else if (gm) { a = +gm[1]; b = +gm[2]; }       // Google: сначала широта

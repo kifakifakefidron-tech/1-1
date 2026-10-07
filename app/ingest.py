@@ -152,7 +152,7 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
             """UPDATE listings SET rooms=?, area=?, land=?, floor=?, floors=?, price=?, price_m2=?, district=?,
                    complex=?, settlement=?, street=?, house=?, title=?, description=?, fragment=?, phones=?,
                    last_seen=MAX(last_seen, ?), first_seen=MIN(first_seen, ?), seen_count=seen_count+1,
-                   is_active=?, sold_at=CASE WHEN ? THEN NULL ELSE sold_at END, search_text=?, geo_status=CASE WHEN ? AND geo_status != 'manual' THEN 'pending' ELSE geo_status END,
+                   is_active=?, sold_at=CASE WHEN ? THEN NULL ELSE sold_at END, search_text=?, geo_status=CASE WHEN ? AND geo_status NOT IN ('manual', 'feed') THEN 'pending' ELSE geo_status END,
                    room_kind=?, rooms_mask=?, article=?, extra_districts=?
                WHERE id=?""",
             (merged["rooms"], merged["area"], merged["land"], merged["floor"], merged["floors"], merged["price"],

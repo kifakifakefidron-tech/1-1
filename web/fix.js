@@ -184,6 +184,10 @@
     }
     marker.setLatLng(start);
     $("fxCoords").value = "";
+    const place = it.settlement || "Краснодар";
+    const q = it.street ? `${place}, ${it.street}${it.house ? " " + it.house : ""}`
+      : it.complex ? `ЖК ${it.complex}, Краснодар` : `${it.district || ""} ${place}`.trim();
+    $("fxYa").href = `https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(q)}`;
     const fit = () => { map.invalidateSize(); map.setView(start, it.lat ? 16 : 12); };
     fit(); setTimeout(fit, 150);
     geoNow();
@@ -196,7 +200,7 @@
     let t = String(text || "").trim();
     try { t = decodeURIComponent(t); } catch { /* */ }
     let a, b;
-    const ya = t.match(/[?&](?:ll|pt)=(-?\d+\.\d+),(-?\d+\.\d+)/);
+    const ya = t.match(/[?&](?:pt|whatshere\[point\])=(-?\d+\.\d+),(-?\d+\.\d+)/) || t.match(/[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/);
     const gm = t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
     if (ya) { a = +ya[2]; b = +ya[1]; } else if (gm) { a = +gm[1]; b = +gm[2]; } else {
       const nums = t.replace(/(\d),(\d)/g, "$1.$2").match(/-?\d+(?:\.\d+)?/g) || [];
