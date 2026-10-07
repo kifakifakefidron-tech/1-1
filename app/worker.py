@@ -51,6 +51,12 @@ def tick(conn) -> dict:
         db.set_state(conn, "cleanup_day", time.strftime("%Y-%m-%d"))
     notify.check_health(conn, dict(wappi.errors), llm.failures)
     notify.daily_summary(conn)
+    try:
+        from . import market
+        if market.snapshot(conn):   # раз в сутки — медианы рынка для динамики
+            stats["market_snapshot"] = True
+    except Exception:  # noqa: BLE001
+        log.exception("снимок рынка не записался")
     db.set_state(conn, "worker_tick", str(int(time.time())))   # для админки: фоновая работа жива
     return stats
 

@@ -204,6 +204,11 @@ CREATE TABLE IF NOT EXISTS price_history (
     listing_id INTEGER NOT NULL REFERENCES listings(id) ON DELETE CASCADE, ts INTEGER NOT NULL, price INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_price_history ON price_history(listing_id, ts);
+-- Ежедневные медианы рынка (аналитика /market): для динамики за неделю и месяц
+CREATE TABLE IF NOT EXISTS market_daily (
+    day TEXT NOT NULL, deal TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, name TEXT,
+    median INTEGER, price INTEGER, n INTEGER, PRIMARY KEY (day, deal, kind, key)
+);
 CREATE TABLE IF NOT EXISTS notes (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
     text TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)

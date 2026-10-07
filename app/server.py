@@ -22,7 +22,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import (accounts, agent, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
-               payments, region, search, stats, tg)
+               market, payments, region, search, stats, tg)
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -706,6 +706,15 @@ def notices_page(request: Request, body: dict | None = None):
     return _page("notify.html")
 
 
+def market_page(request: Request, body: dict | None = None):
+    return _page("market.html")
+
+
+def api_market(request: Request, body: dict | None = None):
+    """Аналитика рынка: медианы по районам и ЖК, динамика. Открыта всем."""
+    return _cached(request, lambda: market.report(db.get(), request.query_params.get("deal", "sale")))
+
+
 def saved_off_page(request: Request, body: dict | None = None):
     q = request.query_params
     ok = hooks.unsubscribe(db.get(), _num(q.get("s"), int) or 0, q.get("t", ""))
@@ -1220,6 +1229,8 @@ routes = [
     Route("/api/saved", threaded(api_saved), methods=["GET", "POST", "DELETE"]),
     Route("/api/notices", threaded(api_notices), methods=["GET", "POST"]),
     Route("/notifications", threaded(notices_page)),
+    Route("/market", threaded(market_page)),
+    Route("/api/market", threaded(api_market)),
     Route("/saved/off", threaded(saved_off_page)),
     Route("/api/agent", threaded(api_agent)),
     Route("/api/agent/verify", threaded(api_agent_verify), methods=["GET", "POST"]),

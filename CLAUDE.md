@@ -162,6 +162,11 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   вчера, 7 и 30 дней, по дням (14), причины снятия (listings.removed_at/removed_reason ставит триггер trg_removed),
   повторы, тип×сделка, медианы цен, качество разбора со ссылками на /fix, чаты, пользователи, worker_tick. Сутки — UTC+3.
 - Сохранённые поиски до 07.10 без page_query: hooks.page_from_params собирает адрес страницы из фильтров API.
+- Фишки 07.10 (вечер): дни в продаже (first_seen) и график цены (price_history — триггеры trg_price_hist_*);
+  «🔥 Горячее» (?hot=1: цена ↓ за 7 дней, listings.market_diff ≤ −12 % — hooks.update_market_diff, «срочн» в тексте);
+  статусы по объекту notes.status (call/show/think/refuse/deal) — CRM в «Избранном» (/api/favorites = избранное + со статусом);
+  сравнение до 3 объектов (localStorage cmp, окно cmpDlg); «✓ Проверенный агент» (search.VERIFIED: номер в agent_phones);
+  аналитика /market (app/market.py, снимки market_daily раз в сутки из worker; район ≥5, ЖК ≥3 объектов).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Аналитика рынка · 1+1</title>
+<meta name="description" content="Цена квадратного метра и аренды квартир по районам и ЖК Краснодара, динамика за неделю и месяц.">
+<meta name="theme-color" content="#035352">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=15">
+<link rel="stylesheet" href="/static/motion.css?v=27">
+<link rel="stylesheet" href="/static/doc.css?v=1">
+<link rel="stylesheet" href="/static/market.css?v=2">
+</head>
+<body>
+<header class="nav"><div class="nav-in">
+  <a class="brand" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="40" height="40" style="border-radius:10px">
+    <span class="brand-text"><b class="brand-name">1+1</b><span class="brand-sub">поиск объектов Краснодара</span></span></a>
+  <nav class="nav-links"><a class="nav-cta" href="/">← К поиску</a></nav>
+</div></header>
+
+<main class="doc mk">
+  <h1>Аналитика рынка</h1>
+  <p class="lead">Сколько стоят квартиры в Краснодаре прямо сейчас — по объявлениям риелторов на 1+1.
+    Медиана: половина объектов дешевле, половина дороже — выбросы не искажают картину.</p>
+
+  <div class="mk-bar">
+    <div class="seg-group" id="mkDeal">
+      <button type="button" class="seg on" data-deal="sale">Продажа</button>
+      <button type="button" class="seg" data-deal="rent">Аренда</button>
+    </div>
+    <div class="seg-group" id="mkKind">
+      <button type="button" class="seg on" data-kind="districts">Районы</button>
+      <button type="button" class="seg" data-kind="complexes">ЖК</button>
+    </div>
+    <input id="mkQ" class="mk-search" placeholder="Найти район или ЖК…">
+  </div>
+
+  <section class="mk-city" id="mkCity"></section>
+  <p class="note" id="mkNote"></p>
+  <div class="mk-table-wrap"><table class="mk-t" id="mkTable"></table></div>
+  <p class="note">Учитываются квартиры (вторичка и новостройки) на сайте сейчас. Район — от 5 объектов, ЖК — от 3.
+    Нажмите на строку — откроются эти объекты.</p>
+</main>
+<script src="/static/market.js?v=1"></script>
+</body>
+</html>

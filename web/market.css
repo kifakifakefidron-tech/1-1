@@ -1,0 +1,27 @@
+/* Аналитика рынка */
+.mk { max-width: 1040px; }
+.mk-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 16px; }
+.mk-search { flex: 1 1 220px; min-width: 0; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line-2);
+  background: var(--paper); color: var(--ink); font: inherit; }
+.mk-city { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.mk-card { background: var(--paper); border: 1px solid var(--line); border-radius: 18px; padding: 14px 16px; }
+.mk-card.main { grid-column: span 2; border-color: #ffd86b; }
+.mk-card > span { display: block; color: var(--ink-3); font-size: 13px; }
+.mk-card b { display: block; font: 600 26px/1.2 var(--head); margin: 4px 0; color: var(--ink); }
+.mk-card.main b { font-size: 34px; }
+.mk-card small { color: var(--ink-3); font-size: 12px; }
+.mk-table-wrap { overflow-x: auto; margin: 8px 0; }
+.mk-t { width: 100%; border-collapse: collapse; font-size: 15px; min-width: 560px; }
+.mk-t th { text-align: left; font-weight: 600; font-size: 13px; color: var(--ink-3); padding: 8px; cursor: pointer; white-space: nowrap;
+  user-select: none; }
+.mk-t th.asc::after { content: " ▲"; } .mk-t th.desc::after { content: " ▼"; }
+.mk-t td { padding: 9px 8px; border-top: 1px solid var(--line); white-space: nowrap; }
+.mk-t tbody tr { cursor: pointer; }
+.mk-t tbody tr:hover { background: rgba(243,232,188,.06); }
+.mk-t td a { color: var(--ink); text-decoration: none; font-weight: 500; }
+.mk-val { position: relative; min-width: 150px; }
+.mk-val i { position: absolute; left: 8px; top: 50%; height: 22px; transform: translateY(-50%); border-radius: 6px;
+  background: rgba(255,216,107,.18); max-width: calc(100% - 16px); }
+.mk-val span { position: relative; font-weight: 600; }
+.mk-ch.up { color: #ff9f8a; } .mk-ch.down { color: #9be8b8; } .mk-ch.none { color: var(--ink-3); }
+@media (max-width: 640px) { .mk-card.main { grid-column: 1 / -1; } .mk-card b { font-size: 22px; } }
