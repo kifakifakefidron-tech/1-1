@@ -39,6 +39,10 @@ def tick(conn) -> dict:
     own = agent.expire_own(conn, _mail(conn))
     if any(own.values()):
         stats["own"] = own
+    from . import planner
+    reminded = planner.remind(conn, _mail(conn))   # показы и созвоны: напомнить заранее
+    if reminded:
+        stats["reminders"] = reminded
     # подписки на поиск, избранное (цена, снят с сайта), окончание доступа — на сайте и письмом
     sent = hooks.run(conn, _mail(conn))
     if sent and any(sent.values()):

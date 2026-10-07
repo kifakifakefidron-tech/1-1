@@ -209,6 +209,20 @@ CREATE TABLE IF NOT EXISTS market_daily (
     day TEXT NOT NULL, deal TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, name TEXT,
     median INTEGER, price INTEGER, n INTEGER, PRIMARY KEY (day, deal, kind, key)
 );
+-- Планер агента: показы, созвоны, встречи, задачи (app/planner.py)
+CREATE TABLE IF NOT EXISTS planner_events (
+    id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL, title TEXT NOT NULL, ts INTEGER NOT NULL, dur_min INTEGER NOT NULL DEFAULT 60,
+    listing_id INTEGER, contact_name TEXT, contact_phone TEXT, place TEXT, note TEXT,
+    remind_min INTEGER NOT NULL DEFAULT 60, reminded INTEGER NOT NULL DEFAULT 0, done INTEGER NOT NULL DEFAULT 0,
+    created INTEGER NOT NULL, updated INTEGER
+);
+CREATE INDEX IF NOT EXISTS ix_planner_user ON planner_events(user_id, ts);
+CREATE INDEX IF NOT EXISTS ix_planner_remind ON planner_events(reminded, done, ts);
+CREATE TABLE IF NOT EXISTS planner_notes (
+    id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, text TEXT NOT NULL,
+    pinned INTEGER NOT NULL DEFAULT 0, color TEXT, created INTEGER NOT NULL, updated INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS notes (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
     text TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)

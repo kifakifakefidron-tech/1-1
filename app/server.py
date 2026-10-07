@@ -22,7 +22,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import (accounts, agent, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
-               market, payments, region, search, stats, tg)
+               market, payments, planner, region, search, stats, tg)
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -302,6 +302,7 @@ def api_listing(request: Request, body: dict | None = None):
     d["same"] = hooks.same_elsewhere(conn, row)
     d["note"] = hooks.get_note(conn, user["id"], lid) if user else None
     d["status"] = hooks.get_status(conn, user["id"], lid) if user else None
+    d["plans"] = planner.for_listing(conn, user["id"], lid) if user else []
     d["favorite"] = bool(user and conn.execute(
         "SELECT 1 FROM favorites WHERE user_id = ? AND listing_id = ?", (user["id"], lid)).fetchone())
     return JSONResponse(d)
@@ -704,6 +705,62 @@ def api_notices(request: Request, body: dict | None = None):
 
 def notices_page(request: Request, body: dict | None = None):
     return _page("notify.html")
+
+
+def planner_page(request: Request, body: dict | None = None):
+    return _page("planner.html")
+
+
+def api_planner(request: Request, body: dict | None = None):
+    """Планер: GET — всё для страницы; POST — сохранить событие {…} / отметить {id, done}; DELETE {id}."""
+    user, err = _need_user(request)
+    if err:
+        return err
+    conn = db.get()
+    body = body or {}
+    if request.method == "DELETE":
+        planner.delete_event(conn, user["id"], int(body.get("id") or 0))
+        return JSONResponse({"ok": True})
+    if request.method == "POST":
+        if set(body) == {"id", "done"}:
+            planner.set_done(conn, user["id"], int(body["id"]), bool(body["done"]))
+            return JSONResponse({"ok": True})
+        if _too_often(request, "planner", 300, 3600):
+            return _err("Слишком часто — попробуйте позже.", 429)
+        res = planner.save_event(conn, user["id"], body)
+        return _err(res["error"]) if "error" in res else JSONResponse({"event": res})
+    q = request.query_params
+    if q.get("from") and q.get("to"):
+        return JSONResponse({"events": planner.events(conn, user["id"], int(q["from"]), int(q["to"]))})
+    return JSONResponse(planner.overview(conn, user["id"]))
+
+
+def api_planner_note(request: Request, body: dict | None = None):
+    user, err = _need_user(request)
+    if err:
+        return err
+    if _too_often(request, "pnote", 600, 3600):
+        return _err("Слишком часто — попробуйте позже.", 429)
+    res = planner.save_note(db.get(), user["id"], body or {})
+    return _err(res["error"]) if "error" in res else JSONResponse({"note": res})
+
+
+def api_planner_ics(request: Request, body: dict | None = None):
+    """Одно событие .ics (кнопка «В календарь телефона»)."""
+    user, err = _need_user(request)
+    if err:
+        return err
+    text = planner.ics(db.get(), user["id"], int(request.path_params["id"]))
+    return Response(text, media_type="text/calendar; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="1plus1-{request.path_params["id"]}.ics"'})
+
+
+def planner_feed(request: Request, body: dict | None = None):
+    """Подписка календаря телефона: /planner/<id>-<подпись>.ics — без входа, по секретной ссылке."""
+    uid, token = int(request.path_params["uid"]), request.path_params["token"]
+    if not planner.check_feed(uid, token):
+        return Response("not found", status_code=404)
+    return Response(planner.ics(db.get(), uid), media_type="text/calendar; charset=utf-8")
 
 
 def market_page(request: Request, body: dict | None = None):
@@ -1230,6 +1287,11 @@ routes = [
     Route("/api/notices", threaded(api_notices), methods=["GET", "POST"]),
     Route("/notifications", threaded(notices_page)),
     Route("/market", threaded(market_page)),
+    Route("/planner", threaded(planner_page)),
+    Route("/planner/{uid:int}-{token}.ics", threaded(planner_feed)),
+    Route("/api/planner", threaded(api_planner), methods=["GET", "POST", "DELETE"]),
+    Route("/api/planner/notes", threaded(api_planner_note), methods=["POST"]),
+    Route("/api/planner/{id:int}.ics", threaded(api_planner_ics)),
     Route("/api/market", threaded(api_market)),
     Route("/saved/off", threaded(saved_off_page)),
     Route("/api/agent", threaded(api_agent)),

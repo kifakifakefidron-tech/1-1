@@ -167,6 +167,11 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   статусы по объекту notes.status (call/show/think/refuse/deal) — CRM в «Избранном» (/api/favorites = избранное + со статусом);
   сравнение до 3 объектов (localStorage cmp, окно cmpDlg); «✓ Проверенный агент» (search.VERIFIED: номер в agent_phones);
   аналитика /market (app/market.py, снимки market_daily раз в сутки из worker; район ≥5, ЖК ≥3 объектов).
+- Планер /planner (app/planner.py, web/planner.*): события planner_events (show/call/meet/task, объект, контакт, место,
+  напоминание remind_min → planner.remind из worker: уведомление kind='plan' + письмо), свои заметки planner_notes,
+  заметки к объектам (notes). Объекты выбираются ИЗ ИЗБРАННОГО (решение Артёма); запланированный из окна объекта сам
+  попадает в избранное. Календарь телефона: /planner/<uid>-<hmac>.ics (подписка), /api/planner/<id>.ics (одно событие).
+  Ссылки: /planner?add=show&listing=ID, /planner?event=ID, /planner?tab=notes.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

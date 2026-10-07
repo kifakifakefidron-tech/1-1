@@ -394,3 +394,13 @@ a.access-btn { text-decoration: none; color: var(--ink); display: inline-block; 
 .cmp-t td.best { color: #ffd86b; font-weight: 600; }
 .cmp-x { position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; border-radius: 50%; border: 0;
   background: rgba(0,0,0,.45); color: #fff; cursor: pointer; }
+
+/* планер в окне объекта и на карточках избранного */
+.d-plan { margin: 12px 0; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.d-plan ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 14px; }
+.d-plan ul a { color: #ffd86b; font-weight: 600; }
+.d-plan ul span { color: var(--ink-2); margin-left: 6px; }
+.plan-btn { position: absolute; right: 54px; bottom: 10px; z-index: 2; width: 34px; height: 34px; border-radius: 50%; display: grid;
+  place-items: center; border: 1px solid var(--line-2); background: rgba(0,0,0,.18); text-decoration: none; font-size: 15px; }
+.cab-links { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.cab-links .pill { font-size: 14px; padding: 8px 14px; }

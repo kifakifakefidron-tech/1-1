@@ -413,6 +413,7 @@
       ${addr ? `<div class="item-place">${esc(addr)}</div>` : ""}
       ${o.description ? `<p class="item-desc">${esc(o.description)}</p>` : ""}
       <button type="button" class="cmp-btn${cmp.includes(o.id) ? " on" : ""}" data-cmp="${o.id}" title="Сравнить" aria-label="Добавить к сравнению">⚖</button>
+      ${favMode ? `<a class="plan-btn" href="/planner?add=show&listing=${o.id}" title="Запланировать показ или звонок" aria-label="Запланировать">📅</a>` : ""}
       <div class="item-meta"><span class="on-sale${daysOnSale(o) >= 30 ? " long" : ""}">в продаже ${esc(daysText(daysOnSale(o)))}</span> · ${esc(fmtAgo(o.last_seen))}</div>
     </li>`;
   }
@@ -638,6 +639,7 @@
       ${o.description ? `<h3 class="d-h">Описание</h3><p class="d-desc">${esc(o.description)}</p>` : ""}
       ${contact}
       ${sameHTML(o)}
+      ${planHTML(o)}
       ${noteHTML(o)}
       <div class="d-contact"><button type="button" class="pill light" data-share="${o.id}">Поделиться</button>
         <button type="button" class="pill light cmp-btn-d${cmp.includes(o.id) ? " on" : ""}" data-cmp="${o.id}">⚖ Сравнить</button></div>
@@ -706,6 +708,17 @@
         Агенты описывают объекты по-разному — сверьте детали перед звонком.</p>
       <ul>${o.same.map((s) => `<li><button type="button" class="link" data-open-id="${s.id}">${esc(fmtPrice(s.price, o.deal))}</button>
         <span>${esc(s.title)} · ${esc(fmtAgo(s.last_seen))}</span></li>`).join("")}</ul></details>`;
+  }
+
+  // Планер: что уже запланировано по объекту + «📅 Запланировать» (объект попадёт в избранное)
+  const PLAN_KINDS = { show: "🏠 Показ", call: "📞 Созвон", meet: "🤝 Встреча", task: "✅ Задача" };
+  function planHTML(o) {
+    if (!me() || o.loading) return "";
+    const when = (ts) => new Date(ts * 1000).toLocaleString("ru-RU", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    const list = (o.plans || []).map((p) => `<li><a href="/planner?event=${p.id}">${PLAN_KINDS[p.kind] || ""} · ${esc(when(p.ts))}</a>${p.done ? " ✓" : ""}
+      <span>${esc(p.title)}</span></li>`).join("");
+    return `<div class="d-plan">${list ? `<ul>${list}</ul>` : ""}
+      <a class="pill light" href="/planner?add=show&listing=${o.id}">📅 Запланировать показ или звонок</a></div>`;
   }
 
   function noteHTML(o) {
@@ -1154,6 +1167,7 @@
     const n = u ? u.favorites.length : 0;
     $("favBtn").innerHTML = `Избранное${n ? `<i class="nav-badge">${n}</i>` : ""}`;
     $("adminLink").hidden = !(u && u.is_admin);
+    $("plannerLink").hidden = !u;
     if (window.yaSelect) window.yaSelect(!!(u && u.is_admin));   // выделил адрес → «В Яндекс Картах»
     const unread = u ? u.unread || 0 : 0;
     $("bellLink").hidden = $("bellMobile").hidden = !u;
@@ -1254,6 +1268,8 @@
       <h2 id="cabTitle">${u.is_admin ? "Кабинет администратора" : "Личный кабинет"}</h2>
       <p class="note">${esc(who)}</p>
       <p>${status}</p>${views}
+      <div class="cab-links"><a class="pill light" href="/planner">📅 Планер: показы, созвоны, заметки</a>
+        <a class="pill light" href="/market">📊 Аналитика рынка</a></div>
       ${u.is_admin ? `<div class="cab-admin" id="cabAdmin"><div class="cab-stats">${"<div class=\"skel\"><i></i></div>".repeat(6)}</div>
         <a class="pill wide" href="/admin">Открыть админку →</a></div>` : ""}
       ${confirm}
@@ -1583,7 +1599,7 @@
     renderCmpBar();
 
     $("results").addEventListener("click", (e) => {
-      if (e.target.closest("[data-fav], [data-cmp]")) return;
+      if (e.target.closest("[data-fav], [data-cmp], .plan-btn")) return;
       const li = e.target.closest(".item");
       if (li) openDetail(Number(li.dataset.id));
     });

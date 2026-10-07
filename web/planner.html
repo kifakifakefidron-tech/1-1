@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Планер · 1+1</title>
+<meta name="theme-color" content="#035352">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=16">
+<link rel="stylesheet" href="/static/motion.css?v=27">
+<link rel="stylesheet" href="/static/doc.css?v=1">
+<link rel="stylesheet" href="/static/planner.css?v=1">
+</head>
+<body>
+<header class="nav"><div class="nav-in">
+  <a class="brand" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="40" height="40" style="border-radius:10px">
+    <span class="brand-text"><b class="brand-name">1+1</b><span class="brand-sub">планер показов и созвонов</span></span></a>
+  <nav class="nav-links"><a class="nav-link" href="/?fav=1">Избранное</a><a class="nav-link" href="/notifications">Уведомления</a>
+    <a class="nav-cta" href="/">← К поиску</a></nav>
+</div></header>
+
+<main class="doc pl">
+  <h1>Планер</h1>
+  <div id="plGuest" class="note-box" hidden>Планер доступен после входа. <a href="/?login=1">Войти</a></div>
+
+  <div id="plApp" hidden>
+    <div class="pl-top">
+      <div class="pl-add">
+        <button type="button" class="pill" data-add="show">+ Показ</button>
+        <button type="button" class="pill light" data-add="call">+ Созвон</button>
+        <button type="button" class="pill light" data-add="meet">+ Встреча</button>
+        <button type="button" class="pill light" data-add="task">+ Задача</button>
+      </div>
+      <button type="button" class="chip" id="plPhone">📲 В календарь телефона</button>
+    </div>
+    <div class="seg-group pl-tabs">
+      <button type="button" class="seg on" data-tab="cal">Календарь</button>
+      <button type="button" class="seg" data-tab="notes">Заметки</button>
+    </div>
+
+    <section id="plCal" class="pl-cal">
+      <div class="pl-month">
+        <div class="pl-month-head">
+          <button type="button" class="icon-btn" data-month="-1" aria-label="Предыдущий месяц">‹</button>
+          <b id="plMonthName"></b>
+          <button type="button" class="icon-btn" data-month="1" aria-label="Следующий месяц">›</button>
+        </div>
+        <div class="pl-grid" id="plGrid"></div>
+        <p class="note pl-legend"><i class="k-show"></i>показ <i class="k-call"></i>созвон <i class="k-meet"></i>встреча <i class="k-task"></i>задача</p>
+      </div>
+      <div class="pl-agenda">
+        <div class="pl-agenda-head"><h2 id="plAgendaTitle">Ближайшее</h2>
+          <button type="button" class="chip" id="plAllDays" hidden>← Всё ближайшее</button></div>
+        <div id="plAgenda"></div>
+      </div>
+    </section>
+
+    <section id="plNotes" hidden>
+      <form id="plNoteNew" class="pl-note-new">
+        <textarea id="plNoteText" rows="2" maxlength="5000" placeholder="Новая заметка: что сделать, кому перезвонить, идеи…"></textarea>
+        <button type="submit" class="pill">Добавить</button>
+      </form>
+      <div class="pl-notes" id="plNoteList"></div>
+      <h2 class="pl-h2">Заметки к объектам</h2>
+      <p class="note">Заметки и статусы, которые вы ставили в окне объекта.</p>
+      <ul class="pl-onotes" id="plObjNotes"></ul>
+    </section>
+  </div>
+</main>
+
+<dialog id="evDlg" class="small-dlg pl-dlg" aria-labelledby="evTitle">
+  <span class="grab" aria-hidden="true"></span>
+  <form class="dlg-body" id="evForm" autocomplete="off">
+    <h2 id="evTitle">Новое событие</h2>
+    <div class="chips" id="evKinds"></div>
+    <label class="agent-field"><span>Что</span><input name="title" maxlength="200" placeholder="Например: показ 2-к на Мачуги"></label>
+    <div class="pl-when">
+      <label class="agent-field"><span>Дата</span><input type="date" name="date" required></label>
+      <label class="agent-field"><span>Время</span><input type="time" name="time" required step="300"></label>
+      <label class="agent-field"><span>Длится</span><select name="dur_min">
+        <option value="15">15 мин</option><option value="30">30 мин</option><option value="60" selected>1 час</option>
+        <option value="90">1,5 часа</option><option value="120">2 часа</option></select></label>
+    </div>
+    <div class="chips pl-quick" id="evQuick"></div>
+    <label class="agent-field"><span>Объект из избранного</span><select name="listing_id" id="evListing"></select></label>
+    <div id="evObj"></div>
+    <div class="pl-two">
+      <label class="agent-field"><span>Контакт</span><input name="contact_name" maxlength="100" placeholder="Имя агента или клиента"></label>
+      <label class="agent-field"><span>Телефон</span><input name="contact_phone" maxlength="30" inputmode="tel" placeholder="+7…"></label>
+    </div>
+    <label class="agent-field"><span>Где</span><input name="place" maxlength="200" placeholder="Адрес, место встречи"></label>
+    <label class="agent-field"><span>Заметка</span><textarea name="note" rows="3" maxlength="3000" placeholder="Что взять, о чём спросить…"></textarea></label>
+    <label class="agent-field"><span>Напомнить</span><select name="remind_min">
+      <option value="0">не напоминать</option><option value="15">за 15 минут</option><option value="30">за 30 минут</option>
+      <option value="60" selected>за час</option><option value="180">за 3 часа</option><option value="1440">за день</option></select></label>
+    <p class="note">Напоминание придёт в «Уведомления» на сайте и на почту.</p>
+    <p class="err" id="evErr" hidden></p>
+    <div class="dlg-actions">
+      <button type="button" class="ghost danger" id="evDel" hidden>Удалить</button>
+      <button type="button" class="ghost" data-close>Отмена</button>
+      <button type="submit" class="pill">Сохранить</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="phoneDlg" class="small-dlg" aria-labelledby="phoneTitle">
+  <span class="grab" aria-hidden="true"></span>
+  <div class="dlg-body">
+    <h2 id="phoneTitle">Календарь телефона</h2>
+    <p>Подпишитесь один раз — показы и созвоны из планера сами появятся в календаре телефона и будут обновляться.</p>
+    <div class="pl-feed"><input id="plFeed" readonly><button type="button" class="pill light" id="plFeedCopy">Копировать</button></div>
+    <p><b>iPhone:</b> <a id="plWebcal" href="#">нажмите здесь</a> → «Подписаться». Или: Настройки → Календарь → Учётные записи →
+      Новая → Другое → «Подписной календарь» → вставьте ссылку.</p>
+    <p><b>Android (Google Календарь):</b> откройте calendar.google.com на компьютере → «Другие календари» → «+» →
+      «Добавить по URL» → вставьте ссылку. Google обновляет такие календари раз в несколько часов.</p>
+    <p class="note">Ссылка личная — не пересылайте её никому.</p>
+    <div class="dlg-actions"><button type="button" class="pill light" data-close>Понятно</button></div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
+<script src="/static/planner.js?v=1"></script>
+</body>
+</html>
