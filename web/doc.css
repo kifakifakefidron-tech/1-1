@@ -19,3 +19,5 @@
 .doc details[open] summary::after { content: " −"; }
 .doc .cta { display: inline-block; margin-top: 18px; text-decoration: none; }
 @media (max-width: 640px) { .doc .steps3 { grid-template-columns: 1fr; } }
+/* кнопка-ссылка на текстовых страницах: тёмный текст на светлой кнопке */
+.doc a.pill:not(.light) { color: var(--on-accent, #035352); }

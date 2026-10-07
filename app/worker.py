@@ -50,7 +50,13 @@ def tick(conn) -> dict:
     synced = feed.maybe_sync(conn)
     if synced:
         stats["feed"] = synced
+    if not db.get_state(conn, "buyers_v1"):   # один раз: запросы из уже разобранных сообщений
+        from . import buyers
+        stats["buyers_backfill"] = buyers.backfill(conn)
+        db.set_state(conn, "buyers_v1", "1")
     if db.get_state(conn, "cleanup_day") != time.strftime("%Y-%m-%d"):
+        from . import buyers
+        stats["buyers_archived"] = buyers.archive(conn)
         stats["cleanup"] = ingest.cleanup_old(conn)
         db.set_state(conn, "cleanup_day", time.strftime("%Y-%m-%d"))
     notify.check_health(conn, dict(wappi.errors), llm.failures)

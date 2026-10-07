@@ -48,7 +48,13 @@
         ${it.photo ? `<img src="${esc(it.photo)}" alt="" loading="lazy">` : `<span class="pks-noph"></span>`}
         <div><a href="/?open=${it.listing_id}" target="_blank"><b>${esc(it.title)}</b></a> <span>${esc(money(it.price, it.deal))}</span>
           ${it.is_active ? "" : `<small class="pks-gone">снят с сайта</small>`}
-          <input class="pks-com" data-com="${it.listing_id}" data-pid="${p.id}" maxlength="1000" value="${esc(it.note || "")}" placeholder="Комментарий для клиента (необязательно)"></div>
+          <input class="pks-com" data-com="${it.listing_id}" data-pid="${p.id}" maxlength="1000" value="${esc(it.note || "")}" placeholder="Комментарий для клиента (необязательно)">
+          <details class="pks-text"${it.text ? " open" : ""}><summary>✎ Текст объявления для клиента${it.text ? " · изменён" : ""}</summary>
+            <textarea rows="6" maxlength="5000" data-text="${it.listing_id}" data-pid="${p.id}">${esc(it.text || it.orig || "")}</textarea>
+            <div class="pks-text-acts"><button type="button" class="chip" data-text-save="${it.listing_id}" data-pid="${p.id}">Сохранить текст</button>
+              ${it.text ? `<button type="button" class="chip" data-text-reset="${it.listing_id}" data-pid="${p.id}">Вернуть исходный</button>` : ""}
+              <span class="note">Номера телефонов из текста убираем — клиент видит только ваш контакт.</span></div>
+          </details></div>
         <div class="pks-it-acts">
           <button type="button" data-up="${i}" data-pid="${p.id}" ${i ? "" : "disabled"} aria-label="Выше">↑</button>
           <button type="button" data-down="${i}" data-pid="${p.id}" ${i < p.items.length - 1 ? "" : "disabled"} aria-label="Ниже">↓</button>
@@ -117,6 +123,14 @@
       const r = await call(`/api/picks/${pid}/items`, { listing_id: Number(t.dataset.add), add: true });
       if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
       toast("✓ Добавлено"); await reload(); return;
+    }
+    if (t.dataset.textSave || t.dataset.textReset) {
+      const lid = Number(t.dataset.textSave || t.dataset.textReset);
+      const ta = document.querySelector(`textarea[data-text="${lid}"][data-pid="${pid}"]`);
+      const text = t.dataset.textReset ? "" : ta.value;
+      const r = await call(`/api/picks/${pid}/items`, { listing_id: lid, add: true, text });
+      if (!r.ok) { toast(r.data.detail || "Не сохранилось"); return; }
+      toast(t.dataset.textReset ? "Вернули исходный текст" : "✓ Текст для клиента сохранён"); await reload(); return;
     }
     if (t.dataset.rm) {
       await call(`/api/picks/${pid}/items`, { listing_id: Number(t.dataset.rm), add: false });

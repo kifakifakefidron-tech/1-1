@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Запросы покупателей · 1+1</title>
+<meta name="description" content="Кто сейчас ищет квартиру, дом или участок в Краснодаре — запросы покупателей из риелторских чатов.">
+<meta name="theme-color" content="#035352">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=18">
+<link rel="stylesheet" href="/static/motion.css?v=27">
+<link rel="stylesheet" href="/static/doc.css?v=2">
+<link rel="stylesheet" href="/static/requests.css?v=1">
+</head>
+<body>
+<header class="nav"><div class="nav-in">
+  <a class="brand" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="40" height="40" style="border-radius:10px">
+    <span class="brand-text"><b class="brand-name">1+1</b><span class="brand-sub">запросы покупателей</span></span></a>
+  <nav class="nav-links"><a class="nav-link" href="/market">Аналитика</a><a class="nav-cta" href="/">← К поиску</a></nav>
+</div></header>
+
+<main class="doc rq">
+  <h1>Запросы покупателей</h1>
+  <p class="lead">Кто сейчас ищет объект — по сообщениям «куплю», «ищу», «есть клиент» из риелторских чатов.
+    У каждого запроса — подходящие объекты на 1+1. А в окне вашего объекта видно, сколько под него покупателей.</p>
+  <p class="note" id="rqCount"></p>
+  <div id="rqLocked" class="note-box" hidden>Телефоны покупателей видны по подписке. <a href="/?login=1">Войти</a> или <a href="/?cabinet=1">оформить доступ</a>.</div>
+  <ul class="rq-list" id="rqList"></ul>
+  <div class="more-results"><button type="button" id="rqMore" class="pill" hidden>Показать ещё</button></div>
+</main>
+<script src="/static/requests.js?v=2"></script>
+</body>
+</html>

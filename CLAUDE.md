@@ -175,6 +175,11 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
 - Подборки для клиента (app/picks.py, таблицы collections/collection_items; /picks — управление, /c/<token> — для клиента,
   с og-превью): только с доступом (_need_access); клиент видит фото/цены/карту/описание без телефонов (parser.strip_phones)
   и ТОЛЬКО контакт агента (имя + agent_phones по умолчанию); счётчик просмотров views/viewed_at; «📁 В подборку» в окне объекта.
+- Запросы покупателей (app/buyers.py, buyer_requests): запрос = в тексте «запрос/ищу/куплю» (кроме «по запросу»,
+  «ищу покупателя») или прежние зачины (rules.is_buyer_request, решение Артёма 07.10; проверяется ДО нейросети).
+  Разбор пожеланий (комнаты, бюджет, районы, ЖК), повтор текста — seen_count; /requests — просто лента, БЕЗ фильтров
+  (решение Артёма); в окне объекта «🙋 Под этот объект есть N покупателей» (buyers.matches: бюджет +10 %).
+  Телефоны — только с доступом. Подборки: свой текст объявления для клиента (collection_items.text, телефоны вырезаются).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

@@ -1,0 +1,18 @@
+/* Лента запросов покупателей */
+.rq { max-width: 900px; }
+.rq-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+.rq-select, .rq-search { padding: 9px 12px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--paper);
+  color: var(--ink); font: inherit; }
+.rq-search { flex: 1 1 180px; min-width: 0; }
+.rq-list { list-style: none; padding: 0 !important; margin: 12px 0; display: grid; gap: 12px; }
+.rq-item { background: var(--paper); border: 1px solid var(--line); border-radius: 18px; padding: 14px 16px; }
+.rq-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rq-chips .chip { font-size: 13px; padding: 3px 10px; }
+.rq-text { white-space: pre-wrap; margin: 10px 0 8px !important; font-size: 15px !important; max-height: 9.6em; overflow: hidden; }
+.rq-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; }
+.rq-foot .chip { text-decoration: none; }
+.rq-phones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.rq-phones .pill { font-size: 14px; padding: 7px 14px; text-decoration: none; }
+.rq-lock { color: var(--ink-3); font-size: 14px; display: block; margin-top: 8px; }
+.rq-empty { padding: 24px; border-radius: 16px; background: var(--chip); color: var(--ink-2); }
+.rq-empty b { display: block; color: var(--ink); }

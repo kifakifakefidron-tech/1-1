@@ -39,12 +39,14 @@ def mine(conn: sqlite3.Connection, user_id: int) -> list[dict]:
                              FROM collections c WHERE c.user_id = ? ORDER BY c.updated DESC""", (user_id,)):
         d = dict(r)
         d["items"] = [dict(x) for x in conn.execute(
-            """SELECT i.listing_id, i.note, i.pos, l.title, l.price, l.deal, l.is_active, l.photos
+            """SELECT i.listing_id, i.note, i.text, i.pos, l.title, l.price, l.deal, l.is_active, l.photos,
+                      l.description AS orig
                FROM collection_items i JOIN listings l ON l.id = i.listing_id
                WHERE i.collection_id = ? ORDER BY i.pos, i.added""", (r["id"],))]
         for it in d["items"]:
             photos = json.loads(it.pop("photos") or "[]")
             it["photo"] = photos[0] if photos else None
+            it["orig"] = parser.strip_phones(it["orig"] or "")   # исходный текст — без телефонов
         out.append(d)
     return out
 
@@ -82,7 +84,9 @@ def delete(conn: sqlite3.Connection, user_id: int, cid: int) -> None:
 
 
 def set_item(conn: sqlite3.Connection, user_id: int, cid: int, listing_id: int, add: bool,
-             note: str | None = None, commit: bool = True) -> dict:
+             note: str | None = None, commit: bool = True, text: str | None = None) -> dict:
+    """text — свой текст объявления для клиента ('' — вернуть исходный); телефоны из него убираем:
+    клиент видит только контакт агента, сделавшего подборку."""
     if not conn.execute("SELECT 1 FROM collections WHERE id = ? AND user_id = ?", (cid, user_id)).fetchone():
         return {"error": "Подборка не найдена."}
     if add:
@@ -95,6 +99,10 @@ def set_item(conn: sqlite3.Connection, user_id: int, cid: int, listing_id: int, 
         conn.execute("""INSERT INTO collection_items (collection_id, listing_id, pos, note, added) VALUES (?,?,?,?,?)
                         ON CONFLICT(collection_id, listing_id) DO UPDATE SET note = COALESCE(excluded.note, note)""",
                      (cid, listing_id, n, (note or "").strip()[:1000] if note is not None else None, int(time.time())))
+        if text is not None:
+            clean = parser.strip_phones(str(text)).strip()[:5000]
+            conn.execute("UPDATE collection_items SET text = ? WHERE collection_id = ? AND listing_id = ?",
+                         (clean or None, cid, listing_id))
     else:
         conn.execute("DELETE FROM collection_items WHERE collection_id = ? AND listing_id = ?", (cid, listing_id))
     conn.execute("UPDATE collections SET updated = ? WHERE id = ?", (int(time.time()), cid))
@@ -131,7 +139,7 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True) -> dic
         except sqlite3.OperationalError:   # база занята — просмотр не засчитаем, страницу покажем
             conn.rollback()
     items = []
-    for r in conn.execute("""SELECT l.*, i.note AS item_note FROM collection_items i JOIN listings l ON l.id = i.listing_id
+    for r in conn.execute("""SELECT l.*, i.note AS item_note, i.text AS item_text FROM collection_items i JOIN listings l ON l.id = i.listing_id
                              WHERE i.collection_id = ? ORDER BY i.pos, i.added""", (c["id"],)):
         items.append({
             "id": r["id"], "title": r["title"], "type": r["type"], "deal": r["deal"], "price": r["price"],
@@ -140,7 +148,7 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True) -> dic
             "settlement": r["settlement"], "street": r["street"], "house": r["house"],
             "lat": r["lat"] if r["geo_status"] != "approx" else None, "lon": r["lon"] if r["geo_status"] != "approx" else None,
             "photos": json.loads(r["photos"] or "[]"),
-            "description": parser.strip_phones(r["description"] or "")[:3000],
+            "description": (r["item_text"] or parser.strip_phones(r["description"] or ""))[:5000],
             "note": r["item_note"] or "", "is_active": r["is_active"]})
     return {"title": c["title"], "note": c["note"], "contact_name": c["contact_name"], "contact_phone": c["contact_phone"],
             "updated": c["updated"], "items": items}

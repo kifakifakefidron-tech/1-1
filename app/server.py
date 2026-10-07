@@ -21,7 +21,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import (accounts, agent, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
+from . import (accounts, agent, buyers, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
                market, payments, picks, planner, region, search, stats, tg)
 from .rules import TYPE_LABELS
 
@@ -303,6 +303,7 @@ def api_listing(request: Request, body: dict | None = None):
     d["note"] = hooks.get_note(conn, user["id"], lid) if user else None
     d["status"] = hooks.get_status(conn, user["id"], lid) if user else None
     d["plans"] = planner.for_listing(conn, user["id"], lid) if user else []
+    d["buyers"] = buyers.for_listing(conn, {**dict(row), "extra_districts": d.get("extra_districts") or []}, access)
     d["favorite"] = bool(user and conn.execute(
         "SELECT 1 FROM favorites WHERE user_id = ? AND listing_id = ?", (user["id"], lid)).fetchone())
     return JSONResponse(d)
@@ -749,7 +750,7 @@ def api_pick_items(request: Request, body: dict | None = None):
         res = picks.move(db.get(), user["id"], cid, [int(x) for x in body["order"] if str(x).isdigit()])
     else:
         res = picks.set_item(db.get(), user["id"], cid, int(body.get("listing_id") or 0), bool(body.get("add", True)),
-                             body.get("note"))
+                             body.get("note"), text=body["text"] if "text" in body else None)
     return _err(res["error"]) if "error" in res else JSONResponse(res)
 
 
@@ -778,6 +779,18 @@ def pick_page(request: Request, body: dict | None = None):
 
 def picks_page(request: Request, body: dict | None = None):
     return _page("picks.html")
+
+
+def requests_page(request: Request, body: dict | None = None):
+    return _page("requests.html")
+
+
+def api_requests(request: Request, body: dict | None = None):
+    """Лента запросов покупателей. Телефоны — только с доступом."""
+    user = current_user(request)
+    q = request.query_params
+    return JSONResponse(buyers.feed(db.get(), has_access(request, user), q.get("deal", ""), q.get("district", ""),
+                                    _num(q.get("rooms"), int), q.get("q", ""), _num(q.get("page"), int) or 1))
 
 
 def planner_page(request: Request, body: dict | None = None):
@@ -1361,6 +1374,8 @@ routes = [
     Route("/notifications", threaded(notices_page)),
     Route("/market", threaded(market_page)),
     Route("/planner", threaded(planner_page)),
+    Route("/requests", threaded(requests_page)),
+    Route("/api/requests", threaded(api_requests)),
     Route("/picks", threaded(picks_page)),
     Route("/c/{token}", threaded(pick_page)),
     Route("/api/picks", threaded(api_picks), methods=["GET", "POST", "DELETE"]),

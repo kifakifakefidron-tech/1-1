@@ -33,3 +33,9 @@
 .pks-add img, .pks-add .pks-noph { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; }
 @media (max-width: 600px) { .pks-new { flex-direction: column; } .pks-two { grid-template-columns: 1fr; } }
 .pks-warn { margin: 8px 0 0; color: #ffd86b; font-size: 14px; }
+.pks-text { margin-top: 6px; }
+.pks-text summary { cursor: pointer; font-size: 13px; color: #ffd86b; }
+.pks-text textarea { width: 100%; box-sizing: border-box; margin-top: 6px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--paper); color: var(--ink); font: inherit; font-size: 14px; resize: vertical; }
+.pks-text-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
+.pks-text-acts .note { font-size: 12px; }

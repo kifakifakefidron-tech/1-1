@@ -49,3 +49,14 @@ def test_picks_need_subscription(env):
     c, conn, lid = env
     _login(c, conn, paid=False)
     assert c.post("/api/picks", json={"title": "x"}).status_code == 403
+
+
+def test_pick_custom_text_without_phones(env):
+    c, conn, lid = env
+    _login(c, conn)
+    p = c.post("/api/picks", json={"title": "Тест", "listing_id": lid}).json()["pick"]
+    c.post(f"/api/picks/{p['id']}/items", json={"listing_id": lid, "text": "Отличная двушка, звоните 8 918 111-22-33"})
+    pub = c.get(f"/api/c/{p['token']}").json()
+    assert pub["items"][0]["description"].startswith("Отличная двушка") and "918" not in pub["items"][0]["description"]
+    c.post(f"/api/picks/{p['id']}/items", json={"listing_id": lid, "text": ""})   # вернуть исходный
+    assert "ЖК Мозаика" in c.get(f"/api/c/{p['token']}").json()["items"][0]["description"]

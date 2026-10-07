@@ -640,6 +640,7 @@
       ${o.description ? `<h3 class="d-h">Описание</h3><p class="d-desc">${esc(o.description)}</p>` : ""}
       ${contact}
       ${sameHTML(o)}
+      ${buyersHTML(o)}
       ${planHTML(o)}
       ${noteHTML(o)}
       <div class="d-contact"><button type="button" class="pill light" data-share="${o.id}">Поделиться</button>
@@ -721,6 +722,20 @@
     return `<div class="d-plan">${list ? `<ul>${list}</ul>` : ""}
       <div class="d-plan-btns"><a class="pill light" href="/planner?add=show&listing=${o.id}">📅 Запланировать</a>
         <button type="button" class="pill light" data-pick-open="${o.id}">📁 В подборку для клиента</button></div></div>`;
+  }
+
+  // Покупатели из чатов, чей запрос подходит под этот объект
+  function buyersHTML(o) {
+    const list = o.buyers || [];
+    if (!list.length) return "";
+    const ago = (ts) => fmtAgo(ts);
+    return `<details class="d-buyers"><summary>🙋 Под этот объект есть ${list.length >= 30 ? "30+" : list.length}
+      ${plural(list.length, "покупатель", "покупателя", "покупателей")}</summary>
+      <p class="note">Запросы «куплю/ищу» из чатов: тип, комнаты, бюджет и район подходят под объект. <a href="/requests">Все запросы →</a></p>
+      <ul>${list.map((r) => `<li><p>${esc(r.text.length > 260 ? r.text.slice(0, 260) + "…" : r.text)}</p>
+        <span class="note">${esc(ago(r.last_seen))}</span>
+        ${r.phones && r.phones.length ? r.phones.map((p) => `<a class="pill" href="tel:${esc(p)}">${esc(p)}</a>`).join("")
+          : r.phones_count ? `<span class="note">📞 номер — по подписке</span>` : ""}</li>`).join("")}</ul></details>`;
   }
 
   // ─── подборки для клиента ───

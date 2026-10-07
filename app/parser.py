@@ -218,6 +218,9 @@ def parse(text: str, sender_phone: str | None = None, use_llm: bool | None = Non
         return "other", []
     chunks = rules.split_objects(text)
 
+    if rules.is_buyer_request(text):   # «запрос / ищу / куплю» — в ленту запросов, нейросеть не нужна
+        return "request", []
+
     if use_llm is None:
         use_llm = llm.available()
 
@@ -251,8 +254,6 @@ def parse(text: str, sender_phone: str | None = None, use_llm: bool | None = Non
                 return ("listing" if out else "other"), out
 
     # Разбор только правилами
-    if rules.is_buyer_request(text):
-        return "request", []
     single = len(chunks) == 1
     out = [po for po in (_build(None, c, text, sender_phone, single=single) for c in chunks) if _is_meaningful(po)]
     return ("listing" if out else "other"), out

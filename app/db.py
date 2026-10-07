@@ -233,6 +233,16 @@ CREATE TABLE IF NOT EXISTS collection_items (
     collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
     pos INTEGER NOT NULL DEFAULT 0, note TEXT, added INTEGER NOT NULL, PRIMARY KEY (collection_id, listing_id)
 );
+-- Запросы покупателей из чатов («куплю/ищу/есть клиент»), app/buyers.py
+CREATE TABLE IF NOT EXISTS buyer_requests (
+    id INTEGER PRIMARY KEY, message_id INTEGER, text_hash TEXT, text TEXT NOT NULL, chat_name TEXT,
+    deal TEXT NOT NULL, type TEXT, rooms_mask INTEGER NOT NULL DEFAULT 0, price_min INTEGER, price_max INTEGER,
+    districts TEXT NOT NULL DEFAULT '[]', complexes TEXT NOT NULL DEFAULT '[]', phones TEXT NOT NULL DEFAULT '[]',
+    first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL, seen_count INTEGER NOT NULL DEFAULT 1,
+    is_active INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS ix_buyer_active ON buyer_requests(is_active, deal, last_seen);
+CREATE INDEX IF NOT EXISTS ix_buyer_hash ON buyer_requests(text_hash);
 CREATE TABLE IF NOT EXISTS notes (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
     text TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)
@@ -274,7 +284,8 @@ MIGRATIONS = [
     ("listings", "removed_at", "INTEGER"),                    # когда сняли с сайта (для статистики; ставит триггер)
     ("listings", "removed_reason", "TEXT"),                   # stale | sold | feed | chat | expired | other
     ("listings", "market_diff", "INTEGER"),
-    ("notes", "status", "TEXT"),                              # статус агента по объекту: call | show | think | refuse | deal                   # % к медиане м² по ЖК/району (hooks.update_market_diff)
+    ("notes", "status", "TEXT"),
+    ("collection_items", "text", "TEXT"),                     # свой текст объявления для клиента (вместо исходного)                              # статус агента по объекту: call | show | think | refuse | deal                   # % к медиане м² по ЖК/району (hooks.update_market_diff)
 ]
 
 _local = threading.local()

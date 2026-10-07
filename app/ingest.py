@@ -214,6 +214,9 @@ def process_message(conn: sqlite3.Connection, message_id: int, use_llm: bool | N
                 (lid, m["id"], m["ts"]))
         conn.execute("UPDATE messages SET status='done', kind=?, objects=? WHERE id=?",
                      (prev["kind"], len(listing_ids), m["id"]))
+        if prev["kind"] == "request":
+            from . import buyers
+            buyers.save(conn, m)
         conn.commit()
         return {"status": "repost", "listings": listing_ids}
 
@@ -230,6 +233,9 @@ def process_message(conn: sqlite3.Connection, message_id: int, use_llm: bool | N
         lid, why = save_object(conn, o, m["id"], m["ts"])
         results.append({"listing_id": lid, "match": why})
     conn.execute("UPDATE messages SET status='done', kind=?, objects=? WHERE id=?", (kind, len(objects), m["id"]))
+    if kind == "request":   # «куплю/ищу» — в ленту запросов покупателей
+        from . import buyers
+        buyers.save(conn, m)
     conn.commit()
     return {"status": "done", "kind": kind, "results": results}
 
