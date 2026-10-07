@@ -195,3 +195,23 @@ def test_own_listing_needs_place(env):
     _verify(c, conn)
     r = c.post("/api/agent/listings", json={"type": "flat", "price": "5"})
     assert r.status_code == 400 and "район" in r.json()["detail"]
+
+
+def test_referral_bonus_after_phone_confirmed(env, monkeypatch):
+    c, conn, _ = env
+    inviter = _login(c, conn, email="boss@example.ru")
+    code = c.get("/api/me").json()["me"]["ref"]["code"]
+    before = accounts.get_user(conn, inviter["id"])["paid_until"]
+    c.cookies.clear()
+    c.get(f"/?ref={code}")                       # пришёл по ссылке — запомнили
+    assert c.cookies.get("ref") == code
+    monkeypatch.setattr(accounts, "check_email_code", lambda *a: (True, ""))   # вход по почте без письма
+    c.post("/api/auth/email/verify", json={"email": "new@example.ru", "code": "1"})
+    new = conn.execute("SELECT * FROM users WHERE email = 'new@example.ru'").fetchone()
+    assert new["referred_by"] == inviter["id"]
+    server._hits.clear()   # лимит «подтверждений в час» общий для всех тестов
+    _verify(c, conn, phone="+7 918 222-33-44", sender="79182223344")   # подтвердил номер — бонус
+    after = accounts.get_user(conn, inviter["id"])["paid_until"]
+    assert after - before >= 7 * 86400 - 5
+    _verify(c, conn, phone="+7 918 222-33-55", sender="79182223355")   # второй номер — бонуса нет
+    assert accounts.get_user(conn, inviter["id"])["paid_until"] == after

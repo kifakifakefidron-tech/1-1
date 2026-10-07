@@ -175,6 +175,55 @@ def extend(conn: sqlite3.Connection, user_id: int, days: int) -> None:
     conn.commit()
 
 
+# ─── «Приведи коллегу — неделя бесплатно» ──────────────────────────────────
+def ref_code(conn: sqlite3.Connection, user: sqlite3.Row) -> str:
+    if user["ref_code"]:
+        return user["ref_code"]
+    import secrets
+    for _ in range(5):
+        code = secrets.token_urlsafe(5).replace("-", "x").replace("_", "y")
+        try:
+            conn.execute("UPDATE users SET ref_code = ? WHERE id = ? AND ref_code IS NULL", (code, user["id"]))
+            conn.commit()
+            break
+        except sqlite3.IntegrityError:
+            conn.rollback()
+    return conn.execute("SELECT ref_code FROM users WHERE id = ?", (user["id"],)).fetchone()[0]
+
+
+def attach_referrer(conn: sqlite3.Connection, user_id: int, code: str | None) -> bool:
+    """Новый аккаунт (создан только что) пришёл по ссылке коллеги — запомнить, кто пригласил."""
+    if not code:
+        return False
+    ref = conn.execute("SELECT id FROM users WHERE ref_code = ?", (code[:20],)).fetchone()
+    u = get_user(conn, user_id)
+    if ref is None or u is None or ref[0] == user_id or u["referred_by"] or u["created"] < time.time() - 600:
+        return False
+    conn.execute("UPDATE users SET referred_by = ? WHERE id = ?", (ref[0], user_id))
+    conn.commit()
+    return True
+
+
+def reward_referrer(conn: sqlite3.Connection, user_id: int) -> bool:
+    """Приглашённый подтвердил свой номер агента — пригласившему +REF_DAYS дней (один раз за коллегу)."""
+    from . import notices
+    u = get_user(conn, user_id)
+    if u is None or not u["referred_by"] or u["ref_rewarded"]:
+        return False
+    conn.execute("UPDATE users SET ref_rewarded = 1 WHERE id = ?", (user_id,))
+    extend(conn, u["referred_by"], config.REF_DAYS)
+    notices.add(conn, u["referred_by"], "sub", f"🎁 +{config.REF_DAYS} дней доступа",
+                "Коллега, которого вы пригласили, подтвердил свой номер. Спасибо, что рассказали о 1+1!", url="/?cabinet=1")
+    conn.commit()
+    return True
+
+
+def ref_info(conn: sqlite3.Connection, user: sqlite3.Row) -> dict:
+    invited, rewarded = conn.execute("SELECT COUNT(*), SUM(ref_rewarded) FROM users WHERE referred_by = ?",
+                                     (user["id"],)).fetchone()
+    return {"code": ref_code(conn, user), "invited": invited or 0, "rewarded": rewarded or 0, "days": config.REF_DAYS}
+
+
 def me(conn: sqlite3.Connection, user: sqlite3.Row | None) -> dict | None:
     if user is None:
         return None
@@ -187,6 +236,7 @@ def me(conn: sqlite3.Connection, user: sqlite3.Row | None) -> dict | None:
         "access": has_access(user, now), "access_until": access_until(user),
         "trial_until": user["trial_until"], "paid_until": user["paid_until"], "trial_used": used_trial,
         "favorites": fav, "views_today": views_today(conn, user["id"]),
+        "ref": ref_info(conn, user),
         "statuses": {r[0]: r[1] for r in conn.execute(
             "SELECT listing_id, status FROM notes WHERE user_id = ? AND status IS NOT NULL", (user["id"],))},
         "unread": conn.execute("SELECT COUNT(*) FROM notices WHERE user_id = ? AND read = 0", (user["id"],)).fetchone()[0],

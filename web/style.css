@@ -421,3 +421,10 @@ a.access-btn { text-decoration: none; color: var(--ink); display: inline-block; 
 .d-buyers li { padding: 8px 10px; border-radius: 10px; background: rgba(0,0,0,.14); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .d-buyers li p { width: 100%; margin: 0; white-space: pre-wrap; font-size: 14px; }
 .d-buyers .pill { font-size: 13px; padding: 5px 12px; }
+
+/* приведи коллегу */
+.cab-ref { margin: 12px 0; padding: 12px 14px; border-radius: 16px; background: rgba(255,216,107,.12); border: 1px solid rgba(255,216,107,.4); }
+.cab-ref-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.cab-ref-row input { flex: 1 1 180px; min-width: 0; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line-2);
+  background: var(--paper); color: var(--ink); font: inherit; font-size: 13px; }
+.cab-ref-row .pill { font-size: 14px; padding: 8px 14px; }

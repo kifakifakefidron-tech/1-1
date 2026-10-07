@@ -163,8 +163,12 @@ def index(request: Request, body: dict | None = None):
     # no-cache: после обновления сайта браузер сразу берёт новую страницу (и новые ?v= у стилей/скриптов)
     headers = {"Cache-Control": "no-cache"}
     oid = _num(request.query_params.get("open"), int)
+    ref = re.sub(r"[^\w-]", "", request.query_params.get("ref", ""))[:20]
     if not oid:
-        return FileResponse(WEB / "index.html", headers=headers)
+        resp = FileResponse(WEB / "index.html", headers=headers)
+        if ref:   # «Приведи коллегу»: запомнить, кто пригласил, до входа
+            resp.set_cookie("ref", ref, max_age=30 * 86400, httponly=True, samesite="lax")
+        return resp
     # Ссылка на объект («Поделиться»): превью в WhatsApp/Telegram — название, цена, место, фото. Без телефонов.
     html_text = (WEB / "index.html").read_text(encoding="utf-8")
     r = db.get().execute("SELECT * FROM listings WHERE id = ?", (oid,)).fetchone()
@@ -409,6 +413,8 @@ def api_email_verify(request: Request, body: dict | None = None):
     user = accounts.upsert_email_user(conn, email)
     if user["blocked"]:
         return _err("Аккаунт заблокирован.", 403)
+    if accounts.attach_referrer(conn, user["id"], request.cookies.get("ref") or str(body.get("ref") or "")):
+        user = accounts.get_user(conn, user["id"])
     token = accounts.create_session(conn, user["id"], request.headers.get("user-agent", ""))
     return _session_response(request, {"ok": True, "me": accounts.me(conn, user)}, token)
 

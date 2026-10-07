@@ -75,6 +75,7 @@ def check_message(conn: sqlite3.Connection, sender_phone: str | None, text: str)
         conn.execute("INSERT OR IGNORE INTO agent_phones (phone, user_id, verified_at) VALUES (?,?,?)",
                      (phone, row["user_id"], int(time.time())))
         conn.commit()
+        accounts.reward_referrer(conn, row["user_id"])   # «Приведи коллегу»: пригласившему +неделя
         return True
     return False
 

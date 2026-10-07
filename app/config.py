@@ -66,6 +66,9 @@ ACCESS_CODE = os.getenv("ACCESS_CODE", "")
 SITE_TITLE = os.getenv("SITE_TITLE", "1+1 · поиск объектов")
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me")
 
+# «Приведи коллегу»: столько дней доступа пригласившему, когда коллега подтвердит свой номер агента
+REF_DAYS = int(os.getenv("REF_DAYS", "7"))
+
 # Геокодер для карты: nominatim (бесплатно, 1 запрос/сек) или off
 GEOCODER = os.getenv("GEOCODER", "nominatim")
 

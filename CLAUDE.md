@@ -180,6 +180,8 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   Разбор пожеланий (комнаты, бюджет, районы, ЖК), повтор текста — seen_count; /requests — просто лента, БЕЗ фильтров
   (решение Артёма); в окне объекта «🙋 Под этот объект есть N покупателей» (buyers.matches: бюджет +10 %).
   Телефоны — только с доступом. Подборки: свой текст объявления для клиента (collection_items.text, телефоны вырезаются).
+- «Приведи коллегу» (accounts.ref_code/attach_referrer/reward_referrer): /?ref=<код> → кука ref → при первом входе по
+  почте users.referred_by; бонус REF_DAYS (7) пригласившему — когда приглашённый ПОДТВЕРДИТ номер агента (защита от накруток).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

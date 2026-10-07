@@ -1279,6 +1279,18 @@
     if ($("cabinetDlg").open) renderCabinet();
   }
 
+  // «Приведи коллегу — неделя бесплатно»
+  function refHTML(r) {
+    const link = `${location.origin}/?ref=${r.code}`;
+    const text = `Пользуюсь 1+1 — все объекты Краснодара из риелторских чатов в одном поиске, с картой и номерами агентов. Попробуй: ${link}`;
+    return `<div class="cab-ref"><b>🎁 Приведи коллегу — +${r.days} дней бесплатно</b>
+      <p class="note">Отправьте ссылку коллеге-риелтору. Когда он войдёт и подтвердит свой номер агента, вам добавится ${r.days} дней доступа.
+        ${r.invited ? `Пришли по ссылке: ${r.invited}, подтвердили номер: ${r.rewarded}.` : ""}</p>
+      <div class="cab-ref-row"><input readonly value="${esc(link)}" aria-label="Ваша ссылка">
+        <button type="button" class="pill light" data-copy-ref="${esc(link)}">Копировать</button>
+        <a class="pill light" href="https://wa.me/?text=${encodeURIComponent(text)}" target="_blank" rel="noopener">WhatsApp</a></div></div>`;
+  }
+
   function renderCabinet() {
     const u = me();
     if (!u) { closeDlg($("cabinetDlg")); return; }
@@ -1300,6 +1312,7 @@
       <h2 id="cabTitle">${u.is_admin ? "Кабинет администратора" : "Личный кабинет"}</h2>
       <p class="note">${esc(who)}</p>
       <p>${status}</p>${views}
+      ${u.ref ? refHTML(u.ref) : ""}
       <div class="cab-links"><a class="pill light" href="/planner">📅 Планер: показы, созвоны, заметки</a>
         <a class="pill light" href="/picks">📁 Подборки для клиентов</a>
         <a class="pill light" href="/market">📊 Аналитика рынка</a></div>
@@ -1451,6 +1464,7 @@
       if (t.dataset.crm) { setCrm(Number(t.dataset.id), t.dataset.crm, t); return; }
       if (t.dataset.cmp) { e.stopPropagation(); toggleCompare(Number(t.dataset.cmp)); return; }
       if (t.dataset.pickOpen) { openPicks(Number(t.dataset.pickOpen)); return; }
+      if (t.dataset.copyRef) { share(t.dataset.copyRef, "1+1 — поиск объектов Краснодара"); return; }
       if (t.dataset.cmpDel) { toggleCompare(Number(t.dataset.cmpDel)); if (cmp.length >= 2) openCompare(); else closeDlg($("cmpDlg")); return; }
       if (t.id === "cmpOpen") { openCompare(); return; }
       if (t.id === "cmpClear") { const ids = cmp; cmp = []; cmpSave(); ids.forEach((id) => document.querySelectorAll(`[data-cmp="${id}"]`).forEach((b) => b.classList.remove("on"))); renderCmpBar(); return; }

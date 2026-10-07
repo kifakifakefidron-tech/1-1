@@ -285,7 +285,11 @@ MIGRATIONS = [
     ("listings", "removed_reason", "TEXT"),                   # stale | sold | feed | chat | expired | other
     ("listings", "market_diff", "INTEGER"),
     ("notes", "status", "TEXT"),
-    ("collection_items", "text", "TEXT"),                     # свой текст объявления для клиента (вместо исходного)                              # статус агента по объекту: call | show | think | refuse | deal                   # % к медиане м² по ЖК/району (hooks.update_market_diff)
+    ("collection_items", "text", "TEXT"),
+    # «Приведи коллегу»: свой код, кто пригласил, начислили ли бонус пригласившему
+    ("users", "ref_code", "TEXT"),
+    ("users", "referred_by", "INTEGER"),
+    ("users", "ref_rewarded", "INTEGER NOT NULL DEFAULT 0"),                     # свой текст объявления для клиента (вместо исходного)                              # статус агента по объекту: call | show | think | refuse | deal                   # % к медиане м² по ЖК/району (hooks.update_market_diff)
 ]
 
 _local = threading.local()
