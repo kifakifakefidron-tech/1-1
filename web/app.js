@@ -412,9 +412,11 @@
       ${tag}
       ${addr ? `<div class="item-place">${esc(addr)}</div>` : ""}
       ${o.description ? `<p class="item-desc">${esc(o.description)}</p>` : ""}
-      <button type="button" class="cmp-btn${cmp.includes(o.id) ? " on" : ""}" data-cmp="${o.id}" title="Сравнить" aria-label="Добавить к сравнению">⚖</button>
-      ${favMode ? `<a class="plan-btn" href="/planner?add=show&listing=${o.id}" title="Запланировать показ или звонок" aria-label="Запланировать">📅</a>` : ""}
-      <div class="item-meta"><span class="on-sale${daysOnSale(o) >= 30 ? " long" : ""}">в продаже ${esc(daysText(daysOnSale(o)))}</span> · ${esc(fmtAgo(o.last_seen))}</div>
+      <div class="item-foot">
+        <div class="item-meta"><span class="on-sale${daysOnSale(o) >= 30 ? " long" : ""}">в продаже ${esc(daysText(daysOnSale(o)))}</span> · ${esc(fmtAgo(o.last_seen))}</div>
+        ${favMode ? `<a class="plan-btn" href="/planner?add=show&listing=${o.id}" title="Запланировать показ или звонок" aria-label="Запланировать">📅</a>` : ""}
+        <button type="button" class="cmp-btn${cmp.includes(o.id) ? " on" : ""}" data-cmp="${o.id}" title="Сравнить" aria-label="Добавить к сравнению">⚖</button>
+      </div>
     </li>`;
   }
 
@@ -1200,6 +1202,8 @@
     $("favBtn").innerHTML = `Избранное${n ? `<i class="nav-badge">${n}</i>` : ""}`;
     $("adminLink").hidden = !(u && u.is_admin);
     $("plannerLink").hidden = !u;
+    $("plannerMore").hidden = $("bellMore").hidden = !u;   // на узком экране — в «Ещё ▾»
+    $("adminMore").hidden = !(u && u.is_admin);
     if (window.yaSelect) window.yaSelect(!!(u && u.is_admin));   // выделил адрес → «В Яндекс Картах»
     const unread = u ? u.unread || 0 : 0;
     $("bellLink").hidden = $("bellMobile").hidden = !u;
@@ -1315,6 +1319,7 @@
       ${u.ref ? refHTML(u.ref) : ""}
       <div class="cab-links"><a class="pill light" href="/planner">📅 Планер: показы, созвоны, заметки</a>
         <a class="pill light" href="/picks">📁 Подборки для клиентов</a>
+        <a class="pill light" href="/requests">🙋 Запросы покупателей</a>
         <a class="pill light" href="/market">📊 Аналитика рынка</a></div>
       ${u.is_admin ? `<div class="cab-admin" id="cabAdmin"><div class="cab-stats">${"<div class=\"skel\"><i></i></div>".repeat(6)}</div>
         <a class="pill wide" href="/admin">Открыть админку →</a></div>` : ""}
@@ -1424,6 +1429,7 @@
   function setFavMode(on) {
     if (on && !me()) { openLogin("Чтобы сохранять объекты в избранное, войдите."); return; }
     favMode = on;
+    document.body.classList.toggle("fav-mode", on);   // в избранном кнопки поиска (сортировка, «Горячее», «Следить») не нужны
     setTab(on ? "fav" : (state.view === "map" ? "map" : "list"));
     if (on && state.view === "map") { state.view = "list"; syncControls(); applyView(); }
     document.querySelector(".filters").hidden = on;
@@ -1458,6 +1464,8 @@
     $("q").addEventListener("input", () => { state.q = $("q").value; refresh(350); });
 
     document.addEventListener("click", (e) => {
+      const more = document.querySelector(".nav-more[open]");
+      if (more && !more.contains(e.target)) more.open = false;   // «Ещё ▾» — закрыть при клике мимо
       const t = e.target.closest("button");
       if (!t) return;
       if (t.dataset.fav) { e.stopPropagation(); toggleFavorite(Number(t.dataset.fav)); return; }

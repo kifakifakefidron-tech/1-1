@@ -319,6 +319,9 @@ dialog::backdrop { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px
   .nav { position: relative; background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; border: 0; }
   .nav-in { padding: 14px 16px 4px; }
   .nav-links, .brand-sub { display: none; }
+  .nav-links.doc-nav { display: flex; }           /* остальные страницы: на телефоне — только «← К поиску» */
+  .nav-links.doc-nav .nav-link { display: none; }
+  .nav-links.doc-nav .nav-cta { padding: 8px 14px; font-size: 13px; }
   .brand .logo { width: 38px; height: 38px; }
 }
 
@@ -553,3 +556,24 @@ button.link { border: 0; background: none; padding: 0; color: var(--ink); font: 
 .combo-item mark { background: none; color: #ffd86b; font-weight: 700; }
 .combo-item.new { color: #9be8b8; font-weight: 600; border-top: 1px solid var(--line); margin-top: 4px; }
 .combo-empty { padding: 10px 12px; color: var(--ink-3); font-size: 14px; }
+
+/* ─── «Ещё ▾» в шапке ─────────────────────────────────────────────────── */
+.nav-link { white-space: nowrap; }
+.nav-more { position: relative; }
+.nav-more summary { list-style: none; cursor: pointer; }
+.nav-more summary::-webkit-details-marker { display: none; }
+.nav-more summary::after { content: " ▾"; font-size: 11px; }
+.nav-menu { position: absolute; right: 0; top: calc(100% + 8px); z-index: 80; min-width: 240px; padding: 6px; border-radius: 16px;
+  background: rgba(10, 94, 92, .98); border: 1px solid var(--line-2); box-shadow: 0 14px 36px rgba(0, 0, 0, .35);
+  display: grid; gap: 2px; animation: riseIn .2s var(--ease) both; }
+.nav-menu a { padding: 10px 12px; border-radius: 10px; color: var(--ink); text-decoration: none; font: 500 14px var(--body); white-space: nowrap; }
+.nav-menu a:hover { background: var(--chip); }
+.doc-nav .nav-link.on { color: var(--ink); background: rgba(243, 232, 188, .14); }
+.nav-cta { white-space: nowrap; }
+@media (max-width: 1100px) and (min-width: 641px) { .doc-nav .nav-link:not(.on) { padding: 9px 10px; font-size: 13px; } }
+@media (max-width: 920px) and (min-width: 641px) { .doc-nav .nav-link:not(.on) { display: none; } }
+.nm-narrow { display: none; }
+@media (max-width: 1023px) and (min-width: 641px) {   /* планшет: часть пунктов шапки — в «Ещё ▾» */
+  #plannerLink, #bellLink, #adminLink { display: none !important; }
+  .nm-narrow:not([hidden]) { display: block; }
+}

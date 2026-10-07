@@ -59,3 +59,5 @@
   font: 600 13px/1.2 system-ui, sans-serif; text-decoration: none; box-shadow: 0 6px 18px rgba(0,0,0,.25); white-space: nowrap; }
 .ya-sel[hidden] { display: none; }
 .d-place .ya-link { margin-left: 6px; white-space: nowrap; font-size: .92em; }
+/* длинные названия районов («ЗИП-2 (Завод измерительных приборов) по улице») не вылезают за экран телефона */
+#fxDistricts .chip, #fxComplexes .chip { max-width: 100%; white-space: normal; text-align: left; }

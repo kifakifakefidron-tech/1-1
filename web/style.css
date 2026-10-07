@@ -428,3 +428,9 @@ a.access-btn { text-decoration: none; color: var(--ink); display: inline-block; 
 .cab-ref-row input { flex: 1 1 180px; min-width: 0; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line-2);
   background: var(--paper); color: var(--ink); font: inherit; font-size: 13px; }
 .cab-ref-row .pill { font-size: 14px; padding: 8px 14px; }
+
+/* избранное: без кнопок поиска; кнопки 📅/⚖ не закрывают строку «в продаже…» */
+body.fav-mode .bar-tools, body.fav-mode .bar-right, body.fav-mode #savedRow, body.fav-mode #refreshBtn, body.fav-mode #hitNote { display: none !important; }
+.item-foot { display: flex; align-items: flex-end; gap: 6px; margin-top: auto; }
+.item-foot .item-meta { flex: 1; min-width: 0; }
+.item-foot .cmp-btn, .item-foot .plan-btn { position: static; flex: none; width: 32px; height: 32px; font-size: 14px; }

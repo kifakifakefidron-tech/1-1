@@ -13,8 +13,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
-<link rel="stylesheet" href="/static/style.css?v=19">
-<link rel="stylesheet" href="/static/motion.css?v=27">
+<link rel="stylesheet" href="/static/style.css?v=21">
+<link rel="stylesheet" href="/static/motion.css?v=30">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -40,9 +40,16 @@
       <button type="button" class="nav-link" data-tab="fav" id="favBtn">Избранное</button>
       <a class="nav-link" href="/planner" id="plannerLink" hidden>Планер</a>
       <a class="nav-link" href="/notifications" id="bellLink" hidden>Уведомления<i class="nav-badge" id="bellBadge" hidden></i></a>
-      <a class="nav-link" href="/requests">Запросы</a>
-      <a class="nav-link" href="/market">Аналитика</a>
-      <a class="nav-link" href="/how">Как это работает</a>
+      <details class="nav-more"><summary class="nav-link">Ещё</summary>
+        <div class="nav-menu">
+          <a class="nm-narrow" href="/planner" id="plannerMore" hidden>📅 Планер</a>
+          <a class="nm-narrow" href="/notifications" id="bellMore" hidden>🔔 Уведомления</a>
+          <a class="nm-narrow" href="/admin" id="adminMore" hidden>⚙ Админка</a>
+          <a href="/requests">🙋 Запросы покупателей</a>
+          <a href="/market">📊 Аналитика рынка</a>
+          <a href="/picks">📁 Подборки для клиентов</a>
+          <a href="/how">❓ Как это работает</a>
+        </div></details>
       <a class="nav-link" href="/admin" id="adminLink" hidden>Админка</a>
       <button type="button" class="nav-cta" id="accountBtn">Войти</button>
     </nav>
@@ -342,7 +349,7 @@
 
 <script src="/static/combo.js?v=2"></script>
 <script src="/static/yasel.js?v=1"></script>
-<script src="/static/app.js?v=51"></script>
+<script src="/static/app.js?v=55"></script>
 <script src="/static/agent.js?v=4"></script>
 </body>
 </html>
