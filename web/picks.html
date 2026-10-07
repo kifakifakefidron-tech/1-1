@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Подборки для клиентов · 1+1</title>
+<meta name="theme-color" content="#035352">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=17">
+<link rel="stylesheet" href="/static/motion.css?v=27">
+<link rel="stylesheet" href="/static/doc.css?v=1">
+<link rel="stylesheet" href="/static/picks.css?v=2">
+</head>
+<body>
+<header class="nav"><div class="nav-in">
+  <a class="brand" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="40" height="40" style="border-radius:10px">
+    <span class="brand-text"><b class="brand-name">1+1</b><span class="brand-sub">подборки для клиентов</span></span></a>
+  <nav class="nav-links"><a class="nav-link" href="/?fav=1">Избранное</a><a class="nav-link" href="/planner">Планер</a>
+    <a class="nav-cta" href="/">← К поиску</a></nav>
+</div></header>
+
+<main class="doc pks">
+  <h1>Подборки для клиентов</h1>
+  <p class="lead">Соберите объекты для клиента и отправьте одну ссылку: фото, цены, карта и только ваш контакт —
+    без телефонов других агентов. Видно, открывал ли клиент подборку.</p>
+  <div id="pksMsg" class="note-box" hidden></div>
+  <div id="pksApp" hidden>
+    <form class="pks-new" id="pksNew"><input name="title" maxlength="120" placeholder="Название, например: «Для Ирины — 2к до 7 млн, ФМР»">
+      <button type="submit" class="pill">+ Новая подборка</button></form>
+    <div id="pksList"></div>
+  </div>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
+<script src="/static/picks.js?v=2"></script>
+</body>
+</html>

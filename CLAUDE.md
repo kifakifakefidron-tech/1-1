@@ -172,6 +172,9 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   заметки к объектам (notes). Объекты выбираются ИЗ ИЗБРАННОГО (решение Артёма); запланированный из окна объекта сам
   попадает в избранное. Календарь телефона: /planner/<uid>-<hmac>.ics (подписка), /api/planner/<id>.ics (одно событие).
   Ссылки: /planner?add=show&listing=ID, /planner?event=ID, /planner?tab=notes.
+- Подборки для клиента (app/picks.py, таблицы collections/collection_items; /picks — управление, /c/<token> — для клиента,
+  с og-превью): только с доступом (_need_access); клиент видит фото/цены/карту/описание без телефонов (parser.strip_phones)
+  и ТОЛЬКО контакт агента (имя + agent_phones по умолчанию); счётчик просмотров views/viewed_at; «📁 В подборку» в окне объекта.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

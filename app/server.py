@@ -22,7 +22,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import (accounts, agent, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
-               market, payments, planner, region, search, stats, tg)
+               market, payments, picks, planner, region, search, stats, tg)
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -707,6 +707,79 @@ def notices_page(request: Request, body: dict | None = None):
     return _page("notify.html")
 
 
+def _need_access(request: Request):
+    """Вошёл и есть доступ (подписка / пробный период / админ)."""
+    user, err = _need_user(request)
+    if err:
+        return None, err
+    if not has_access(request, user):
+        return None, _err("Подборки для клиентов — по подписке. Оформите доступ в кабинете.", 403)
+    return user, None
+
+
+def api_picks(request: Request, body: dict | None = None):
+    """Мои подборки: GET — список; POST — создать/изменить {id?, title, note, contact_name, contact_phone, listing_id?};
+    DELETE {id}."""
+    user, err = _need_access(request)
+    if err:
+        return err
+    conn = db.get()
+    body = body or {}
+    if request.method == "DELETE":
+        picks.delete(conn, user["id"], int(body.get("id") or 0))
+        return JSONResponse({"ok": True})
+    if request.method == "POST":
+        if _too_often(request, "picks", 300, 3600):
+            return _err("Слишком часто — попробуйте позже.", 429)
+        res = picks.save(conn, user, body)
+        return _err(res["error"]) if "error" in res else JSONResponse({"pick": res})
+    lid = _num(request.query_params.get("listing"), int)
+    return JSONResponse({"items": picks.mine(conn, user["id"]),
+                         "with": picks.with_listing(conn, user["id"], lid) if lid else []})
+
+
+def api_pick_items(request: Request, body: dict | None = None):
+    """Объект в подборку / из подборки {listing_id, add, note?} или порядок {order: [...]}."""
+    user, err = _need_access(request)
+    if err:
+        return err
+    body = body or {}
+    cid = int(request.path_params["id"])
+    if "order" in body:
+        res = picks.move(db.get(), user["id"], cid, [int(x) for x in body["order"] if str(x).isdigit()])
+    else:
+        res = picks.set_item(db.get(), user["id"], cid, int(body.get("listing_id") or 0), bool(body.get("add", True)),
+                             body.get("note"))
+    return _err(res["error"]) if "error" in res else JSONResponse(res)
+
+
+def api_pick_public(request: Request, body: dict | None = None):
+    d = picks.public(db.get(), request.path_params["token"])
+    return JSONResponse(d) if d else _err("Подборка не найдена или удалена.", 404)
+
+
+def pick_page(request: Request, body: dict | None = None):
+    """Страница подборки для клиента + превью ссылки в мессенджерах (название, число объектов, фото)."""
+    html_text = (WEB / "pick.html").read_text(encoding="utf-8")
+    d = picks.public(db.get(), request.path_params["token"], count_view=False)
+    if d:
+        esc = lambda v: html.escape(str(v), quote=True)  # noqa: E731
+        n = len(d["items"])
+        photo = next((i["photos"][0] for i in d["items"] if i["photos"]), "/static/favicon.svg")
+        if photo.startswith("/"):
+            photo = config.SITE_URL + photo
+        who = f" · {d['contact_name']}" if d["contact_name"] else ""
+        desc = f"{n} {'объект' if n % 10 == 1 and n % 100 != 11 else 'объекта' if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else 'объектов'}{who}"
+        meta = (f'<meta property="og:type" content="website"><meta property="og:title" content="{esc(d["title"])}">'
+                f'<meta property="og:description" content="{esc(desc)}"><meta property="og:image" content="{esc(photo)}">')
+        html_text = html_text.replace("<title>Подборка · 1+1</title>", f"<title>{esc(d['title'])} · 1+1</title>{meta}", 1)
+    return Response(html_text, media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
+
+
+def picks_page(request: Request, body: dict | None = None):
+    return _page("picks.html")
+
+
 def planner_page(request: Request, body: dict | None = None):
     return _page("planner.html")
 
@@ -1288,6 +1361,11 @@ routes = [
     Route("/notifications", threaded(notices_page)),
     Route("/market", threaded(market_page)),
     Route("/planner", threaded(planner_page)),
+    Route("/picks", threaded(picks_page)),
+    Route("/c/{token}", threaded(pick_page)),
+    Route("/api/picks", threaded(api_picks), methods=["GET", "POST", "DELETE"]),
+    Route("/api/picks/{id:int}/items", threaded(api_pick_items), methods=["POST"]),
+    Route("/api/c/{token}", threaded(api_pick_public)),
     Route("/planner/{uid:int}-{token}.ics", threaded(planner_feed)),
     Route("/api/planner", threaded(api_planner), methods=["GET", "POST", "DELETE"]),
     Route("/api/planner/notes", threaded(api_planner_note), methods=["POST"]),

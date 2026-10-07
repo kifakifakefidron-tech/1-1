@@ -13,7 +13,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
-<link rel="stylesheet" href="/static/style.css?v=16">
+<link rel="stylesheet" href="/static/style.css?v=17">
 <link rel="stylesheet" href="/static/motion.css?v=27">
 </head>
 <body>
@@ -220,6 +220,18 @@
   </div>
 </dialog>
 
+<dialog id="pickDlg" class="small-dlg" aria-labelledby="pickTitle">
+  <span class="grab" aria-hidden="true"></span>
+  <div class="dlg-body">
+    <h2 id="pickTitle">В подборку для клиента</h2>
+    <p class="note">Отметьте подборки, в которые добавить объект. Ссылку клиенту — на странице <a href="/picks">«Подборки»</a>.</p>
+    <ul class="pick-list" id="pickList"></ul>
+    <form class="inline-form" id="pickNewForm"><input id="pickNewTitle" maxlength="120" placeholder="Новая подборка, например «Для Ирины»">
+      <button type="submit" class="pill light">+ Создать</button></form>
+    <div class="dlg-actions"><a class="ghost" href="/picks">Открыть подборки →</a><button type="button" class="pill" data-close>Готово</button></div>
+  </div>
+</dialog>
+
 <dialog id="loginDlg" class="small-dlg" aria-labelledby="loginTitle">
   <span class="grab" aria-hidden="true"></span>
   <div class="dlg-body">
@@ -328,7 +340,7 @@
 
 <script src="/static/combo.js?v=2"></script>
 <script src="/static/yasel.js?v=1"></script>
-<script src="/static/app.js?v=48"></script>
+<script src="/static/app.js?v=49"></script>
 <script src="/static/agent.js?v=4"></script>
 </body>
 </html>

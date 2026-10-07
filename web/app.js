@@ -452,7 +452,8 @@
     }
     $("sheetApply").textContent = data.total ? `Показать ${num(data.total)} ${plural(data.total, "объект", "объекта", "объектов")}` : "Ничего не нашлось";
     $("count").innerHTML = favMode
-      ? `Избранное и в работе: ${num(data.total)} <button type="button" class="link-btn" id="favExit">← ко всем объектам</button>${crmChips()}`
+      ? `Избранное и в работе: ${num(data.total)} <button type="button" class="link-btn" id="favExit">← ко всем объектам</button>
+        <a class="link-btn" href="/picks">📁 Подборки для клиентов</a> <a class="link-btn" href="/planner">📅 Планер</a>${crmChips()}`
       : esc(data.total ? `${num(data.total)} ${plural(data.total, "объект", "объекта", "объектов")}` : "Ничего не нашлось");
     // Карточки появляются волной: у каждой своя небольшая задержка
     data.items.forEach((o) => known.set(o.id, o));
@@ -718,7 +719,23 @@
     const list = (o.plans || []).map((p) => `<li><a href="/planner?event=${p.id}">${PLAN_KINDS[p.kind] || ""} · ${esc(when(p.ts))}</a>${p.done ? " ✓" : ""}
       <span>${esc(p.title)}</span></li>`).join("");
     return `<div class="d-plan">${list ? `<ul>${list}</ul>` : ""}
-      <a class="pill light" href="/planner?add=show&listing=${o.id}">📅 Запланировать показ или звонок</a></div>`;
+      <div class="d-plan-btns"><a class="pill light" href="/planner?add=show&listing=${o.id}">📅 Запланировать</a>
+        <button type="button" class="pill light" data-pick-open="${o.id}">📁 В подборку для клиента</button></div></div>`;
+  }
+
+  // ─── подборки для клиента ───
+  let pickFor = 0;
+  async function openPicks(id) {
+    pickFor = id;
+    const r = await call(`/api/picks?listing=${id}`);
+    if (r.status === 403) { toast(r.data.detail || "Подборки — по подписке", 3500); return; }
+    if (!r.ok) { toast("Не получилось загрузить подборки"); return; }
+    const inSet = new Set(r.data.with);
+    $("pickList").innerHTML = r.data.items.map((p) => `<li><label><input type="checkbox" data-pick-toggle="${p.id}"${inSet.has(p.id) ? " checked" : ""}>
+      <span><b>${esc(p.title)}</b><small>${p.n} ${plural(p.n, "объект", "объекта", "объектов")}</small></span></label></li>`).join("")
+      || `<li class="note">Подборок пока нет — создайте первую.</li>`;
+    $("pickNewTitle").value = "";
+    openDlg($("pickDlg"));
   }
 
   function noteHTML(o) {
@@ -1269,6 +1286,7 @@
       <p class="note">${esc(who)}</p>
       <p>${status}</p>${views}
       <div class="cab-links"><a class="pill light" href="/planner">📅 Планер: показы, созвоны, заметки</a>
+        <a class="pill light" href="/picks">📁 Подборки для клиентов</a>
         <a class="pill light" href="/market">📊 Аналитика рынка</a></div>
       ${u.is_admin ? `<div class="cab-admin" id="cabAdmin"><div class="cab-stats">${"<div class=\"skel\"><i></i></div>".repeat(6)}</div>
         <a class="pill wide" href="/admin">Открыть админку →</a></div>` : ""}
@@ -1417,6 +1435,7 @@
       if (t.dataset.fav) { e.stopPropagation(); toggleFavorite(Number(t.dataset.fav)); return; }
       if (t.dataset.crm) { setCrm(Number(t.dataset.id), t.dataset.crm, t); return; }
       if (t.dataset.cmp) { e.stopPropagation(); toggleCompare(Number(t.dataset.cmp)); return; }
+      if (t.dataset.pickOpen) { openPicks(Number(t.dataset.pickOpen)); return; }
       if (t.dataset.cmpDel) { toggleCompare(Number(t.dataset.cmpDel)); if (cmp.length >= 2) openCompare(); else closeDlg($("cmpDlg")); return; }
       if (t.id === "cmpOpen") { openCompare(); return; }
       if (t.id === "cmpClear") { const ids = cmp; cmp = []; cmpSave(); ids.forEach((id) => document.querySelectorAll(`[data-cmp="${id}"]`).forEach((b) => b.classList.remove("on"))); renderCmpBar(); return; }
@@ -1595,8 +1614,22 @@
     document.addEventListener("load", (e) => {
       if (e.target.tagName === "IMG") e.target.classList.add("loaded");
     }, true);
-    ["detail", "loginDlg", "cabinetDlg", "cmpDlg"].forEach((id) => swipeToClose($(id)));
+    ["detail", "loginDlg", "cabinetDlg", "cmpDlg", "pickDlg"].forEach((id) => swipeToClose($(id)));
     renderCmpBar();
+    $("pickList").addEventListener("change", async (e) => {
+      const cb = e.target;
+      if (!cb.dataset.pickToggle) return;
+      const r = await call(`/api/picks/${cb.dataset.pickToggle}/items`, { listing_id: pickFor, add: cb.checked });
+      if (!r.ok) { cb.checked = !cb.checked; toast(r.data.detail || "Не получилось"); return; }
+      toast(cb.checked ? "✓ Добавлено в подборку" : "Убрано из подборки", 1600);
+    });
+    $("pickNewForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const r = await call("/api/picks", { title: $("pickNewTitle").value, listing_id: pickFor });
+      if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
+      toast("✓ Подборка создана, объект добавлен", 2200);
+      openPicks(pickFor);
+    });
 
     $("results").addEventListener("click", (e) => {
       if (e.target.closest("[data-fav], [data-cmp], .plan-btn")) return;

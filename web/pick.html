@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Подборка · 1+1</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#035352">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="/static/style.css?v=17">
+<link rel="stylesheet" href="/static/motion.css?v=27">
+<link rel="stylesheet" href="/static/pick.css?v=1">
+</head>
+<body>
+<main class="pk">
+  <header class="pk-head">
+    <div class="pk-brand"><img src="/static/favicon.svg" alt="" width="34" height="34"><span>Подборка объектов</span></div>
+    <h1 id="pkTitle">Загружаем…</h1>
+    <p class="pk-note" id="pkNote" hidden></p>
+    <div class="pk-agent" id="pkAgent" hidden></div>
+  </header>
+  <div class="pk-map" id="pkMap" hidden></div>
+  <ol class="pk-list" id="pkList"></ol>
+  <footer class="pk-foot">Подборка сделана в сервисе <a href="/">1+1</a> — поиск объектов Краснодара.</footer>
+</main>
+<div class="pk-agent-bar" id="pkBar" hidden></div>
+<dialog id="pkPhoto" class="pk-photo"><img id="pkPhotoImg" alt=""><button type="button" class="close" id="pkPhotoClose" aria-label="Закрыть">✕</button>
+  <button type="button" class="pk-nav prev" id="pkPrev" aria-label="Предыдущее фото">‹</button><button type="button" class="pk-nav next" id="pkNext" aria-label="Следующее фото">›</button></dialog>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="/static/pick.js?v=1"></script>
+</body>
+</html>

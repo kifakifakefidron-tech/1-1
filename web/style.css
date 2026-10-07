@@ -404,3 +404,12 @@ a.access-btn { text-decoration: none; color: var(--ink); display: inline-block; 
   place-items: center; border: 1px solid var(--line-2); background: rgba(0,0,0,.18); text-decoration: none; font-size: 15px; }
 .cab-links { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
 .cab-links .pill { font-size: 14px; padding: 8px 14px; }
+
+/* подборки */
+.d-plan-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.pick-list { list-style: none; margin: 10px 0; padding: 0; display: grid; gap: 6px; max-height: 45vh; overflow-y: auto; }
+.pick-list label { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 12px; background: rgba(0,0,0,.14); cursor: pointer; }
+.pick-list input { accent-color: #ffd86b; width: 18px; height: 18px; }
+.pick-list span { display: flex; flex-direction: column; }
+.pick-list small { color: var(--ink-3); }
+#count .link-btn[href] { text-decoration: none; margin-left: 10px; }

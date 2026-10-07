@@ -223,6 +223,16 @@ CREATE TABLE IF NOT EXISTS planner_notes (
     id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, text TEXT NOT NULL,
     pinned INTEGER NOT NULL DEFAULT 0, color TEXT, created INTEGER NOT NULL, updated INTEGER NOT NULL
 );
+-- Подборки для клиента (app/picks.py): агент собирает объекты, клиент открывает /c/<token>
+CREATE TABLE IF NOT EXISTS collections (
+    id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, token TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL, note TEXT, contact_name TEXT, contact_phone TEXT, created INTEGER NOT NULL, updated INTEGER NOT NULL,
+    views INTEGER NOT NULL DEFAULT 0, viewed_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS collection_items (
+    collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
+    pos INTEGER NOT NULL DEFAULT 0, note TEXT, added INTEGER NOT NULL, PRIMARY KEY (collection_id, listing_id)
+);
 CREATE TABLE IF NOT EXISTS notes (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
     text TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)
