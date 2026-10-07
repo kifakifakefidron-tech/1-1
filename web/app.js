@@ -707,6 +707,7 @@
     f.complex.value = o.complex || "";
     $("placeDistrict").value = o.district || "";
     $("placeInfo").textContent = [o.title, address(o)].filter(Boolean).join(" · ");
+    $("placeYa").href = `https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(yaQuery(o))}`;
     $("placeSkip").hidden = !placeQueue;
     $("placeLeft").textContent = "";
     renderPlaceLearn();

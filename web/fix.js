@@ -109,6 +109,7 @@
     ].filter(Boolean).join(" · ");
     $("fxText").textContent = it.text;
     $("fxOpen").href = `/?open=${it.id}`;
+    $("fxYaAll").href = yaHref(it);
     $("fxPhoto").hidden = !it.photo;
     if (it.photo) $("fxPhoto").src = it.photo;
     $("fxPlace").hidden = mode !== "place";
@@ -171,6 +172,14 @@
     renderLearn();
   }
 
+  // Яндекс Карты с вписанным адресом: дом → ЖК → улица → район
+  function yaHref(it) {
+    const place = it.settlement || "Краснодар";
+    const q = it.street ? `${place}, ${it.street}${it.house ? " " + it.house : ""}`
+      : it.complex ? `ЖК ${it.complex}, Краснодар` : `${it.district || ""} ${place}`.trim();
+    return `https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(q)}`;
+  }
+
   // ─── карта ────────────────────────────────────────────────────────────
   function showGeo(it) {
     const start = it.lat ? [it.lat, it.lon] : [45.035, 38.975];
@@ -184,10 +193,7 @@
     }
     marker.setLatLng(start);
     $("fxCoords").value = "";
-    const place = it.settlement || "Краснодар";
-    const q = it.street ? `${place}, ${it.street}${it.house ? " " + it.house : ""}`
-      : it.complex ? `ЖК ${it.complex}, Краснодар` : `${it.district || ""} ${place}`.trim();
-    $("fxYa").href = `https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(q)}`;
+    $("fxYa").href = yaHref(it);
     const fit = () => { map.invalidateSize(); map.setView(start, it.lat ? 16 : 12); };
     fit(); setTimeout(fit, 150);
     geoNow();

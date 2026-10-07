@@ -142,6 +142,7 @@
           ${field("street", "Улица", o.street)}
           ${field("house", "Дом", o.house)}
         </div>
+        <p class="note"><a class="ya-link" data-ya-form href="https://yandex.ru/maps/35/krasnodar/" target="_blank" rel="noopener">🔎 Проверить адрес в Яндекс Картах ↗</a></p>
         <datalist id="agentDistricts">${(meta.districts || []).map((d) => `<option value="${esc(d)}">`).join("")}</datalist>` : "";
     const photos = isNew ? `<p class="note">Фото можно добавить сразу после сохранения.</p>` : photosHTML(o);
     body.innerHTML = `
@@ -246,6 +247,14 @@
 
   // ─── события ────────────────────────────────────────────────────────────
   document.addEventListener("click", async (e) => {
+    const ya = e.target.closest("a[data-ya-form]");
+    if (ya) {   // адрес из полей формы — в ссылку, до перехода
+      const f = $("agentForm");
+      const v = (n) => (f && f[n] ? f[n].value.trim() : "");
+      const q = v("street") ? `Краснодар, ${v("street")} ${v("house")}` : v("complex") ? `ЖК ${v("complex")}, Краснодар` : `${v("district")} Краснодар`;
+      ya.href = `https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(q.trim())}`;
+      return;
+    }
     const t = e.target.closest("button");
     if (!t) return;
     if (t.hasAttribute("data-agent")) { closeDlg($("cabinetDlg")); open(); return; }

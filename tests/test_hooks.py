@@ -160,3 +160,17 @@ def test_site_notice_even_if_email_already_sent(env):
     _add(conn, "2-к квартира 60 м², 5/9 эт., ЮМР. 7 млн руб. 89180000009", ts=int(time.time()) + 5)
     titles = [n["title"] for n in c.get("/api/notices").json()["items"]]
     assert titles.count("Новые объекты по поиску: 1") == 2
+
+
+def test_old_saved_search_url_rebuilt_from_params():
+    from urllib.parse import parse_qs, urlsplit
+    from app import hooks
+    s = {"id": 7, "page_query": None,
+         "params": "deal=sale&district=%D0%A4%D0%9C%D0%A0&district=%D0%AE%D0%9C%D0%A0&price_max=7500000&rooms=1%2C2&type=flat"}
+    q = parse_qs(urlsplit(hooks.search_url(s)).query)
+    assert q["district"] == ["ФМР|ЮМР"] and q["pmax"] == ["7.5"] and q["rooms"] == ["1|2"] and q["saved"] == ["7"]
+    rent = {"id": 8, "page_query": "", "params": "deal=rent&price_max=35000"}
+    q = parse_qs(urlsplit(hooks.search_url(rent)).query)
+    assert q["deal"] == ["rent"] and q["pmax"] == ["35"]
+    # служебные отметки из адреса страницы не попадают в ссылку
+    assert hooks.search_url({"id": 9, "page_query": "rooms=2&open=5&saved=3&since=1", "params": ""}) == "/?rooms=2&saved=9"

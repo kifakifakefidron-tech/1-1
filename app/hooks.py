@@ -204,14 +204,47 @@ def save_search(conn: sqlite3.Connection, user: sqlite3.Row, query: str, types: 
 
 
 def _page_query(q: str) -> str:
-    """Адрес страницы с фильтрами — без вида, страницы и открытого объекта."""
-    pairs = [(k, v) for k, v in urllib.parse.parse_qsl((q or "").lstrip("?")) if k not in ("open", "view", "page", "fresh")]
+    """Адрес страницы с фильтрами — без вида, страницы, открытого объекта и служебных отметок."""
+    pairs = [(k, v) for k, v in urllib.parse.parse_qsl((q or "").lstrip("?"))
+             if k not in ("open", "view", "page", "fresh", "saved", "since", "fav", "login", "cabinet", "agent")]
     return urllib.parse.urlencode(pairs)
+
+
+def page_from_params(params: str) -> str:
+    """Старые подписки (до page_query): фильтры API → адрес страницы. Цена на странице — в млн (аренда — в тыс.)."""
+    p: dict[str, list[str]] = {}
+    for k, v in urllib.parse.parse_qsl(params or ""):
+        p.setdefault(k, []).append(v)
+    one = lambda k: p.get(k, [""])[0]   # noqa: E731
+    rent = one("deal") == "rent"
+    out = []
+    if one("q"):
+        out.append(("q", one("q")))
+    if rent:
+        out.append(("deal", "rent"))
+    for api, page in (("type", "type"), ("rooms", "rooms")):
+        if one(api):
+            out.append((page, one(api).replace(",", "|")))
+    for api, page in (("price_min", "pmin"), ("price_max", "pmax")):
+        if one(api).isdigit():
+            out.append((page, f"{int(one(api)) / (1000 if rent else 1e6):g}"))
+    for api, page in (("area_min", "amin"), ("area_max", "amax"), ("land_min", "lmin"), ("land_max", "lmax"),
+                      ("not_first", "nf"), ("not_last", "nl")):
+        if one(api):
+            out.append((page, one(api)))
+    for k in ("district", "complex"):
+        vals = [x for v in p.get(k, []) for x in v.split(",") if x]
+        if vals:
+            out.append((k, "|".join(vals)))
+    return urllib.parse.urlencode(out)
 
 
 def search_url(s, since: int | None = None) -> str:
     """Ссылка на сохранённый поиск (те же фильтры). С since — страница выделит объекты, появившиеся после него."""
     pq = s["page_query"] if "page_query" in s.keys() and s["page_query"] else ""
+    if not pq and "params" in s.keys():   # подписка сохранена до 07.10 — адрес страницы собираем из фильтров
+        pq = page_from_params(s["params"])
+    pq = _page_query(pq)
     extra = f"saved={s['id']}" + (f"&since={since}" if since else "")
     return "/?" + "&".join(x for x in (pq, extra) if x)
 

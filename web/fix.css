@@ -52,6 +52,7 @@
   .fx-actions { position: sticky; bottom: 0; background: var(--paper); margin: 18px -18px -18px; padding: 12px 18px;
     border-radius: 0 0 20px 20px; }
 }
+.fx-open.ya-link { display: inline-block; margin-left: 14px; }
 .ya-link { color: #ffd86b; font-weight: 600; text-decoration: none; }
 .ya-link:hover { text-decoration: underline; }
 .ya-sel { position: fixed; z-index: 2147483000; padding: 7px 12px; border-radius: 999px; background: #ffd86b; color: #035352;
