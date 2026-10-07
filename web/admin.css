@@ -133,3 +133,31 @@ tr.peek td { background: rgba(0, 0, 0, .12); }
   .sp-list { max-height: 40vh; }
   .sp-objs li { grid-template-columns: 1fr auto; }
 }
+
+/* подробная статистика */
+.st { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; margin-top: 18px; }
+.st-box { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; min-width: 0; }
+.st-box.wide { grid-column: 1 / -1; }
+.st-box h3 { margin: 0 0 10px; font: 600 20px var(--head); }
+.st-t { width: 100%; border-collapse: collapse; font-size: 14px; }
+.st-t th { text-align: left; font-weight: 600; color: var(--ink-3); font-size: 12px; padding: 4px 8px; }
+.st-t td { padding: 6px 8px; border-top: 1px solid var(--line); }
+.st-t td:not(:first-child), .st-t th:not(:first-child) { text-align: right; white-space: nowrap; }
+.st-t small { color: var(--ink-3); }
+.st-kv { display: grid; gap: 2px; margin: 8px 0 0; }
+.st-kv div { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.st-kv dt { color: var(--ink-2); }
+.st-kv dd { margin: 0; font-weight: 600; text-align: right; }
+.st-kv a, .st-list a { color: #ffd86b; }
+.st-days { display: grid; grid-template-columns: repeat(14, 1fr); gap: 6px; align-items: end; }
+.st-day { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; min-width: 0; }
+.st-bars { height: 120px; width: 100%; display: flex; gap: 2px; align-items: flex-end; justify-content: center; }
+.st-bars i { width: 42%; max-width: 18px; border-radius: 4px 4px 0 0; min-height: 1px; }
+.st-bars .add, .st-dot.add { background: #ffd86b; }
+.st-bars .rem, .st-dot.rem { background: #ff9f8a; }
+.st-day b { color: #ffd86b; font-weight: 600; }
+.st-day small { color: #ff9f8a; }
+.st-day span { color: var(--ink-3); white-space: nowrap; }
+.st-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin: 0 4px 0 10px; vertical-align: -1px; }
+.st-list { margin: 0; padding-left: 20px; font-size: 14px; display: grid; gap: 6px; }
+@media (max-width: 600px) { .st { grid-template-columns: 1fr; } .st-day span { font-size: 9px; } }

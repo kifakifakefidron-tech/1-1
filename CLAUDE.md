@@ -158,6 +158,10 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   «🔎 Найти адрес в Яндекс Картах» в окне точки и на /fix, и у админа — кнопка при выделении текста (web/yasel.js).
   Ссылку из Яндекса вставляют в поле координат (метка pt/whatshere важнее центра ll).
 - Объекты фида снова с отметкой «Партнёр» (.mark.partner) — только отметка, без вывода вперёд (решение 07.10, ночь).
+- `app/stats.py` — подробная статистика в админке (вкладка «Обзор», /api/admin/stats): добавлено/снято сегодня,
+  вчера, 7 и 30 дней, по дням (14), причины снятия (listings.removed_at/removed_reason ставит триггер trg_removed),
+  повторы, тип×сделка, медианы цен, качество разбора со ссылками на /fix, чаты, пользователи, worker_tick. Сутки — UTC+3.
+- Сохранённые поиски до 07.10 без page_query: hooks.page_from_params собирает адрес страницы из фильтров API.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

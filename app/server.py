@@ -22,7 +22,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import (accounts, agent, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
-               payments, region, search, tg)
+               payments, region, search, stats, tg)
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -528,6 +528,14 @@ def api_admin_overview(request: Request, body: dict | None = None):
         "price": config.SUB_PRICE, "period_days": config.SUB_DAYS,
         "feed_synced": int(db.get_state(conn, "feed_synced") or 0),
     })
+
+
+def api_admin_stats(request: Request, body: dict | None = None):
+    """Подробная статистика: добавлено/снято по дням, причины, чаты, качество разбора, пользователи."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    return JSONResponse(stats.collect(db.get()))
 
 
 def api_admin_users(request: Request, body: dict | None = None):
@@ -1184,6 +1192,7 @@ routes = [
     Route("/api/pay", threaded(api_pay), methods=["POST"]),
     Route("/api/payments/yookassa", threaded(api_yookassa), methods=["POST"]),
     Route("/api/admin/overview", threaded(api_admin_overview)),
+    Route("/api/admin/stats", threaded(api_admin_stats)),
     Route("/api/admin/users", threaded(api_admin_users)),
     Route("/api/admin/users/{id:int}", threaded(api_admin_user_action), methods=["POST"]),
     Route("/api/admin/promos", threaded(api_admin_promos), methods=["GET", "POST", "DELETE"]),

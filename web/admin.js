@@ -40,6 +40,94 @@
       card(o.payments ? "включена" : "выключена", `оплата (${o.price} ₽ / ${o.period_days} дн.)`),
       card(day(o.feed_synced), "фид СТРЕЛ обновлён"),
     ].join("");
+    stats();
+  }
+
+  // ─── подробная статистика ───────────────────────────────────────────────
+  const n0 = (x) => (x == null ? "—" : Number(x).toLocaleString("ru-RU"));
+  const money = (p, deal) => (p == null ? "—" : deal === "rent" ? `${n0(Math.round(p / 1000))} тыс. ₽/мес`
+    : p >= 1e6 ? `${(p / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} млн ₽` : `${n0(p)} ₽`);
+  const ago = (ts) => {
+    if (!ts) return "—";
+    const m = Math.round((now() - ts) / 60);
+    return m < 1 ? "только что" : m < 60 ? `${m} мин назад` : m < 1440 ? `${Math.round(m / 60)} ч назад` : day(ts);
+  };
+  const box = (title, html, wide) => `<section class="st-box${wide ? " wide" : ""}"><h3>${title}</h3>${html}</section>`;
+  const tbl = (head, rows) => `<table class="st-t"><thead><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  const kv = (pairs) => `<dl class="st-kv">${pairs.map(([k, v, hint]) =>
+    `<div${hint ? ` title="${esc(hint)}"` : ""}><dt>${k}</dt><dd>${v}</dd></div>`).join("")}</dl>`;
+  const objLink = (o, val) => `<a href="/?open=${o.id}" target="_blank">${esc(o.title)}</a> · ${esc(money(o.price, o.deal))}${val}`;
+
+  async function stats() {
+    let s;
+    try { s = await call("/api/admin/stats"); } catch (e) { $("stats").innerHTML = `<p class="note">${esc(e.message)}</p>`; return; }
+    const L = s.listings, U = s.users, M = s.messages, Q = s.quality;
+    const per = (o) => [n0(o.today), n0(o.yesterday), n0(o.d7), n0(o.d30)];
+    const maxDay = Math.max(1, ...s.days.map((d) => Math.max(d.added, d.removed)));
+    const bars = s.days.map((d) => {
+      const lbl = new Date(d.day * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+      return `<div class="st-day" title="${lbl}: добавлено ${d.added}, снято ${d.removed}, сообщений ${d.messages}">
+        <div class="st-bars"><i class="add" style="height:${(d.added / maxDay) * 100}%"></i><i class="rem" style="height:${(d.removed / maxDay) * 100}%"></i></div>
+        <b>${d.added ? "+" + d.added : ""}</b><small>${d.removed ? "−" + d.removed : ""}</small><span>${lbl}</span></div>`;
+    }).join("");
+    const kinds = { listing: "объявления", request: "запросы «куплю/ищу»", other: "не про недвижимость", skipped: "пропущены (старые)", error: "ошибки разбора" };
+    const src = { wa: "WhatsApp", tg: "Telegram", max: "MAX", manual: "вручную", chat: "из чатов", feed: "СТРЕЛЫ (фид)", own: "свои объявления агентов" };
+    const fix = (kind, mode) => `<a href="/fix?mode=${mode}&kind=${kind}" target="_blank">разобрать →</a>`;
+    $("stats").innerHTML = [
+      box("Объявления: добавлено и снято", tbl(["", "Сегодня", "Вчера", "7 дней", "30 дней"], [
+        ["➕ Добавлено новых", ...per(L.added)],
+        ["➖ Снято с сайта", ...per(L.removed)],
+        ["🔁 Прислали повторно (объект ещё продаётся)", ...per(L.reposted)],
+      ]) + `<p class="note">Сейчас на сайте: <b>${n0(L.visible)}</b>. За 7 дней цена снизилась у ${n0(L.price_down_d7)}, выросла у ${n0(L.price_up_d7)}.</p>`, true),
+      box("По дням (14 дней)", `<div class="st-days">${bars}</div>
+        <p class="note"><i class="st-dot add"></i> добавлено <i class="st-dot rem"></i> снято · наведите на столбик — подробности</p>`, true),
+      box("Почему сняли", L.removed_reasons.length ? tbl(["Причина", "Сегодня", "7 дней"],
+        L.removed_reasons.map((r) => [esc(r.reason), n0(r.today), n0(r.d7)])) : `<p class="note">За 7 дней ничего не снято.</p>`),
+      box("Что на сайте", tbl(["", "Продажа", "Аренда"], Object.entries(s.mix).map(([t, v]) => [esc(t), n0(v.sale), n0(v.rent)]))
+        + kv(Object.entries(L.by_source).map(([k, v]) => [src[k] || k, n0(v)]))),
+      box("Цены (медиана)", kv([["Квартира, продажа", money(s.prices.flat_sale_median, "sale")],
+        ["Цена м² квартиры", s.prices.flat_m2_median ? `${n0(s.prices.flat_m2_median)} ₽` : "—"],
+        ["Квартира, аренда", money(s.prices.rent_median, "rent")]])),
+      box("Качество разбора", kv([
+        ["Без района", `${n0(Q.no_district)} ${fix("nodistrict", "place")}`, "не находятся фильтром по району"],
+        ["Квартиры без ЖК", `${n0(Q.flats_no_complex)} ${fix("nocomplex", "place")}`],
+        ["Нет точки на карте", `${n0(Q.no_map)} ${fix("none", "geo")}`],
+        ["Точка примерная", `${n0(Q.approx_map)} ${fix("approx", "geo")}`],
+        ["Без цены", n0(Q.no_price)], ["Без площади", n0(Q.no_area)], ["Без фото", n0(Q.no_photo)],
+        ["Скрыты: нет адреса, ЖК и района", n0(Q.hidden_no_place)],
+        ["Поправлено вами", n0(Q.admin_fixed)], ["Выучено правил", n0(Q.learned_rules)], ["Выучено точек", n0(Q.learned_points)],
+      ])),
+      box("Сообщения из чатов", kv([
+        ["Сегодня", n0(M.today)], ["За 7 дней", n0(M.d7)], ["Ждут разбора", n0(M.queue)],
+        ["Ошибок за 7 дней", n0(M.errors_d7)], ["Активных чатов за 7 дней", n0(M.chats_active_d7)], ["Отключено чатов", n0(M.chats_blocked)],
+        ...Object.entries(M.kinds_d7).map(([k, v]) => [`— ${kinds[k] || k}`, n0(v)]),
+        ...Object.entries(M.by_source_d7).map(([k, v]) => [`— ${src[k] || k}`, n0(v)]),
+      ])),
+      box("Самые полезные чаты (7 дней)", s.top_chats.length ? tbl(["Чат", "Сообщений", "Новых объектов"],
+        s.top_chats.map((c) => [esc(c.name || "—") + ` <small>${esc(src[c.source] || c.source)}</small>`, n0(c.messages), n0(c.new_objects)]))
+        : `<p class="note">Сообщений за 7 дней нет${s.system.wappi_enabled ? "" : " — сбор из чатов на паузе"}.</p>`, true),
+      box("Районы", tbl(["Район", "Объектов"], s.top_districts.map((d) => [esc(d.name), n0(d.n)]))),
+      box("ЖК", tbl(["ЖК", "Объектов"], s.top_complexes.map((d) => [esc(d.name), n0(d.n)]))),
+      box("Пользователи", tbl(["", "Сегодня", "7 дней", "30 дней"], [
+        ["Новых", n0(U.new.today), n0(U.new.d7), n0(U.new.d30)],
+        ["Заходили", n0(U.active.today), n0(U.active.d7), ""],
+        ["Открыли номеров", n0(U.phone_views.today), n0(U.phone_views.d7), ""],
+      ]) + kv([["Всего", n0(U.total)], ["На пробной неделе", n0(U.trial)], ["Оплатили", n0(U.paid)],
+        ["Доступ кончится за 3 дня", n0(U.access_ends_3d)], ["Доступ кончился", n0(U.expired)],
+        ["Открывали номера за 7 дней (людей)", n0(U.phone_viewers_d7)],
+        ["В избранном (за 7 дней)", `${n0(U.favorites)} (${n0(U.favorites_d7)})`], ["Следят за поисками", n0(U.saved_searches)],
+        ["Уведомлений за 7 дней", n0(U.notices_d7)], ["Заметок", n0(U.notes)],
+        ["Агентов с подтверждённым номером", n0(U.agents_verified)], ["Своих объявлений агентов", n0(U.own_listings)],
+        ["Правок агентов за 7 дней", n0(U.agent_edits_d7)], ["Новых жалоб", n0(U.complaints_new)], ["Скрытых номеров", n0(U.optouts)]]), true),
+      box("Чаще открывают номер (7 дней)", s.most_viewed.length
+        ? `<ol class="st-list">${s.most_viewed.map((o) => `<li>${objLink(o, ` · <b>${o.views}</b>`)}</li>`).join("")}</ol>` : `<p class="note">Пока нет.</p>`),
+      box("Чаще в избранном", s.most_fav.length
+        ? `<ol class="st-list">${s.most_fav.map((o) => `<li>${objLink(o, ` · <b>${o.n}</b> ♥`)}</li>`).join("")}</ol>` : `<p class="note">Пока нет.</p>`),
+      box("Фоновая работа", kv([
+        ["Последний цикл", `${ago(s.system.worker_tick)}${s.system.worker_ok === false ? " ⚠️ давно — проверьте worker" : ""}`],
+        ["Фид СТРЕЛ обновлён", ago(s.system.feed_synced)], ["Сбор из чатов", s.system.wappi_enabled ? "включён" : "на паузе"]])),
+    ].join("");
   }
 
   // ─── пользователи ───────────────────────────────────────────────────────

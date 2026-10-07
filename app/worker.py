@@ -51,6 +51,7 @@ def tick(conn) -> dict:
         db.set_state(conn, "cleanup_day", time.strftime("%Y-%m-%d"))
     notify.check_health(conn, dict(wappi.errors), llm.failures)
     notify.daily_summary(conn)
+    db.set_state(conn, "worker_tick", str(int(time.time())))   # для админки: фоновая работа жива
     return stats
 
 

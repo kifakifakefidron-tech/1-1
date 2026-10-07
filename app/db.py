@@ -237,6 +237,8 @@ MIGRATIONS = [
     ("listings", "admin_fixed", "INTEGER NOT NULL DEFAULT 0"),  # ЖК/район поправил админ — автоматика не трогает
     ("listings", "extra_districts", "TEXT NOT NULL DEFAULT '[]'"),  # ещё районы (объект на границе районов)
     ("listings", "hidden_reason", "TEXT"),                    # 'chat' — скрыт, т.к. приходил только из отключённых чатов
+    ("listings", "removed_at", "INTEGER"),                    # когда сняли с сайта (для статистики; ставит триггер)
+    ("listings", "removed_reason", "TEXT"),                   # stale | sold | feed | chat | expired | other
 ]
 
 _local = threading.local()
@@ -257,6 +259,28 @@ def _migrate(conn: sqlite3.Connection) -> None:
                     WHEN OLD.price IS NOT NULL AND NEW.price IS NOT NULL AND NEW.price != OLD.price
                     BEGIN UPDATE listings SET prev_price = OLD.price, price_changed_at = CAST(strftime('%s','now') AS INTEGER)
                           WHERE id = NEW.id; END""")
+    # Сняли с сайта (любым путём) — запомнить когда и почему; вернули — забыть
+    conn.execute("""CREATE TRIGGER IF NOT EXISTS trg_removed AFTER UPDATE OF is_active ON listings
+                    WHEN OLD.is_active != NEW.is_active
+                    BEGIN UPDATE listings SET
+                        removed_at = CASE WHEN NEW.is_active = 0 THEN CAST(strftime('%s','now') AS INTEGER) END,
+                        removed_reason = CASE WHEN NEW.is_active = 1 THEN NULL
+                            WHEN NEW.sold_at IS NOT NULL THEN 'sold'
+                            WHEN NEW.hidden_reason = 'chat' THEN 'chat'
+                            WHEN NEW.source = 'feed' THEN 'feed'
+                            WHEN NEW.source = 'own' THEN 'expired'
+                            WHEN NEW.last_seen < CAST(strftime('%s','now') AS INTEGER) - 15 * 86400 THEN 'stale'
+                            ELSE 'other' END
+                    WHERE id = NEW.id; END""")
+    # Один раз: снятым раньше — примерная дата снятия (продано — дата продажи, устарело — последний повтор + срок)
+    if not conn.execute("SELECT 1 FROM state WHERE key = 'removed_backfill'").fetchone():
+        conn.execute("""UPDATE listings SET
+                            removed_at = MIN(COALESCE(sold_at, CASE WHEN source = 'chat' THEN last_seen + ? END),
+                                             CAST(strftime('%s','now') AS INTEGER)),
+                            removed_reason = CASE WHEN sold_at IS NOT NULL THEN 'sold' WHEN hidden_reason = 'chat' THEN 'chat'
+                                                  WHEN source = 'chat' THEN 'stale' ELSE 'other' END
+                        WHERE is_active = 0 AND removed_at IS NULL""", (config.STALE_DAYS * 86400,))
+        conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('removed_backfill', '1')")
     conn.commit()
 
 
