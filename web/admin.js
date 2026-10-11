@@ -489,7 +489,21 @@
     }
   }
 
-  const loaders = { overview, users, promos, optouts, complaints, edits, chats, geo, place, districts };
+  // ─── удалённые навсегда ─────────────────────────────────────────────────
+  async function banned() {
+    const d = await call("/api/admin/banned");
+    $("bannedTable").innerHTML = d.items.length ? `<thead><tr><th>Объект</th><th>Удалён</th><th></th></tr></thead><tbody>${d.items.map((o) =>
+      `<tr><td><a href="/?open=${o.id}" target="_blank">${esc(o.title)}</a><br><span class="note">${esc([o.complex && "ЖК " + o.complex, o.district].filter(Boolean).join(" · "))}</span></td>
+        <td>${day(o.ts)}</td><td class="acts"><button data-unban="${o.id}">Восстановить</button></td></tr>`).join("")}</tbody>`
+      : `<tr><td class="note">Пока ничего не удалено. Удалить объект — в его окне: «⚙ Админ» → «🗑 Удалить навсегда».</td></tr>`;
+  }
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-unban]");
+    if (!b) return;
+    try { await call(`/api/admin/listings/${b.dataset.unban}/action`, { action: "restore" }); banned(); } catch (err) { fail(err); }
+  });
+
+  const loaders = { overview, users, promos, optouts, complaints, edits, chats, geo, place, districts, banned };
 
   function show(tab) {
     document.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));

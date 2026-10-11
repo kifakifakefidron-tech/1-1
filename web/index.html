@@ -13,8 +13,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
-<link rel="stylesheet" href="/static/style.css?v=21">
-<link rel="stylesheet" href="/static/motion.css?v=30">
+<link rel="stylesheet" href="/static/style.css?v=23">
+<link rel="stylesheet" href="/static/motion.css?v=32">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -33,17 +33,15 @@
     </svg>
       <span class="brand-text"><b class="brand-name">1+1</b><span class="brand-sub">поиск объектов Краснодара</span></span>
     </a>
-    <a class="bell-mobile" href="/notifications" id="bellMobile" hidden aria-label="Уведомления"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><i class="bell-dot" id="bellDot" hidden></i></a>
+    <a class="bell" href="/notifications" id="bellMobile" data-bell hidden aria-label="Уведомления"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><b class="bell-count" hidden></b></a>
     <nav class="nav-links" aria-label="Разделы">
       <button type="button" class="nav-link on" data-tab="list">Объекты</button>
       <button type="button" class="nav-link" data-tab="map">Карта</button>
       <button type="button" class="nav-link" data-tab="fav" id="favBtn">Избранное</button>
       <a class="nav-link" href="/planner" id="plannerLink" hidden>Планер</a>
-      <a class="nav-link" href="/notifications" id="bellLink" hidden>Уведомления<i class="nav-badge" id="bellBadge" hidden></i></a>
       <details class="nav-more"><summary class="nav-link">Ещё</summary>
         <div class="nav-menu">
           <a class="nm-narrow" href="/planner" id="plannerMore" hidden>📅 Планер</a>
-          <a class="nm-narrow" href="/notifications" id="bellMore" hidden>🔔 Уведомления</a>
           <a class="nm-narrow" href="/admin" id="adminMore" hidden>⚙ Админка</a>
           <a href="/requests">🙋 Запросы покупателей</a>
           <a href="/market">📊 Аналитика рынка</a>
@@ -141,6 +139,7 @@
   <div class="saved-row" id="savedRow" hidden>
     <span class="saved-label">🔔 Мои поиски</span>
     <div class="saved-chips" id="savedChips"></div>
+    <button type="button" class="saved-toggle" id="savedToggle">Скрыть</button>
   </div>
   <div class="hit-note" id="hitNote" hidden></div>
 
@@ -349,7 +348,8 @@
 
 <script src="/static/combo.js?v=2"></script>
 <script src="/static/yasel.js?v=1"></script>
-<script src="/static/app.js?v=55"></script>
+<script src="/static/bell.js?v=1"></script>
+<script src="/static/app.js?v=58"></script>
 <script src="/static/agent.js?v=4"></script>
 </body>
 </html>

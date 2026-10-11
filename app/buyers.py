@@ -259,7 +259,7 @@ def search_url(r: dict) -> str:
 
 
 def feed(conn: sqlite3.Connection, with_contacts: bool, deal: str = "", district: str = "", rooms: int | None = None,
-         q: str = "", page: int = 1, size: int = 30) -> dict:
+         q: str = "", page: int = 1, size: int = 32) -> dict:
     where, params = ["is_active = 1"], []
     if deal in ("sale", "rent"):
         where.append("deal = ?"); params.append(deal)
@@ -275,9 +275,7 @@ def feed(conn: sqlite3.Connection, with_contacts: bool, deal: str = "", district
                         params + [size, (max(1, page) - 1) * size]).fetchall()
     items = []
     for r in rows:
-        d = _row(r, with_contacts)
-        d["url"] = search_url(d)
-        items.append(d)
+        items.append(_row(r, with_contacts))
     districts = [x[0] for x in conn.execute(
         "SELECT j.value, COUNT(*) n FROM buyer_requests, json_each(districts) j WHERE is_active = 1 GROUP BY 1 ORDER BY 2 DESC LIMIT 40")]
     return {"total": total, "items": items, "districts": districts, "page": page,

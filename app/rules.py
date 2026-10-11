@@ -390,8 +390,25 @@ def detect_type(text: str) -> str | None:
     return _type_by_words(norm(text))
 
 
-def detect_deal(text: str) -> str:
+_COMMUNAL = re.compile(r"\bком\.?\s*(?:плат|услуг)|\bкоммунал|\bкомунал|\bку\b|\bк/у\b|\bжку\b|"
+                       r"\bсч[её]тчик|свет\s*(?:,|и)?\s*вод|за\s+свет|\bквартплат")
+
+
+def has_communal(text: str) -> bool:
+    """Упомянуты коммунальные платежи («+ком платежи», «КУ», «коммуналка», «счётчики») — признак настоящей аренды."""
+    return bool(_COMMUNAL.search(norm(text).replace("ё", "е")))
+
+
+def has_rent_words(text: str) -> bool:
+    return detect_deal(text, need_communal=False) == "rent"
+
+
+def detect_deal(text: str, need_communal: bool = True) -> str:
+    """Аренда — только если «сдам/сдаётся/аренда…» И упомянуты коммунальные платежи (решение Артёма 07.10:
+    без этого в аренду попадало много лишнего — «дом сдаётся в 2026», продажи с арендатором и т.п.)."""
     t = norm(text)
+    if need_communal and not has_communal(text):
+        return "sale"
     if (re.search(r"\b(?:сдам|сдается|сдаётся|сдаю|сдаем|сдаём|сдаются|в аренду|аренда|арендa|посуточн|долгосрочн\w* аренд|"
                   r"на длительный срок|помесячно|в месяц|/мес|руб\.?/мес|т\.?р\.?/мес)", t)
             and not re.search(r"\bарендн\w* бизнес|\bарендатор\w* (?:есть|оплачива)|\bс арендатор", t)):

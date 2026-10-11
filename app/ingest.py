@@ -85,6 +85,9 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
     learning.apply(conn, o)
     fh = dedupe.fragment_hash(o.fragment)
     d = o.to_dict()
+    ban = conn.execute("SELECT listing_id FROM banned WHERE kind = 'frag' AND key = ?", (fh,)).fetchone()
+    if ban is not None:   # этот текст админ удалил навсегда
+        return ban[0] or 0, "banned"
     if d.get("article"):
         own = conn.execute("SELECT id FROM listings WHERE source = 'feed' AND article = ? AND is_active = 1",
                            (d["article"],)).fetchone()
@@ -94,6 +97,8 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
                 "VALUES (?,?,?,?,?,?,'strely')", (own["id"], message_id, ts, d["price"], json.dumps(d["phones"]), fh))
             return own["id"], "strely"
     match, why = dedupe.find_match(conn, o, fh, ts)
+    if match is not None and match["hidden_reason"] == "admin":   # тот же объект, удалённый админом
+        return match["id"], "banned"
 
     if match is None:
         d["title"] = make_title(d)
@@ -193,6 +198,11 @@ def add_message(conn: sqlite3.Connection, *, source: str, text: str, ts: int | N
 
 def process_message(conn: sqlite3.Connection, message_id: int, use_llm: bool | None = None) -> dict:
     m = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
+    if m is not None and m["status"] == "new" and conn.execute(
+            "SELECT 1 FROM banned WHERE kind = 'hash' AND key = ?", (m["text_hash"],)).fetchone():
+        conn.execute("UPDATE messages SET status = 'skipped', kind = 'banned' WHERE id = ?", (m["id"],))
+        conn.commit()
+        return {"status": "banned"}
     if m is None:
         return {"status": "missing"}
 
@@ -207,7 +217,8 @@ def process_message(conn: sqlite3.Connection, message_id: int, use_llm: bool | N
             "SELECT DISTINCT listing_id FROM listing_events WHERE message_id = ?", (prev["id"],))]
         for lid in listing_ids:
             conn.execute(
-                "UPDATE listings SET last_seen = MAX(last_seen, ?), seen_count = seen_count + 1, is_active = 1 WHERE id = ?",
+                "UPDATE listings SET last_seen = MAX(last_seen, ?), seen_count = seen_count + 1, "
+                "is_active = CASE WHEN hidden_reason = 'admin' THEN 0 ELSE 1 END WHERE id = ?",
                 (m["ts"], lid))
             conn.execute(
                 "INSERT INTO listing_events (listing_id, message_id, ts, match) VALUES (?,?,?, 'repost')",
@@ -262,6 +273,54 @@ def process_pending(conn: sqlite3.Connection, limit: int = 200, use_llm: bool | 
     return done
 
 
+def ban_listing(conn: sqlite3.Connection, listing_id: int) -> dict:
+    """Админ удалил объект навсегда: скрыть и запомнить его тексты — повторы и тот же объект больше не появятся."""
+    r = conn.execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    if r is None:
+        return {"error": "не найдено"}
+    now = int(time.time())
+    keys = [("frag", h[0]) for h in conn.execute(
+        "SELECT DISTINCT fragment_hash FROM listing_events WHERE listing_id = ? AND fragment_hash IS NOT NULL", (listing_id,))]
+    keys += [("hash", h[0]) for h in conn.execute(
+        """SELECT DISTINCT m.text_hash FROM listing_events e JOIN messages m ON m.id = e.message_id
+           WHERE e.listing_id = ? AND (SELECT COUNT(DISTINCT e2.listing_id) FROM listing_events e2
+                                       WHERE e2.message_id = m.id) = 1""", (listing_id,))]   # портянки не баним целиком
+    if r["ext_id"]:
+        keys.append(("feed", r["ext_id"]))
+    conn.executemany("INSERT OR IGNORE INTO banned (kind, key, listing_id, title, ts) VALUES (?,?,?,?,?)",
+                     [(k, v, listing_id, r["title"], now) for k, v in keys])
+    conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'admin' WHERE id = ?", (listing_id,))
+    conn.commit()
+    return {"ok": True, "keys": len(keys)}
+
+
+def unban_listing(conn: sqlite3.Connection, listing_id: int) -> None:
+    conn.execute("DELETE FROM banned WHERE listing_id = ?", (listing_id,))
+    conn.execute("UPDATE listings SET is_active = 1, hidden_reason = NULL, last_seen = MAX(last_seen, ?) WHERE id = ?",
+                 (int(time.time()), listing_id))
+    conn.commit()
+
+
+def fix_rent_rule(conn: sqlite3.Connection) -> dict:
+    """Один раз после нового правила аренды: «аренда» без коммунальных платежей — дорогие в продажу, дешёвые скрыть."""
+    to_sale = hidden = 0
+    for r in conn.execute("""SELECT id, price, fragment, description FROM listings
+                             WHERE deal = 'rent' AND deal_fixed = 0 AND source = 'chat'""").fetchall():
+        if rules.has_communal(r["fragment"] or r["description"] or ""):
+            continue
+        if r["price"] and r["price"] >= 1_000_000:
+            row = dict(conn.execute("SELECT * FROM listings WHERE id = ?", (r["id"],)).fetchone())
+            row["deal"] = "sale"
+            row["title"] = make_title(row)
+            conn.execute("UPDATE listings SET deal = 'sale', title = ? WHERE id = ?", (row["title"], r["id"]))
+            to_sale += 1
+        else:
+            conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'rent_rule' WHERE id = ? AND is_active = 1", (r["id"],))
+            hidden += 1
+    conn.commit()
+    return {"to_sale": to_sale, "hidden": hidden}
+
+
 def archive_stale(conn: sqlite3.Connection, now: int | None = None) -> int:
     now = int(now or time.time())
     # Объекты фида СТРЕЛ не устаревают сами — их снимает сам фид
@@ -275,7 +334,9 @@ def cleanup_old(conn: sqlite3.Connection, now: int | None = None) -> dict:
     """Раз в сутки: удалить сообщения старше KEEP_DAYS и объекты, скрытые дольше KEEP_DAYS."""
     now = int(now or time.time())
     edge = now - config.KEEP_DAYS * 86400
-    ids = [r[0] for r in conn.execute("SELECT id FROM listings WHERE is_active = 0 AND last_seen < ?", (edge,))]
+    # удалённые админом не стираем: по ним узнаём тот же объект в новых сообщениях
+    ids = [r[0] for r in conn.execute("""SELECT id FROM listings WHERE is_active = 0 AND last_seen < ?
+                                         AND COALESCE(hidden_reason, '') != 'admin'""", (edge,))]
     for i in ids:
         conn.execute("DELETE FROM listings_fts WHERE rowid = ?", (i,))
         conn.execute("DELETE FROM listing_events WHERE listing_id = ?", (i,))

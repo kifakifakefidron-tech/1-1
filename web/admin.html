@@ -10,8 +10,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=21">
-<link rel="stylesheet" href="/static/motion.css?v=30">
+<link rel="stylesheet" href="/static/style.css?v=23">
+<link rel="stylesheet" href="/static/motion.css?v=32">
 <link rel="stylesheet" href="/static/admin.css?v=8">
 </head>
 <body>
@@ -34,6 +34,7 @@
       <button class="seg" data-tab="geo">Карта</button>
       <button class="seg" data-tab="place">ЖК и районы</button>
       <button class="seg" data-tab="districts">Справочник</button>
+      <button class="seg" data-tab="banned">Удалённые</button>
     </nav>
 
     <section data-pane="overview"><div class="adm-cards" id="overview"></div><div class="st" id="stats"></div></section>
@@ -137,6 +138,11 @@
       </div>
     </section>
 
+    <section data-pane="banned" hidden>
+      <p class="note">Объекты, удалённые вами навсегда: их повторы и тот же объект в новых сообщениях на сайт не попадают.</p>
+      <div class="adm-table-wrap"><table class="adm-table" id="bannedTable"></table></div>
+    </section>
+
     <section data-pane="edits" hidden>
       <p class="note">Что агенты меняли в объявлениях. Если правка неверная — «Откатить» вернёт прежнее значение.</p>
       <div class="adm-table-wrap"><table class="adm-table" id="edits"></table></div>
@@ -145,6 +151,6 @@
 </main>
 <div class="chat-toast" id="chatToast" hidden></div>
 <script src="/static/combo.js?v=2"></script>
-<script src="/static/admin.js?v=15"></script>
+<script src="/static/admin.js?v=16"></script>
 </body>
 </html>

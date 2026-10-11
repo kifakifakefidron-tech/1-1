@@ -19,18 +19,17 @@
     return h < 1 ? "только что" : h < 24 ? `${h} ч назад` : h < 48 ? "вчера" : new Date(ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
   };
 
-  function itemHTML(r, access) {
+  function itemHTML(r, access, i) {
     const chips = [r.deal === "rent" ? "Аренда" : "Покупка", r.type && TYPES[r.type], roomsText(r.rooms_mask),
       r.price_min && r.price_max ? `${money(r.price_min, r.deal)} – ${money(r.price_max, r.deal)}` : r.price_max ? `до ${money(r.price_max, r.deal)}` : "",
       ...r.districts, ...r.complexes.map((c) => `ЖК ${c}`)].filter(Boolean);
     const phones = access && r.phones && r.phones.length
       ? r.phones.map((p) => `<a class="pill" href="tel:${esc(p)}">${esc(p)}</a><a class="pill light" href="https://wa.me/${p.replace(/\D/g, "")}" target="_blank" rel="noopener">WhatsApp</a>`).join("")
       : r.phones_count ? `<span class="rq-lock">📞 +7 ••• •••-••-•• — по подписке</span>` : "";
-    return `<li class="rq-item">
+    return `<li class="rq-item" style="--d:${Math.min(i, 12) * 40}ms">
       <div class="rq-chips">${chips.map((c) => `<span class="chip on">${esc(c)}</span>`).join("")}</div>
       <p class="rq-text">${esc(r.text)}</p>
-      <div class="rq-foot"><span class="note">${esc(ago(r.last_seen))}${r.seen_count > 1 ? ` · присылали ${r.seen_count} раз` : ""}</span>
-        <a class="chip" href="${esc(r.url)}">Подходящие объекты →</a></div>
+      <div class="rq-foot"><span class="note">${esc(ago(r.last_seen))}${r.seen_count > 1 ? ` · присылали ${r.seen_count} раз` : ""}</span></div>
       ${phones ? `<div class="rq-phones">${phones}</div>` : ""}</li>`;
   }
 
@@ -44,7 +43,7 @@
     try { d = await (await fetch(`/api/requests?${p}`)).json(); } catch { $("rqCount").textContent = "Не получилось загрузить."; return; }
     $("rqCount").textContent = d.total ? `Запросов: ${d.total.toLocaleString("ru-RU")} · за последние ${d.stale_days} дней` : "";
     $("rqLocked").hidden = d.access;
-    const html = d.items.map((r) => itemHTML(r, d.access)).join("");
+    const html = d.items.map((r, i) => itemHTML(r, d.access, i)).join("");
     if (append) $("rqList").insertAdjacentHTML("beforeend", html);
     else $("rqList").innerHTML = html || `<li class="rq-empty"><b>Запросов пока нет</b>Как только в чатах появятся «куплю/ищу» — они будут здесь.</li>`;
     $("rqMore").hidden = d.page >= d.pages;

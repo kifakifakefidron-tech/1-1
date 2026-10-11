@@ -305,7 +305,7 @@
   }
 
   // ─── сравнение 2–3 объектов ─────────────────────────────────────────────
-  const CMP_MAX = 3;
+  const CMP_MAX = 5;
   let cmp = [];
   try { cmp = JSON.parse(localStorage.getItem("cmp") || "[]").filter(Number.isInteger).slice(0, CMP_MAX); } catch { cmp = []; }
   const cmpSave = () => { try { localStorage.setItem("cmp", JSON.stringify(cmp)); } catch { /* приватный режим */ } };
@@ -597,78 +597,114 @@
   }
   const MATCH = { new: "первое сообщение", repost: "репост", "same-object": "тот же объект" };
 
+  // Раскрывающаяся строка окна объекта: иконка, название, короткая подсказка справа
+  const acc = (icon, title, hint, body, opts = {}) => body ? `<details class="dv-acc${opts.cls ? " " + opts.cls : ""}"${opts.open ? " open" : ""}>
+      <summary><span class="dv-acc-ic">${icon}</span><span class="dv-acc-t">${title}</span>${hint ? `<span class="dv-acc-h">${hint}</span>` : ""}</summary>
+      <div class="dv-acc-b">${body}</div></details>` : "";
+
   function detailHTML(o) {
-    const rooms = o.rooms == null ? null : o.rooms === 0 ? "студия" : o.rooms >= 5 ? "5 и больше" : String(o.rooms);
+    const rooms = o.rooms == null ? null : o.rooms === 0 ? "студия" : o.rooms >= 5 ? "5+" : String(o.rooms);
     const floor = o.floor ? (o.floors ? `${o.floor} из ${o.floors}` : String(o.floor)) : (o.floors ? `этажей: ${o.floors}` : null);
     const facts = [
-      fact("Тип", (meta.types || {})[o.type] || null),
-      fact("Сделка", o.deal === "rent" ? "аренда" : "продажа"),
-      fact("Комнат", rooms),
-      fact("Площадь", o.area ? `${num(o.area, 1)} м²` : null),
-      fact("Участок", o.land ? `${num(o.land, 1)} сот.` : null),
-      fact("Этаж", floor),
-      fact("Район", o.district),
-      fact("ЖК", o.complex),
-      fact("Населённый пункт", o.settlement),
-      fact("Адрес", o.street ? `ул. ${o.street}${o.house ? ", " + o.house : ""}` : null),
+      ["Комнат", rooms], ["Площадь", o.area ? `${num(o.area, 1)} м²` : null], ["Участок", o.land ? `${num(o.land, 1)} сот.` : null],
+      ["Этаж", floor], ["Тип", (meta.types || {})[o.type] || null], ["Район", o.district], ["ЖК", o.complex],
+      ["Посёлок", o.settlement], ["Адрес", o.street ? `ул. ${o.street}${o.house ? ", " + o.house : ""}` : null],
+    ].filter(([, v]) => v != null && v !== "").map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("");
+    const photos = o.photos || [];
+    const gallery = photos.length
+      ? `<div class="dv-gal${photos.length === 1 ? " one" : ""}">${photos.map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="" ${i ? 'loading="lazy"' : ""}></a>`).join("")}</div>`
+      : "";
+    const m = o.market;
+    const marketTag = m && m.diff <= -3 ? `<span class="dv-tag good">−${-m.diff}% к рынку</span>` : m && m.diff >= 3 ? `<span class="dv-tag high">+${m.diff}% к рынку</span>` : "";
+    const days = o.first_seen ? daysOnSale(o) : null;
+    const u = me();
+    const admin = u && u.is_admin;
+    const st = o.status || myStatus(o.id);
+    const inCmp = cmp.includes(o.id);
+    const actions = [
+      `<button type="button" class="dv-act${inCmp ? " on" : ""}" data-cmp="${o.id}"><i>⚖</i><span>${inCmp ? "В сравнении" : "Сравнить"}</span></button>`,
+      u ? `<a class="dv-act" href="/planner?add=show&listing=${o.id}"><i>📅</i><span>Запланировать</span></a>` : "",
+      u ? `<button type="button" class="dv-act" data-pick-open="${o.id}"><i>📁</i><span>В подборку</span></button>` : "",
+      `<button type="button" class="dv-act" data-share="${o.id}"><i>↗</i><span>Поделиться</span></button>`,
+      o.url && o.phones && o.phones.length ? `<a class="dv-act" href="${esc(o.url)}" target="_blank" rel="noopener"><i>🔗</i><span>На сайте</span></a>` : "",
     ].join("");
 
-    const contact = contactHTML(o);
-    const gallery = o.photos && o.photos.length
-      ? `<div class="gallery">${o.photos.map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="" loading="lazy"></a>`).join("")}</div>` : "";
-    const site = o.url && o.phones && o.phones.length ? `<a class="pill light" href="${esc(o.url)}" target="_blank" rel="noopener">Подробнее у агента →</a>` : "";
-
+    // раскрывающиеся строки
+    const chart = priceChartHTML(o, true);
+    const priceBody = (days != null ? `<p class="dv-line">⏳ В продаже <b>${esc(daysText(days))}</b>${days >= 30 ? " — долго продаётся, можно торговаться" : ""}</p>` : "")
+      + (m ? `<p class="dv-line">${m.diff <= -3 ? `Дешевле рынка на <b>${-m.diff}%</b>` : m.diff >= 3 ? `Дороже рынка на <b>${m.diff}%</b>` : "<b>По рынку</b>"}
+          <small>средняя цена м² — ${esc(num(m.median))} ₽ · ${esc(m.base)}, ${m.n} ${plural(m.n, "объект", "объекта", "объектов")}</small></p>` : "")
+      + chart;
+    const priceHint = [days != null ? `${days < 1 ? "новое" : days + " дн."}` : "", chart ? "график" : ""].filter(Boolean).join(" · ");
+    const notesBody = u && !o.loading ? `<div class="chips dv-crm">${Object.entries(STATUSES).map(([k, v]) =>
+        `<button type="button" class="chip${st === k ? " on" : ""}" data-crm="${k}" data-id="${o.id}">${v}</button>`).join("")}</div>
+      <textarea class="d-note-text" data-note="${o.id}" rows="3" maxlength="2000" placeholder="Заметка — видите только вы. Например: звонил 12.10, торг 100 т.р.">${esc(o.note || "")}</textarea>
+      <span class="note d-note-saved" hidden>Сохранено</span>` : "";
+    const when = (ts) => new Date(ts * 1000).toLocaleString("ru-RU", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    const plans = (o.plans || []);
+    const plansBody = plans.length ? `<ul class="dv-list">${plans.map((p) => `<li><a href="/planner?event=${p.id}">${PLAN_KINDS[p.kind] || ""} · ${esc(when(p.ts))}</a>${p.done ? " ✓" : ""}
+      <small>${esc(p.title)}</small></li>`).join("")}</ul>` : "";
+    const buyers = o.buyers || [];
+    const buyersBody = buyers.length ? `<ul class="dv-list">${buyers.map((r) => `<li><p>${esc(r.text.length > 220 ? r.text.slice(0, 220) + "…" : r.text)}</p>
+        <small>${esc(fmtAgo(r.last_seen))}</small>${r.phones && r.phones.length ? r.phones.map((p) => `<a class="pill" href="tel:${esc(p)}">${esc(p)}</a>`).join("")
+          : r.phones_count ? `<small>· номер — по подписке</small>` : ""}</li>`).join("")}</ul>
+      <a class="dv-more" href="/requests">Все запросы покупателей →</a>` : "";
+    const same = o.same || [];
+    const sameBody = same.length ? `<p class="note">Тот же или очень похожий объект у других агентов — сверьте детали.</p>
+      <ul class="dv-list">${same.map((s) => `<li><button type="button" class="link" data-open-id="${s.id}">${esc(fmtPrice(s.price, o.deal))}</button>
+        <small>${esc(s.title)} · ${esc(fmtAgo(s.last_seen))}</small></li>`).join("")}</ul>` : "";
     const hist = (o.history || []).map((h) => {
       const who = meta.access ? [h.chat, h.sender].filter(Boolean).join(" · ") : "";
-      return `<li><span>${esc(fmtDate(h.ts))}${h.price ? " — " + esc(fmtPrice(h.price, o.deal)) : ""}</span>
-        <span class="who">${esc(who || MATCH[h.match] || "")}</span></li>`;
+      return `<li><span>${esc(fmtDate(h.ts))}${h.price ? " — " + esc(fmtPrice(h.price, o.deal)) : ""}</span><small>${esc(who || MATCH[h.match] || "")}</small></li>`;
     }).join("");
-
     const chats = (o.seen_count > 1 ? `Присылали ${o.seen_count} ${plural(o.seen_count, "раз", "раза", "раз")}` : "")
-      + (o.chats > 1 ? ` в ${o.chats} ${plural(o.chats, "чат", "чата", "чатов")}` : "") + (o.seen_count > 1 ? ". " : "");
-    const fav = !!o.favorite;
+      + (o.chats > 1 ? ` в ${o.chats} ${plural(o.chats, "чат", "чата", "чатов")}` : "");
+    const histBody = (hist ? `<ul class="dv-list dv-hist">${hist}</ul>` : "")
+      + (meta.access && o.fragment ? `<p class="dv-sub-h">Исходное сообщение</p><pre class="d-source">${esc(o.fragment)}</pre>` : "");
+    const geoNote = o.geo_status === "manual" ? "точка поставлена вручную" : o.geo_status === "learned" ? "точка из ваших прошлых правок"
+      : o.geo_status === "feed" ? "точка из фида СТРЕЛ" : o.lat ? "точка найдена по адресу" : "точки нет";
+    const adminBody = admin ? `<div class="dv-admin">
+        <button type="button" class="chip" data-place-edit="${o.id}">✎ ЖК и район${o.admin_fixed ? " ✓" : ""}</button>
+        <button type="button" class="chip" data-geo-edit="${o.id}">📍 Точка на карте</button>
+        <button type="button" class="chip" data-admin-act="deal" data-deal="${o.deal === "rent" ? "sale" : "rent"}" data-id="${o.id}">⇄ ${o.deal === "rent" ? "В продажу" : "В аренду"}</button>
+        <button type="button" class="chip danger" data-admin-act="delete" data-id="${o.id}">🗑 Удалить навсегда</button>
+      </div><p class="note">${esc(geoNote)}${chats ? " · " + esc(chats) : ""}</p>` : "";
+
     return `
       ${gallery}
-      <h2 class="d-title" id="dTitle">${esc(headline(o) || o.title)}</h2>
-      <p class="d-place">${esc([headline(o) ? o.title : "", address(o)].filter(Boolean).join(" · "))}
-        ${address(o) ? `<a class="ya-link" href="https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(yaQuery(o))}" target="_blank" rel="noopener">на Яндекс Картах ↗</a>` : ""}</p>
-      <p class="d-price">${esc(fmtPrice(o.price, o.deal))}</p>
-      <p class="d-price-m2">${o.price_m2 && o.deal !== "rent" ? esc(num(o.price_m2)) + " ₽/м²" : "&nbsp;"}</p>
-      <dl class="d-facts">${facts}</dl>
-      ${badgesHTML(o)}
-      ${saleHTML(o)}
-      ${marketHTML(o)}
-      ${priceChartHTML(o)}
-      ${o.description ? `<h3 class="d-h">Описание</h3><p class="d-desc">${esc(o.description)}</p>` : ""}
-      ${contact}
-      ${sameHTML(o)}
-      ${buyersHTML(o)}
-      ${planHTML(o)}
-      ${noteHTML(o)}
-      <div class="d-contact"><button type="button" class="pill light" data-share="${o.id}">Поделиться</button>
-        <button type="button" class="pill light cmp-btn-d${cmp.includes(o.id) ? " on" : ""}" data-cmp="${o.id}">⚖ Сравнить</button></div>
-      ${site ? `<div class="d-contact">${site}</div>` : ""}
-      ${meta.access && o.fragment ? `<h3 class="d-h">Исходное сообщение</h3><pre class="d-source">${esc(o.fragment)}</pre>` : ""}
-      ${hist ? `<details class="d-hist-box"><summary>История · ${o.history.length} ${plural(o.history.length, "сообщение", "сообщения", "сообщений")}</summary><ul class="d-hist">${hist}</ul></details>` : ""}
-      <p class="d-note">${esc(chats)}Впервые: ${esc(fmtAgo(o.first_seen))}, последний раз: ${esc(fmtAgo(o.last_seen))}.</p>
-      ${o.can_edit ? `<div class="d-contact"><button type="button" class="pill light" data-agent-edit="${o.id}">✎ Изменить моё объявление</button></div>` : ""}
-      ${me() && me().is_admin ? `<div class="d-contact"><button type="button" class="pill light" data-place-edit="${o.id}">✎ ЖК и район</button>
-        <span class="note">${o.admin_fixed ? "поправлено вами" : ""}</span></div>` : ""}
-      ${me() && me().is_admin ? `<div class="d-contact"><button type="button" class="pill light" data-geo-edit="${o.id}">📍 Поправить точку на карте</button>
-        <span class="note">${o.geo_status === "manual" ? "точка поставлена вручную" : o.geo_status === "learned" ? "точка из ваших прошлых правок" : o.geo_status === "feed" ? "точка из фида СТРЕЛ" : o.lat ? "точка найдена по адресу" : "точки нет"}</span></div>` : ""}
-      ${reportHTML(o)}
-      ${brandLine("поиск объектов Краснодара из риелторских чатов")}`;
+      <div class="dv">
+        <div class="dv-head">
+          ${badgesHTML(o)}
+          <h2 class="dv-title" id="dTitle">${esc(headline(o) || o.title)}</h2>
+          <p class="dv-subt">${esc([headline(o) ? o.title : "", address(o)].filter(Boolean).join(" · "))}
+            ${address(o) ? `<a class="ya-link" href="https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(yaQuery(o))}" target="_blank" rel="noopener">на карте ↗</a>` : ""}</p>
+          <div class="dv-price"><b>${esc(fmtPrice(o.price, o.deal))}</b>
+            ${o.price_m2 && o.deal !== "rent" ? `<span>${esc(num(o.price_m2))} ₽/м²</span>` : ""}${marketTag}</div>
+        </div>
+        <div class="dv-acts">${actions}</div>
+        ${contactHTML(o)}
+        ${facts ? `<dl class="dv-facts">${facts}</dl>` : ""}
+        ${o.description ? `<div class="dv-desc clamp"><p>${esc(o.description)}</p><button type="button" class="dv-desc-more" data-desc-more>Читать полностью</button></div>` : ""}
+        <div class="dv-accs">
+          ${acc("📈", "Цена и рынок", priceHint, priceBody)}
+          ${acc("📝", "Мой статус и заметка", st ? STATUSES[st] : o.note ? "есть заметка" : "", notesBody)}
+          ${acc("📅", "В планере", plans.length ? `${plans.length}` : "", plansBody)}
+          ${acc("🙋", "Покупатели под объект", `${buyers.length >= 30 ? "30+" : buyers.length}`, buyersBody, { cls: "good" })}
+          ${acc("👥", "Похожие у других агентов", `${same.length}`, sameBody)}
+          ${acc("🕓", "История", hist ? `${o.history.length}` : "", histBody)}
+          ${o.can_edit ? `<button type="button" class="dv-acc-btn" data-agent-edit="${o.id}"><span class="dv-acc-ic">✎</span>Изменить моё объявление</button>` : ""}
+          ${acc("⚙", "Админ", "", adminBody, { cls: "admin" })}
+          ${reportHTML(o)}
+        </div>
+        <p class="dv-foot">Впервые: ${esc(fmtAgo(o.first_seen))} · обновлено ${esc(fmtAgo(o.last_seen))}</p>
+        ${brandLine("поиск объектов Краснодара из риелторских чатов")}
+      </div>`;
   }
 
-  function saleHTML(o) {
-    if (!o.first_seen) return "";
-    const n = daysOnSale(o);
-    return `<div class="d-sale${n >= 30 ? " long" : ""}">⏳ В продаже <b>${esc(daysText(n))}</b>${n >= 30
-      ? " — долго продаётся, можно торговаться" : ""}<small>считаем с первого появления на 1+1</small></div>`;
-  }
+
 
   // График цены: ступеньки по датам смены цены, до сегодня
-  function priceChartHTML(o) {
+  function priceChartHTML(o) {   // внутренность строки «Цена и рынок»
     // смены цены в пределах 10 минут — это одно сообщение, разобранное повторно: берём последнюю
     const h = [];
     for (const x of (o.price_history || []).filter((p) => p.price > 0)) {
@@ -690,54 +726,31 @@
     const diff = last - first;
     const word = diff < 0 ? `снизилась на ${esc(fmtShortPrice(-diff, o.deal))}` : diff > 0 ? `выросла на ${esc(fmtShortPrice(diff, o.deal))}` : "вернулась к первой";
     const rows = h.slice().reverse().map((p) => `<li><span>${esc(fmtDate(p.ts))}</span><b>${esc(fmtPrice(p.price, o.deal))}</b></li>`).join("");
-    return `<details class="d-chart" open><summary>📈 Цена ${word} · ${h.length} ${plural(h.length, "изменение", "изменения", "изменений")}</summary>
+    return `<p class="dv-line">📈 Цена ${word} · ${h.length} ${plural(h.length, "изменение", "изменения", "изменений")}</p>
       <svg viewBox="0 0 ${W} ${H}" class="d-chart-svg" role="img" aria-label="График цены"><path d="${d}"/>${dots}</svg>
-      <ul class="d-chart-list">${rows}</ul></details>`;
+      <ul class="d-chart-list">${rows}</ul>`;
   }
 
-  function marketHTML(o) {
-    const m = o.market;
-    if (!m) return "";
-    const word = m.diff <= -3 ? `дешевле рынка на <b>${-m.diff}%</b>` : m.diff >= 3 ? `дороже рынка на <b>${m.diff}%</b>` : "<b>по рынку</b>";
-    const cls = m.diff <= -3 ? "good" : m.diff >= 3 ? "high" : "";
-    return `<div class="d-market ${cls}"><span>${word}</span>
-      <small>средняя цена м² — ${esc(num(m.median))} ₽, ${esc(m.base)}, по ${m.n} ${plural(m.n, "объекту", "объектам", "объектам")}</small></div>`;
-  }
 
-  function sameHTML(o) {
-    if (!o.same || !o.same.length) return "";
-    const n = o.same.length;
-    return `<details class="d-same"><summary>Похожие объявления других агентов · ${n}</summary>
-      <p class="note">Тот же или очень похожий объект: совпадают ЖК/улица, этаж, комнаты и площадь.
-        Агенты описывают объекты по-разному — сверьте детали перед звонком.</p>
-      <ul>${o.same.map((s) => `<li><button type="button" class="link" data-open-id="${s.id}">${esc(fmtPrice(s.price, o.deal))}</button>
-        <span>${esc(s.title)} · ${esc(fmtAgo(s.last_seen))}</span></li>`).join("")}</ul></details>`;
-  }
 
   // Планер: что уже запланировано по объекту + «📅 Запланировать» (объект попадёт в избранное)
   const PLAN_KINDS = { show: "🏠 Показ", call: "📞 Созвон", meet: "🤝 Встреча", task: "✅ Задача" };
-  function planHTML(o) {
-    if (!me() || o.loading) return "";
-    const when = (ts) => new Date(ts * 1000).toLocaleString("ru-RU", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-    const list = (o.plans || []).map((p) => `<li><a href="/planner?event=${p.id}">${PLAN_KINDS[p.kind] || ""} · ${esc(when(p.ts))}</a>${p.done ? " ✓" : ""}
-      <span>${esc(p.title)}</span></li>`).join("");
-    return `<div class="d-plan">${list ? `<ul>${list}</ul>` : ""}
-      <div class="d-plan-btns"><a class="pill light" href="/planner?add=show&listing=${o.id}">📅 Запланировать</a>
-        <button type="button" class="pill light" data-pick-open="${o.id}">📁 В подборку для клиента</button></div></div>`;
-  }
 
-  // Покупатели из чатов, чей запрос подходит под этот объект
-  function buyersHTML(o) {
-    const list = o.buyers || [];
-    if (!list.length) return "";
-    const ago = (ts) => fmtAgo(ts);
-    return `<details class="d-buyers"><summary>🙋 Под этот объект есть ${list.length >= 30 ? "30+" : list.length}
-      ${plural(list.length, "покупатель", "покупателя", "покупателей")}</summary>
-      <p class="note">Запросы «куплю/ищу» из чатов: тип, комнаты, бюджет и район подходят под объект. <a href="/requests">Все запросы →</a></p>
-      <ul>${list.map((r) => `<li><p>${esc(r.text.length > 260 ? r.text.slice(0, 260) + "…" : r.text)}</p>
-        <span class="note">${esc(ago(r.last_seen))}</span>
-        ${r.phones && r.phones.length ? r.phones.map((p) => `<a class="pill" href="tel:${esc(p)}">${esc(p)}</a>`).join("")
-          : r.phones_count ? `<span class="note">📞 номер — по подписке</span>` : ""}</li>`).join("")}</ul></details>`;
+
+  // ─── админ: удалить навсегда / перенести продажа ↔ аренда ───
+  async function adminAction(id, act, deal) {
+    if (act === "delete" && !confirm("Удалить объект навсегда?\nПовторы этого объявления и тот же объект больше не появятся.\nВернуть можно в админке → «Удалённые».")) return;
+    const r = await call(`/api/admin/listings/${id}/action`, act === "delete" ? { action: "delete" } : { action: "deal", deal });
+    if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
+    if (act === "delete") {
+      closeDlg($("detail"));
+      document.querySelectorAll(`.item[data-id="${id}"]`).forEach((el) => { el.classList.add("leaving"); setTimeout(() => el.remove(), 350); });
+      toast("🗑 Удалено навсегда. Вернуть — админка → «Удалённые»", 3500);
+    } else {
+      toast(deal === "rent" ? "⇄ Перенесено в аренду" : "⇄ Перенесено в продажу", 2400);
+      openDetail(id);
+      refresh();
+    }
   }
 
   // ─── подборки для клиента ───
@@ -755,17 +768,6 @@
     openDlg($("pickDlg"));
   }
 
-  function noteHTML(o) {
-    if (!me() || o.loading) return "";
-    const st = o.status || myStatus(o.id);
-    const chips = Object.entries(STATUSES).map(([k, v]) =>
-      `<button type="button" class="chip${st === k ? " on" : ""}" data-crm="${k}" data-id="${o.id}">${v}</button>`).join("");
-    return `<div class="d-crm"><span class="d-crm-label">Мой статус <small>(видите только вы)</small></span><div class="chips">${chips}</div></div>
-      <details class="d-note-box"${o.note ? " open" : ""}><summary>Моя заметка${o.note ? "" : " (видите только вы)"}</summary>
-      <textarea class="d-note-text" data-note="${o.id}" rows="3" maxlength="2000"
-        placeholder="Например: звонил 12.10, собственник готов торговаться">${esc(o.note || "")}</textarea>
-      <span class="note d-note-saved" hidden>Сохранено</span></details>`;
-  }
 
   // Поделиться: на телефоне — системное меню (WhatsApp, Telegram…), на компьютере — копируем ссылку
   async function share(url, title) {
@@ -952,8 +954,12 @@
     savedList = r.ok ? r.data.items || [] : [];
     renderSaved();
   }
+  let savedHidden = false;
+  try { savedHidden = localStorage.getItem("savedHidden") === "1"; } catch { /* */ }
   function renderSaved() {
     $("savedRow").hidden = !savedList.length;
+    $("savedRow").classList.toggle("collapsed", savedHidden);
+    $("savedToggle").textContent = savedHidden ? `Показать · ${savedList.length}` : "Скрыть";
     $("savedChips").innerHTML = savedList.map((s) =>
       `<span class="saved-chip${s.id === activeSaved ? " on" : ""}">
         <button type="button" class="saved-open" data-saved="${s.id}" title="${esc(s.title)}">${esc(s.title)}</button>
@@ -1022,7 +1028,7 @@
   }
 
   function reportHTML(o) {
-    return `<details class="d-report"><summary>Сообщить об ошибке</summary>
+    return `<details class="dv-acc d-report"><summary><span class="dv-acc-ic">⚠</span><span class="dv-acc-t">Сообщить об ошибке</span></summary>
       <form class="report-form" data-report="${o.id}">
         <select name="reason">
           <option value="sold">Объект продан или неактуален</option>
@@ -1202,13 +1208,12 @@
     $("favBtn").innerHTML = `Избранное${n ? `<i class="nav-badge">${n}</i>` : ""}`;
     $("adminLink").hidden = !(u && u.is_admin);
     $("plannerLink").hidden = !u;
-    $("plannerMore").hidden = $("bellMore").hidden = !u;   // на узком экране — в «Ещё ▾»
+    $("plannerMore").hidden = !u;   // на узком экране — в «Ещё ▾»
     $("adminMore").hidden = !(u && u.is_admin);
     if (window.yaSelect) window.yaSelect(!!(u && u.is_admin));   // выделил адрес → «В Яндекс Картах»
     const unread = u ? u.unread || 0 : 0;
-    $("bellLink").hidden = $("bellMobile").hidden = !u;
-    $("bellBadge").hidden = $("bellDot").hidden = !unread;
-    $("bellBadge").textContent = unread;
+    $("bellMobile").hidden = !u;
+    if (u && window.bellSet) window.bellSet(unread);   // колокольчик с числом (web/bell.js)
     $("favBadge").hidden = !n;
     $("favBadge").textContent = n;
     $("optoutLink").hidden = !meta.bot;
@@ -1471,6 +1476,14 @@
       if (t.dataset.fav) { e.stopPropagation(); toggleFavorite(Number(t.dataset.fav)); return; }
       if (t.dataset.crm) { setCrm(Number(t.dataset.id), t.dataset.crm, t); return; }
       if (t.dataset.cmp) { e.stopPropagation(); toggleCompare(Number(t.dataset.cmp)); return; }
+      if (t.id === "savedToggle") {
+        savedHidden = !savedHidden;
+        try { localStorage.setItem("savedHidden", savedHidden ? "1" : "0"); } catch { /* */ }
+        renderSaved(); return;
+      }
+      if (t.hasAttribute("data-desc-more")) { const box = t.closest(".dv-desc"); box.classList.toggle("clamp");
+        t.textContent = box.classList.contains("clamp") ? "Читать полностью" : "Свернуть"; return; }
+      if (t.dataset.adminAct) { adminAction(Number(t.dataset.id), t.dataset.adminAct, t.dataset.deal); return; }
       if (t.dataset.pickOpen) { openPicks(Number(t.dataset.pickOpen)); return; }
       if (t.dataset.copyRef) { share(t.dataset.copyRef, "1+1 — поиск объектов Краснодара"); return; }
       if (t.dataset.cmpDel) { toggleCompare(Number(t.dataset.cmpDel)); if (cmp.length >= 2) openCompare(); else closeDlg($("cmpDlg")); return; }

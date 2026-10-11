@@ -243,6 +243,11 @@ CREATE TABLE IF NOT EXISTS buyer_requests (
 );
 CREATE INDEX IF NOT EXISTS ix_buyer_active ON buyer_requests(is_active, deal, last_seen);
 CREATE INDEX IF NOT EXISTS ix_buyer_hash ON buyer_requests(text_hash);
+-- Удалено админом навсегда: тексты (хеш сообщения/куска), объекты фида — больше не добавляем
+CREATE TABLE IF NOT EXISTS banned (
+    kind TEXT NOT NULL, key TEXT NOT NULL, listing_id INTEGER, title TEXT, ts INTEGER NOT NULL, PRIMARY KEY (kind, key)
+);
+CREATE INDEX IF NOT EXISTS ix_banned_listing ON banned(listing_id);
 CREATE TABLE IF NOT EXISTS notes (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
     text TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)
@@ -289,7 +294,8 @@ MIGRATIONS = [
     # «Приведи коллегу»: свой код, кто пригласил, начислили ли бонус пригласившему
     ("users", "ref_code", "TEXT"),
     ("users", "referred_by", "INTEGER"),
-    ("users", "ref_rewarded", "INTEGER NOT NULL DEFAULT 0"),                     # свой текст объявления для клиента (вместо исходного)                              # статус агента по объекту: call | show | think | refuse | deal                   # % к медиане м² по ЖК/району (hooks.update_market_diff)
+    ("users", "ref_rewarded", "INTEGER NOT NULL DEFAULT 0"),
+    ("listings", "deal_fixed", "INTEGER NOT NULL DEFAULT 0"),   # админ сам поставил продажу/аренду — автоматика не трогает                     # свой текст объявления для клиента (вместо исходного)                              # статус агента по объекту: call | show | think | refuse | deal                   # % к медиане м² по ЖК/району (hooks.update_market_diff)
 ]
 
 _local = threading.local()

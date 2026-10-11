@@ -101,6 +101,8 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
     # Аренда — только если в тексте прямо написано «сдам», «аренда», «сдаётся»… (нейросеть иногда
     # ставила аренду обычным продажам). Шапка подборки «Сдаю:» относится ко всем объектам в ней.
     deal = "rent" if r.deal == "rent" or rules.detect_deal(text) == "rent" else "sale"
+    # «Сдам», но без коммунальных платежей — не аренда; если и цена «арендная» (меньше 300 тыс.) — объект не берём
+    rent_words = deal == "sale" and rules.has_rent_words(fragment)
 
     area = _num(obj.get("area_m2"))
     land = _num(obj.get("land_sotki"))
@@ -117,8 +119,8 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
     strict_price = rules.extract_price(fragment, deal, strict=True)
     price = strict_price or _int(obj.get("price_rub"))
     if price is not None and deal == "sale" and price < 300_000:
-        price = price * 1000 if 300 <= price < 100_000 else None
-    if price is None or price < 1000:
+        price = price * 1000 if 300 <= price < 100_000 and not rent_words else None
+    if (price is None or price < 1000) and not rent_words:
         price = r.price
 
     # Комнаты: тип планировки (студия/мини/евро/обычная) по тексту надёжнее нейросети

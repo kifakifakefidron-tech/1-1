@@ -23,7 +23,11 @@ def _value(r, deal: str) -> int | None:
     return r["price"] if r["price"] and 5_000 <= r["price"] <= 1_000_000 else None
 
 
-def current(conn: sqlite3.Connection, deal: str) -> dict:
+def _room_key(r) -> int | None:
+    return 0 if r["room_kind"] == "studio" or r["rooms"] == 0 else min(r["rooms"] or 0, 4) or None
+
+
+def current(conn: sqlite3.Connection, deal: str, rooms: int | None = None) -> dict:
     """Сейчас: {('d', район) | ('cx', ключ ЖК): {name, median, price, n}} + по городу и по комнатам."""
     groups: dict[tuple, dict] = {}
     city, by_rooms = [], {}
@@ -32,8 +36,10 @@ def current(conn: sqlite3.Connection, deal: str) -> dict:
         v = _value(r, deal)
         if v is None:
             continue
+        rk = _room_key(r)
+        if rooms is not None and rk != rooms:   # выбраны комнаты — только такие квартиры
+            continue
         city.append((v, r["price"]))
-        rk = 0 if r["room_kind"] == "studio" or r["rooms"] == 0 else min(r["rooms"] or 0, 4) or None
         if rk is not None:
             by_rooms.setdefault(rk, []).append((v, r["price"]))
         if r["district"]:
@@ -87,13 +93,15 @@ def _past(conn: sqlite3.Connection, deal: str, days_ago: int, now: int) -> tuple
         "SELECT kind, key, median FROM market_daily WHERE deal = ? AND day = ?", (deal, day))}
 
 
-def report(conn: sqlite3.Connection, deal: str = "sale", now: int | None = None) -> dict:
+def report(conn: sqlite3.Connection, deal: str = "sale", now: int | None = None, rooms: int | None = None) -> dict:
     now = int(now or time.time())
     deal = "rent" if deal == "rent" else "sale"
+    rooms = rooms if rooms in (0, 1, 2, 3, 4) else None
     snapshot(conn, now)   # первый заход за день — заодно снимок (если worker ещё не сделал)
-    cur = current(conn, deal)
-    d7_day, d7 = _past(conn, deal, 7, now)
-    d30_day, d30 = _past(conn, deal, 30, now)
+    cur = current(conn, deal, rooms)
+    # снимки — по всем квартирам; для выбранных комнат динамику не считаем (сравнивать не с чем)
+    d7_day, d7 = _past(conn, deal, 7, now) if rooms is None else (None, {})
+    d30_day, d30 = _past(conn, deal, 30, now) if rooms is None else (None, {})
     pct = lambda new, old: round((new / old - 1) * 100, 1) if old else None   # noqa: E731
 
     def rows(kind: str) -> list[dict]:
@@ -107,6 +115,6 @@ def report(conn: sqlite3.Connection, deal: str = "sale", now: int | None = None)
     city = cur["city"]
     city["ch7"] = pct(city["median"], d7.get(("city", ""))) if city["median"] else None
     city["ch30"] = pct(city["median"], d30.get(("city", ""))) if city["median"] else None
-    return {"deal": deal, "city": city, "districts": rows("d"), "complexes": rows("cx"),
+    return {"deal": deal, "rooms": rooms, "city": city, "districts": rows("d"), "complexes": rows("cx"),
             "since7": d7_day, "since30": d30_day,
             "first_day": conn.execute("SELECT MIN(day) FROM market_daily").fetchone()[0]}

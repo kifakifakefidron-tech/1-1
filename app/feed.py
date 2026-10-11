@@ -111,9 +111,16 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
         if not d:
             continue
         seen.add(d["ext_id"])
+        if conn.execute("SELECT 1 FROM banned WHERE kind = 'feed' AND key = ?", (d["ext_id"],)).fetchone():
+            continue
         learning.apply(conn, d)   # правки админа по ЖК/району действуют и на объекты партнёра
         d["search_text"] = make_search_text(d)
-        row = conn.execute("SELECT id, price, lat, lon, geo_status FROM listings WHERE ext_id = ?", (d["ext_id"],)).fetchone()
+        row = conn.execute("SELECT id, price, lat, lon, geo_status, deal, deal_fixed FROM listings WHERE ext_id = ?",
+                           (d["ext_id"],)).fetchone()
+        if row and row["deal_fixed"]:   # админ сам перенёс в аренду/продажу — фид не перебивает
+            d["deal"] = row["deal"]
+            d["title"] = make_title(d)
+            d["search_text"] = make_search_text(d)
         # точка из фида — отметка 'feed': её не перезаписывают ни геокодер, ни правки ЖК/района
         geo_st = "feed" if d["lat"] else "pending"
         if row and not d["lat"] and row["lat"] is not None and row["geo_status"] in ("learned", "ok", "approx"):

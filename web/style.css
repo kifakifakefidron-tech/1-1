@@ -434,3 +434,95 @@ body.fav-mode .bar-tools, body.fav-mode .bar-right, body.fav-mode #savedRow, bod
 .item-foot { display: flex; align-items: flex-end; gap: 6px; margin-top: auto; }
 .item-foot .item-meta { flex: 1; min-width: 0; }
 .item-foot .cmp-btn, .item-foot .plan-btn { position: static; flex: none; width: 32px; height: 32px; font-size: 14px; }
+
+/* ═══ окно объекта v2: главное сверху, остальное — раскрывающимися строками ═══ */
+#detailBody { padding: 0 0 26px; }
+.dv { padding: 0 26px; }
+.dv-gal { display: flex; gap: 6px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 0 0 4px; margin: 0 0 4px;
+  border-radius: 22px 22px 0 0; scrollbar-width: none; }
+.dv-gal::-webkit-scrollbar { display: none; }
+.dv-gal a { flex: 0 0 auto; scroll-snap-align: start; }
+.dv-gal img { height: 280px; width: auto; max-width: 420px; object-fit: cover; display: block; border-radius: 6px;
+  animation: riseIn .5s var(--ease) both; }
+.dv-gal a:first-child img { border-top-left-radius: 22px; }
+.dv-gal.one img { width: 100%; max-width: none; }
+.dv-gal.one a { flex: 1; }
+.dv-head { padding-top: 18px; }
+.dv-head .marks { margin: 0 0 8px; }
+.dv-title { font: 600 28px/1.12 var(--head); margin: 0 60px 4px 0; letter-spacing: .01em; }
+.dv-subt { color: var(--ink-2); margin: 0 0 12px; font-size: 15px; }
+.dv-subt .ya-link { margin-left: 6px; white-space: nowrap; font-size: 14px; }
+.dv-price { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.dv-price b { font: 600 38px/1 var(--head); }
+.dv-price span { color: var(--ink-3); font-size: 14px; }
+.dv-tag { padding: 3px 10px; border-radius: 999px; font: 600 12px var(--body) !important; }
+.dv-tag.good { background: #9be8b8; color: #063b2c !important; }
+.dv-tag.high { background: rgba(255, 159, 138, .22); color: #ffc2b4 !important; }
+.dv-acts { display: flex; gap: 8px; margin: 18px -2px 4px; overflow-x: auto; scrollbar-width: none; padding: 2px; }
+.dv-acts::-webkit-scrollbar { display: none; }
+.dv-act { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 84px; padding: 10px 8px 8px;
+  border-radius: 16px; border: 1px solid var(--line); background: rgba(0, 0, 0, .12); color: var(--ink); text-decoration: none;
+  font: 500 12px var(--body); cursor: pointer; transition: background .2s, transform .2s var(--spring), border-color .2s; }
+.dv-act i { font-style: normal; font-size: 19px; line-height: 1; }
+.dv-act:hover { background: var(--chip); transform: translateY(-2px); }
+.dv-act:active { transform: scale(.96); }
+.dv-act.on { border-color: #ffd86b; background: rgba(255, 216, 107, .16); }
+.dv .d-contact { margin: 14px 0 0; }
+.dv .d-contact .pill { flex: 1 1 160px; text-align: center; }
+.dv .d-locked { margin-top: 14px; }
+.dv-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0; margin: 18px 0 0; border-radius: 16px;
+  overflow: hidden; border: 1px solid var(--line); }
+.dv-facts div { padding: 9px 14px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 0 -1px -1px 0; }
+.dv-facts dt { color: var(--ink-3); font-size: 12px; }
+.dv-facts dd { margin: 0; font-weight: 600; font-size: 15px; }
+.dv-desc { margin: 16px 0 0; position: relative; }
+.dv-desc p { white-space: pre-line; margin: 0; color: var(--ink-2); line-height: 1.55; }
+.dv-desc.clamp p { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+.dv-desc-more { margin-top: 6px; padding: 0; border: 0; background: none; color: #ffd86b; font: 600 14px var(--body); cursor: pointer; }
+.dv-desc:not(.clamp) .dv-desc-more, .dv-desc.clamp .dv-desc-more { display: inline-block; }
+.dv-accs { margin: 20px 0 0; border-top: 1px solid var(--line); }
+.dv-acc, .dv-acc-btn { border-bottom: 1px solid var(--line); }
+.dv-acc summary, .dv-acc-btn { display: flex; align-items: center; gap: 12px; padding: 13px 2px; cursor: pointer; list-style: none;
+  font: 500 15px var(--body); color: var(--ink); transition: color .2s; }
+.dv-acc-btn { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; }
+.dv-acc summary::-webkit-details-marker { display: none; }
+.dv-acc summary::after { content: ""; width: 8px; height: 8px; margin-left: 6px; border-right: 2px solid var(--ink-3);
+  border-bottom: 2px solid var(--ink-3); transform: rotate(45deg) translateY(-2px); transition: transform .25s var(--ease); }
+.dv-acc[open] summary::after { transform: rotate(-135deg) translateY(-2px); }
+.dv-acc summary:hover, .dv-acc-btn:hover { color: #ffd86b; }
+.dv-acc-ic { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 10px; background: rgba(243, 232, 188, .08);
+  font-size: 15px; }
+.dv-acc-t { flex: 1; }
+.dv-acc-h { color: var(--ink-3); font-size: 13px; white-space: nowrap; }
+.dv-acc.good .dv-acc-h { color: #9be8b8; font-weight: 600; }
+.dv-acc-b { padding: 2px 2px 16px 44px; animation: riseIn .3s var(--ease) both; }
+.dv-acc-b > :first-child { margin-top: 0; }
+.dv-line { margin: 0 0 8px; }
+.dv-line small { display: block; color: var(--ink-3); font-size: 12px; }
+.dv-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.dv-list li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.dv-list li p { width: 100%; margin: 0; white-space: pre-wrap; font-size: 14px; color: var(--ink-2); }
+.dv-list small { color: var(--ink-3); font-size: 13px; }
+.dv-list a { color: #ffd86b; }
+.dv-list .pill { font-size: 13px; padding: 4px 12px; }
+.dv-hist li { justify-content: space-between; font-size: 14px; }
+.dv-more { display: inline-block; margin-top: 10px; color: #ffd86b; font-size: 14px; }
+.dv-sub-h { margin: 12px 0 6px; color: var(--ink-3); font-size: 13px; }
+.dv-crm { margin: 0 0 10px; }
+.dv-crm .chip { font-size: 13px; }
+.dv .d-note-text { width: 100%; }
+.dv-admin { display: flex; flex-wrap: wrap; gap: 6px; }
+.dv-admin .chip.danger { color: #ffb4a0; border-color: rgba(255, 180, 160, .4); }
+.dv-acc.admin .dv-acc-ic { background: rgba(255, 216, 107, .14); }
+.dv .d-report summary { color: var(--ink-3); }
+.dv-foot { color: var(--ink-3); font-size: 12px; margin: 16px 0 0; }
+.item.leaving { transition: opacity .3s, transform .3s; opacity: 0; transform: scale(.94); }
+@media (max-width: 640px) {
+  .dv { padding: 0 16px; }
+  .dv-gal img { height: 230px; max-width: 86vw; }
+  .dv-title { font-size: 24px; margin-right: 0; }
+  .dv-price b { font-size: 32px; }
+  .dv-act { min-width: 76px; }
+  .dv-acc-b { padding-left: 2px; }
+}
+.dv .d-report { margin-top: 0; }

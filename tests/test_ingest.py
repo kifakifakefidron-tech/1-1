@@ -80,7 +80,7 @@ def test_search_is_by_whole_words(conn, add):
 def test_filters_and_contacts_visibility(conn, add):
     add(AGENT_A)
     add("Студия 24 м2, ЖК Движение, 3/24 этаж, 3 200 000 руб. +7 900 222-33-44")
-    add("Сдам 1-к квартиру, 40 м2, 5/9 эт., ФМР. 25 000 руб/мес. 89184445566")
+    add("Сдам 1-к квартиру, 40 м2, 5/9 эт., ФМР. 25 000 руб/мес + коммуналка. 89184445566")
     q = search.Query(rooms=[0], price_max=4_000_000)
     res = search.search(conn, q, NOW, with_contacts=False)
     assert res["total"] == 1 and res["items"][0]["rooms"] == 0
@@ -105,3 +105,16 @@ def test_stale_listing_hidden_after_20_days(conn, add):
     add(AGENT_A, ts=NOW - 25 * 86400)
     assert ingest.archive_stale(conn, now=NOW) == 1
     assert search.search(conn, search.Query(), NOW, False)["total"] == 0
+
+
+def test_admin_ban_listing_never_returns(conn, add):
+    from app import ingest
+    text = "2-к квартира 58 м², 7/16 эт., ЖК Мозаика, ФМР. 7,5 млн руб. 89181112233"
+    lid = add(text)["results"][0]["listing_id"]
+    ingest.ban_listing(conn, lid)
+    add(text)                                     # репост того же текста
+    add("Двушка 58 м², этаж 7/16, ЖК Мозаика. Цена 7,4 млн. 89181112233")   # тот же объект другими словами
+    rows = conn.execute("SELECT is_active FROM listings").fetchall()
+    assert [r[0] for r in rows] == [0]            # ни старый не вернулся, ни новый не появился
+    ingest.unban_listing(conn, lid)
+    assert conn.execute("SELECT is_active FROM listings WHERE id = ?", (lid,)).fetchone()[0] == 1

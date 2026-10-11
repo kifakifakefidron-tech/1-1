@@ -710,6 +710,18 @@ def api_notices(request: Request, body: dict | None = None):
                          "is_admin": bool(user["is_admin"])})
 
 
+def api_notices_peek(request: Request, body: dict | None = None):
+    """Для колокольчика в шапке: сколько непрочитанных и 3 самых свежих непрочитанных (быстро, без проверок)."""
+    user = current_user(request)
+    if user is None:
+        return _err("Нужно войти.", 401)
+    conn = db.get()
+    rows = conn.execute("""SELECT id, ts, kind, title, body, url FROM notices WHERE user_id = ? AND read = 0
+                           ORDER BY id DESC LIMIT 3""", (user["id"],)).fetchall()
+    return JSONResponse({"unread": notices.unread(conn, user["id"]),
+                         "latest": [{**dict(r), "icon": notices.ICONS.get(r["kind"], "🔔")} for r in rows]})
+
+
 def notices_page(request: Request, body: dict | None = None):
     return _page("notify.html")
 
@@ -861,7 +873,8 @@ def market_page(request: Request, body: dict | None = None):
 
 def api_market(request: Request, body: dict | None = None):
     """Аналитика рынка: медианы по районам и ЖК, динамика. Открыта всем."""
-    return _cached(request, lambda: market.report(db.get(), request.query_params.get("deal", "sale")))
+    return _cached(request, lambda: market.report(db.get(), request.query_params.get("deal", "sale"),
+                                                  rooms=_num(request.query_params.get("rooms"), int)))
 
 
 def saved_off_page(request: Request, body: dict | None = None):
@@ -1252,6 +1265,53 @@ def districts_map_page(request: Request, body: dict | None = None):
     return _page("districts.html")
 
 
+def api_admin_listing_action(request: Request, body: dict | None = None):
+    """Админ: {action: delete | restore | deal, deal: sale|rent}. delete — навсегда (тот же текст/объект не вернётся)."""
+    from .ingest import _reindex, make_search_text, make_title
+    _, err = _need_admin(request)
+    if err:
+        return err
+    conn = db.get()
+    lid = int(request.path_params["id"])
+    body = body or {}
+    act = body.get("action")
+    if act == "delete":
+        res = ingest.ban_listing(conn, lid)
+    elif act == "restore":
+        ingest.unban_listing(conn, lid)
+        res = {"ok": True}
+    elif act == "deal" and body.get("deal") in ("sale", "rent"):
+        r = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
+        if r is None:
+            return _err("не найдено", 404)
+        d = {**dict(r), "deal": body["deal"]}
+        d["title"] = make_title(d)
+        d["search_text"] = make_search_text(d)
+        conn.execute("""UPDATE listings SET deal = ?, deal_fixed = 1, title = ?, search_text = ?,
+                        is_active = CASE WHEN hidden_reason = 'rent_rule' THEN 1 ELSE is_active END,
+                        hidden_reason = CASE WHEN hidden_reason = 'rent_rule' THEN NULL ELSE hidden_reason END
+                        WHERE id = ?""", (body["deal"], d["title"], d["search_text"], lid))
+        _reindex(conn, lid, d["search_text"])
+        conn.commit()
+        res = {"ok": True, "deal": body["deal"], "title": d["title"]}
+    else:
+        return _err("Неизвестное действие.")
+    if "error" in res:
+        return _err(res["error"], 404)
+    _bump_cache()
+    return JSONResponse(res)
+
+
+def api_admin_banned(request: Request, body: dict | None = None):
+    """Удалённые админом объекты — список для «Восстановить»."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    rows = db.get().execute("""SELECT l.id, l.title, l.price, l.deal, l.district, l.complex, MAX(b.ts) AS ts, COUNT(b.key) AS keys
+                               FROM banned b JOIN listings l ON l.id = b.listing_id GROUP BY l.id ORDER BY ts DESC LIMIT 500""").fetchall()
+    return JSONResponse({"items": [dict(r) for r in rows]})
+
+
 def api_admin_fix(request: Request, body: dict | None = None):
     """Экран разбора /fix: следующий объект очереди (без уже разобранных и пропущенных в этой сессии)
     или конкретный объект (?id=). mode: place (ЖК/район) | geo (карта)."""
@@ -1378,6 +1438,7 @@ routes = [
     Route("/api/saved", threaded(api_saved), methods=["GET", "POST", "DELETE"]),
     Route("/api/notices", threaded(api_notices), methods=["GET", "POST"]),
     Route("/notifications", threaded(notices_page)),
+    Route("/api/notices/peek", threaded(api_notices_peek)),
     Route("/market", threaded(market_page)),
     Route("/planner", threaded(planner_page)),
     Route("/requests", threaded(requests_page)),
@@ -1409,6 +1470,8 @@ routes = [
     Route("/admin/map", threaded(districts_map_page)),
     Route("/api/admin/districts", threaded(api_admin_districts), methods=["GET", "POST"]),
     Route("/fix", threaded(fix_page)),
+    Route("/api/admin/listings/{id:int}/action", threaded(api_admin_listing_action), methods=["POST"]),
+    Route("/api/admin/banned", threaded(api_admin_banned)),
     Route("/api/admin/listings/{id:int}/place", threaded(api_admin_place), methods=["POST"]),
     Route("/api/admin/place-queue", threaded(api_admin_place_queue), methods=["GET", "POST"]),
     Mount("/static", StaticFiles(directory=WEB), name="static"),

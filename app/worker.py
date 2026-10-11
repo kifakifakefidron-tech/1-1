@@ -50,6 +50,9 @@ def tick(conn) -> dict:
     synced = feed.maybe_sync(conn)
     if synced:
         stats["feed"] = synced
+    if not db.get_state(conn, "rent_rule_v1"):   # один раз: новое правило аренды («+ком платежи»)
+        stats["rent_rule"] = ingest.fix_rent_rule(conn)
+        db.set_state(conn, "rent_rule_v1", "1")
     if not db.get_state(conn, "buyers_v1"):   # один раз: запросы из уже разобранных сообщений
         from . import buyers
         stats["buyers_backfill"] = buyers.backfill(conn)

@@ -24,4 +24,4 @@ def test_request_saved_and_matched(conn, add):
     assert len(found) == 1 and "phones" not in found[0] and "4445566" not in found[0]["text"]
     assert buyers.for_listing(conn, {**o, "price": 9_000_000}, False) == []   # дороже бюджета
     feed = buyers.feed(conn, True)
-    assert feed["total"] == 1 and feed["items"][0]["phones"] == ["+79184445566"] and "district=" in feed["items"][0]["url"]
+    assert feed["total"] == 1 and feed["items"][0]["phones"] == ["+79184445566"]
