@@ -492,12 +492,18 @@
   // ─── удалённые навсегда ─────────────────────────────────────────────────
   async function banned() {
     const d = await call("/api/admin/banned");
+    const phones = (d.phones || []).length ? `<thead><tr><th>Номер (всё от него)</th><th>Удалён</th><th></th></tr></thead><tbody>${d.phones.map((p) =>
+      `<tr><td><b>${esc(p.phone)}</b><br><span class="note">скрыто объектов: ${p.listings}</span></td><td>${day(p.ts)}</td>
+        <td class="acts"><button data-unban-phone="${esc(p.phone)}">Вернуть</button></td></tr>`).join("")}</tbody>` : "";
+    $("bannedPhones").innerHTML = phones;
     $("bannedTable").innerHTML = d.items.length ? `<thead><tr><th>Объект</th><th>Удалён</th><th></th></tr></thead><tbody>${d.items.map((o) =>
       `<tr><td><a href="/?open=${o.id}" target="_blank">${esc(o.title)}</a><br><span class="note">${esc([o.complex && "ЖК " + o.complex, o.district].filter(Boolean).join(" · "))}</span></td>
         <td>${day(o.ts)}</td><td class="acts"><button data-unban="${o.id}">Восстановить</button></td></tr>`).join("")}</tbody>`
       : `<tr><td class="note">Пока ничего не удалено. Удалить объект — в его окне: «⚙ Админ» → «🗑 Удалить навсегда».</td></tr>`;
   }
   document.addEventListener("click", async (e) => {
+    const p = e.target.closest("[data-unban-phone]");
+    if (p) { try { await call("/api/admin/phones/ban", { phone: p.dataset.unbanPhone, action: "unban" }); banned(); } catch (err) { fail(err); } return; }
     const b = e.target.closest("[data-unban]");
     if (!b) return;
     try { await call(`/api/admin/listings/${b.dataset.unban}/action`, { action: "restore" }); banned(); } catch (err) { fail(err); }

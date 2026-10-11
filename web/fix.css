@@ -61,3 +61,19 @@
 .d-place .ya-link { margin-left: 6px; white-space: nowrap; font-size: .92em; }
 /* длинные названия районов («ЗИП-2 (Завод измерительных приборов) по улице») не вылезают за экран телефона */
 #fxDistricts .chip, #fxComplexes .chip { max-width: 100%; white-space: normal; text-align: left; }
+
+/* карточка целиком, точка в режиме районов, «всё от номера» */
+.fx-gal { display: flex; gap: 6px; overflow-x: auto; margin: 10px 0 0; scrollbar-width: thin; }
+.fx-gal img { height: 96px; width: auto; border-radius: 10px; display: block; }
+.fx-facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+.fx-facts .chip { font-size: 13px; padding: 4px 10px; }
+.fx-phones { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.fx-phone { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.fx-phone a { color: var(--ink); font-weight: 600; }
+.chip.danger { color: #ffb4a0; border-color: rgba(255, 180, 160, .4); }
+.fx-geo-box { margin: 12px 0 0; border: 1px solid var(--line); border-radius: 16px; padding: 0 12px; }
+.fx-geo-box summary { cursor: pointer; padding: 12px 0; font-weight: 600; list-style: none; }
+.fx-geo-box summary::-webkit-details-marker { display: none; }
+.fx-geo-box.geo-mode { border: 0; padding: 0; }
+.fx-geo-box.geo-mode summary { display: none; }
+.fx-geo-box #fxGeoSave { margin: 0 0 12px; }

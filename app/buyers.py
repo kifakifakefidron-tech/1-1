@@ -146,6 +146,8 @@ def save(conn: sqlite3.Connection, m: sqlite3.Row) -> int | None:
         ph = rules.normalize_phone(str(m["sender"]).split("@")[0])
         if ph:
             p["phones"] = [ph]
+    if set(p["phones"]) & {r[0] for r in conn.execute("SELECT key FROM banned WHERE kind = 'phone'")}:
+        return None   # номер удалён админом целиком
     # тот же человек с тем же запросом другими словами — тоже повтор
     for r in conn.execute("""SELECT id, phones, deal, type, rooms_mask, districts FROM buyer_requests
                              WHERE is_active = 1 AND deal = ? AND rooms_mask = ? AND COALESCE(type, '') = ?""",
@@ -162,6 +164,21 @@ def save(conn: sqlite3.Connection, m: sqlite3.Row) -> int | None:
          p["price_max"], json.dumps(p["districts"], ensure_ascii=False), json.dumps(p["complexes"], ensure_ascii=False),
          json.dumps(p["phones"]), m["ts"], m["ts"]))
     return cur.lastrowid
+
+
+def recheck(conn: sqlite3.Connection) -> dict:
+    """После уточнения правила: «запросить по номеру», «цена по запросу» — это объявления. Такие запросы
+    удаляем, а их сообщения разбираем заново (как объявления)."""
+    removed = reparse = 0
+    for r in conn.execute("SELECT id, message_id, text, text_hash FROM buyer_requests").fetchall():
+        if rules.is_buyer_request(r["text"]):
+            continue
+        conn.execute("DELETE FROM buyer_requests WHERE id = ?", (r["id"],))
+        removed += 1
+        reparse += conn.execute("UPDATE messages SET status = 'new', kind = NULL WHERE text_hash = ? AND kind = 'request'",
+                                (r["text_hash"],)).rowcount
+    conn.commit()
+    return {"removed": removed, "reparse": reparse}
 
 
 def backfill(conn: sqlite3.Connection) -> int:

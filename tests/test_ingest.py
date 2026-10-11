@@ -118,3 +118,24 @@ def test_admin_ban_listing_never_returns(conn, add):
     assert [r[0] for r in rows] == [0]            # ни старый не вернулся, ни новый не появился
     ingest.unban_listing(conn, lid)
     assert conn.execute("SELECT is_active FROM listings WHERE id = ?", (lid,)).fetchone()[0] == 1
+
+
+def test_ban_phone_hides_everything_and_blocks_new(conn, add):
+    from app import ingest
+    a = add("2-к квартира 58 м², 7/16 эт., ЖК Мозаика, ФМР. 7,5 млн руб. 89181112233")["results"][0]["listing_id"]
+    b = add("Студия 25 м², 3/9 эт., ЖК Свобода. 3,2 млн руб. 89181112233")["results"][0]["listing_id"]
+    keep = add("1-к квартира 38 м², 5/9 эт., ЖК Абрикосово. 4,5 млн. 89184445566")["results"][0]["listing_id"]
+    res = ingest.ban_phone(conn, "8 918 111-22-33")
+    assert res["listings"] == 2 and res["messages"] == 2
+    assert {r[0]: r[1] for r in conn.execute("SELECT id, is_active FROM listings")} == {a: 0, b: 0, keep: 1}
+    r = add("Евро-2 40 м², 2/5 эт., ЖК Мозаика. 6 млн. 89181112233")   # новое от этого номера — не берём
+    assert r["results"][0]["match"] == "banned"
+    ingest.unban_phone(conn, "+79181112233")
+    assert conn.execute("SELECT COUNT(*) FROM listings WHERE is_active = 1").fetchone()[0] == 3
+
+
+def test_fix_rent_rule_once(conn, add):
+    from app import ingest
+    lid = add("Сдам 1-к квартиру, 40 м2, 5/9 эт., ФМР. 25 000 руб/мес + коммуналка. 89184445566")["results"][0]["listing_id"]
+    conn.execute("UPDATE listings SET fragment = 'Сдам 1-к, 25 000 руб/мес', description = 'Сдам 1-к' WHERE id = ?", (lid,))
+    assert ingest.fix_rent_rule(conn) == {"to_sale": 0, "hidden": 1}

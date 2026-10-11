@@ -9,7 +9,7 @@ import shutil
 import time
 from pathlib import Path
 
-from . import config, dedupe, learning, parser
+from . import config, dedupe, learning, parser, rules
 from .rules import TYPE_LABELS, rooms_mask
 from .textnorm import norm, words
 
@@ -88,6 +88,8 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
     ban = conn.execute("SELECT listing_id FROM banned WHERE kind = 'frag' AND key = ?", (fh,)).fetchone()
     if ban is not None:   # этот текст админ удалил навсегда
         return ban[0] or 0, "banned"
+    if d.get("phones") and set(d["phones"]) & banned_phones(conn):   # номер удалён админом целиком
+        return 0, "banned"
     if d.get("article"):
         own = conn.execute("SELECT id FROM listings WHERE source = 'feed' AND article = ? AND is_active = 1",
                            (d["article"],)).fetchone()
@@ -198,8 +200,9 @@ def add_message(conn: sqlite3.Connection, *, source: str, text: str, ts: int | N
 
 def process_message(conn: sqlite3.Connection, message_id: int, use_llm: bool | None = None) -> dict:
     m = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
-    if m is not None and m["status"] == "new" and conn.execute(
-            "SELECT 1 FROM banned WHERE kind = 'hash' AND key = ?", (m["text_hash"],)).fetchone():
+    if m is not None and m["status"] == "new" and (conn.execute(
+            "SELECT 1 FROM banned WHERE kind = 'hash' AND key = ?", (m["text_hash"],)).fetchone()
+            or (m["sender"] and rules.normalize_phone(str(m["sender"]).split("@")[0]) in banned_phones(conn))):
         conn.execute("UPDATE messages SET status = 'skipped', kind = 'banned' WHERE id = ?", (m["id"],))
         conn.commit()
         return {"status": "banned"}
@@ -292,6 +295,48 @@ def ban_listing(conn: sqlite3.Connection, listing_id: int) -> dict:
     conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'admin' WHERE id = ?", (listing_id,))
     conn.commit()
     return {"ok": True, "keys": len(keys)}
+
+
+def banned_phones(conn: sqlite3.Connection) -> set[str]:
+    return {r[0] for r in conn.execute("SELECT key FROM banned WHERE kind = 'phone'")}
+
+
+def ban_phone(conn: sqlite3.Connection, phone: str) -> dict:
+    """Админ: всё от этого номера — скрыть объекты и запросы, удалить сообщения; новые не принимать."""
+    phone = rules.normalize_phone(phone or "")
+    if not phone:
+        return {"error": "Номер не распознан."}
+    now = int(time.time())
+    conn.execute("INSERT OR IGNORE INTO banned (kind, key, title, ts) VALUES ('phone', ?, ?, ?)", (phone, phone, now))
+    listings = conn.execute("""UPDATE listings SET is_active = 0, hidden_reason = 'phone'
+                               WHERE EXISTS (SELECT 1 FROM json_each(listings.phones) j WHERE j.value = ?)
+                                 AND COALESCE(hidden_reason, '') != 'admin'""", (phone,)).rowcount
+    requests = conn.execute("""UPDATE buyer_requests SET is_active = 0
+                               WHERE EXISTS (SELECT 1 FROM json_each(buyer_requests.phones) j WHERE j.value = ?)""",
+                            (phone,)).rowcount
+    digits = phone[-10:]
+    gone = []
+    for m in conn.execute("SELECT id, text, sender FROM messages WHERE status != 'new' OR status = 'new'"):
+        snd = rules.normalize_phone(str(m["sender"] or "").split("@")[0]) if m["sender"] else None
+        if snd == phone or (digits in "".join(ch for ch in (m["text"] or "") if ch.isdigit())
+                            and phone in rules.extract_phones(m["text"] or "")):
+            gone.append(m["id"])
+    for i in range(0, len(gone), 500):
+        part = gone[i:i + 500]
+        conn.execute(f"DELETE FROM messages WHERE id IN ({','.join('?' * len(part))})", part)
+    conn.commit()
+    return {"ok": True, "phone": phone, "listings": listings, "requests": requests, "messages": len(gone)}
+
+
+def unban_phone(conn: sqlite3.Connection, phone: str) -> None:
+    phone = rules.normalize_phone(phone or "") or phone
+    conn.execute("DELETE FROM banned WHERE kind = 'phone' AND key = ?", (phone,))
+    conn.execute("""UPDATE listings SET is_active = 1, hidden_reason = NULL
+                    WHERE hidden_reason = 'phone' AND EXISTS (SELECT 1 FROM json_each(listings.phones) j WHERE j.value = ?)""",
+                 (phone,))
+    conn.execute("""UPDATE buyer_requests SET is_active = 1
+                    WHERE EXISTS (SELECT 1 FROM json_each(buyer_requests.phones) j WHERE j.value = ?)""", (phone,))
+    conn.commit()
 
 
 def unban_listing(conn: sqlite3.Connection, listing_id: int) -> None:

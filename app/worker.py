@@ -53,6 +53,10 @@ def tick(conn) -> dict:
     if not db.get_state(conn, "rent_rule_v1"):   # один раз: новое правило аренды («+ком платежи»)
         stats["rent_rule"] = ingest.fix_rent_rule(conn)
         db.set_state(conn, "rent_rule_v1", "1")
+    if not db.get_state(conn, "buyers_v2"):   # «запросить по номеру» — не запрос: удалить и разобрать заново
+        from . import buyers
+        stats["buyers_recheck"] = buyers.recheck(conn)
+        db.set_state(conn, "buyers_v2", "1")
     if not db.get_state(conn, "buyers_v1"):   # один раз: запросы из уже разобранных сообщений
         from . import buyers
         stats["buyers_backfill"] = buyers.backfill(conn)

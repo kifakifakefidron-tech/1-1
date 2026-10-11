@@ -1137,7 +1137,8 @@ def _fix_item(conn, lid: int) -> dict | None:
     return {k: r[k] for k in ("id", "title", "price", "deal", "type", "rooms", "area", "floor", "floors", "complex",
                               "district", "street", "house", "settlement", "lat", "lon", "geo_status", "admin_fixed",
                               "source")} | {
-        "text": text, "photo": photos[0] if photos else None,
+        "text": text, "photo": photos[0] if photos else None, "photos": photos[:12], "land": r["land"],
+        "phones": json.loads(r["phones"] or "[]"),
         "extra_districts": json.loads(r["extra_districts"] or "[]"),
         "suggest": geo.suggestions(text, r["street"], r["complex"]),
         "learned": [label for _, label in geocode.learn_keys(r)],
@@ -1302,6 +1303,24 @@ def api_admin_listing_action(request: Request, body: dict | None = None):
     return JSONResponse(res)
 
 
+def api_admin_phone_ban(request: Request, body: dict | None = None):
+    """Админ: {phone, action: ban | unban} — всё от номера скрыть/удалить и не принимать, или вернуть."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    body = body or {}
+    conn = db.get()
+    if body.get("action") == "unban":
+        ingest.unban_phone(conn, str(body.get("phone") or ""))
+        res = {"ok": True}
+    else:
+        res = ingest.ban_phone(conn, str(body.get("phone") or ""))
+        if "error" in res:
+            return _err(res["error"])
+    _bump_cache()
+    return JSONResponse(res)
+
+
 def api_admin_banned(request: Request, body: dict | None = None):
     """Удалённые админом объекты — список для «Восстановить»."""
     _, err = _need_admin(request)
@@ -1309,7 +1328,11 @@ def api_admin_banned(request: Request, body: dict | None = None):
         return err
     rows = db.get().execute("""SELECT l.id, l.title, l.price, l.deal, l.district, l.complex, MAX(b.ts) AS ts, COUNT(b.key) AS keys
                                FROM banned b JOIN listings l ON l.id = b.listing_id GROUP BY l.id ORDER BY ts DESC LIMIT 500""").fetchall()
-    return JSONResponse({"items": [dict(r) for r in rows]})
+    phones = db.get().execute("""SELECT b.key AS phone, b.ts,
+                                     (SELECT COUNT(*) FROM listings l, json_each(l.phones) j
+                                      WHERE j.value = b.key AND l.hidden_reason = 'phone') AS listings
+                                  FROM banned b WHERE b.kind = 'phone' ORDER BY b.ts DESC""").fetchall()
+    return JSONResponse({"items": [dict(r) for r in rows], "phones": [dict(r) for r in phones]})
 
 
 def api_admin_fix(request: Request, body: dict | None = None):
@@ -1472,6 +1495,7 @@ routes = [
     Route("/fix", threaded(fix_page)),
     Route("/api/admin/listings/{id:int}/action", threaded(api_admin_listing_action), methods=["POST"]),
     Route("/api/admin/banned", threaded(api_admin_banned)),
+    Route("/api/admin/phones/ban", threaded(api_admin_phone_ban), methods=["POST"]),
     Route("/api/admin/listings/{id:int}/place", threaded(api_admin_place), methods=["POST"]),
     Route("/api/admin/place-queue", threaded(api_admin_place_queue), methods=["GET", "POST"]),
     Mount("/static", StaticFiles(directory=WEB), name="static"),

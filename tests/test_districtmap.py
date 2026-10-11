@@ -50,3 +50,14 @@ def test_renamed_district_keeps_its_contour(conn):
     districtmap.save_polygon(conn, "ФМР", "district", [[(45.04, 38.99), (45.04, 39.02), (45.06, 39.02), (45.06, 38.99)]])
     learning.rename_district(conn, "ФМР", "Фестивальный округ")
     assert districtmap.district_at(conn, 45.05, 39.0)[0] == "Фестивальный округ"
+
+
+def test_map_move_is_learned(conn, add):
+    from app import districtmap, ingest, learning
+    lid = add("2-к квартира 58 м², 7/16 эт., ул. Ставропольская 10. 7,5 млн руб. 89181112233")["results"][0]["listing_id"]
+    districtmap.set_districts(conn, [{"id": lid, "district": "ЦМР"}])
+    assert conn.execute("SELECT admin_fixed FROM listings WHERE id = ?", (lid,)).fetchone()[0] == 1
+    assert any(r["kind"] == "addr" for r in learning.list_rules(conn))
+    # новое объявление о том же доме другого агента — сразу в ЦМР
+    o = add("Двушка 60 м², 3/16 эт., ул. Ставропольская 10. 7,9 млн. 89184445566")["results"][0]["listing_id"]
+    assert conn.execute("SELECT district FROM listings WHERE id = ?", (o,)).fetchone()[0] == "ЦМР"

@@ -668,6 +668,7 @@
         <button type="button" class="chip" data-geo-edit="${o.id}">📍 Точка на карте</button>
         <button type="button" class="chip" data-admin-act="deal" data-deal="${o.deal === "rent" ? "sale" : "rent"}" data-id="${o.id}">⇄ ${o.deal === "rent" ? "В продажу" : "В аренду"}</button>
         <button type="button" class="chip danger" data-admin-act="delete" data-id="${o.id}">🗑 Удалить навсегда</button>
+        ${(o.phones || []).map((p) => `<button type="button" class="chip danger" data-ban-phone="${esc(p)}" title="Скрыть все объекты и сообщения от этого номера и не принимать новые">🚫 Всё от ${esc(p)}</button>`).join("")}
       </div><p class="note">${esc(geoNote)}${chats ? " · " + esc(chats) : ""}</p>` : "";
 
     return `
@@ -751,6 +752,15 @@
       openDetail(id);
       refresh();
     }
+  }
+
+  async function banPhone(phone) {
+    if (!confirm(`Удалить всё от номера ${phone}?\nВсе его объекты и запросы скроются, сообщения удалятся, новые не будут приниматься.\nВернуть — админка → «Удалённые».`)) return;
+    const r = await call("/api/admin/phones/ban", { phone });
+    if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
+    closeDlg($("detail"));
+    toast(`🚫 Номер удалён: объектов ${r.data.listings}, сообщений ${r.data.messages}`, 3500);
+    refresh();
   }
 
   // ─── подборки для клиента ───
@@ -1484,6 +1494,7 @@
       if (t.hasAttribute("data-desc-more")) { const box = t.closest(".dv-desc"); box.classList.toggle("clamp");
         t.textContent = box.classList.contains("clamp") ? "Читать полностью" : "Свернуть"; return; }
       if (t.dataset.adminAct) { adminAction(Number(t.dataset.id), t.dataset.adminAct, t.dataset.deal); return; }
+      if (t.dataset.banPhone) { banPhone(t.dataset.banPhone); return; }
       if (t.dataset.pickOpen) { openPicks(Number(t.dataset.pickOpen)); return; }
       if (t.dataset.copyRef) { share(t.dataset.copyRef, "1+1 — поиск объектов Краснодара"); return; }
       if (t.dataset.cmpDel) { toggleCompare(Number(t.dataset.cmpDel)); if (cmp.length >= 2) openCompare(); else closeDlg($("cmpDlg")); return; }

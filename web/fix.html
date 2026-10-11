@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="/static/style.css?v=23">
 <link rel="stylesheet" href="/static/motion.css?v=32">
-<link rel="stylesheet" href="/static/fix.css?v=7">
+<link rel="stylesheet" href="/static/fix.css?v=8">
 </head>
 <body>
 <header class="nav"><div class="nav-in">
@@ -45,7 +45,10 @@
           <div class="fx-now" id="fxNow"></div>
         </div>
       </div>
+      <div class="fx-gal" id="fxGal"></div>
+      <div class="fx-facts" id="fxFacts"></div>
       <pre class="fx-text" id="fxText"></pre>
+      <div class="fx-phones" id="fxPhones"></div>
       <a class="fx-open" id="fxOpen" target="_blank">Открыть объект на сайте ↗</a>
       <a class="fx-open ya-link" id="fxYaAll" target="_blank" rel="noopener">🔎 Адрес в Яндекс Картах ↗</a>
     </div>
@@ -73,8 +76,9 @@
         <div class="fx-block fx-learn" id="fxLearn"></div>
       </form>
 
-      <!-- Карта -->
-      <div id="fxGeo" class="fx-form" hidden>
+      <!-- Карта (в режиме «ЖК и районы» — раскрывается по кнопке) -->
+      <details class="fx-geo-box" id="fxGeoBox"><summary>📍 Точка на карте <span class="note" id="fxGeoState"></span></summary>
+      <div id="fxGeo" class="fx-form">
         <div id="fxMap" class="fx-map"></div>
         <form class="inline-form" id="fxCoordsForm">
           <input id="fxCoords" placeholder="Координаты или ссылка с Яндекс/Google Карт">
@@ -84,7 +88,8 @@
           — найдите дом, нажмите на него, скопируйте ссылку из адресной строки и вставьте в поле выше.</p>
         <p class="note" id="fxGeoNow"></p>
         <p class="note">Точка запомнится для этого дома и ЖК — объявления с тем же адресом встанут сюда же.</p>
-      </div>
+        <button type="button" class="pill light" id="fxGeoSave" hidden>💾 Сохранить точку</button>
+      </div></details>
 
       <div class="fx-actions">
         <button type="button" class="ghost" id="fxBack" title="Предыдущий объект (←)">← Назад</button>
@@ -99,6 +104,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="/static/combo.js?v=2"></script>
 <script src="/static/yasel.js?v=1"></script>
-<script src="/static/fix.js?v=9"></script>
+<script src="/static/fix.js?v=10"></script>
 </body>
 </html>

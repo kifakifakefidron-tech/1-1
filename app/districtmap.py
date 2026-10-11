@@ -199,6 +199,7 @@ def accept(conn: sqlite3.Connection, kind: str, name: str, district: str | None 
             d["search_text"] = make_search_text(d)
             conn.execute("UPDATE listings SET district = ?, search_text = ? WHERE id = ?", (hit[0], d["search_text"], r["id"]))
             _reindex(conn, r["id"], d["search_text"])
+            _learn_move(conn, r, hit[0])
             n += 1
     conn.commit()
     return {"listings": n}
@@ -215,6 +216,7 @@ def fill_empty(conn: sqlite3.Connection) -> int:
             d["search_text"] = make_search_text(d)
             conn.execute("UPDATE listings SET district = ?, search_text = ? WHERE id = ?", (hit[0], d["search_text"], r["id"]))
             _reindex(conn, r["id"], d["search_text"])
+            _learn_move(conn, r, hit[0])
             n += 1
     conn.commit()
     return n
@@ -392,6 +394,17 @@ def all_polygons(conn: sqlite3.Connection) -> list[dict]:
              "polys": json.loads(r["polys"])} for r in conn.execute("SELECT * FROM district_polygons ORDER BY area DESC")]
 
 
+def _learn_move(conn: sqlite3.Connection, r, district: str) -> None:
+    """Перенос по карте — правило на будущее: дом (улица + дом) → район; ЖК → район; улица без дома и ЖК → район.
+    Объект помечаем «поправлено админом», чтобы автоматика его не возвращала."""
+    from . import learning
+    want = {"addr": bool(r["street"] and r["house"]), "cx_district": bool(r["complex"]),
+            "street": bool(r["street"] and not r["house"] and not r["complex"])}
+    if any(want.values()):
+        learning.learn(conn, r, r["complex"], district, want)
+    conn.execute("UPDATE listings SET admin_fixed = 1 WHERE id = ?", (r["id"],))
+
+
 def set_districts(conn: sqlite3.Connection, items: list[dict], remember_complex: dict | None = None) -> dict:
     """Проставить район выбранным объектам: [{id, district}]. remember_complex={name, district} —
     ещё и правило «ЖК → район» для новых объявлений."""
@@ -408,6 +421,7 @@ def set_districts(conn: sqlite3.Connection, items: list[dict], remember_complex:
         row["search_text"] = make_search_text(row)
         conn.execute("UPDATE listings SET district = ?, search_text = ? WHERE id = ?", (d, row["search_text"], r["id"]))
         _reindex(conn, r["id"], row["search_text"])
+        _learn_move(conn, r, d)   # запомнить: новые объявления с этим домом/ЖК сразу в этот район
         n += 1
     conn.commit()
     if remember_complex and remember_complex.get("name") and remember_complex.get("district"):

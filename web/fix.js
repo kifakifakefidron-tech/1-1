@@ -112,9 +112,23 @@
     $("fxYaAll").href = yaHref(it);
     $("fxPhoto").hidden = !it.photo;
     if (it.photo) $("fxPhoto").src = it.photo;
+    // карточка целиком: все фото, параметры, номера
+    const photos = it.photos || [];
+    $("fxGal").innerHTML = photos.length > 1 ? photos.map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="" loading="lazy"></a>`).join("") : "";
+    const rooms = it.rooms == null ? null : it.rooms === 0 ? "студия" : `${it.rooms}-комн.`;
+    $("fxFacts").innerHTML = [rooms, it.area && `${it.area} м²`, it.land && `участок ${it.land} сот.`,
+      it.floor && `этаж ${it.floor}${it.floors ? "/" + it.floors : ""}`, it.deal === "rent" ? "аренда" : "продажа",
+      it.source === "feed" ? "фид СТРЕЛ" : it.source === "own" ? "свой объект агента" : ""].filter(Boolean)
+      .map((x) => `<span class="chip">${esc(x)}</span>`).join("");
+    $("fxPhones").innerHTML = (it.phones || []).map((p) => `<span class="fx-phone"><a href="tel:${esc(p)}">${esc(p)}</a>
+      <button type="button" class="chip danger" data-ban-phone="${esc(p)}" title="Скрыть все объекты и сообщения от этого номера и не принимать новые">🚫 Всё от номера</button></span>`).join("");
     $("fxPlace").hidden = mode !== "place";
-    $("fxGeo").hidden = mode !== "geo";
     $("fxHide").hidden = mode !== "geo";
+    $("fxGeoBox").classList.toggle("geo-mode", mode === "geo");
+    $("fxGeoBox").open = mode === "geo";
+    $("fxGeoSave").hidden = mode === "geo";
+    $("fxGeoState").textContent = it.lat ? ({ manual: "· поставлена вручную", learned: "· из ваших правок", feed: "· из фида",
+      approx: "· примерная" }[it.geo_status] || "· найдена по адресу") : "· точки нет";
     if (mode === "place") showPlace(it); else showGeo(it);
     window.scrollTo({ top: 0 });
   }
@@ -243,6 +257,26 @@
     next();
   }
 
+  // Режим «ЖК и районы»: точку можно поправить тут же, не уходя из очереди
+  async function saveGeoOnly() {
+    if (!item || !marker) return;
+    const ll = marker.getLatLng();
+    const r = await call(`/api/admin/listings/${item.id}/geo`, { lat: ll.lat, lon: ll.lng });
+    if (!r.ok) { toast(r.data.detail || "Не получилось сохранить точку"); return; }
+    item.lat = ll.lat; item.lon = ll.lng; item.geo_status = "manual";
+    $("fxGeoState").textContent = "· поставлена вручную";
+    toast(`📍 Точка сохранена${r.data.applied ? ` · поправлено ещё ${r.data.applied}` : ""}`);
+  }
+  // Удалить всё от номера: объекты, запросы, сообщения; новые не принимать
+  async function banPhone(phone) {
+    if (!confirm(`Удалить всё от номера ${phone}?\nВсе его объекты и запросы скроются, сообщения удалятся, новые не будут приниматься.\nВернуть — админка → «Удалённые».`)) return;
+    const r = await call("/api/admin/phones/ban", { phone });
+    if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
+    toast(`🚫 Номер удалён: объектов ${r.data.listings}, сообщений ${r.data.messages}`, 4000);
+    if (item) { ss.done.push(item.id); save(); }
+    next();
+  }
+
   // ─── верхняя панель ───────────────────────────────────────────────────
   function renderTop() {
     document.querySelectorAll("[data-mode]").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
@@ -267,6 +301,8 @@
     else if (b.id === "fxSkip") skip();
     else if (b.id === "fxBack") back();
     else if (b.id === "fxHide") submit({ hide: true });
+    else if (b.id === "fxGeoSave") saveGeoOnly();
+    else if (b.dataset.banPhone) banPhone(b.dataset.banPhone);
     else if (b.dataset.extraDel) { extraDistricts = extraDistricts.filter((x) => x !== b.dataset.extraDel); renderExtra(); }
   });
   // Район и ЖК — выпадающие списки с поиском; нет такого района — «+ Добавить район»
@@ -296,6 +332,7 @@
   });
   $("fxComplex").addEventListener("input", renderLearn);
   $("fxPlace").addEventListener("submit", (e) => { e.preventDefault(); submit(); });
+  $("fxGeoBox").addEventListener("toggle", () => { if ($("fxGeoBox").open && item && mode === "place") showGeo(item); });
   $("fxCoordsForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const ll = parseCoords($("fxCoords").value);
