@@ -8,8 +8,8 @@
 .nt-ico { width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; overflow: hidden;
   background: var(--chip); font: 600 22px var(--head); color: var(--ink); }
 .nt-ico img { width: 100%; height: 100%; object-fit: cover; }
-.nt-ico.k-price { background: #ffd27a; color: #3b2a00; }
-.nt-ico.k-gone { background: rgba(255, 180, 160, .25); }
+.nt-ico.k-price { background: var(--gold); color: #3b2a00; }
+.nt-ico.k-gone { background: rgba(226, 165, 150, .25); }
 .nt-ico.k-search { background: var(--ink); color: var(--on-accent); }
 .nt-body b { display: block; color: var(--ink); font-size: 16px; }
 .nt-body p { margin: 2px 0 0 !important; font-size: 14px !important; }

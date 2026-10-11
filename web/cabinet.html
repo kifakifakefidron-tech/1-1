@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Кабинет · 1+1</title>
+<meta name="theme-color" content="#035352">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=25">
+<link rel="stylesheet" href="/static/motion.css?v=34">
+<link rel="stylesheet" href="/static/doc.css?v=2">
+<link rel="stylesheet" href="/static/cabinet.css?v=1">
+<link rel="stylesheet" href="/static/theme.css?v=1">
+</head>
+<body>
+<header class="nav"><div class="nav-in">
+  <a class="brand" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="40" height="40" style="border-radius:10px">
+    <span class="brand-text"><b class="brand-name">1+1</b><span class="brand-sub">личный кабинет</span></span></a>
+  <nav class="nav-links doc-nav"><a class="nav-link" href="/?fav=1">Избранное</a><a class="nav-link" href="/planner">Планер</a><a class="nav-link" href="/picks">Подборки</a><a class="nav-link" href="/requests">Запросы</a><a class="nav-link" href="/market">Аналитика</a><a class="nav-link on" href="/cabinet">Кабинет</a><a class="nav-cta" href="/">← К поиску</a></nav>
+</div></header>
+
+<main class="cb">
+  <div class="cb-guest" id="cbGuest" hidden>
+    <h1>Кабинет</h1>
+    <p>Войдите по почте — избранное, планер, подборки и доступ к номерам будут на любом устройстве.</p>
+    <a class="pill" href="/?login=1">Войти</a>
+  </div>
+
+  <div class="cb-app" id="cbApp" hidden>
+    <aside class="cb-side">
+      <div class="cb-profile">
+        <div class="cb-ava" id="cbAva"></div>
+        <h1 id="cbName"></h1>
+        <p class="cb-mail" id="cbMail"></p>
+        <div class="cb-status" id="cbStatus"></div>
+      </div>
+      <div class="cb-plan" id="cbPlan"></div>
+      <button type="button" class="cb-logout" id="cbLogout"><svg class="ic ic-l" aria-hidden="true"><use href="/static/icons.svg?v=1#i-logout"></use></svg>Выйти</button>
+    </aside>
+
+    <div class="cb-main">
+      <section class="cb-sec">
+        <h2 class="cb-h">Разделы</h2>
+        <div class="cb-tiles" id="cbTiles"></div>
+      </section>
+      <section class="cb-sec" id="cbAdmin" hidden>
+        <div class="cb-h-row"><h2 class="cb-h">Сводка</h2><a class="cb-link" href="/admin">Открыть админку →</a></div>
+        <div class="cb-stats" id="cbStats"></div>
+      </section>
+      <section class="cb-sec">
+        <div class="cb-h-row"><h2 class="cb-h">Слежу за поисками</h2><span class="cb-count" id="cbSavedN"></span></div>
+        <ul class="cb-saved" id="cbSaved"></ul>
+      </section>
+      <section class="cb-sec" id="cbRefSec" hidden>
+        <h2 class="cb-h">Приведи коллегу</h2>
+        <div id="cbRef"></div>
+      </section>
+      <section class="cb-sec">
+        <h2 class="cb-h">Промокод</h2>
+        <form class="cb-promo" id="cbPromo"><input id="cbPromoInput" autocomplete="off" placeholder="Введите промокод" aria-label="Промокод">
+          <button type="submit" class="pill light">Применить</button></form>
+        <p class="note" id="cbPromoMsg" hidden></p>
+      </section>
+    </div>
+  </div>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
+<script src="/static/icons.js?v=2"></script>
+<script src="/static/cabinet.js?v=1"></script>
+<script src="/static/bell.js?v=1"></script>
+</body>
+</html>

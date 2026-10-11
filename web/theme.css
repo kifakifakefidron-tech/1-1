@@ -1,0 +1,122 @@
+/* 1+1 · тема: спокойный дорогой минимализм.
+   Бирюза и кремовый — основа; шампань — единственный акцент; зелёный и терракота — приглушённые, только для смысла.
+   Подключается ПОСЛЕДНЕЙ на всех страницах. */
+:root {
+  --gold: #e3cb8f;            /* шампань: акцент, выделение, ссылки-действия */
+  --gold-soft: rgba(227, 203, 143, .14);
+  --ok: #a7d1b6;              /* «хорошо»: ниже рынка, проверен, готово */
+  --ok-ink: #0d3a2c;
+  --bad: #e2a596;             /* «внимание»: удалить, дороже рынка */
+  --info: #b8c8e4;
+  --r-xs: 8px; --r-sm: 12px; --r-md: 16px; --r-lg: 22px; --r-xl: 28px;
+  --sh-1: inset 0 1px 0 rgba(243, 232, 188, .05), 0 6px 18px rgba(0, 20, 20, .16);
+  --sh-2: inset 0 1px 0 rgba(243, 232, 188, .06), 0 18px 46px rgba(0, 18, 18, .28);
+  --ease: cubic-bezier(.22, 1, .36, 1);     /* мягкая остановка, без «пружины» */
+  --spring: cubic-bezier(.22, 1, .36, 1);
+  --dur-1: .18s; --dur-2: .32s; --dur-3: .6s;
+  --ink-2: rgba(243, 232, 188, .78);
+  --ink-3: rgba(243, 232, 188, .52);
+  --line: rgba(243, 232, 188, .12);
+  --line-2: rgba(243, 232, 188, .24);
+}
+
+/* фон с едва заметным светом сверху — глубина без «декора» */
+body { background: radial-gradient(1100px 520px at 50% -12%, rgba(243, 232, 188, .07), transparent 62%), var(--bg);
+  background-attachment: fixed; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+::selection { background: var(--gold); color: var(--on-accent); }
+:focus-visible { outline: 1.5px solid var(--gold); outline-offset: 3px; border-radius: 6px; }
+
+/* ─── иконки ─── */
+.ic { width: 1.1em; height: 1.1em; flex: none; vertical-align: -.18em; fill: none; stroke: currentColor; stroke-width: 1.5;
+  stroke-linecap: round; stroke-linejoin: round; }
+.ic-l { margin-right: .42em; }
+.dv-act i .ic, .cab-tile2 i .ic, .dv-acc-ic .ic { width: 20px; height: 20px; margin: 0; vertical-align: 0; }
+.dv-acc-ic .ic { width: 17px; height: 17px; }
+.dv-act i, .cab-tile2 i { display: grid; place-items: center; height: 22px; }
+
+/* ─── типографика ─── */
+h1, h2, h3, .d-title, .dv-title { letter-spacing: .015em; }
+.d-h, .pl-day-h, .dv-sub-h, .st-box h3, .fx-label, .mk-card > span, .cab-pay span, .note.caps {
+  letter-spacing: .06em; }
+
+/* ─── кнопки: тише и точнее ─── */
+.pill { border-radius: 999px; font-weight: 600; letter-spacing: .01em; box-shadow: none; }
+.pill:not(.light):hover { box-shadow: 0 8px 22px rgba(0, 0, 0, .22); transform: translateY(-1px); }
+.pill.light { background: transparent; border: 1px solid var(--line-2); color: var(--ink); }
+.pill.light:hover { background: rgba(243, 232, 188, .06); border-color: rgba(243, 232, 188, .4); }
+button:active, .pill:active, .chip:active, .seg:active { transform: scale(.98); }
+.chip { border: 1px solid var(--line); background: transparent; font-weight: 500; }
+.chip:hover { border-color: var(--line-2); background: rgba(243, 232, 188, .04); }
+.chip.on { background: var(--ink); color: var(--on-accent); border-color: var(--ink); }
+.chip.on .ic { stroke: currentColor; }
+.seg.on, .chip.on { animation: none; }
+#hotBtn.on { background: var(--gold); color: var(--on-accent); border-color: var(--gold); text-shadow: none; }
+#hotBtn:hover { text-shadow: none; }
+.icon-btn { border: 1px solid var(--line); background: transparent; }
+.icon-btn:hover { border-color: var(--line-2); background: rgba(243, 232, 188, .05); }
+
+/* ─── отметки на карточках: тонкие, без ярких заливок ─── */
+.mark { display: inline-flex; align-items: center; gap: .3em; padding: 2px 8px; border-radius: 6px; font: 600 11px/1.6 var(--body);
+  letter-spacing: .03em; background: transparent; border: 1px solid var(--line-2); color: var(--ink-2); }
+.mark.new { border-color: var(--gold); color: var(--gold); }
+.mark.down, .mark.good, .mark.verified { border-color: rgba(167, 209, 182, .55); color: var(--ok); background: transparent; }
+.mark.hot { border-color: rgba(226, 165, 150, .55); color: var(--bad); background: transparent; }
+.mark.partner { border-color: var(--line-2); color: var(--ink-3); background: transparent; }
+.mark.crm { border-color: var(--line-2); color: var(--ink); background: rgba(243, 232, 188, .06); }
+.mark.crm-deal { border-color: var(--ok); color: var(--ok); background: transparent; }
+.mark.hit { border-color: var(--gold); color: var(--gold); }
+
+/* ─── карточки ─── */
+.item { border-radius: var(--r-lg); border: 1px solid var(--line); box-shadow: none;
+  transition: transform var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease), border-color var(--dur-2) var(--ease); }
+@media (hover: hover) {
+  .item:hover { transform: translateY(-2px); box-shadow: var(--sh-2); border-color: var(--line-2); }
+  .item:hover .item-photo img.loaded { transform: scale(1.025); }
+}
+.item-photo img { transition: transform .9s var(--ease); }
+.price, .dv-price b, .d-price { letter-spacing: .01em; }
+.cmp-btn, .plan-btn { border: 1px solid var(--line); background: transparent; color: var(--ink-2); }
+.cmp-btn:hover, .plan-btn:hover { border-color: var(--line-2); color: var(--ink); }
+.cmp-btn.on, .cmp-btn-d.on { background: var(--gold); border-color: var(--gold); color: var(--on-accent); }
+.cmp-btn .ic, .plan-btn .ic { width: 15px; height: 15px; margin: 0; }
+
+/* ─── окно объекта ─── */
+.dv-act { border-radius: var(--r-md); border: 1px solid var(--line); background: transparent; color: var(--ink-2); font-weight: 500; }
+.dv-act:hover { color: var(--ink); border-color: var(--line-2); background: rgba(243, 232, 188, .04); transform: translateY(-1px); }
+.dv-act.on { border-color: var(--gold); color: var(--gold); background: transparent; }
+.dv-tag.good { background: transparent; border: 1px solid var(--ok); color: var(--ok) !important; }
+.dv-tag.high { background: transparent; border: 1px solid rgba(226, 165, 150, .6); color: var(--bad) !important; }
+.dv-acc-ic { background: transparent; border: 1px solid var(--line); color: var(--ink-2); border-radius: 10px; }
+.dv-acc.good .dv-acc-h { color: var(--ok); }
+.dv-acc.admin .dv-acc-ic { border-color: rgba(227, 203, 143, .45); color: var(--gold); background: transparent; }
+.dv-facts { border-radius: var(--r-md); }
+.dv-gal img { border-radius: 4px; }
+.dv-desc-more, .ya-link, .dv-more, .dv-list a, .d-chart-list a { color: var(--gold); }
+.d-locked { border-radius: var(--r-md); border: 1px solid var(--line); background: rgba(0, 0, 0, .1); }
+.chip.danger { color: var(--bad); border-color: rgba(226, 165, 150, .35); }
+
+/* ─── окна и всплывающее ─── */
+dialog::backdrop { background: rgba(2, 30, 29, .55); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.small-dlg, .detail { border-radius: var(--r-xl); border: 1px solid var(--line); box-shadow: var(--sh-2); }
+.toast { border-radius: 14px; border: 1px solid var(--line-2); box-shadow: var(--sh-2); font-weight: 500; }
+.bell-pop { border-color: var(--line-2); background: rgba(6, 66, 64, .97); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.bell-pop-ic { color: var(--gold); display: grid; place-items: start; padding-top: 2px; }
+.bell-pop-ic .ic { width: 20px; height: 20px; }
+.bell-count { background: var(--gold); color: var(--on-accent); }
+.cmp-bar { border-color: var(--line-2); background: rgba(6, 66, 64, .95); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+
+/* ─── шапка ─── */
+.nav-link { font-weight: 500; letter-spacing: .01em; }
+.nav-link.on { background: transparent; color: var(--ink); box-shadow: inset 0 -1.5px 0 var(--gold); border-radius: 0; }
+.nav-cta { box-shadow: none; }
+.nav-menu { border-radius: var(--r-md); box-shadow: var(--sh-2); }
+.nav-menu a .ic { color: var(--ink-3); }
+
+/* ─── мягкие появления ─── */
+@keyframes riseIn { from { opacity: 0; transform: translateY(10px); } }
+@keyframes tick { 50% { transform: scale(1.02); } }
+.doc { animation-duration: .7s; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

@@ -6,6 +6,7 @@
   "use strict";
 
   const $ = (id) => document.getElementById(id);
+  const ic = (n) => (window.ic ? window.ic(n) : "");   // тонкие иконки (web/icons.js)
   const PAGE_SIZE = 32;  // делится и на 4 (компьютер), и на 2 (телефон)
 
   const state = {
@@ -625,7 +626,7 @@
       `<button type="button" class="dv-act${inCmp ? " on" : ""}" data-cmp="${o.id}"><i>⚖</i><span>${inCmp ? "В сравнении" : "Сравнить"}</span></button>`,
       u ? `<a class="dv-act" href="/planner?add=show&listing=${o.id}"><i>📅</i><span>Запланировать</span></a>` : "",
       u ? `<button type="button" class="dv-act" data-pick-open="${o.id}"><i>📁</i><span>В подборку</span></button>` : "",
-      `<button type="button" class="dv-act" data-share="${o.id}"><i>↗</i><span>Поделиться</span></button>`,
+      `<button type="button" class="dv-act" data-share="${o.id}"><i>${ic("share")}</i><span>Поделиться</span></button>`,
       o.url && o.phones && o.phones.length ? `<a class="dv-act" href="${esc(o.url)}" target="_blank" rel="noopener"><i>🔗</i><span>На сайте</span></a>` : "",
     ].join("");
 
@@ -1295,7 +1296,7 @@
     toast("Вы вошли");
     refresh();
     if ($("detail").open && openedId) openDetail(openedId);
-    if ($("cabinetDlg").open) renderCabinet();
+    if ($("cabinetDlg").open) closeDlg($("cabinetDlg"));
   }
 
   // «Приведи коллегу — неделя бесплатно»
@@ -1433,7 +1434,7 @@
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || !el.animate) return;
     const r = el.getBoundingClientRect();
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    const colors = ["#ff8a7a", "#f3e8bc", "#ffd27a", "#ffb3a7"];
+    const colors = ["#e2a596", "#f3e8bc", "#e3cb8f", "#e2a596"];
     for (let i = 0; i < 10; i++) {
       const p = document.createElement("i");
       p.className = "spark";
@@ -1544,7 +1545,7 @@
       if (t.hasAttribute("data-sheet-close")) { closeSheet(); return; }
       if (t.dataset.tab) {
         const tab = t.dataset.tab;
-        if (tab === "account") { me() ? renderCabinet() : openLogin(); return; }
+        if (tab === "account") { if (me()) location.href = "/cabinet"; else openLogin(); return; }
         if (tab === "fav") { setFavMode(true); return; }
         const go = () => {
           if (favMode) setFavMode(false);
@@ -1738,7 +1739,7 @@
     });
     detail.addEventListener("close", () => { detailStack = []; openedId = 0; setOpenParam(null); });
 
-    $("accountBtn").addEventListener("click", () => (me() ? renderCabinet() : openLogin()));
+    $("accountBtn").addEventListener("click", () => (me() ? (location.href = "/cabinet") : openLogin()));
 
     $("tgLogin").addEventListener("click", () => startTelegram(false));
     $("loginDlg").addEventListener("close", () => clearInterval(tgPoll));
@@ -1840,7 +1841,7 @@
       if (act === "login") { if (!me()) openLogin(); }
       else if (!me()) openLogin();
       else if (act === "fav") setFavMode(true);
-      else if (act === "cabinet") renderCabinet();
+      else if (act === "cabinet") { location.replace(me() ? "/cabinet" : "/?login=1"); return; }
       else if (act === "agent") document.dispatchEvent(new CustomEvent("oneplus:agent"));
     }
   }

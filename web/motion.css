@@ -281,7 +281,7 @@ dialog::backdrop { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px
 .fav-btn { display: grid; place-items: center; }
 .fav-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linejoin: round;
   transition: fill .25s var(--ease), stroke .25s var(--ease), transform .3s var(--spring); }
-.fav-btn.on svg { fill: #ff8a7a; stroke: #ff8a7a; }
+.fav-btn.on svg { fill: var(--bad); stroke: var(--bad); }
 .fav-btn:hover svg { transform: scale(1.12); }
 .fav-btn.pop { animation: heartPop .6s var(--spring); }
 @keyframes heartPop { 0% { transform: scale(1); } 25% { transform: scale(.78); } 55% { transform: scale(1.28); } 100% { transform: scale(1); } }
@@ -337,7 +337,7 @@ dialog::backdrop { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px
   animation: riseIn .5s var(--spring) both; }
 .cab-tile b { font: 600 22px var(--head); }
 .cab-tile span { color: var(--ink-3); font-size: 11.5px; line-height: 1.25; }
-.cab-tile.warn b { color: #ffb3a7; }
+.cab-tile.warn b { color: var(--bad); }
 .cab-stats .skel { min-height: 58px; border-radius: 12px; overflow: hidden; }
 .cab-stats .skel i { height: 100%; min-height: 58px; border-radius: 12px; }
 .cab-admin .pill { text-align: center; text-decoration: none; }
@@ -443,15 +443,15 @@ dialog.detail { contain: layout paint; overscroll-behavior: contain; }
 .mark { position: static; font-size: 12px; line-height: 1.5; font-weight: 600; padding: 1px 9px; border-radius: 999px;
   background: var(--chip); color: var(--ink); white-space: nowrap; }
 .mark.new { background: var(--ink); color: var(--on-accent); }
-.mark.down { background: #ffd27a; color: #3b2a00; }
-.mark.good { background: #9be8b8; color: #063b2c; }
+.mark.down { background: var(--gold); color: #3b2a00; }
+.mark.good { background: var(--ok); color: var(--ok-ink); }
 .d-back { font-size: 20px; font-weight: 600; }
 .bar-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; width: 100%; }
 .bar-tools .chip { font-size: 13px; padding: 5px 12px; }
 .bar-tools .reset-chip { border-color: var(--ink); color: var(--ink); font-weight: 600; }
 .d-market { margin: 12px 0; padding: 12px 14px; border-radius: 14px; background: var(--chip); display: flex; flex-direction: column; gap: 2px; }
-.d-market.good { background: rgba(155, 232, 184, .14); border: 1px solid #9be8b8; }
-.d-market.high { background: rgba(255, 180, 160, .14); }
+.d-market.good { background: rgba(167, 209, 182, .14); border: 1px solid var(--ok); }
+.d-market.high { background: rgba(226, 165, 150, .14); }
 .d-market small { color: var(--ink-3); }
 .d-same, .d-note-box { margin: 12px 0; border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; }
 .d-same summary, .d-note-box summary { cursor: pointer; font-weight: 600; }
@@ -494,7 +494,7 @@ button.link { border: 0; background: none; padding: 0; color: var(--ink); font: 
 .bell-mobile { display: none; position: relative; margin-left: auto; width: 42px; height: 42px; border-radius: 50%;
   place-items: center; color: var(--ink); background: var(--chip); }
 .bell-mobile svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
-.bell-dot { position: absolute; top: 8px; right: 9px; width: 9px; height: 9px; border-radius: 50%; background: #ff8a7a;
+.bell-dot { position: absolute; top: 8px; right: 9px; width: 9px; height: 9px; border-radius: 50%; background: var(--bad);
   box-shadow: 0 0 0 2px var(--bg); }
 @media (max-width: 640px) { .bell-mobile:not([hidden]) { display: grid; } }
 
@@ -504,10 +504,10 @@ button.link { border: 0; background: none; padding: 0; color: var(--ink); font: 
 .saved-label { flex: 0 0 auto; font-size: 13px; color: var(--ink-3); }
 .saved-chips { display: flex; gap: 6px; flex-wrap: nowrap; }
 .saved-chips .chip { white-space: nowrap; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
-.hit-note { margin: 10px 0 0; padding: 10px 14px; border-radius: 14px; background: rgba(155, 232, 184, .14);
-  border: 1px solid #9be8b8; font-size: 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.item.hit { border-color: #9be8b8; box-shadow: 0 0 0 2px #9be8b8, 0 14px 34px rgba(0, 0, 0, .25); }
-.mark.hit { background: #9be8b8; color: #063b2c; }
+.hit-note { margin: 10px 0 0; padding: 10px 14px; border-radius: 14px; background: rgba(167, 209, 182, .14);
+  border: 1px solid var(--ok); font-size: 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.item.hit { border-color: var(--ok); box-shadow: 0 0 0 2px var(--ok), 0 14px 34px rgba(0, 0, 0, .25); }
+.mark.hit { background: var(--ok); color: var(--ok-ink); }
 
 /* ─── «Партнёр» и правка точки (админ) ─────────────────────────────────── */
 .mark.partner { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-2); }
@@ -553,8 +553,8 @@ button.link { border: 0; background: none; padding: 0; color: var(--ink); font: 
   border-radius: 10px; cursor: pointer; color: var(--ink); font-size: 15px; line-height: 1.3; }
 .combo-item small { color: var(--ink-3); font-size: 12px; white-space: nowrap; }
 .combo-item.on, .combo-item:hover { background: rgba(243, 232, 188, .12); }
-.combo-item mark { background: none; color: #ffd86b; font-weight: 700; }
-.combo-item.new { color: #9be8b8; font-weight: 600; border-top: 1px solid var(--line); margin-top: 4px; }
+.combo-item mark { background: none; color: var(--gold); font-weight: 700; }
+.combo-item.new { color: var(--ok); font-weight: 600; border-top: 1px solid var(--line); margin-top: 4px; }
 .combo-empty { padding: 10px 12px; color: var(--ink-3); font-size: 14px; }
 
 /* ─── «Ещё ▾» в шапке ─────────────────────────────────────────────────── */
@@ -588,7 +588,7 @@ button.link { border: 0; background: none; padding: 0; color: var(--ink); font: 
 .bell svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
 .bell.has svg { animation: bellRing 1.2s var(--ease) 1; transform-origin: 50% 10%; }
 .bell-count { position: absolute; top: -3px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
-  background: #ff8a7a; color: #3b0d06; font: 700 11px/18px var(--body); text-align: center; box-shadow: 0 0 0 2px var(--bg, #035352); }
+  background: var(--bad); color: #3b0d06; font: 700 11px/18px var(--body); text-align: center; box-shadow: 0 0 0 2px var(--bg, #035352); }
 .nav-links { order: 2; }
 @keyframes bellRing { 0%, 100% { transform: rotate(0); } 15% { transform: rotate(14deg); } 30% { transform: rotate(-12deg); }
   45% { transform: rotate(8deg); } 60% { transform: rotate(-5deg); } 75% { transform: rotate(2deg); } }
@@ -596,7 +596,7 @@ button.link { border: 0; background: none; padding: 0; color: var(--ink); font: 
 
 .bell-pop { position: fixed; z-index: 2000; right: 20px; bottom: 20px; width: min(340px, calc(100vw - 32px)); display: grid;
   grid-template-columns: auto 1fr; gap: 6px 10px; padding: 12px 12px 10px 14px; border-radius: 16px; background: rgba(8, 72, 70, .97);
-  border: 1px solid rgba(255, 216, 107, .45); box-shadow: 0 14px 40px rgba(0, 0, 0, .4); color: var(--ink);
+  border: 1px solid rgba(227, 203, 143, .45); box-shadow: 0 14px 40px rgba(0, 0, 0, .4); color: var(--ink);
   transform: translateY(24px) scale(.96); opacity: 0; pointer-events: none; transition: transform .35s var(--spring), opacity .25s; }
 .bell-pop.in { transform: none; opacity: 1; pointer-events: auto; }
 .bell-pop-ic { font-size: 20px; line-height: 1.2; }
@@ -625,8 +625,8 @@ body:not(:has(.tabbar)) .bell-pop { bottom: 20px; }
 /* ═══ последние штрихи: лёгкость и отклик ═══ */
 html { scroll-behavior: smooth; }
 .chip.on, .seg.on { animation: tick .3s var(--spring); }
-#hotBtn:hover { text-shadow: 0 0 12px rgba(255, 159, 138, .6); }
-#hotBtn.on { background: linear-gradient(135deg, #ffb08a, #ffd86b); color: #4a120a; border-color: transparent; }
+#hotBtn:hover { text-shadow: 0 0 12px rgba(226, 165, 150, .6); }
+#hotBtn.on { background: linear-gradient(135deg, #ffb08a, var(--gold)); color: #4a120a; border-color: transparent; }
 .dv-acc summary { border-radius: 12px; transition: background .2s, color .2s; }
 .dv-acc summary:hover { background: rgba(243, 232, 188, .05); }
 .mark { animation: fadeIn .4s var(--ease) both; }

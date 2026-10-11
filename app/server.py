@@ -307,7 +307,8 @@ def api_listing(request: Request, body: dict | None = None):
     d["note"] = hooks.get_note(conn, user["id"], lid) if user else None
     d["status"] = hooks.get_status(conn, user["id"], lid) if user else None
     d["plans"] = planner.for_listing(conn, user["id"], lid) if user else []
-    d["buyers"] = buyers.for_listing(conn, {**dict(row), "extra_districts": d.get("extra_districts") or []}, access)
+    # «Покупатели под объект» — только админу (решение Артёма 11.10)
+    d["buyers"] = buyers.for_listing(conn, {**dict(row), "extra_districts": d.get("extra_districts") or []}, access)         if user and user["is_admin"] else []
     d["favorite"] = bool(user and conn.execute(
         "SELECT 1 FROM favorites WHERE user_id = ? AND listing_id = ?", (user["id"], lid)).fetchone())
     return JSONResponse(d)
@@ -793,6 +794,10 @@ def pick_page(request: Request, body: dict | None = None):
                 f'<meta property="og:description" content="{esc(desc)}"><meta property="og:image" content="{esc(photo)}">')
         html_text = html_text.replace("<title>Подборка · 1+1</title>", f"<title>{esc(d['title'])} · 1+1</title>{meta}", 1)
     return Response(html_text, media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
+
+
+def cabinet_page(request: Request, body: dict | None = None):
+    return _page("cabinet.html")
 
 
 def picks_page(request: Request, body: dict | None = None):
@@ -1467,6 +1472,7 @@ routes = [
     Route("/requests", threaded(requests_page)),
     Route("/api/requests", threaded(api_requests)),
     Route("/picks", threaded(picks_page)),
+    Route("/cabinet", threaded(cabinet_page)),
     Route("/c/{token}", threaded(pick_page)),
     Route("/api/picks", threaded(api_picks), methods=["GET", "POST", "DELETE"]),
     Route("/api/picks/{id:int}/items", threaded(api_pick_items), methods=["POST"]),

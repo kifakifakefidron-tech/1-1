@@ -4,7 +4,7 @@
 .pks-new input { flex: 1; min-width: 0; padding: 11px 14px; border-radius: 14px; border: 1px solid var(--line-2); background: var(--paper);
   color: var(--ink); font: inherit; }
 .pks-card { background: var(--paper); border: 1px solid var(--line); border-radius: 20px; padding: 14px 16px; margin: 0 0 14px; }
-.pks-card.open { border-color: #ffd86b; }
+.pks-card.open { border-color: var(--gold); }
 .pks-top { display: flex; justify-content: space-between; gap: 10px; cursor: pointer; }
 .pks-top h2 { margin: 0 0 2px !important; font-size: 22px !important; }
 .pks-arrow { color: var(--ink-3); }
@@ -21,7 +21,7 @@
 .pks-it img, .pks-noph { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; background: rgba(0,0,0,.2); display: block; }
 .pks-it a { color: var(--ink); text-decoration: none; }
 .pks-it span { color: var(--ink-2); font-size: 14px; }
-.pks-gone { color: #ff9f8a; margin-left: 6px; }
+.pks-gone { color: var(--bad); margin-left: 6px; }
 .pks-com { width: 100%; box-sizing: border-box; margin-top: 6px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--line);
   background: var(--paper); color: var(--ink); font: inherit; font-size: 13px; }
 .pks-it-acts { display: flex; flex-direction: column; gap: 4px; }
@@ -32,9 +32,9 @@
 .pks-add li { display: grid; grid-template-columns: 48px 1fr auto; gap: 10px; align-items: center; font-size: 14px; }
 .pks-add img, .pks-add .pks-noph { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; }
 @media (max-width: 600px) { .pks-new { flex-direction: column; } .pks-two { grid-template-columns: 1fr; } }
-.pks-warn { margin: 8px 0 0; color: #ffd86b; font-size: 14px; }
+.pks-warn { margin: 8px 0 0; color: var(--gold); font-size: 14px; }
 .pks-text { margin-top: 6px; }
-.pks-text summary { cursor: pointer; font-size: 13px; color: #ffd86b; }
+.pks-text summary { cursor: pointer; font-size: 13px; color: var(--gold); }
 .pks-text textarea { width: 100%; box-sizing: border-box; margin-top: 6px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line);
   background: var(--paper); color: var(--ink); font: inherit; font-size: 14px; resize: vertical; }
 .pks-text-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
@@ -55,7 +55,7 @@
 .pks-head { min-width: 0; }
 .pks-head h2 { margin: 0 !important; font-size: 19px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pks-meta { display: flex; gap: 10px; font-size: 12.5px; color: var(--ink-3); }
-.pks-meta .seen { color: #9be8b8; }
+.pks-meta .seen { color: var(--ok); }
 .pks-arrow { width: 8px; height: 8px; border-right: 2px solid var(--ink-3); border-bottom: 2px solid var(--ink-3); transform: rotate(45deg);
   transition: transform .25s var(--ease); }
 .pks-card.open .pks-arrow { transform: rotate(-135deg); }

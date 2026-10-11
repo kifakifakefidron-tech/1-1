@@ -33,7 +33,7 @@
 .extra-chip button { border: 0; background: none; color: inherit; font: 600 16px/1 var(--body); cursor: pointer; padding: 0 2px; }
 .fx-dsearch { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .fx-dsearch input { flex: 1 1 220px; }
-#fxDistrictAdd { border-color: #9be8b8; color: #9be8b8; }
+#fxDistrictAdd { border-color: var(--ok); color: var(--ok); }
 .fx-check { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 14px;
   color: var(--ink-2); line-height: 1.4; cursor: pointer; }
 .fx-check input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--ink); }
@@ -53,9 +53,9 @@
     border-radius: 0 0 20px 20px; }
 }
 .fx-open.ya-link { display: inline-block; margin-left: 14px; }
-.ya-link { color: #ffd86b; font-weight: 600; text-decoration: none; }
+.ya-link { color: var(--gold); font-weight: 600; text-decoration: none; }
 .ya-link:hover { text-decoration: underline; }
-.ya-sel { position: fixed; z-index: 2147483000; padding: 7px 12px; border-radius: 999px; background: #ffd86b; color: #035352;
+.ya-sel { position: fixed; z-index: 2147483000; padding: 7px 12px; border-radius: 999px; background: var(--gold); color: #035352;
   font: 600 13px/1.2 system-ui, sans-serif; text-decoration: none; box-shadow: 0 6px 18px rgba(0,0,0,.25); white-space: nowrap; }
 .ya-sel[hidden] { display: none; }
 .d-place .ya-link { margin-left: 6px; white-space: nowrap; font-size: .92em; }
@@ -70,7 +70,7 @@
 .fx-phones { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
 .fx-phone { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .fx-phone a { color: var(--ink); font-weight: 600; }
-.chip.danger { color: #ffb4a0; border-color: rgba(255, 180, 160, .4); }
+.chip.danger { color: var(--bad); border-color: rgba(226, 165, 150, .4); }
 .fx-geo-box { margin: 12px 0 0; border: 1px solid var(--line); border-radius: 16px; padding: 0 12px; }
 .fx-geo-box summary { cursor: pointer; padding: 12px 0; font-weight: 600; list-style: none; }
 .fx-geo-box summary::-webkit-details-marker { display: none; }

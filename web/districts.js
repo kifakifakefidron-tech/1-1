@@ -6,7 +6,7 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   // Наши цвета: светло-жёлтый, мятный, янтарный, голубой, коралловый, сиреневый, бирюзовый
-  const PALETTE = ["#F3E8BC", "#9be8b8", "#ffd27a", "#7fc8ff", "#ffb4a0", "#c7a6ff", "#6fd3c4", "#ffe08a", "#a3d9ff", "#f7a8d8"];
+  const PALETTE = ["#F3E8BC", "#a7d1b6", "#e3cb8f", "#7fc8ff", "#e2a596", "#c7a6ff", "#6fd3c4", "#ffe08a", "#a3d9ff", "#f7a8d8"];
   const color = (name) => { let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return PALETTE[h % PALETTE.length]; };
 
   let map, layers = new Map(), cxGroup, distGroup;
@@ -107,7 +107,7 @@
     $("dmEdit").hidden = !l; $("dmDel").hidden = !l;
     $("dmDraw").textContent = l ? "✏️ Обвести заново" : "✏️ Обвести на карте";
     if (l && fly) map.flyToBounds(l.layer.getBounds().pad(0.3), { duration: 0.6 });
-    for (const [n, x] of layers) x.layer.setStyle({ weight: n === name ? 4 : 2, color: n === name ? "#ffd86b" : "#0b3f3e" });
+    for (const [n, x] of layers) x.layer.setStyle({ weight: n === name ? 4 : 2, color: n === name ? "#e3cb8f" : "#0b3f3e" });
     checkAll = false;
     renderCheck();
   }
@@ -117,7 +117,7 @@
     $("dmHelp").hidden = false;
     $("dmHelp").innerHTML = `Нажимайте на карте по границе района «<b>${esc(selected)}</b>». Чтобы закончить — нажмите на первую точку.
       Esc — отменить. Точки прилипают к соседним районам, чтобы не было щелей.`;
-    map.pm.enableDraw("Polygon", { pathOptions: { color: "#ffd86b", fillColor: color(selected), fillOpacity: .35 } });
+    map.pm.enableDraw("Polygon", { pathOptions: { color: "#e3cb8f", fillColor: color(selected), fillOpacity: .35 } });
   }
   function startEdit() {
     const l = layers.get(selected);
