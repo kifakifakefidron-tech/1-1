@@ -39,3 +39,33 @@
   background: var(--paper); color: var(--ink); font: inherit; font-size: 14px; resize: vertical; }
 .pks-text-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
 .pks-text-acts .note { font-size: 12px; }
+
+/* ═══ подборки v2 ═══ */
+.pks-new { align-items: center; background: var(--paper); border: 1px solid var(--line); border-radius: 18px; padding: 6px 6px 6px 4px; }
+.pks-new input { border: 0; background: none; }
+.pks-new .pill { flex: none; padding: 9px 16px; }
+.pks-card { padding: 12px 14px; border-radius: 20px; animation: riseIn .45s var(--ease) both; transition: border-color .2s, box-shadow .25s; }
+.pks-card:hover { box-shadow: 0 12px 30px rgba(0, 0, 0, .18); }
+.pks-top { display: grid; grid-template-columns: auto 1fr 14px; gap: 12px; align-items: center; }
+.pks-thumbs { display: flex; }
+.pks-thumbs img, .pks-thumbs .pks-noph { width: 44px; height: 44px; border-radius: 12px; object-fit: cover; border: 2px solid var(--paper);
+  margin-left: -14px; background: rgba(0, 0, 0, .25); }
+.pks-thumbs > :first-child { margin-left: 0; }
+.pks-noph.empty { display: grid; place-items: center; font-size: 18px; }
+.pks-head { min-width: 0; }
+.pks-head h2 { margin: 0 !important; font-size: 19px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pks-meta { display: flex; gap: 10px; font-size: 12.5px; color: var(--ink-3); }
+.pks-meta .seen { color: #9be8b8; }
+.pks-arrow { width: 8px; height: 8px; border-right: 2px solid var(--ink-3); border-bottom: 2px solid var(--ink-3); transform: rotate(45deg);
+  transition: transform .25s var(--ease); }
+.pks-card.open .pks-arrow { transform: rotate(-135deg); }
+.pks-share { gap: 6px; margin-top: 10px; }
+.pks-btn { padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line-2); background: none; color: var(--ink) !important;
+  font: 500 13px var(--body); text-decoration: none; cursor: pointer; transition: background .2s, transform .2s var(--spring); }
+.pks-btn:hover { background: var(--chip); transform: translateY(-1px); }
+.pks-btn.main { background: var(--ink); color: var(--on-accent) !important; border-color: var(--ink); }
+.pks-btn.ghosty { border-color: transparent; color: var(--ink-3) !important; }
+.pks-edit, .pks-h, .pks-items, .pks-add { animation: riseIn .35s var(--ease) both; }
+.pks-it { transition: background .2s; }
+.pks-it:hover { background: rgba(0, 0, 0, .2); }
+@media (max-width: 600px) { .pks-new { flex-direction: row !important; } .pks-new input { padding: 8px 10px; } }

@@ -9,10 +9,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=23">
-<link rel="stylesheet" href="/static/motion.css?v=32">
+<link rel="stylesheet" href="/static/style.css?v=25">
+<link rel="stylesheet" href="/static/motion.css?v=34">
 <link rel="stylesheet" href="/static/doc.css?v=2">
-<link rel="stylesheet" href="/static/picks.css?v=3">
+<link rel="stylesheet" href="/static/picks.css?v=5">
 </head>
 <body>
 <header class="nav"><div class="nav-in">
@@ -23,17 +23,16 @@
 
 <main class="doc pks">
   <h1>Подборки для клиентов</h1>
-  <p class="lead">Соберите объекты для клиента и отправьте одну ссылку: фото, цены, карта и только ваш контакт —
-    без телефонов других агентов. Видно, открывал ли клиент подборку.</p>
+  <p class="lead">Одна ссылка для клиента: фото, цены, карта и только ваш контакт.</p>
   <div id="pksMsg" class="note-box" hidden></div>
   <div id="pksApp" hidden>
-    <form class="pks-new" id="pksNew"><input name="title" maxlength="120" placeholder="Название, например: «Для Ирины — 2к до 7 млн, ФМР»">
-      <button type="submit" class="pill">+ Новая подборка</button></form>
+    <form class="pks-new" id="pksNew"><input name="title" maxlength="120" placeholder="Новая подборка, напр. «Ирине — 2к ФМР»">
+      <button type="submit" class="pill" aria-label="Создать подборку">+ Создать</button></form>
     <div id="pksList"></div>
   </div>
 </main>
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
-<script src="/static/picks.js?v=3"></script>
+<script src="/static/picks.js?v=4"></script>
 <script src="/static/bell.js?v=1"></script>
 </body>
 </html>

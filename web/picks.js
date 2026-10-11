@@ -63,15 +63,19 @@
     const add = (favs || []).filter((f) => !inPick.has(f.id));
     return `<article class="pks-card${isOpen ? " open" : ""}" data-pick="${p.id}">
       <div class="pks-top" data-toggle="${p.id}">
-        <div><h2>${esc(p.title)}</h2><span class="note">${p.n} ${p.n % 10 === 1 && p.n % 100 !== 11 ? "объект" : (p.n % 10 >= 2 && p.n % 10 <= 4 && (p.n % 100 < 12 || p.n % 100 > 14)) ? "объекта" : "объектов"} · ${esc(seen)}</span></div>
-        <span class="pks-arrow">${isOpen ? "▲" : "▼"}</span>
+        <div class="pks-thumbs">${p.items.slice(0, 4).map((it) => it.photo ? `<img src="${esc(it.photo)}" alt="" loading="lazy">` : `<span class="pks-noph"></span>`).join("")
+          || `<span class="pks-noph empty">📁</span>`}</div>
+        <div class="pks-head"><h2>${esc(p.title)}</h2>
+          <div class="pks-meta"><span>${p.n} ${p.n % 10 === 1 && p.n % 100 !== 11 ? "объект" : (p.n % 10 >= 2 && p.n % 10 <= 4 && (p.n % 100 < 12 || p.n % 100 > 14)) ? "объекта" : "объектов"}</span>
+            <span class="${p.views ? "seen" : ""}" title="${esc(seen)}">👁 ${p.views ? `${p.views} · ${esc(ago(p.viewed_at))}` : "не открывал"}</span></div></div>
+        <span class="pks-arrow"></span>
       </div>
-      ${p.contact_phone ? "" : `<p class="pks-warn">⚠ Укажите свой телефон в подборке (раскройте её) — клиент увидит только ваш контакт.</p>`}
+      ${p.contact_phone ? "" : `<p class="pks-warn">⚠ Укажите свой телефон — клиент увидит только ваш контакт (раскройте подборку).</p>`}
       <div class="pks-share">
-        <button type="button" class="pill" data-copy="${p.id}">Скопировать ссылку</button>
-        <a class="pill light" href="https://wa.me/?text=${encodeURIComponent(`${p.title}\n${link(p)}`)}" target="_blank" rel="noopener">Отправить в WhatsApp</a>
-        <a class="pill light" href="https://t.me/share/url?url=${encodeURIComponent(link(p))}&text=${encodeURIComponent(p.title)}" target="_blank" rel="noopener">Telegram</a>
-        <a class="chip" href="/c/${esc(p.token)}" target="_blank">Как увидит клиент ↗</a>
+        <button type="button" class="pks-btn main" data-copy="${p.id}">🔗 Ссылка</button>
+        <a class="pks-btn" href="https://wa.me/?text=${encodeURIComponent(`${p.title}\n${link(p)}`)}" target="_blank" rel="noopener">WhatsApp</a>
+        <a class="pks-btn" href="https://t.me/share/url?url=${encodeURIComponent(link(p))}&text=${encodeURIComponent(p.title)}" target="_blank" rel="noopener">Telegram</a>
+        <a class="pks-btn ghosty" href="/c/${esc(p.token)}" target="_blank">👁 Как видит клиент</a>
       </div>
       ${isOpen ? `<form class="pks-edit" data-edit="${p.id}">
         <label class="agent-field"><span>Название</span><input name="title" maxlength="120" value="${esc(p.title)}"></label>

@@ -526,3 +526,53 @@ body.fav-mode .bar-tools, body.fav-mode .bar-right, body.fav-mode #savedRow, bod
   .dv-acc-b { padding-left: 2px; }
 }
 .dv .d-report { margin-top: 0; }
+
+/* ═══ кабинет v2 ═══ */
+#cabinetBody > * + * { margin-top: 14px; }
+.cab-head { display: flex; gap: 14px; align-items: center; }
+.cab-ava { width: 58px; height: 58px; flex: none; border-radius: 50%; display: grid; place-items: center; font: 600 26px var(--head);
+  color: var(--on-accent); background: linear-gradient(135deg, #ffd86b, #f3e8bc); box-shadow: 0 8px 22px rgba(0, 0, 0, .25);
+  animation: popIn .5s var(--spring) both; }
+.cab-who { min-width: 0; }
+.cab-who h2 { margin: 0; font: 600 22px/1.2 var(--head); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cab-who .note { margin: 2px 0 6px; }
+.cab-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font: 600 12px var(--body); }
+.cab-badge.admin { background: rgba(255, 216, 107, .2); color: #ffd86b; }
+.cab-badge.ok { background: #9be8b8; color: #063b2c; }
+.cab-badge.off { background: rgba(255, 159, 138, .2); color: #ffc2b4; }
+.cab-bar { height: 6px; border-radius: 3px; background: rgba(243, 232, 188, .12); overflow: hidden; }
+.cab-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #9be8b8, #ffd86b);
+  animation: growX .9s var(--ease) both; transform-origin: left; }
+.cab-left { margin: 4px 0 0 !important; color: var(--ink-3); font-size: 12px; }
+.cab-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.cab-tile2 { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  min-height: 82px; padding: 10px 6px; border-radius: 16px; border: 1px solid var(--line); background: rgba(0, 0, 0, .12);
+  color: var(--ink); text-decoration: none; font: 500 12.5px var(--body); cursor: pointer;
+  transition: transform .22s var(--spring), background .2s, border-color .2s; animation: riseIn .45s var(--ease) both; }
+.cab-grid > :nth-child(2) { animation-delay: 30ms; } .cab-grid > :nth-child(3) { animation-delay: 60ms; }
+.cab-grid > :nth-child(4) { animation-delay: 90ms; } .cab-grid > :nth-child(5) { animation-delay: 120ms; }
+.cab-grid > :nth-child(6) { animation-delay: 150ms; } .cab-grid > :nth-child(7) { animation-delay: 180ms; }
+.cab-grid > :nth-child(8) { animation-delay: 210ms; }
+.cab-tile2 i { font-style: normal; font-size: 22px; line-height: 1; }
+.cab-tile2 b { position: absolute; top: 6px; right: 8px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #ffd86b;
+  color: #035352; font: 700 11px/18px var(--body); }
+.cab-tile2:hover { transform: translateY(-3px); background: var(--chip); border-color: var(--line-2); }
+.cab-tile2:active { transform: scale(.96); }
+.cab-pay { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-radius: 18px;
+  background: linear-gradient(135deg, rgba(255, 216, 107, .16), rgba(243, 232, 188, .05)); border: 1px solid rgba(255, 216, 107, .35); }
+.cab-pay div { display: grid; gap: 2px; }
+.cab-pay span { color: var(--ink-3); font-size: 13px; }
+.cab-accs { border-top: 1px solid var(--line); }
+.cab-accs .dv-acc-b { padding-left: 2px; }
+.cab-ref { margin: 0; padding: 0; background: none; border: 0; }
+.cab-foot { display: flex; justify-content: space-between; align-items: center; }
+.cab-foot .ghost { color: var(--ink-3); }
+.cab-admin { padding: 12px; }
+.cab-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@keyframes growX { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes popIn { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (max-width: 520px) { .cab-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .cab-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.cab-admin .cab-tile { padding: 8px 10px; }
+.cab-admin .cab-tile b { font-size: 19px; }
+.cab-admin .cab-tile span { font-size: 11px; }
+@media (max-width: 520px) { .cab-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; } }

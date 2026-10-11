@@ -25,3 +25,10 @@
 .mk-val span { position: relative; font-weight: 600; }
 .mk-ch.up { color: #ff9f8a; } .mk-ch.down { color: #9be8b8; } .mk-ch.none { color: var(--ink-3); }
 @media (max-width: 640px) { .mk-card.main { grid-column: 1 / -1; } .mk-card b { font-size: 22px; } }
+
+.mk-rooms { margin: -4px 0 16px; }
+.mk-rooms .chip { font-size: 14px; }
+.mk-card { transition: transform .25s var(--spring), border-color .2s; animation: riseIn .5s var(--ease) both; }
+.mk-card:hover { transform: translateY(-3px); border-color: var(--line-2); }
+.mk-t tbody tr { animation: riseIn .4s var(--ease) both; }
+.mk-val i { transition: width .6s var(--ease); }

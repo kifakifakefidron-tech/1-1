@@ -617,3 +617,29 @@ body:not(:has(.tabbar)) .bell-pop { bottom: 20px; }
 .saved-toggle:hover { color: var(--ink); border-color: var(--line-2); }
 .saved-row.collapsed .saved-chips { display: none; }
 .saved-row.collapsed .saved-toggle { margin-left: 0; }
+@media (max-width: 640px) {
+  .nav-links.doc-nav { margin-left: auto; }
+  .doc-nav ~ .bell { margin-left: 8px; }
+}
+
+/* ═══ последние штрихи: лёгкость и отклик ═══ */
+html { scroll-behavior: smooth; }
+.chip.on, .seg.on { animation: tick .3s var(--spring); }
+#hotBtn:hover { text-shadow: 0 0 12px rgba(255, 159, 138, .6); }
+#hotBtn.on { background: linear-gradient(135deg, #ffb08a, #ffd86b); color: #4a120a; border-color: transparent; }
+.dv-acc summary { border-radius: 12px; transition: background .2s, color .2s; }
+.dv-acc summary:hover { background: rgba(243, 232, 188, .05); }
+.mark { animation: fadeIn .4s var(--ease) both; }
+.count { transition: opacity .2s; }
+.results.busy .count { opacity: .6; }
+.pill, .chip, .seg, .dv-act, .cab-tile2, .pks-btn { -webkit-tap-highlight-color: transparent; }
+@media (max-width: 640px) {
+  .bar-tools { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px;
+    -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent); mask-image: linear-gradient(90deg, #000 88%, transparent); }
+  .bar-tools::-webkit-scrollbar { display: none; }
+  .bar-tools .chip { flex: 0 0 auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .chip.on, .seg.on, .mark, .dv-acc-b, .pl-ev, .pks-card, .rq-item, .cab-tile2 { animation: none !important; }
+}

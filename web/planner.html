@@ -9,10 +9,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=23">
-<link rel="stylesheet" href="/static/motion.css?v=32">
+<link rel="stylesheet" href="/static/style.css?v=25">
+<link rel="stylesheet" href="/static/motion.css?v=34">
 <link rel="stylesheet" href="/static/doc.css?v=2">
-<link rel="stylesheet" href="/static/planner.css?v=1">
+<link rel="stylesheet" href="/static/planner.css?v=3">
 </head>
 <body>
 <header class="nav"><div class="nav-in">
@@ -22,19 +22,12 @@
 </div></header>
 
 <main class="doc pl">
-  <h1>Планер</h1>
+  <div class="pl-title"><h1>Планер</h1>
+    <div class="pl-title-acts"><button type="button" class="icon-btn pl-phone" id="plPhone" title="В календарь телефона" aria-label="В календарь телефона">📲</button>
+      <button type="button" class="pill pl-new" data-add="show">+ Новое событие</button></div></div>
   <div id="plGuest" class="note-box" hidden>Планер доступен после входа. <a href="/?login=1">Войти</a></div>
 
   <div id="plApp" hidden>
-    <div class="pl-top">
-      <div class="pl-add">
-        <button type="button" class="pill" data-add="show">+ Показ</button>
-        <button type="button" class="pill light" data-add="call">+ Созвон</button>
-        <button type="button" class="pill light" data-add="meet">+ Встреча</button>
-        <button type="button" class="pill light" data-add="task">+ Задача</button>
-      </div>
-      <button type="button" class="chip" id="plPhone">📲 В календарь телефона</button>
-    </div>
     <div class="seg-group pl-tabs">
       <button type="button" class="seg on" data-tab="cal">Календарь</button>
       <button type="button" class="seg" data-tab="notes">Заметки</button>
@@ -121,7 +114,7 @@
 </dialog>
 
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
-<script src="/static/planner.js?v=1"></script>
+<script src="/static/planner.js?v=2"></script>
 <script src="/static/bell.js?v=1"></script>
 </body>
 </html>

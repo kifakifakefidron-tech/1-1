@@ -8,6 +8,7 @@
   const sp = new URLSearchParams(location.search);
   let deal = sp.get("deal") === "rent" ? "rent" : "sale";
   let kind = sp.get("kind") === "complexes" ? "complexes" : "districts";
+  let rooms = /^[0-4]$/.test(sp.get("rooms") || "") ? sp.get("rooms") : "";
   let sort = { key: "n", dir: -1 };
   let data = null;
 
@@ -21,13 +22,14 @@
     const p = new URLSearchParams();
     if (deal === "rent") p.set("deal", "rent");
     if (kind === "complexes") p.set("kind", "complexes");
+    if (rooms !== "") p.set("rooms", rooms);
     history.replaceState(null, "", p.toString() ? `?${p}` : location.pathname);
   }
 
   async function load() {
     $("mkTable").innerHTML = `<tr><td class="note">Считаем…</td></tr>`;
     try {
-      const r = await fetch(`/api/market?deal=${deal}`);
+      const r = await fetch(`/api/market?deal=${deal}${rooms !== "" ? `&rooms=${rooms}` : ""}`);
       data = await r.json();
     } catch { $("mkTable").innerHTML = `<tr><td class="note">Не получилось загрузить. Обновите страницу.</td></tr>`; return; }
     render();
@@ -36,6 +38,7 @@
   function render() {
     document.querySelectorAll("[data-deal]").forEach((b) => b.classList.toggle("on", b.dataset.deal === deal));
     document.querySelectorAll("[data-kind]").forEach((b) => b.classList.toggle("on", b.dataset.kind === kind));
+    document.querySelectorAll("[data-rooms]").forEach((b) => b.classList.toggle("on", b.dataset.rooms === rooms));
     const c = data.city;
     $("mkCity").innerHTML = c.median ? `
       <div class="mk-card main"><span>Краснодар, ${deal === "sale" ? "цена м²" : "аренда в месяц"}</span><b>${main(c)}</b>
@@ -44,7 +47,7 @@
       ${c.rooms.map((r) => `<div class="mk-card"><span>${esc(r.label)}</span><b>${deal === "sale" ? money(r.price) : money(r.median) + "/мес"}</b>
         <small>${deal === "sale" ? `${n0(r.median)} ₽/м² · ` : ""}${n0(r.n)} шт.</small></div>`).join("")}`
       : `<p class="note">Пока мало объявлений ${deal === "rent" ? "об аренде" : "о продаже"} — статистика появится, когда их станет больше.</p>`;
-    $("mkNote").textContent = data.since7 ? "" : `Динамика появится через неделю: каждый день сохраняем цены${data.first_day ? ` (с ${data.first_day.split("-").reverse().join(".")})` : ""}.`;
+    $("mkNote").textContent = rooms !== "" ? "Динамика считается по всем квартирам — выберите «Все квартиры», чтобы её увидеть." : data.since7 ? "" : `Динамика появится через неделю: каждый день сохраняем цены${data.first_day ? ` (с ${data.first_day.split("-").reverse().join(".")})` : ""}.`;
 
     const q = ($("mkQ").value || "").trim().toLowerCase().replace(/ё/g, "е");
     let rows = (data[kind] || []).filter((x) => !q || x.name.toLowerCase().replace(/ё/g, "е").includes(q));
@@ -55,7 +58,7 @@
     });
     const max = Math.max(1, ...rows.map((x) => x.median));
     const th = (key, label) => `<th data-sort="${key}" class="${sort.key === key ? (sort.dir > 0 ? "asc" : "desc") : ""}">${label}</th>`;
-    const link = (x) => `/?${deal === "rent" ? "deal=rent&" : ""}type=flat&${kind === "districts" ? "district" : "complex"}=${encodeURIComponent(x.name)}`;
+    const link = (x) => `/?${deal === "rent" ? "deal=rent&" : ""}type=flat&${rooms !== "" ? `rooms=${rooms}&` : ""}${kind === "districts" ? "district" : "complex"}=${encodeURIComponent(x.name)}`;
     $("mkTable").innerHTML = `<thead><tr>${th("name", kind === "districts" ? "Район" : "ЖК")}${th("median", deal === "sale" ? "Цена м²" : "Аренда/мес")}
         ${deal === "sale" ? th("price", "Квартира") : ""}${th("n", "Объектов")}${th("ch7", "Неделя")}${th("ch30", "Месяц")}</tr></thead>
       <tbody>${rows.map((x) => `<tr data-href="${esc(link(x))}" tabindex="0">
@@ -70,6 +73,7 @@
     if (!b) return;
     if (b.dataset.deal) { deal = b.dataset.deal; writeUrl(); load(); return; }
     if (b.dataset.kind) { kind = b.dataset.kind; writeUrl(); render(); return; }
+    if (b.dataset.rooms !== undefined) { rooms = b.dataset.rooms; writeUrl(); load(); return; }
     if (b.dataset.sort) {
       sort = sort.key === b.dataset.sort ? { key: sort.key, dir: -sort.dir } : { key: b.dataset.sort, dir: b.dataset.sort === "name" ? 1 : -1 };
       render(); return;

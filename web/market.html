@@ -10,10 +10,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=23">
-<link rel="stylesheet" href="/static/motion.css?v=32">
+<link rel="stylesheet" href="/static/style.css?v=25">
+<link rel="stylesheet" href="/static/motion.css?v=34">
 <link rel="stylesheet" href="/static/doc.css?v=2">
-<link rel="stylesheet" href="/static/market.css?v=2">
+<link rel="stylesheet" href="/static/market.css?v=3">
 </head>
 <body>
 <header class="nav"><div class="nav-in">
@@ -38,6 +38,14 @@
     </div>
     <input id="mkQ" class="mk-search" placeholder="Найти район или ЖК…">
   </div>
+  <div class="chips mk-rooms" id="mkRooms">
+    <button type="button" class="chip on" data-rooms="">Все квартиры</button>
+    <button type="button" class="chip" data-rooms="0">Студии</button>
+    <button type="button" class="chip" data-rooms="1">1-комн.</button>
+    <button type="button" class="chip" data-rooms="2">2-комн.</button>
+    <button type="button" class="chip" data-rooms="3">3-комн.</button>
+    <button type="button" class="chip" data-rooms="4">4+</button>
+  </div>
 
   <section class="mk-city" id="mkCity"></section>
   <p class="note" id="mkNote"></p>
@@ -45,7 +53,7 @@
   <p class="note">Учитываются квартиры (вторичка и новостройки) на сайте сейчас. Район — от 5 объектов, ЖК — от 3.
     Нажмите на строку — откроются эти объекты.</p>
 </main>
-<script src="/static/market.js?v=1"></script>
+<script src="/static/market.js?v=2"></script>
 <script src="/static/bell.js?v=1"></script>
 </body>
 </html>

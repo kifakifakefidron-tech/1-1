@@ -1302,7 +1302,7 @@
   function refHTML(r) {
     const link = `${location.origin}/?ref=${r.code}`;
     const text = `Пользуюсь 1+1 — все объекты Краснодара из риелторских чатов в одном поиске, с картой и номерами агентов. Попробуй: ${link}`;
-    return `<div class="cab-ref"><b>🎁 Приведи коллегу — +${r.days} дней бесплатно</b>
+    return `<div class="cab-ref">
       <p class="note">Отправьте ссылку коллеге-риелтору. Когда он войдёт и подтвердит свой номер агента, вам добавится ${r.days} дней доступа.
         ${r.invited ? `Пришли по ссылке: ${r.invited}, подтвердили номер: ${r.rewarded}.` : ""}</p>
       <div class="cab-ref-row"><input readonly value="${esc(link)}" aria-label="Ваша ссылка">
@@ -1313,47 +1313,54 @@
   function renderCabinet() {
     const u = me();
     if (!u) { closeDlg($("cabinetDlg")); return; }
-    const who = [u.name, u.tg_username && "@" + u.tg_username, u.email].filter(Boolean).join(" · ");
-    let status;
-    if (u.is_admin) status = "Администратор — доступ к номерам без ограничений.";
-    else if (u.access) status = `Доступ к номерам открыт до <b>${esc(fmtDay(u.access_until))}</b>.`;
-    else status = "Доступа к номерам сейчас нет.";
-    const views = u.views_limit ? `<p class="note">Открыто номеров за сутки: ${u.views_today} из ${u.views_limit}.</p>` : "";
+    const name = u.name || u.email || (u.tg_username && "@" + u.tg_username) || "Коллега";
+    const sub = [u.name && u.email, u.tg_username && "@" + u.tg_username].filter(Boolean).join(" · ");
+    const now = Date.now() / 1000;
+    const left = u.access_until ? Math.max(0, Math.ceil((u.access_until - now) / 86400)) : 0;
+    let badge, bar = "";
+    if (u.is_admin) badge = `<span class="cab-badge admin">Администратор</span>`;
+    else if (u.access) {
+      badge = `<span class="cab-badge ok">Доступ до ${esc(fmtDay(u.access_until))}</span>`;
+      bar = `<div class="cab-bar" title="Осталось ${left} ${plural(left, "день", "дня", "дней")}"><i style="width:${Math.min(100, left / 7 * 100)}%"></i></div>
+        <p class="cab-left">Осталось ${left} ${plural(left, "день", "дня", "дней")}</p>`;
+    } else badge = `<span class="cab-badge off">Доступа к номерам нет</span>`;
     const promoUser = !u.tg_username && !u.email;
     const confirm = !u.phone_confirmed && meta.tg_login
-      ? `${promoUser ? `<p class="note">Вы вошли по коду коллег. Привяжите Telegram — так избранное и доступ сохранятся на любом устройстве.</p>` : ""}
-         <button type="button" class="pill" data-tglink>${promoUser ? "Привязать Telegram" : "Подтвердить номер через Telegram"}${u.trial_used || promoUser ? "" : ` — ${meta.trial_days} дней бесплатно`}</button>`
-      : (promoUser ? `<p class="note">Вы вошли по коду коллег.</p>` : "");
-    const pay = u.is_admin ? "" : `<div class="cab-row"><div><b>Подписка</b><br><span class="note">${meta.price} ₽ за ${meta.period_days} дней</span></div>
-      ${meta.payments ? `<button type="button" class="pill" data-pay>Оплатить</button>` : `<span class="note">Оплата появится скоро</span>`}</div>`;
+      ? `<button type="button" class="pill wide" data-tglink>${promoUser ? "Привязать Telegram" : "Подтвердить номер через Telegram"}${u.trial_used || promoUser ? "" : ` — ${meta.trial_days} дней бесплатно`}</button>` : "";
+    const tile = (icon, label, attrs, count) => `<${attrs.startsWith("href") ? "a" : "button type=\"button\""} class="cab-tile2" ${attrs}>
+        <i>${icon}</i><span>${label}</span>${count ? `<b>${count}</b>` : ""}</${attrs.startsWith("href") ? "a" : "button"}>`;
+    const views = u.views_limit ? `<p class="note">Открыто номеров за сутки: ${u.views_today} из ${u.views_limit}.</p>` : "";
     $("cabinetBody").innerHTML = `
-      <div class="dlg-logo">${LOGO}</div>
-      <h2 id="cabTitle">${u.is_admin ? "Кабинет администратора" : "Личный кабинет"}</h2>
-      <p class="note">${esc(who)}</p>
-      <p>${status}</p>${views}
-      ${u.ref ? refHTML(u.ref) : ""}
-      <div class="cab-links"><a class="pill light" href="/planner">📅 Планер: показы, созвоны, заметки</a>
-        <a class="pill light" href="/picks">📁 Подборки для клиентов</a>
-        <a class="pill light" href="/requests">🙋 Запросы покупателей</a>
-        <a class="pill light" href="/market">📊 Аналитика рынка</a></div>
-      ${u.is_admin ? `<div class="cab-admin" id="cabAdmin"><div class="cab-stats">${"<div class=\"skel\"><i></i></div>".repeat(6)}</div>
-        <a class="pill wide" href="/admin">Открыть админку →</a></div>` : ""}
+      <div class="cab-head">
+        <div class="cab-ava">${esc((name.trim()[0] || "1").toUpperCase())}</div>
+        <div class="cab-who"><h2 id="cabTitle">${esc(name)}</h2>${sub ? `<p class="note">${esc(sub)}</p>` : ""}${badge}</div>
+      </div>
+      ${bar}${views}
+      <div class="cab-grid">
+        ${tile("♡", "Избранное", 'id="cabFav"', u.favorites.length || "")}
+        ${tile("🔔", "Уведомления", 'href="/notifications"', u.unread || "")}
+        ${tile("📅", "Планер", 'href="/planner"')}
+        ${tile("📁", "Подборки", 'href="/picks"')}
+        ${tile("🙋", "Запросы", 'href="/requests"')}
+        ${tile("📊", "Аналитика", 'href="/market"')}
+        ${tile("🏷", "Я агент", "data-agent")}
+        ${u.is_admin ? tile("⚙", "Админка", 'href="/admin"') : ""}
+      </div>
+      ${u.is_admin ? `<div class="cab-admin" id="cabAdmin"><div class="cab-stats">${"<div class=\"skel\"><i></i></div>".repeat(8)}</div></div>` : ""}
       ${confirm}
-      ${pay}
-      <form class="inline-form" id="promoForm">
-        <input id="promoInput" autocomplete="off" placeholder="Промокод" aria-label="Промокод">
-        <button type="submit" class="pill light">Применить</button>
-      </form>
-      <p class="note" id="promoMsg" hidden></p>
-      <div class="cab-saved" id="cabSaved"></div>
-      <div class="dlg-actions cab-actions">
-        <button type="button" class="ghost" id="cabFav">♡ Избранное (${u.favorites.length})</button>
-        <a class="ghost" href="/notifications">🔔 Уведомления${u.unread ? ` (${u.unread})` : ""}</a>
-        <button type="button" class="ghost" data-agent>Я агент: мои объявления</button>
-        ${u.is_admin ? `<a class="ghost" href="/admin">Админка</a>` : ""}
-        <button type="button" class="ghost" id="logoutBtn">Выйти</button>
-        <button type="button" class="pill light" data-close>Закрыть</button>
-      </div>`;
+      ${u.is_admin ? "" : `<div class="cab-pay"><div><b>Подписка</b><span>${meta.price} ₽ за ${meta.period_days} дней — номера агентов и все инструменты</span></div>
+        ${meta.payments ? `<button type="button" class="pill" data-pay>Оплатить</button>` : `<span class="note">скоро</span>`}</div>`}
+      <div class="cab-accs">
+        <details class="dv-acc"><summary><span class="dv-acc-ic">🔔</span><span class="dv-acc-t">Слежу за поисками</span><span class="dv-acc-h" id="cabSavedN"></span></summary>
+          <div class="dv-acc-b"><div class="cab-saved" id="cabSaved"></div></div></details>
+        ${u.ref ? `<details class="dv-acc"><summary><span class="dv-acc-ic">🎁</span><span class="dv-acc-t">Приведи коллегу — +${u.ref.days} дней</span>
+          <span class="dv-acc-h">${u.ref.rewarded ? `+${u.ref.rewarded * u.ref.days} дн.` : ""}</span></summary><div class="dv-acc-b">${refHTML(u.ref)}</div></details>` : ""}
+        <details class="dv-acc"><summary><span class="dv-acc-ic">🎟</span><span class="dv-acc-t">Промокод</span></summary><div class="dv-acc-b">
+          <form class="inline-form" id="promoForm"><input id="promoInput" autocomplete="off" placeholder="Введите промокод" aria-label="Промокод">
+            <button type="submit" class="pill light">Применить</button></form><p class="note" id="promoMsg" hidden></p></div></details>
+      </div>
+      <div class="cab-foot"><button type="button" class="ghost" id="logoutBtn">Выйти</button>
+        <button type="button" class="pill light" data-close>Закрыть</button></div>`;
     openDlg($("cabinetDlg"));
     if (u.is_admin) loadAdminStats();
     loadSaved();
@@ -1365,7 +1372,8 @@
     const box = $("cabSaved");
     if (!box || !r.ok) return;
     const items = r.data.items || [];
-    box.innerHTML = `<h3 class="d-h">Слежу за поисками · ${items.length}</h3>` + (items.length
+    if ($("cabSavedN")) $("cabSavedN").textContent = items.length || "";
+    box.innerHTML = (items.length
       ? `<ul class="saved-list">${items.map((x) => `<li><a href="${esc(x.url)}">${esc(x.title)}</a>
           <button type="button" class="ghost" data-unsave="${x.id}" aria-label="Не следить">✕</button></li>`).join("")}</ul>`
       : `<p class="note">Настройте фильтры и нажмите «🔔 Следить» — пришлём письмо, когда появятся новые объекты.</p>`);

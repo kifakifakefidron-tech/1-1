@@ -75,11 +75,16 @@
   function evHTML(e, showDate) {
     const l = e.listing;
     const phone = e.contact_phone ? e.contact_phone.replace(/\D/g, "") : "";
+    const sub = [l ? l.title : "", e.contact_name, !l && e.place ? e.place : ""].filter(Boolean).join(" · ");
     return `<article class="pl-ev k-${e.kind}${e.done ? " done" : ""}" data-ev="${e.id}">
-      <div class="pl-ev-time"><b>${time(e.ts)}</b>${showDate ? `<small>${new Date(e.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</small>` : ""}</div>
+      <button type="button" class="pl-ev-done${e.done ? " on" : ""}" data-done="${e.id}" title="${e.done ? "Вернуть в планы" : "Готово"}" aria-label="Готово">✓</button>
+      <div class="pl-ev-row" data-ev-toggle="${e.id}">
+        <div class="pl-ev-time"><b>${time(e.ts)}</b>${showDate ? `<small>${new Date(e.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</small>` : ""}</div>
+        <div class="pl-ev-sum"><h3><span class="pl-ev-ic">${(KINDS[e.kind] || "•").split(" ")[0]}</span>${esc(e.title)}${e.remind_min && !e.done ? ` <span class="pl-bell" title="Напомним заранее">🔔</span>` : ""}</h3>
+          ${sub ? `<small>${esc(sub)}</small>` : ""}</div>
+        <span class="pl-ev-arrow"></span>
+      </div>
       <div class="pl-ev-main">
-        <div class="pl-ev-kind">${KINDS[e.kind] || ""}${e.remind_min && !e.done ? ` <span title="Напомним заранее">🔔</span>` : ""}</div>
-        <h3>${esc(e.title)}</h3>
         ${l ? `<a class="pl-obj" href="/?open=${l.id}" target="_blank">${l.photo ? `<img src="${esc(l.photo)}" alt="" loading="lazy">` : ""}
           <span><b>${esc(l.title)}</b>${esc(money(l.price, l.deal))}${l.is_active ? "" : " · снят с сайта"}<small>${esc(place(l))}</small></span></a>` : ""}
         ${e.contact_name || e.contact_phone ? `<div class="pl-contact">${esc(e.contact_name || "")}
@@ -87,9 +92,8 @@
         ${e.place ? `<div class="pl-place">📍 ${esc(e.place)}</div>` : ""}
         ${e.note ? `<p class="pl-note">${esc(e.note)}</p>` : ""}
         <div class="pl-ev-acts">
-          <button type="button" class="chip${e.done ? " on" : ""}" data-done="${e.id}">${e.done ? "✓ Готово" : "Отметить готовым"}</button>
           <button type="button" class="chip" data-edit="${e.id}">✎ Изменить</button>
-          <a class="chip" href="/api/planner/${e.id}.ics" title="Скачать в календарь телефона">📅 В календарь</a>
+          <a class="chip" href="/api/planner/${e.id}.ics" title="Скачать в календарь телефона">📅 В календарь телефона</a>
         </div>
       </div></article>`;
   }
@@ -249,6 +253,8 @@
 
   // ─── события ───
   document.addEventListener("click", async (e) => {
+    const tog = e.target.closest("[data-ev-toggle]");
+    if (tog && !e.target.closest("button, a")) { tog.closest(".pl-ev").classList.toggle("open"); return; }
     const t = e.target.closest("button, [data-day]");
     if (!t) return;
     if (t.dataset.add) { openEvent(null, { kind: t.dataset.add, day: pickedDay || "" }); return; }
@@ -333,7 +339,7 @@
         const d = new Date(ev.ts * 1000); month = new Date(d.getFullYear(), d.getMonth(), 1);
         await pickDay(dayKey(d));
         const card = document.querySelector(`[data-ev="${id}"]`);
-        if (card) { card.classList.add("hl"); card.scrollIntoView({ block: "center" }); }
+        if (card) { card.classList.add("hl", "open"); card.scrollIntoView({ block: "center" }); }
       }
     }
     if (sp.get("tab") === "notes") document.querySelector('[data-tab="notes"]').click();
