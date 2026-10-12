@@ -21,7 +21,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import (accounts, agent, autolearn, buyers, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
+from . import (accounts, agent, autolearn, brain, buyers, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
                market, payments, picks, planner, region, search, stats, tg)
 from .rules import TYPE_LABELS
 
@@ -1123,7 +1123,7 @@ def api_admin_place(request: Request, body: dict | None = None):
     d["title"] = make_title(d)
     d["search_text"] = make_search_text(d)
     conn.execute("""UPDATE listings SET complex = ?, district = ?, extra_districts = ?, search_text = ?, admin_fixed = 1,
-                    district_src = NULL, geo_status = CASE WHEN geo_status IN ('manual', 'learned', 'feed') THEN geo_status ELSE 'pending' END
+                    district_src = NULL, place_conflict = NULL, geo_status = CASE WHEN geo_status IN ('manual', 'learned', 'feed') THEN geo_status ELSE 'pending' END
                     WHERE id = ?""", (cx, district, json.dumps(extra, ensure_ascii=False), d["search_text"], lid))
     _reindex(conn, lid, d["search_text"])
     for field, old, new in (("complex", row["complex"], cx), ("district", row["district"], district)):
@@ -1203,6 +1203,7 @@ def _fix_item(conn, lid: int) -> dict | None:
         "geo_src": autolearn.GEO_SRC.get(r["geo_src"] or "") if r["geo_src"] != "geocoder" else None,
         "district_src": autolearn.DISTRICT_SRC.get(r["district_src"] or ""),
         "was_district": _was_district(conn, r),
+        "conflict": (r["place_conflict"] or "").split(":", 1)[-1] or None,
         "zone": _zone(conn, r["district"]),
     }
 
@@ -1520,10 +1521,8 @@ def api_admin_fix(request: Request, body: dict | None = None):
     conn = db.get()
     learning.sync_districts(conn)
     q = request.query_params
-    mode = "geo" if q.get("mode") == "geo" else "place"
-    queues = _GEO_QUEUE if mode == "geo" else _PLACE_QUEUE
-    kind = q.get("kind") if q.get("kind") in queues else next(iter(queues))
-    where = queues[kind]
+    kind = brain.queue_key(q.get("mode"), q.get("kind"))   # одна очередь «Обучения» (старые ссылки тоже понимаем)
+    mode, where = brain.QUEUE[kind]["mode"], brain.QUEUE[kind]["where"]
     if q.get("at"):   # район под точкой (метку двигают на карте разбора)
         try:
             lat, lon = (float(x) for x in q["at"].split(",")[:2])
@@ -1557,7 +1556,9 @@ def api_admin_fix(request: Request, body: dict | None = None):
     complexes = sorted({c.name for _, c in geo._complexes()} | {r[0] for r in conn.execute(
         "SELECT DISTINCT complex FROM listings WHERE complex IS NOT NULL AND is_active = 1")},
         key=lambda x: x.lower().replace("ё", "е"))
-    return JSONResponse({"item": item, "group": group, "left": left, "mode": mode, "kind": kind,
+    return JSONResponse({"item": item, "group": group, "left": left, "mode": mode, "kind": kind, "counts": brain.counts(conn),
+                         "queues": [{"key": x["key"], "label": x["label"], "hint": x["hint"], "mode": x["mode"]}
+                                    for x in brain.QUEUES],
                          "districts": geo.all_district_names(), "complexes": complexes})
 
 
@@ -1584,6 +1585,32 @@ def api_admin_geo_queue(request: Request, body: dict | None = None):
             ORDER BY l.id DESC LIMIT 200""", ([after] if after else [])).fetchall()
     learned = [dict(r) for r in conn.execute("SELECT key, label, lat, lon, n, ts FROM geo_learned ORDER BY ts DESC LIMIT 200")]
     return JSONResponse({"items": [dict(r) for r in rows], "counts": counts, "learned": learned})
+
+
+def api_admin_learn(request: Request, body: dict | None = None):
+    """«Обучение»: сводка, единая очередь с числами, цепочка решений, выученное, перепроверка."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    return JSONResponse(brain.overview(db.get()))
+
+
+def api_admin_knowledge(request: Request, body: dict | None = None):
+    """Всё выученное одним списком (GET ?kind=&q=); забыть (POST {type: rule|point, id})."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    conn = db.get()
+    if request.method == "POST":
+        b = body or {}
+        return JSONResponse({"ok": brain.forget(conn, str(b.get("type", "")), b.get("id"))})
+    q = request.query_params
+    return JSONResponse({"items": brain.knowledge(conn, q.get("kind", ""), q.get("q", "").strip()),
+                         "kinds": brain.KNOW_KINDS})
+
+
+def learn_page(request: Request, body: dict | None = None):
+    return _page("learn.html")
 
 
 def api_admin_recheck(request: Request, body: dict | None = None):
@@ -1648,6 +1675,9 @@ routes = [
     Route("/api/map", threaded(api_map)),
     Route("/api/districts/map", threaded(api_districts_map)),
     Route("/api/admin/recheck", threaded(api_admin_recheck), methods=["POST"]),
+    Route("/api/admin/learn", threaded(api_admin_learn)),
+    Route("/api/admin/learn/knowledge", threaded(api_admin_knowledge), methods=["GET", "POST"]),
+    Route("/learn", threaded(learn_page)),
     Route("/api/stats", threaded(api_stats)),
     Route("/api/login", threaded(api_login), methods=["POST"]),
     Route("/api/auth/tg/start", threaded(api_tg_start), methods=["POST"]),

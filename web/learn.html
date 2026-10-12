@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Обучение · 1+1</title>
+<meta name="theme-color" content="#035352">
+<meta name="robots" content="noindex">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=25">
+<link rel="stylesheet" href="/static/motion.css?v=34">
+<link rel="stylesheet" href="/static/learn.css?v=2">
+<link rel="stylesheet" href="/static/theme.css?v=14">
+</head>
+<body>
+<header class="nav"><div class="nav-in">
+  <a class="brand" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="40" height="40" style="border-radius:10px">
+    <span class="brand-text"><b class="brand-name">1+1</b><span class="brand-sub">обучение и разбор</span></span></a>
+  <nav class="nav-links"><a class="nav-link" href="/fix">Разбор</a><a class="nav-link" href="/admin/map">Карта районов</a><a class="nav-link" href="/admin">Админка</a><a class="nav-cta" href="/">К поиску</a></nav>
+</div></header>
+
+<main class="ln">
+  <p class="ln-denied" id="lnDenied" hidden>Эта страница только для администратора. <a href="/?login=1">Войти</a></p>
+  <div id="lnApp" hidden>
+    <section class="ln-hero">
+      <div>
+        <h1>Обучение и разбор</h1>
+        <p class="ln-lead">Один сервис: новые объявления, самообучение и ежечасная перепроверка решают по одной цепочке.
+          Всё, что вы правите, он запоминает и сразу применяет к похожим объектам — старым и новым.</p>
+      </div>
+      <a class="pill ln-go" id="lnGo" href="/fix">Разбирать</a>
+    </section>
+
+    <section class="ln-ready" id="lnReady"></section>
+
+    <h2 class="ln-h">Ждёт вашего решения</h2>
+    <div class="ln-queues" id="lnQueues"></div>
+
+    <h2 class="ln-h">Как сервис решает</h2>
+    <p class="note">Сверху — самое главное. Если источники спорят, сервис не выбирает сам, а кладёт объект в «Спорные».</p>
+    <div class="ln-pipes" id="lnPipes"></div>
+
+    <h2 class="ln-h">Перепроверка всех объектов</h2>
+    <div class="ln-box" id="lnRecheck"></div>
+
+    <h2 class="ln-h">Что сервис выучил</h2>
+    <div class="ln-know" id="lnKnowCards"></div>
+    <div class="ln-kfilter">
+      <div class="chips" id="lnKinds"></div>
+      <input id="lnSearch" type="search" placeholder="Найти: улица, ЖК, район…" autocomplete="off">
+    </div>
+    <div class="ln-list" id="lnList"></div>
+
+    <h2 class="ln-h">Инструменты</h2>
+    <div class="ln-tools">
+      <a class="ln-tool" href="/admin/map"><b>Карта районов</b><span>Нарисовать и поправить районы, сверить объекты с картой</span></a>
+      <a class="ln-tool" href="/admin?tab=districts"><b>Справочник</b><span>Районы, ЖК и улицы: переименовать, слить, перенести</span></a>
+      <a class="ln-tool" href="/admin?tab=phones"><b>Номера</b><span>Все объекты по номеру агента, удалить всё от номера</span></a>
+      <a class="ln-tool" href="/admin?tab=banned"><b>Удалённые</b><span>Удалённые навсегда объекты и номера — вернуть</span></a>
+    </div>
+  </div>
+</main>
+<script src="/static/icons.js?v=3"></script>
+<script src="/static/learn.js?v=1"></script>
+</body>
+</html>

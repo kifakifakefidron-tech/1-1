@@ -111,3 +111,16 @@
   border: 1px solid color-mix(in srgb, var(--info, var(--gold)) 50%, transparent); color: var(--ink-2); }
 .fx-clash { color: var(--bad); }
 .fx-group[hidden] { display: none; }
+
+/* Одна очередь «Обучения» и спорные объекты */
+.fx-queues .chip b { margin-left: 4px; font-weight: 600; opacity: .8; }
+.fx-queues .chip.hot { border-color: color-mix(in srgb, var(--bad) 60%, transparent); }
+.fx-queues .chip.hot b { color: var(--bad); opacity: 1; }
+.fx-qhint { margin: 6px 0 0; }
+.fx-conflict { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; margin: 0 0 14px; font-size: 14px;
+  border: 1px solid color-mix(in srgb, var(--bad) 50%, transparent); border-radius: var(--r-md, 14px);
+  background: color-mix(in srgb, var(--bad) 10%, transparent); color: var(--ink-2); }
+.fx-conflict[hidden] { display: none; }
+.fx-conflict > svg { flex: none; width: 20px; height: 20px; color: var(--bad); }
+.fx-conflict b { color: var(--ink); }
+.fx-conflict small { display: block; margin-top: 2px; }

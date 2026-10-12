@@ -59,34 +59,6 @@
     `<div${hint ? ` title="${esc(hint)}"` : ""}><dt>${k}</dt><dd>${v}</dd></div>`).join("")}</dl>`;
   const objLink = (o, val) => `<a href="/?open=${o.id}" target="_blank">${esc(o.title)}</a> · ${esc(money(o.price, o.deal))}${val}`;
 
-  // Перепроверка всех объектов по справочнику адресов и вашим районам (раз в час сама; кнопка — сейчас)
-  function recheckBox(R, fix) {
-    const when = R ? new Date(R.ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
-    return box("Перепроверка всех объектов", (R ? kv([
-      ["Когда", when],
-      ["Точек уточнено по адресу", n0(R.points || 0), "дом из справочника OSM, фида или ваших правок"],
-      ["Район исправлен по вашей карте", `${n0(R.districts_changed || 0)} ${fix("auto", "place")}`, "дом дальше 150 м от района из объявления"],
-      ["Район поставлен (не было)", n0(R.districts_filled || 0)],
-      ["Добавлен второй район", n0(R.districts_extra || 0), "у района из объявления нет контура"],
-      ["ЖК найден по контуру", n0(R.complexes || 0)],
-      ["Оставлено по вашим правилам", n0(R.kept_rule || 0)], ["Дом у границы — оставлено", n0(R.kept_border || 0)],
-    ]) : `<p class="note">Ещё не запускалась — фоновая работа запустит сама в ближайшие минуты.</p>`) + `
-      <div class="rc-acts"><button type="button" class="pill light" data-recheck="run">Перепроверить сейчас</button>
-        ${R && R.active_edits ? `<button type="button" class="pill light danger" data-recheck="rollback">Откатить все изменения сервиса (${n0(R.active_edits)})</button>` : ""}</div>`);
-  }
-  document.addEventListener("click", async (e) => {
-    const b = e.target.closest("[data-recheck]");
-    if (!b) return;
-    const rb = b.dataset.recheck === "rollback";
-    if (rb && !confirm("Вернуть районы и ЖК, которые сервис поменял при перепроверке? Ваши ручные правки останутся.")) return;
-    b.disabled = true; b.textContent = rb ? "Откатываем…" : "Проверяем…";
-    try {
-      const r = await call("/api/admin/recheck", { action: rb ? "rollback" : "run" });
-      alert(rb ? `Откачено объектов: ${r.reverted}` : `Готово: точек ${r.points || 0}, районов ${(r.districts_changed || 0) + (r.districts_filled || 0)}, ЖК ${r.complexes || 0}`);
-    } catch (err) { fail(err); }
-    stats();
-  });
-
   async function stats() {
     let s;
     try { s = await call("/api/admin/stats"); } catch (e) { $("stats").innerHTML = `<p class="note">${esc(e.message)}</p>`; return; }
@@ -102,6 +74,7 @@
     const kinds = { listing: "объявления", request: "запросы «куплю/ищу»", other: "не про недвижимость", skipped: "пропущены (старые)", error: "ошибки разбора" };
     const src = { wa: "WhatsApp", tg: "Telegram", max: "MAX", manual: "вручную", chat: "из чатов", feed: "СТРЕЛЫ (фид)", own: "свои объявления агентов" };
     const fix = (kind, mode) => `<a href="/fix?mode=${mode}&kind=${kind}" target="_blank">разобрать →</a>`;
+    const learnLink = `<p class="note">Всё про разбор и обучение — на одной странице: <a href="/learn">Обучение и разбор →</a></p>`;
     $("stats").innerHTML = [
       box("Объявления: добавлено и снято", tbl(["", "Сегодня", "Вчера", "7 дней", "30 дней"], [
         ["➕ Добавлено новых", ...per(L.added)],
@@ -129,7 +102,7 @@
         ["Адресов в справочнике OSM", n0(Q.osm_addr), "обновляется раз в месяц, © OpenStreetMap"],
         ["Сервис сам поставил районов", `${n0(Q.auto_districts)} ${fix("auto", "place")}`, "по карте районов и соседним объявлениям"],
       ])),
-      recheckBox(s.recheck, fix),
+      box("Обучение и разбор", learnLink),
       box("Сообщения из чатов", kv([
         ["Сегодня", n0(M.today)], ["За 7 дней", n0(M.d7)], ["Ждут разбора", n0(M.queue)],
         ["Ошибок за 7 дней", n0(M.errors_d7)], ["Активных чатов за 7 дней", n0(M.chats_active_d7)], ["Отключено чатов", n0(M.chats_blocked)],
@@ -700,7 +673,8 @@
     try {
       await call("/api/admin/overview");
       $("app").hidden = false;
-      show("overview");
+      const tab = new URLSearchParams(location.search).get("tab");   // /admin?tab=districts — сразу нужная вкладка
+      show(tab && loaders[tab] ? tab : "overview");
     } catch {
       $("denied").hidden = false;
     }

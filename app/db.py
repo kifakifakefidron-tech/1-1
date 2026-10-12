@@ -305,7 +305,8 @@ MIGRATIONS = [
     ("listings", "price_fixed", "INTEGER NOT NULL DEFAULT 0"),  # админ поправил цену — повторы с той же ошибкой не перебивают
     ("listings", "price_wrong", "INTEGER"),
     ("listings", "geo_src", "TEXT"),        # откуда точка, если её поставил сервис сам (app/autolearn.py)
-    ("listings", "district_src", "TEXT"),   # откуда район, если его поставил сервис сам: map | vote-house | vote-cx                     # какую ошибочную цену разбор давал (её и не принимаем)   # админ сам поставил продажу/аренду — автоматика не трогает                     # свой текст объявления для клиента (вместо исходного)                              # статус агента по объекту: call | show | think | refuse | deal                   # % к медиане м² по ЖК/району (hooks.update_market_diff)
+    ("listings", "district_src", "TEXT"),
+    ("listings", "place_conflict", "TEXT"),  # источники спорят: «rule:…» (правило ≠ карта), «votes:…» (карта ≠ соседи)   # откуда район, если его поставил сервис сам: map | vote-house | vote-cx                     # какую ошибочную цену разбор давал (её и не принимаем)   # админ сам поставил продажу/аренду — автоматика не трогает                     # свой текст объявления для клиента (вместо исходного)                              # статус агента по объекту: call | show | think | refuse | deal                   # % к медиане м² по ЖК/району (hooks.update_market_diff)
 ]
 
 _local = threading.local()

@@ -13,29 +13,27 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="/static/style.css?v=25">
 <link rel="stylesheet" href="/static/motion.css?v=34">
-<link rel="stylesheet" href="/static/fix.css?v=11">
+<link rel="stylesheet" href="/static/fix.css?v=12">
 <link rel="stylesheet" href="/static/theme.css?v=14">
 </head>
 <body>
 <header class="nav"><div class="nav-in">
   <a class="brand" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="40" height="40" style="border-radius:10px">
     <span class="brand-text"><b class="brand-name">1+1</b><span class="brand-sub">разбор и обучение</span></span></a>
-  <nav class="nav-links"><a class="nav-link" href="/admin/map">Карта районов</a><a class="nav-link" href="/admin">Админка</a><a class="nav-cta" href="/">К поиску</a></nav>
+  <nav class="nav-links"><a class="nav-link" href="/learn">Обучение</a><a class="nav-link" href="/admin/map">Карта районов</a><a class="nav-link" href="/admin">Админка</a><a class="nav-cta" href="/">К поиску</a></nav>
 </div></header>
 
 <main class="fx">
   <div class="fx-top">
-    <div class="seg-group">
-      <button type="button" class="seg" data-mode="place">ЖК и районы</button>
-      <button type="button" class="seg" data-mode="geo">Карта</button>
-    </div>
-    <div class="chips" id="fxKinds"></div>
+    <div class="chips fx-queues" id="fxKinds"></div>
+    <p class="note fx-qhint" id="fxQHint"></p>
     <div class="fx-progress" id="fxProgress"></div>
   </div>
 
   <p class="fx-denied" id="fxDenied" hidden>Эта страница только для администратора. <a href="/?login=1">Войти</a></p>
   <p class="fx-done" id="fxDone" hidden></p>
 
+  <div class="fx-conflict" id="fxConflict" hidden></div>
   <div class="fx-group" id="fxGroup" hidden></div>
   <section class="fx-card" id="fxCard" hidden>
     <div class="fx-left">
@@ -115,6 +113,6 @@
 <script src="/static/icons.js?v=3"></script>
 <script src="/static/combo.js?v=2"></script>
 <script src="/static/yasel.js?v=2"></script>
-<script src="/static/fix.js?v=15"></script>
+<script src="/static/fix.js?v=16"></script>
 </body>
 </html>

@@ -252,6 +252,7 @@ def fill_districts(conn: sqlite3.Connection) -> dict:
     from .ingest import _reindex, make_search_text, make_title
     votes = _votes(conn)
     done = disputed = 0
+    conn.execute("UPDATE listings SET place_conflict = NULL WHERE place_conflict LIKE 'votes:%'")
     for r in conn.execute("""SELECT * FROM listings WHERE is_active = 1 AND district IS NULL AND settlement IS NULL
                              AND admin_fixed = 0 AND source != 'own'""").fetchall():
         cands = candidates(conn, r, votes)
@@ -259,6 +260,9 @@ def fill_districts(conn: sqlite3.Connection) -> dict:
             continue
         if len({d for d, _ in cands}) > 1:
             disputed += 1
+            why = {"map": "по вашей карте", "vote-house": "по объявлениям этого дома", "vote-cx": "по объявлениям этого ЖК"}
+            conn.execute("UPDATE listings SET place_conflict = ? WHERE id = ?",
+                         ("votes:" + "; ".join(f"{why[s]} — «{d}»" for d, s in cands), r["id"]))
             continue
         d = {**dict(r), "district": cands[0][0]}
         d["title"] = make_title(d)
@@ -326,6 +330,7 @@ def recheck_all(conn: sqlite3.Connection) -> dict:
     conn.commit()
     # 2) районы и 3) ЖК — по точке
     rs = learning.rules(conn, fresh=True)
+    conn.execute("UPDATE listings SET place_conflict = NULL WHERE place_conflict LIKE 'rule:%'")
     # что вы откатили — больше не трогаем (иначе каждый час возвращалось бы снова)
     undone = {(r[0], r[1]) for r in conn.execute(
         "SELECT listing_id, field FROM listing_edits WHERE user_id = ? AND reverted = 1", (SERVICE_UID,))}
@@ -346,6 +351,10 @@ def recheck_all(conn: sqlite3.Connection) -> dict:
                 changed = True
             elif _has_rule(rs, r):
                 rep["kept_rule"] += 1
+                out = known.km_outside(cur, r["lat"], r["lon"])
+                if out is None or out > NEAR_BORDER_KM:   # ваше правило и ваша карта спорят — решите, что верно
+                    conn.execute("UPDATE listings SET place_conflict = ? WHERE id = ?",
+                                 (f"rule:по вашему правилу — «{cur}», а дом на вашей карте — в «{new}»", r["id"]))
             else:
                 out = known.km_outside(cur, r["lat"], r["lon"])
                 if out is None:   # у района из объявления нет контура (подрайон?) — нарисованный добавляем вторым

@@ -243,6 +243,16 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   Не трогает: admin_fixed, районы по вашим правилам (_has_rule: addr/cx_district/street), фид, own, станицы.
   Журнал listing_edits с user_id=0 («Сервис (перепроверка)»); rollback_recheck откатывает всё (кроме поправленного
   админом), откаченное повторно не меняется. На /fix у таких объектов «сервис: … · было «X»» и подсказка «было до перепроверки».
+- 12.10 — ОДИН СЕРВИС «ОБУЧЕНИЕ И РАЗБОР» (app/brain.py, страница /learn, web/learn.*): единая очередь brain.QUEUES
+  по важности — conflict «Спорные» (listings.place_conflict: «rule:» ваше правило ≠ ваша карта — ставит recheck_all;
+  «votes:» карта ≠ соседние объявления — ставит fill_districts; правка админа обнуляет) → nodistrict → nogeo → approx →
+  nocomplex → auto «Проверить решения сервиса» → fixed. /fix?kind=<ключ> — без режимов: на экране ВСЕГДА и район/ЖК/цена,
+  и карта; сохранение: place — в очередях района всегда, в очередях карты — если меняли; geo — в очередях карты всегда,
+  иначе если двигали метку (geoDirty). Старые ссылки /fix?mode=geo&kind=none → brain.ALIASES. /learn: сводка «готово
+  полностью» (точный дом + район + ЖК у квартир, без спора), карточки очередей, «Как сервис решает» (цепочки района и
+  точки с числами), перепроверка (запуск/откат), всё выученное одним списком (правила + точки, поиск, «Забыть» —
+  brain.forget), инструменты. API: /api/admin/learn, /api/admin/learn/knowledge (GET/POST). В админке вкладки
+  «Карта» и «ЖК и районы» заменены ссылкой «Обучение и разбор»; /admin?tab=<вкладка> открывает нужную.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
@@ -251,7 +261,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 142 тестов
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 145 тестов
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены
