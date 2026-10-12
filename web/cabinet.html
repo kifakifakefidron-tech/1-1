@@ -4,72 +4,119 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Кабинет · 1+1</title>
-<meta name="theme-color" content="#035352">
+<meta name="theme-color" content="#023f3e">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css?v=25">
 <link rel="stylesheet" href="/static/motion.css?v=34">
 <link rel="stylesheet" href="/static/doc.css?v=2">
-<link rel="stylesheet" href="/static/cabinet.css?v=1">
 <link rel="stylesheet" href="/static/theme.css?v=14">
+<link rel="stylesheet" href="/static/glass.css?v=2">
+<link rel="stylesheet" href="/static/cabinet.css?v=5">
 </head>
-<body>
-<header class="nav"><div class="nav-in">
-  <a class="brand" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="40" height="40" style="border-radius:10px">
-    <span class="brand-text"><b class="brand-name">1+1</b><span class="brand-sub">личный кабинет</span></span></a>
-  <nav class="nav-links doc-nav"><a class="nav-link" href="/?fav=1">Избранное</a><a class="nav-link" href="/planner">Планер</a><a class="nav-link" href="/picks">Подборки</a><a class="nav-link" href="/requests">Запросы</a><a class="nav-link" href="/market">Аналитика</a><a class="nav-link on" href="/cabinet">Кабинет</a><a class="nav-cta" href="/">← К поиску</a></nav>
-</div></header>
+<body class="dash-body">
+<main class="dash">
+  <!-- узкое меню-«рельс» слева (на телефоне — нижняя панель) -->
+  <nav class="rail" aria-label="Разделы">
+    <a class="rail-logo" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="38" height="38"></a>
+    <a class="rail-a on" href="/cabinet" data-tip="Кабинет"><span data-ic="grid"></span></a>
+    <a class="rail-a" href="/" data-tip="Поиск объектов"><span data-ic="search"></span></a>
+    <a class="rail-a" href="/?fav=1" data-tip="Избранное и статусы"><span data-ic="heart"></span></a>
+    <a class="rail-a" href="/planner" data-tip="Планер"><span data-ic="calendar"></span></a>
+    <a class="rail-a" href="/picks" data-tip="Подборки клиентам"><span data-ic="folder"></span></a>
+    <a class="rail-a" href="/requests" data-tip="Запросы покупателей"><span data-ic="users"></span></a>
+    <a class="rail-a" href="/market" data-tip="Аналитика рынка"><span data-ic="chart"></span></a>
+    <a class="rail-a" href="/learn" data-tip="Обучение и разбор" id="railLearn" hidden><span data-ic="layers"></span></a>
+    <a class="rail-a" href="/admin" data-tip="Админка" id="railAdmin" hidden><span data-ic="sliders"></span></a>
+    <span class="rail-gap"></span>
+    <button type="button" class="rail-a" id="dLogout" data-tip="Выйти"><span data-ic="logout"></span></button>
+  </nav>
 
-<main class="cb">
-  <div class="cb-guest" id="cbGuest" hidden>
-    <h1>Кабинет</h1>
-    <p>Войдите по почте — избранное, планер, подборки и доступ к номерам будут на любом устройстве.</p>
-    <a class="pill" href="/?login=1">Войти</a>
-  </div>
+  <div class="dash-main">
+    <div class="d-guest" id="dGuest" hidden>
+      <h1>Кабинет риелтора</h1>
+      <p>Ваш день, объекты в работе, клиенты, ставки и погода — на одном экране. Войдите по почте: всё сохранится на любом устройстве.</p>
+      <a class="pill" href="/?login=1">Войти</a>
+    </div>
 
-  <div class="cb-app" id="cbApp" hidden>
-    <aside class="cb-side">
-      <div class="cb-profile">
-        <div class="cb-ava" id="cbAva"></div>
-        <h1 id="cbName"></h1>
-        <p class="cb-mail" id="cbMail"></p>
-        <div class="cb-status" id="cbStatus"></div>
+    <div id="dApp" hidden>
+      <header class="d-head">
+        <div>
+          <p class="d-date" id="dDate"></p>
+          <h1 class="d-hello" id="dHello">Добрый день</h1>
+        </div>
+        <div class="d-head-r">
+          <span class="d-access" id="dAccess"></span>
+          <a class="d-icon-btn" href="/notifications" aria-label="Уведомления" id="dBell"><span data-ic="bell"></span><b id="dBellN" hidden></b></a>
+          <a class="d-ava" id="dAva" href="#profile" aria-label="Профиль"></a>
+        </div>
+      </header>
+
+      <div class="bento" id="bento">
+        <!-- погода -->
+        <section class="g w-weather" id="wWeather"><div class="g-skel"></div></section>
+        <!-- ключевая ставка -->
+        <section class="g w-rate" id="wRate"><div class="g-skel"></div></section>
+        <!-- ипотека в крае -->
+        <section class="g w-mort" id="wMort"><div class="g-skel"></div></section>
+        <!-- курсы -->
+        <section class="g w-fx" id="wFx"><div class="g-skel"></div></section>
+
+        <!-- день -->
+        <section class="g w-day span-2" id="wDay"><div class="g-skel"></div></section>
+        <!-- объекты в работе (CRM) -->
+        <section class="g w-crm span-2" id="wCrm"><div class="g-skel"></div></section>
+
+        <!-- уведомления -->
+        <section class="g w-news" id="wNews"><div class="g-skel"></div></section>
+        <!-- рынок -->
+        <section class="g w-market" id="wMarket"><div class="g-skel"></div></section>
+        <!-- калькулятор -->
+        <section class="g w-calc span-2" id="wCalc"></section>
+
+        <!-- доступ и подписка -->
+        <section class="g w-plan" id="wPlan"></section>
+        <!-- быстрые действия -->
+        <section class="g w-quick" id="wQuick"></section>
+        <!-- мои поиски -->
+        <section class="g w-saved" id="wSaved"></section>
+        <!-- приведи коллегу + промокод -->
+        <section class="g w-ref" id="wRef"></section>
+
+        <!-- админ -->
+        <section class="g w-admin span-4" id="wAdmin" hidden></section>
       </div>
-      <div class="cb-plan" id="cbPlan"></div>
-      <button type="button" class="cb-logout" id="cbLogout"><svg class="ic ic-l" aria-hidden="true"><use href="/static/icons.svg?v=2#i-logout"></use></svg>Выйти</button>
-    </aside>
 
-    <div class="cb-main">
-      <section class="cb-sec">
-        <h2 class="cb-h">Разделы</h2>
-        <div class="cb-tiles" id="cbTiles"></div>
-      </section>
-      <section class="cb-sec" id="cbAdmin" hidden>
-        <div class="cb-h-row"><h2 class="cb-h">Сводка</h2><a class="cb-link" href="/admin">Открыть админку →</a></div>
-        <div class="cb-stats" id="cbStats"></div>
-      </section>
-      <section class="cb-sec">
-        <div class="cb-h-row"><h2 class="cb-h">Слежу за поисками</h2><span class="cb-count" id="cbSavedN"></span></div>
-        <ul class="cb-saved" id="cbSaved"></ul>
-      </section>
-      <section class="cb-sec" id="cbRefSec" hidden>
-        <h2 class="cb-h">Приведи коллегу</h2>
-        <div id="cbRef"></div>
-      </section>
-      <section class="cb-sec">
-        <h2 class="cb-h">Промокод</h2>
-        <form class="cb-promo" id="cbPromo"><input id="cbPromoInput" autocomplete="off" placeholder="Введите промокод" aria-label="Промокод">
+      <section class="g d-profile" id="profile">
+        <div class="d-prof-row">
+          <div class="d-ava big" id="dAva2"></div>
+          <div><h2 id="dName"></h2><p class="note" id="dMail"></p></div>
+        </div>
+        <form class="d-promo" id="dPromo"><input id="dPromoInput" autocomplete="off" placeholder="Промокод" aria-label="Промокод">
           <button type="submit" class="pill light">Применить</button></form>
-        <p class="note" id="cbPromoMsg" hidden></p>
+        <p class="note" id="dPromoMsg" hidden></p>
       </section>
+      <p class="d-credits">Погода — MET Norway · ключевая ставка, курсы и ставки по ипотеке — Банк России</p>
     </div>
   </div>
 </main>
+
+<!-- ставки банков (правит админ) -->
+<dialog id="banksDlg" class="small-dlg">
+  <div class="dlg-body">
+    <div class="d-dlg-head"><h2>Ставки банков по ипотеке</h2><button type="button" class="close" data-close aria-label="Закрыть">✕</button></div>
+    <p class="note">Готового бесплатного источника ставок банков нет — впишите актуальные (например, со страниц банков). Пустые строки не сохраняются.</p>
+    <div id="banksRows"></div>
+    <div class="d-dlg-acts"><button type="button" class="pill light" id="banksAdd">+ Строка</button>
+      <button type="button" class="pill" id="banksSave">Сохранить</button></div>
+  </div>
+</dialog>
+
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
-<script src="/static/icons.js?v=3"></script>
-<script src="/static/cabinet.js?v=1"></script>
+<script src="/static/icons.js?v=4"></script>
+<script src="/static/cabinet.js?v=4"></script>
 <script src="/static/bell.js?v=1"></script>
 </body>
 </html>

@@ -28,6 +28,8 @@ def tick(conn) -> dict:
         stats_r = region.hide_foreign(conn)   # чаты Сочи/Адлера/… — не показываем
         log.info("другие города: %s", stats_r)
     stats = {"new_messages": wappi.poll_all(conn) if config.WAPPI_ENABLED else "пауза"}
+    if not config.WAPPI_ENABLED and wappi.poll_verify_only(conn):   # пауза, но агенты ждут подтверждения номера
+        stats["verify_check"] = True
     purged = region.purge_blocked(conn)   # отключённые чаты: удалить их сообщения и объекты только оттуда
     if purged["chats"]:
         stats["purged"] = purged
@@ -53,6 +55,11 @@ def tick(conn) -> dict:
     sent = hooks.run(conn, _mail(conn))
     if sent and any(sent.values()):
         stats["notices"] = sent
+    try:
+        from . import widgets
+        widgets.refresh(conn)   # погода, ставка ЦБ, курсы, ипотека — заранее, чтобы кабинет открывался мгновенно
+    except Exception:  # noqa: BLE001
+        log.exception("виджеты кабинета не обновились")
     synced = feed.maybe_sync(conn)
     if synced:
         stats["feed"] = synced

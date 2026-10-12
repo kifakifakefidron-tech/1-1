@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Оформление доступа · 1+1</title>
+<meta name="theme-color" content="#023f3e">
+<meta name="robots" content="noindex">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=25">
+<link rel="stylesheet" href="/static/motion.css?v=34">
+<link rel="stylesheet" href="/static/theme.css?v=14">
+<link rel="stylesheet" href="/static/glass.css?v=2">
+<link rel="stylesheet" href="/static/pay.css?v=1">
+</head>
+<body class="pay-body">
+<header class="pay-top">
+  <a class="pay-brand" href="/cabinet" aria-label="Назад в кабинет"><img src="/static/favicon.svg" alt="" width="34" height="34"><span>1+1</span></a>
+  <ol class="pay-steps" id="paySteps">
+    <li class="on" data-step="1"><i>1</i>Тариф</li>
+    <li data-step="2"><i>2</i>Оплата</li>
+    <li data-step="3"><i>3</i>Готово</li>
+  </ol>
+  <a class="pay-back" href="/cabinet">В кабинет</a>
+</header>
+
+<main class="pay">
+  <section class="pay-stage">
+    <div class="card3d" id="card3d">
+      <div class="card-in" id="cardIn">
+        <div class="card-face front">
+          <div class="cf-top"><span class="cf-logo"><img src="/static/favicon.svg" alt="" width="34" height="34"></span><span class="cf-tier">PREMIUM</span></div>
+          <div class="cf-chip" aria-hidden="true"><i></i><i></i><i></i></div>
+          <div class="cf-num" id="cardNum">1+1 · ДОСТУП · <span id="cardDays">7 ДНЕЙ</span></div>
+          <div class="cf-bottom"><div><small>ВЛАДЕЛЕЦ</small><b id="cardName">РИЕЛТОР</b></div>
+            <div><small>ДОСТУП ДО</small><b id="cardTill">—</b></div></div>
+          <div class="cf-shine" aria-hidden="true"></div>
+        </div>
+        <div class="card-face back">
+          <div class="cb-stripe"></div>
+          <ul class="cb-list">
+            <li>Номера агентов по всем объектам</li><li>Планер, подборки, уведомления</li>
+            <li>Запросы покупателей и аналитика</li><li>Без автосписаний — продлеваете сами</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card-glow" id="cardGlow" aria-hidden="true"></div>
+    </div>
+    <div class="pay-trust">
+      <span><svg viewBox="0 0 24 24"><path d="M12 3.5l7 2.8v5.2c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6.3z"/><path d="M9 12l2.2 2.2L15.5 10"/></svg>Оплата на защищённой странице ЮKassa — мы не видим данные карты</span>
+      <span><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>Чек самозанятого придёт на почту</span>
+      <span><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>Без автосписаний: продлеваете, когда нужно</span>
+    </div>
+  </section>
+
+  <section class="pay-panel" id="payPanel">
+    <div class="pay-view" id="viewPlans">
+      <h1>Доступ ко всем инструментам</h1>
+      <p class="pay-lead">Номера агентов, планер показов, подборки клиентам, уведомления о новых объектах и снижении цен.</p>
+      <div class="plans" id="plans"></div>
+      <ul class="pay-inc">
+        <li>Номера агентов по всем объектам Краснодара</li>
+        <li>Планер показов и созвонов с напоминаниями</li>
+        <li>Подборки для клиентов по ссылке</li>
+        <li>Уведомления о новых объектах и снижении цены</li>
+      </ul>
+      <div class="pay-total"><span>К оплате</span><b id="payTotal">—</b></div>
+      <button type="button" class="pay-btn" id="payBtn"><span id="payBtnText">Оплатить</span></button>
+      <p class="pay-note" id="payNote"></p>
+    </div>
+
+    <div class="pay-view" id="viewWait" hidden>
+      <div class="pay-spinner" aria-hidden="true"></div>
+      <h1 id="waitTitle">Проверяем оплату</h1>
+      <p class="pay-lead" id="waitText">Банк подтверждает платёж — обычно это пара секунд.</p>
+    </div>
+
+    <div class="pay-view" id="viewDone" hidden>
+      <svg class="pay-check" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="29"/><path d="M19 33l9 9 17-19"/></svg>
+      <h1>Доступ открыт</h1>
+      <p class="pay-lead" id="doneText">Спасибо! Номера агентов и все инструменты уже работают.</p>
+      <div class="pay-done-acts"><a class="pay-btn" href="/">К поиску объектов</a><a class="pill light" href="/cabinet">В кабинет</a></div>
+    </div>
+
+    <div class="pay-view" id="viewFail" hidden>
+      <svg class="pay-x" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="29"/><path d="M23 23l18 18M41 23L23 41"/></svg>
+      <h1>Оплата не прошла</h1>
+      <p class="pay-lead">Деньги не списаны. Попробуйте ещё раз или другой картой.</p>
+      <div class="pay-done-acts"><button type="button" class="pay-btn" id="payRetry">Попробовать снова</button></div>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
+<script src="/static/pay.js?v=1"></script>
+</body>
+</html>

@@ -21,8 +21,8 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import (accounts, agent, autolearn, brain, buyers, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
-               market, payments, picks, planner, region, search, stats, tg)
+from . import (accounts, agent, autolearn, brain, buyers, dashboard, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
+               market, payments, picks, planner, region, search, stats, tg, widgets)
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -343,6 +343,7 @@ def api_stats(request: Request, body: dict | None = None):
         "new_24h": one("SELECT COUNT(*) FROM listings WHERE first_seen >= ?", day),
         "messages_24h": one("SELECT COUNT(*) FROM messages WHERE ts >= ?", day),
         "duplicates_merged": one("SELECT COUNT(*) FROM listing_events WHERE match != 'new'"),
+        "districts": one("SELECT COUNT(DISTINCT district) FROM listings WHERE is_active=1 AND district IS NOT NULL"),
     })
 
 
@@ -505,12 +506,20 @@ def api_complaint(request: Request, body: dict | None = None):
 
 # ─── оплата (подготовлено, выключено) ──────────────────────────────────────
 def api_pay(request: Request, body: dict | None = None):
+    """GET — тарифы и последний платёж (страница /pay); POST {days} — создать платёж и вернуть ссылку ЮKassa."""
     user, err = _need_user(request)
     if err:
         return err
+    if request.method == "GET":
+        return JSONResponse({"plans": payments.plans(), "enabled": payments.available(),
+                             "last": payments.last_status(db.get(), user["id"]) if request.query_params.get("check") else None})
     if not payments.available():
         return _err("Оплата скоро появится.", 503)
-    return JSONResponse({"url": payments.create(db.get(), user["id"])})
+    return JSONResponse({"url": payments.create(db.get(), user["id"], _num((body or {}).get("days"), int))})
+
+
+def pay_page(request: Request, body: dict | None = None):
+    return _page("pay.html")
 
 
 def api_yookassa(request: Request, body: dict | None = None):
@@ -1587,6 +1596,27 @@ def api_admin_geo_queue(request: Request, body: dict | None = None):
     return JSONResponse({"items": [dict(r) for r in rows], "counts": counts, "learned": learned})
 
 
+def api_dashboard(request: Request, body: dict | None = None):
+    """Кабинет одним запросом: день, CRM, уведомления, рынок, погода, ставки."""
+    user, err = _need_user(request)
+    if err:
+        return err
+    return JSONResponse(dashboard.build(db.get(), user))
+
+
+def api_widgets(request: Request, body: dict | None = None):
+    """Погода и ставки — и для гостей (главная, кабинет до входа)."""
+    return JSONResponse(widgets.all_widgets(db.get()))
+
+
+def api_admin_banks(request: Request, body: dict | None = None):
+    """Ставки банков по ипотеке (ведёт админ): POST {items: [{bank, program, rate}]}."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    return JSONResponse(widgets.set_banks(db.get(), (body or {}).get("items") or []))
+
+
 def api_admin_learn(request: Request, body: dict | None = None):
     """«Обучение»: сводка, единая очередь с числами, цепочка решений, выученное, перепроверка."""
     _, err = _need_admin(request)
@@ -1676,6 +1706,9 @@ routes = [
     Route("/api/districts/map", threaded(api_districts_map)),
     Route("/api/admin/recheck", threaded(api_admin_recheck), methods=["POST"]),
     Route("/api/admin/learn", threaded(api_admin_learn)),
+    Route("/api/dashboard", threaded(api_dashboard)),
+    Route("/api/widgets", threaded(api_widgets)),
+    Route("/api/admin/banks", threaded(api_admin_banks), methods=["POST"]),
     Route("/api/admin/learn/knowledge", threaded(api_admin_knowledge), methods=["GET", "POST"]),
     Route("/learn", threaded(learn_page)),
     Route("/api/stats", threaded(api_stats)),
@@ -1690,7 +1723,8 @@ routes = [
     Route("/api/favorites/{id:int}", threaded(api_favorite_toggle), methods=["POST"]),
     Route("/api/promo", threaded(api_promo), methods=["POST"]),
     Route("/api/complaints", threaded(api_complaint), methods=["POST"]),
-    Route("/api/pay", threaded(api_pay), methods=["POST"]),
+    Route("/api/pay", threaded(api_pay), methods=["GET", "POST"]),
+    Route("/pay", threaded(pay_page)),
     Route("/api/payments/yookassa", threaded(api_yookassa), methods=["POST"]),
     Route("/api/admin/overview", threaded(api_admin_overview)),
     Route("/api/admin/stats", threaded(api_admin_stats)),

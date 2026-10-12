@@ -110,3 +110,27 @@ def test_bot_remembers_only_admin(conn, monkeypatch):
     assert db.get_state(conn, "tg_admin_chat") is None
     bot.remember_admin(conn, {"from": {"id": 42, "username": "artemandreevic1"}, "chat": {"id": 42}})
     assert db.get_state(conn, "tg_admin_chat") == "42"
+
+
+def test_verify_codes_while_collection_paused(conn, monkeypatch):
+    """Сбор на паузе, но агент ждёт подтверждения номера: код из лички засчитывается, объявления из групп — нет."""
+    from app import accounts, agent
+    monkeypatch.setattr(config, "WAPPI_TOKENS", {"wa": "t", "tg": "", "max": ""})
+    monkeypatch.setattr(config, "WAPPI_PROFILES", ["wa:p1"])
+    monkeypatch.setattr(config, "WAPPI_ENABLED", False)
+    wappi._pending_cache["t"] = 0
+    u = accounts.upsert_email_user(conn, "agent@example.ru")
+    info, err = agent.start_verification(conn, u["id"], "+7 918 111-22-33")
+    assert err is None
+
+    def fake_get(path, params, token):
+        return {"messages": [
+            {"id": "c1", "chatId": "79181112233@c.us", "time": NOW, "body": f"1+1-{info['code']}"},
+            {"id": "g1", "chatId": "1@g.us", "time": NOW, "body": AD},
+        ]}
+
+    monkeypatch.setattr(wappi, "_get", fake_get)
+    assert wappi.poll_verify_only(conn) == 1
+    assert agent.verified_phones(conn, u["id"]) == ["+79181112233"]
+    assert conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 0   # из групп ничего не сохранили
+    assert wappi.poll_verify_only(conn) == 0                                  # больше никто не ждёт — Wappi не трогаем

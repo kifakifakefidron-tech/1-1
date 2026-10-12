@@ -1327,6 +1327,7 @@
     $("plannerLink").hidden = !u;
     $("plannerMore").hidden = !u;   // на узком экране — в «Ещё ▾»
     $("adminMore").hidden = !(u && u.is_admin);
+    if ($("heroLogin")) { $("heroLogin").hidden = !!u; $("heroCabinet").hidden = !u; }
     if (window.yaSelect) window.yaSelect(!!(u && u.is_admin));   // выделил адрес → «В Яндекс Картах»
     const unread = u ? u.unread || 0 : 0;
     $("bellMobile").hidden = !u;
@@ -1924,8 +1925,39 @@
     });
   }
 
+  // ─── первый экран: живые цифры базы (счётчик «докручивается»), «скрыть» запоминается ───
+  function countUp(el, to) {
+    const t0 = performance.now(), dur = 900;
+    const step = (t) => {
+      const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      el.textContent = num(Math.round(to * e));
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+  async function initHero() {
+    const hero = $("hero");
+    if (!hero) return;
+    let hidden = false;
+    try { hidden = localStorage.getItem("heroHidden") === "1"; } catch { /* */ }
+    if (hidden) { hero.hidden = true; return; }
+    $("heroX").addEventListener("click", () => {
+      hero.style.transition = "opacity .35s, transform .35s"; hero.style.opacity = "0"; hero.style.transform = "translateY(-8px)";
+      setTimeout(() => { hero.hidden = true; }, 340);
+      try { localStorage.setItem("heroHidden", "1"); } catch { /* */ }
+    });
+    $("heroLogin").addEventListener("click", () => openLogin());
+    try {
+      const s = await getJSON("/api/stats");
+      hero.querySelectorAll("[data-k]").forEach((b) => {
+        if (s[b.dataset.k]) countUp(b, s[b.dataset.k]); else b.parentElement.hidden = true;   // нули не показываем
+      });
+    } catch { /* без цифр — тоже красиво */ }
+  }
+
   async function init() {
     readUrl();
+    initHero();
     try { meta = await getJSON("/api/meta"); } catch { /* страница всё равно покажет список */ }
     renderTypes();
     renderAccount();

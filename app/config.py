@@ -95,6 +95,9 @@ SITE_URL = os.getenv("SITE_URL", "").strip() or (
 TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "7"))           # бесплатно после подтверждения номера (раз на номер)
 SUB_PRICE = int(os.getenv("SUB_PRICE", "49"))            # ₽ за период
 SUB_DAYS = int(os.getenv("SUB_DAYS", "7"))               # период подписки, дней
+# Тарифы на странице оплаты: «дней:цена,дней:цена» (например «7:49,30:179,90:449»); по умолчанию — один SUB_DAYS:SUB_PRICE
+SUB_PLANS = [(int(d), int(p)) for d, p in (x.split(":") for x in
+             (os.getenv("SUB_PLANS", "").strip() or f"{SUB_DAYS}:{SUB_PRICE}").split(",") if ":" in x)]
 PHONE_VIEWS_PER_DAY = int(os.getenv("PHONE_VIEWS_PER_DAY", "0"))  # 0 = без лимита (пока выключен)  # защита от выкачивания номеров
 PROMO_LOGIN_DAYS = int(os.getenv("PROMO_LOGIN_DAYS", "30"))  # доступ после входа по коду коллег
 # Пробная неделя при первом входе по почте (раз на адрес) — пока Telegram в России недоступен

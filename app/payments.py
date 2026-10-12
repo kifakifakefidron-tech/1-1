@@ -41,19 +41,44 @@ def _request(url: str, body: dict | None = None) -> dict:
         return json.loads(resp.read())
 
 
-def create(conn: sqlite3.Connection, user_id: int) -> str:
-    """Создать платёж; возвращает ссылку на страницу оплаты ЮKassa."""
+def plans() -> list[dict]:
+    """Тарифы для страницы оплаты (из SUB_PLANS): дней, цена, цена за день, выгода к самому короткому."""
+    base = min(config.SUB_PLANS, key=lambda x: x[0]) if config.SUB_PLANS else (config.SUB_DAYS, config.SUB_PRICE)
+    per_base = base[1] / base[0]
+    out = []
+    for days, price in sorted(config.SUB_PLANS):
+        save = round((1 - (price / days) / per_base) * 100) if days != base[0] else 0
+        out.append({"days": days, "price": price, "per_day": round(price / days, 1), "save": max(0, save)})
+    return out
+
+
+def create(conn: sqlite3.Connection, user_id: int, days: int | None = None) -> str:
+    """Создать платёж по тарифу (дней); возвращает ссылку на страницу оплаты ЮKassa."""
+    plan = next((p for p in config.SUB_PLANS if p[0] == days), None) or \
+        (config.SUB_PLANS[0] if config.SUB_PLANS else (config.SUB_DAYS, config.SUB_PRICE))
+    days, price = plan
     pay = _request(API, {
-        "amount": {"value": f"{config.SUB_PRICE}.00", "currency": "RUB"},
+        "amount": {"value": f"{price}.00", "currency": "RUB"},
         "capture": True,
-        "confirmation": {"type": "redirect", "return_url": f"{config.SITE_URL}/?paid=1"},
-        "description": f"Подписка 1+1 на {config.SUB_DAYS} дн.",
-        "metadata": {"user_id": user_id},
+        "confirmation": {"type": "redirect", "return_url": f"{config.SITE_URL}/pay?check=1"},
+        "description": f"Доступ 1+1 на {days} дн.",
+        "metadata": {"user_id": user_id, "days": days},
     })
     conn.execute("INSERT INTO payments (user_id, amount, days, provider_id, status, created) VALUES (?,?,?,?,?,?)",
-                 (user_id, config.SUB_PRICE, config.SUB_DAYS, pay["id"], pay.get("status", "pending"), int(time.time())))
+                 (user_id, price, days, pay["id"], pay.get("status", "pending"), int(time.time())))
     conn.commit()
     return pay["confirmation"]["confirmation_url"]
+
+
+def last_status(conn: sqlite3.Connection, user_id: int) -> dict | None:
+    """После возврата из ЮKassa: последний платёж человека — перепроверяем и говорим, чем закончился."""
+    row = conn.execute("SELECT * FROM payments WHERE user_id = ? ORDER BY id DESC LIMIT 1", (user_id,)).fetchone()
+    if row is None:
+        return None
+    if row["status"] not in ("succeeded", "canceled") and available():
+        confirm(conn, row["provider_id"])
+        row = conn.execute("SELECT * FROM payments WHERE id = ?", (row["id"],)).fetchone()
+    return {"status": row["status"], "days": row["days"], "amount": row["amount"]}
 
 
 def confirm(conn: sqlite3.Connection, provider_id: str) -> bool:

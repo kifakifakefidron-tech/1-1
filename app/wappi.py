@@ -121,6 +121,8 @@ def _store(conn: sqlite3.Connection, source: str, profile_id: str, m: dict,
     is_group = group if group is not None else _is_group(source, m)
     if not is_group and source in config.VERIFY_CHANNELS and _verify_pending(conn):
         _check_code(conn, profile_id, source, m, chat_id)
+    if _verify_only["on"]:   # сбор на паузе — только коды подтверждения, объявления не сохраняем
+        return False, ts
     if config.WAPPI_GROUPS_ONLY and not is_group:
         return False, ts
     if m.get("isDeleted"):
@@ -142,6 +144,7 @@ def _store(conn: sqlite3.Connection, source: str, profile_id: str, m: dict,
 
 
 _pending_cache: dict = {"t": 0.0, "v": False}
+_verify_only: dict = {"on": False}
 
 
 def _verify_pending(conn) -> bool:
@@ -238,7 +241,8 @@ def _poll_by_chats(conn, profile, source, profile_id, token, cursor) -> tuple[in
                 old = True
                 continue
             if _is_group(source, c):
-                chats.append(c)
+                if not _verify_only["on"]:
+                    chats.append(c)
             elif source in config.VERIFY_CHANNELS and _verify_pending(conn):
                 c = {**c, "_personal": True}   # личка: ищем только коды подтверждения номера
                 chats.append(c)
@@ -347,10 +351,11 @@ def poll_profile(conn: sqlite3.Connection, profile: str) -> int:
     if not token:
         log.error("Нет токена Wappi для «%s»: задайте WAPPI_TOKEN_%s в .env", profile, source.upper())
         return 0
-    state_key = f"wappi_cursor:{profile}"
+    state_key = f"wappi_{'verify_' if _verify_only['on'] else ''}cursor:{profile}"
     cursor = int(db.get_state(conn, state_key) or 0)
     if not cursor:
-        cursor = int(time.time()) - config.WAPPI_BACKFILL_HOURS * 3600
+        # проверка кодов — только свежая личка (15 мин), сбор — история за WAPPI_BACKFILL_HOURS
+        cursor = int(time.time()) - (900 if _verify_only["on"] else config.WAPPI_BACKFILL_HOURS * 3600)
 
     poll = _poll_all_messages if source == "wa" else _poll_by_chats
     added, received, newest = poll(conn, profile, source, profile_id, token, cursor)
@@ -358,6 +363,21 @@ def poll_profile(conn: sqlite3.Connection, profile: str) -> int:
         db.set_state(conn, state_key, str(newest))
     log.info("Wappi %s: получено %d, новых объявлений-кандидатов %d", profile, received, added)
     return added
+
+
+def poll_verify_only(conn: sqlite3.Connection) -> int:
+    """Сбор из чатов на паузе, но агенты ждут подтверждения номера: читаем только личку с кодами «1+1-XXXXXX»
+    (отдельный курсор — когда сбор включат, объявления из групп за это время не потеряются)."""
+    if not _verify_pending(conn) or not config.WAPPI_PROFILES or not any(config.WAPPI_TOKENS.values()):
+        return 0
+    _verify_only["on"] = True
+    try:
+        for p in config.WAPPI_PROFILES:
+            if p.partition(":")[0] in config.VERIFY_CHANNELS:
+                poll_profile(conn, p)
+    finally:
+        _verify_only["on"] = False
+    return 1
 
 
 def poll_all(conn: sqlite3.Connection) -> int:
