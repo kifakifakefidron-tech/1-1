@@ -235,6 +235,14 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   .leaflet-interactive:focus без outline (был чёрный прямоугольник), без bringToFront на hover (ломал клик); наведение — название и число, нажатие — район в
   фильтр, выбранные подсвечены, пусто — карта летит к району. Заглушка карточки — «Фото у агента», логотип 88 px.
   Свой домен: Caddyfile — блок {$OLD_DOMAINS:http://unused.invalid} → redir на SITE_DOMAIN; шаги в README «Свой домен».
+- 12.10 — ПЕРЕПРОВЕРКА ВСЕХ ОБЪЕКТОВ (autolearn.recheck_all; worker через maybe_recheck раз в час и сразу после
+  изменения контуров/справочника; админка «Обзор» → «Перепроверить сейчас», POST /api/admin/recheck {run|rollback}):
+  1) точки — дом из OSM/фида/правок лучше точки геокодера/примерной; 2) район по НАРИСОВАННЫМ районам: дом в другом
+  районе дальше 150 м от района из объявления → район по карте (district_src='map'); у района объявления нет контура →
+  нарисованный вторым (extra_districts); нет района → ставим; 3) квартира без ЖК, дом в контуре известного ЖК → ЖК.
+  Не трогает: admin_fixed, районы по вашим правилам (_has_rule: addr/cx_district/street), фид, own, станицы.
+  Журнал listing_edits с user_id=0 («Сервис (перепроверка)»); rollback_recheck откатывает всё (кроме поправленного
+  админом), откаченное повторно не меняется. На /fix у таких объектов «сервис: … · было «X»» и подсказка «было до перепроверки».
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
@@ -243,7 +251,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 140 тестов
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 142 тестов
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены

@@ -1202,15 +1202,25 @@ def _fix_item(conn, lid: int) -> dict | None:
         "learned": [label for _, label in geocode.learn_keys(r)],
         "geo_src": autolearn.GEO_SRC.get(r["geo_src"] or "") if r["geo_src"] != "geocoder" else None,
         "district_src": autolearn.DISTRICT_SRC.get(r["district_src"] or ""),
+        "was_district": _was_district(conn, r),
         "zone": _zone(conn, r["district"]),
     }
+
+
+def _was_district(conn, r) -> str | None:
+    """Район, который был до перепроверки сервисом (если сервис его поменял и это не откатили)."""
+    e = conn.execute("""SELECT old FROM listing_edits WHERE listing_id = ? AND user_id = ? AND field = 'district'
+                        AND reverted = 0 ORDER BY id DESC LIMIT 1""", (r["id"], autolearn.SERVICE_UID)).fetchone()
+    old = json.loads(e[0]) if e else None
+    return old if old and old != r["district"] else None
 
 
 def _fix_suggest(conn, r, text: str) -> dict:
     """Подсказки районов: сначала по вашей карте районов и соседним объявлениям, потом по тексту и справочнику."""
     sug = geo.suggestions(text, r["street"], r["complex"])
     seen: dict = {}
-    for h in autolearn.hints(conn, r) + sug["districts"]:
+    was = _was_district(conn, r)
+    for h in autolearn.hints(conn, r) + sug["districts"] + ([{"name": was, "why": "было до перепроверки"}] if was else []):
         if h["name"] in seen:
             seen[h["name"]]["why"] += " · " + h["why"]
         else:
@@ -1576,6 +1586,21 @@ def api_admin_geo_queue(request: Request, body: dict | None = None):
     return JSONResponse({"items": [dict(r) for r in rows], "counts": counts, "learned": learned})
 
 
+def api_admin_recheck(request: Request, body: dict | None = None):
+    """Перепроверка всех объектов по справочнику адресов и нарисованным районам: {action: run | rollback}."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    conn = db.get()
+    if (body or {}).get("action") == "rollback":
+        n = autolearn.rollback_recheck(conn)
+        _bump_cache()
+        return JSONResponse({"ok": True, "reverted": n})
+    rep = autolearn.recheck_all(conn)
+    _bump_cache()
+    return JSONResponse({"ok": True, **rep})
+
+
 def api_admin_edits(request: Request, body: dict | None = None):
     _, err = _need_admin(request)
     if err:
@@ -1622,6 +1647,7 @@ routes = [
     Route("/api/facets", threaded(api_facets)),
     Route("/api/map", threaded(api_map)),
     Route("/api/districts/map", threaded(api_districts_map)),
+    Route("/api/admin/recheck", threaded(api_admin_recheck), methods=["POST"]),
     Route("/api/stats", threaded(api_stats)),
     Route("/api/login", threaded(api_login), methods=["POST"]),
     Route("/api/auth/tg/start", threaded(api_tg_start), methods=["POST"]),

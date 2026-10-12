@@ -179,3 +179,4 @@ tr.peek td { background: rgba(0, 0, 0, .12); }
 .ph-list a { color: var(--ink); font-weight: 600; }
 .ph-list .note { display: block; font-size: 12.5px; }
 @media (max-width: 860px) { .ph-wrap { grid-template-columns: 1fr; } .ph-detail { position: static; } }
+.rc-acts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }

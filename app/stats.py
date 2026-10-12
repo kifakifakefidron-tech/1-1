@@ -15,6 +15,17 @@ TYPES = {"flat": "Квартиры", "new": "Квартиры", "room": "Ком�
 VISIBLE = "is_active = 1 AND (district IS NOT NULL OR complex IS NOT NULL OR street IS NOT NULL OR settlement IS NOT NULL)"
 
 
+def _recheck(conn) -> dict | None:
+    """Последняя перепроверка всех объектов (app/autolearn.recheck_all) и сколько её правок ещё не откачено."""
+    import json
+    row = conn.execute("SELECT value FROM state WHERE key = 'recheck_report'").fetchone()
+    if not row:
+        return None
+    rep = json.loads(row[0])
+    rep["active_edits"] = conn.execute("SELECT COUNT(*) FROM listing_edits WHERE user_id = 0 AND reverted = 0").fetchone()[0]
+    return rep
+
+
 def day_start(now: int) -> int:
     return (now + TZ) // 86400 * 86400 - TZ
 
@@ -161,6 +172,7 @@ def collect(conn: sqlite3.Connection, now: int | None = None) -> dict:
               "feed_synced": int(db.get_state(conn, "feed_synced") or 0),
               "wappi_enabled": config.WAPPI_ENABLED, "now": now, "today": today}
     return {"listings": listings, "days": days, "mix": mix, "top_districts": top_districts,
+            "recheck": _recheck(conn),
             "top_complexes": top_complexes, "prices": prices, "quality": quality, "messages": messages,
             "top_chats": top_chats, "users": users, "most_viewed": most_viewed, "most_fav": most_fav,
             "system": system, "periods": periods}

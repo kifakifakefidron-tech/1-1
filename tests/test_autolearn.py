@@ -114,3 +114,48 @@ def test_fix_queue_groups_and_applies_to_group(tmp_path, monkeypatch):
         assert c.get("/api/admin/fix?at=45.05,39.0").json()["district"] == "ФМР"
     conn.close()
     db._local.conn = None
+
+
+KAT = [[(45.00, 38.90), (45.00, 38.92), (45.02, 38.92), (45.02, 38.90)]]
+
+
+def _put(conn, lid, lat, lon, district="ФМР"):
+    conn.execute("UPDATE listings SET lat = ?, lon = ?, geo_status = 'ok', geo_src = 'osm-house', district = ? WHERE id = ?",
+                 (lat, lon, district, lid))
+    conn.commit()
+
+
+def test_recheck_all_moves_district_by_drawn_map_and_rolls_back(conn, add):
+    districtmap.save_polygon(conn, "ФМР", "district", FMR)
+    districtmap.save_polygon(conn, "Катюша", "district", KAT)
+    far = _lid(add("2-к квартира 50 м², 3/9 эт., ФМР, ул. Новаторов 7. 6 млн. 89180000061"))
+    _put(conn, far, 45.01, 38.91)                       # дом в Катюше, в объявлении «ФМР» → Катюша
+    border = _lid(add("1-к квартира 40 м², 2/9 эт., ФМР, ул. Новаторов 9. 5 млн. 89180000062"))
+    districtmap.save_polygon(conn, "ЦМР", "district", [[(45.06, 38.99), (45.06, 39.02), (45.08, 39.02), (45.08, 38.99)]])
+    _put(conn, border, 45.0605, 39.00)                  # дом в ЦМР, но в 55 м от ФМР — район агента оставляем
+    sub = _lid(add("Студия 25 м², 2/9 эт., Гидрострой, ул. Тихая 3. 3 млн. 89180000063"))
+    _put(conn, sub, 45.01, 38.91, "Гидрострой")          # у Гидростроя контура нет → Катюша вторым районом
+    rep = autolearn.recheck_all(conn)
+    assert rep["districts_changed"] == 1 and rep["kept_border"] == 1 and rep["districts_extra"] == 1
+    assert _row(conn, far)["district"] == "Катюша" and _row(conn, far)["district_src"] == "map"
+    assert _row(conn, border)["district"] == "ФМР"
+    assert _row(conn, sub)["district"] == "Гидрострой" and "Катюша" in _row(conn, sub)["extra_districts"]
+    # откат — всё как было, и повторная перепроверка откаченное не трогает
+    assert autolearn.rollback_recheck(conn) == 2
+    assert _row(conn, far)["district"] == "ФМР" and "Катюша" not in _row(conn, sub)["extra_districts"]
+    rep = autolearn.recheck_all(conn)
+    assert not rep.get("districts_changed") and _row(conn, far)["district"] == "ФМР"
+
+
+def test_recheck_keeps_admin_rules_and_fixes(conn, add):
+    from app import learning
+    districtmap.save_polygon(conn, "Катюша", "district", KAT)
+    a = _lid(add("2-к квартира 50 м², 3/9 эт., ФМР, ЖК Мозаика. 6 млн. 89180000071"))
+    _put(conn, a, 45.01, 38.91)
+    learning.learn(conn, _row(conn, a), "Мозаика", "ФМР", {"cx_district": True})   # ваше правило: ЖК Мозаика → ФМР
+    b = _lid(add("1-к квартира 40 м², 2/9 эт., ФМР, ул. Новаторов 9. 5 млн. 89180000072"))
+    _put(conn, b, 45.01, 38.91)
+    conn.execute("UPDATE listings SET admin_fixed = 1 WHERE id = ?", (b,))
+    conn.commit()
+    rep = autolearn.recheck_all(conn)
+    assert rep.get("kept_rule") == 1 and _row(conn, a)["district"] == "ФМР" and _row(conn, b)["district"] == "ФМР"

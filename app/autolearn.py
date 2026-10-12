@@ -277,6 +277,157 @@ def hints(conn: sqlite3.Connection, row) -> list[dict]:
                                 "vote-cx": "так в объявлениях этого ЖК"}[src]} for d, src in candidates(conn, row)]
 
 
+# ─── перепроверка всех объектов (справочник адресов + нарисованные районы) ─
+SERVICE_UID = 0          # «пользователь» сервиса в журнале listing_edits (откат — rollback_recheck)
+NEAR_BORDER_KM = 0.15    # дом у самой границы района из объявления — район агента не трогаем
+HOUSE_SRC = ("osm-house", "osm-near", "feed-house", "learned")
+RECHECK_EVERY_S = 3600
+
+
+def _has_rule(rs: dict, row) -> bool:
+    """Район объекта задан вашим правилом (дом / ЖК / улица) — его перепроверка не трогает."""
+    return any(k and (kind, k) in rs for kind, k in (
+        ("addr", learning.addr_key(row["street"], row["house"], row["settlement"])),
+        ("cx_district", learning.cx_key(row["complex"])), ("street", learning.street_key(row["street"], row["settlement"]))))
+
+
+def _log(conn, lid: int, field: str, old, new, now: int) -> None:
+    import json
+    conn.execute("INSERT INTO listing_edits (listing_id, user_id, ts, field, old, new) VALUES (?,?,?,?,?,?)",
+                 (lid, SERVICE_UID, now, field, json.dumps(old, ensure_ascii=False), json.dumps(new, ensure_ascii=False)))
+
+
+def recheck_all(conn: sqlite3.Connection) -> dict:
+    """Все объекты заново:
+      1) точка — дом из справочника адресов / фида / ваших правок лучше прежней точки геокодера или примерной;
+      2) район — по вашим нарисованным районам: точка дома в другом районе (дальше 150 м от границы района из
+         объявления) → район по карте; у района из объявления нет контура → нарисованный добавляется вторым;
+      3) квартира без ЖК, а дом внутри контура известного ЖК → этот ЖК.
+    Не трогаем: поправленное вами (admin_fixed), районы по вашим правилам, объекты фида СТРЕЛ, станицы/посёлки.
+    Каждая замена района/ЖК — в журнале listing_edits (user_id = 0), откат — rollback_recheck."""
+    import json
+
+    from . import geo
+    from .ingest import _reindex, make_search_text, make_title
+    known = Known(conn)
+    rep: Counter = Counter()
+    now = int(time.time())
+    # 1) точки
+    for r in conn.execute("""SELECT * FROM listings WHERE is_active = 1 AND geo_status NOT IN ('manual', 'learned', 'feed')
+                             AND COALESCE(geo_src, '') NOT IN ('osm-house', 'osm-near', 'feed-house', 'learned')""").fetchall():
+        hit = known.point(r)
+        if not hit or hit[3] not in HOUSE_SRC + ("map-cx", "feed-cx"):
+            continue
+        if hit[3] in ("map-cx", "feed-cx") and r["geo_status"] == "ok":
+            continue   # точка ЖК не лучше уже найденной точки дома
+        if r["lat"] is None or r["geo_status"] != "ok" or geocode._km((r["lat"], r["lon"]), hit[:2]) > 0.05:
+            conn.execute("UPDATE listings SET lat = ?, lon = ?, geo_status = ?, geo_src = ? WHERE id = ?", (*hit, r["id"]))
+            rep["points"] += 1
+    conn.commit()
+    # 2) районы и 3) ЖК — по точке
+    rs = learning.rules(conn, fresh=True)
+    # что вы откатили — больше не трогаем (иначе каждый час возвращалось бы снова)
+    undone = {(r[0], r[1]) for r in conn.execute(
+        "SELECT listing_id, field FROM listing_edits WHERE user_id = ? AND reverted = 1", (SERVICE_UID,))}
+    for r in conn.execute("""SELECT * FROM listings WHERE is_active = 1 AND lat IS NOT NULL AND admin_fixed = 0
+                             AND source NOT IN ('feed', 'own') AND settlement IS NULL
+                             AND geo_status IN ('ok', 'manual', 'learned')""").fetchall():
+        d = dict(r)
+        changed = False
+        hit = districtmap.district_at(conn, r["lat"], r["lon"])
+        new = hit[0] if hit and hit[1] == "district" else None
+        extra = json.loads(r["extra_districts"] or "[]")
+        cur = r["district"]
+        if new and new != cur and new not in extra and (r["id"], "district") not in undone                 and (r["id"], "extra_districts") not in undone:
+            if cur is None:
+                d["district"], d["district_src"] = new, "map"
+                _log(conn, r["id"], "district", cur, new, now)
+                rep["districts_filled"] += 1
+                changed = True
+            elif _has_rule(rs, r):
+                rep["kept_rule"] += 1
+            else:
+                out = known.km_outside(cur, r["lat"], r["lon"])
+                if out is None:   # у района из объявления нет контура (подрайон?) — нарисованный добавляем вторым
+                    d["extra_districts"] = json.dumps(extra + [new], ensure_ascii=False)
+                    _log(conn, r["id"], "extra_districts", extra, extra + [new], now)
+                    rep["districts_extra"] += 1
+                    changed = True
+                elif out <= NEAR_BORDER_KM:
+                    rep["kept_border"] += 1
+                else:
+                    d["district"], d["district_src"] = new, "map"
+                    _log(conn, r["id"], "district", cur, new, now)
+                    rep["districts_changed"] += 1
+                    changed = True
+        if not r["complex"] and r["type"] in ("flat", "new") and r["geo_src"] in HOUSE_SRC + (None, "geocoder")                 and (r["id"], "complex") not in undone:
+            cx = districtmap.complex_at(conn, r["lat"], r["lon"])
+            rec = geo.resolve_complex(cx) if cx else None
+            if rec and learning.cx_key(rec.name).removeprefix("cx:") not in GENERIC_CX:
+                d["complex"] = rec.name
+                _log(conn, r["id"], "complex", None, rec.name, now)
+                rep["complexes"] += 1
+                changed = True
+        if changed:
+            d["title"] = make_title(d)
+            d["search_text"] = make_search_text(d)
+            conn.execute("""UPDATE listings SET district = ?, district_src = ?, extra_districts = ?, complex = ?, title = ?,
+                            search_text = ? WHERE id = ?""", (d["district"], d["district_src"], d["extra_districts"],
+                                                             d["complex"], d["title"], d["search_text"], r["id"]))
+            _reindex(conn, r["id"], d["search_text"])
+    conn.commit()
+    out = dict(rep)
+    out["ts"] = now
+    conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('recheck_report', ?)", (json.dumps(out),))
+    conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('recheck_ts', ?)", (str(now),))
+    conn.commit()
+    return out
+
+
+def rollback_recheck(conn: sqlite3.Connection, since: int = 0) -> int:
+    """Вернуть всё, что поменяла перепроверка (район, второй район, ЖК). Возвращает число объектов."""
+    import json
+
+    from .ingest import _reindex, make_search_text, make_title
+    rows = conn.execute("""SELECT * FROM listing_edits WHERE user_id = ? AND reverted = 0 AND ts >= ?
+                           AND field IN ('district', 'extra_districts', 'complex') ORDER BY id DESC""",
+                        (SERVICE_UID, since)).fetchall()
+    touched = set()
+    for e in rows:
+        r = conn.execute("SELECT * FROM listings WHERE id = ?", (e["listing_id"],)).fetchone()
+        if r is None or r["admin_fixed"]:
+            continue   # вы уже поправили объект сами — ваше важнее
+        old = json.loads(e["old"])
+        if e["field"] == "extra_districts":
+            old = json.dumps(old or [], ensure_ascii=False)
+        conn.execute(f"UPDATE listings SET {e['field']} = ?, district_src = NULL WHERE id = ?", (old, r["id"]))
+        conn.execute("UPDATE listing_edits SET reverted = 1 WHERE id = ?", (e["id"],))
+        touched.add(r["id"])
+    for lid in touched:
+        d = dict(conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone())
+        d["title"] = make_title(d)
+        d["search_text"] = make_search_text(d)
+        conn.execute("UPDATE listings SET title = ?, search_text = ? WHERE id = ?", (d["title"], d["search_text"], lid))
+        _reindex(conn, lid, d["search_text"])
+    conn.commit()
+    return len(touched)
+
+
+def maybe_recheck(conn: sqlite3.Connection) -> dict | None:
+    """Раз в час — и сразу, если поменялись нарисованные районы или справочник адресов."""
+    key = "|".join(str(x) for x in conn.execute(
+        """SELECT COUNT(*), MAX(ts) FROM district_polygons""").fetchone()) + "|" + (
+        (conn.execute("SELECT value FROM state WHERE key = 'osm_addr_ts'").fetchone() or [""])[0])
+    last_key = (conn.execute("SELECT value FROM state WHERE key = 'recheck_key'").fetchone() or [""])[0]
+    last_ts = int((conn.execute("SELECT value FROM state WHERE key = 'recheck_ts'").fetchone() or [0])[0] or 0)
+    if key == last_key and time.time() - last_ts < RECHECK_EVERY_S:
+        return None
+    out = recheck_all(conn)
+    conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('recheck_key', ?)", (key,))
+    conn.commit()
+    return out
+
+
 # ─── один проход (из worker) ─────────────────────────────────────────────
 def run(conn: sqlite3.Connection) -> dict:
     t = time.time()
@@ -294,6 +445,9 @@ def run(conn: sqlite3.Connection) -> dict:
         conn.commit()
     out["points"] = fill_points(conn, known)
     out.update(fill_districts(conn))
+    rc = maybe_recheck(conn)   # все объекты — по справочнику адресов и вашим районам (раз в час и после правок карты)
+    if rc:
+        out["recheck_all"] = {k: v for k, v in rc.items() if k != "ts"}
     out["s"] = round(time.time() - t, 2)
     return out
 

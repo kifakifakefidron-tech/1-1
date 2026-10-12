@@ -108,7 +108,8 @@
     $("fxNow").innerHTML = [
       it.complex ? `ЖК <b>${esc(it.complex)}</b>` : "ЖК —",
       it.district ? `район <b>${esc([it.district, ...(it.extra_districts || [])].join(", "))}</b>${it.district_src
-        ? ` <span class="fx-src" title="Район поставил сервис сам">сервис: ${esc(it.district_src)}</span>` : ""}` : "район —",
+        ? ` <span class="fx-src" title="Район поставил сервис сам">сервис: ${esc(it.district_src)}${it.was_district
+          ? ` · было «${esc(it.was_district)}»` : ""}</span>` : ""}` : "район —",
       it.street ? `ул. ${esc(it.street)}${it.house ? ", " + esc(it.house) : ""}` : "",
       it.settlement ? esc(it.settlement) : "",
     ].filter(Boolean).join(" · ");
