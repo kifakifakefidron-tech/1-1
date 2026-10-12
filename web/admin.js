@@ -531,7 +531,7 @@
       <p class="note">Объектов: ${d.listings.length} · запросов: ${d.requests.length} · сообщений: ${d.messages}</p>
       <div class="ph-acts">${d.banned ? `<button data-ph-unban="${esc(d.phone)}">Вернуть номер</button>`
         : `<button class="danger" data-ph-ban="${esc(d.phone)}">Удалить всё от номера</button>`}
-        <a href="https://wa.me/${d.phone.replace(/\D/g, "")}" target="_blank" rel="noopener">WhatsApp</a></div>
+        <button type="button" class="chip" data-max="${esc(d.phone)}">MAX</button></div>
       <ul class="ph-list">${d.listings.map((o) => `<li class="${o.is_active ? "" : "off"}">
         <div><a href="/?open=${o.id}" target="_blank">${esc(o.title)}</a><span class="note">${esc(phMoney(o.price, o.deal))} ·
           ${esc([o.complex && "ЖК " + o.complex, o.district].filter(Boolean).join(" · ") || "без места")}${o.is_active ? "" : " · скрыт"}</span></div>

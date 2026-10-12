@@ -25,7 +25,7 @@
     const digits = (d.contact_phone || "").replace(/\D/g, "");
     return `${compact ? "" : `<span class="pk-agent-label">Ваш агент</span>`}<b>${esc(d.contact_name || "Агент")}</b>
       ${digits ? `<a class="pill" href="tel:${esc(d.contact_phone)}">Позвонить</a>
-        <a class="pill light" href="https://wa.me/${digits}" target="_blank" rel="noopener">WhatsApp</a>` : ""}`;
+        <button type="button" class="pill light" data-max="${esc(d.contact_phone)}">Написать в MAX</button>` : ""}`;
   }
 
   async function load() {

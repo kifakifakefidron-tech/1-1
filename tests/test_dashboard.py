@@ -41,8 +41,9 @@ def test_bank_rates_admin_only(env):
     assert c.post("/api/admin/banks", json={"items": [{"bank": "Сбер", "rate": "11,5"}]}).status_code == 403
     conn.execute("UPDATE users SET is_admin = 1")
     conn.commit()
-    r = c.post("/api/admin/banks", json={"items": [{"bank": "Сбер", "program": "Вторичка", "rate": "11,5"}, {"bank": "", "rate": "1"}]}).json()
-    assert r["items"] == [{"bank": "Сбер", "program": "Вторичка", "rate": 11.5}]
+    r = c.post("/api/admin/banks", json={"items": [{"bank": "ВТБ", "secondary": "12,1", "family": "6"},
+                                                   {"bank": "Сбер", "secondary": "11,5", "new": "—"}, {"bank": "", "secondary": "1"}]}).json()
+    assert r["items"] == [{"bank": "Сбер", "secondary": 11.5}, {"bank": "ВТБ", "secondary": 12.1, "family": 6.0}]   # дешевле — выше
     assert c.get("/api/dashboard").json()["widgets"]["banks"]["items"][0]["bank"] == "Сбер"
 
 

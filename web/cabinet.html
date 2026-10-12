@@ -13,8 +13,8 @@
 <link rel="stylesheet" href="/static/motion.css?v=34">
 <link rel="stylesheet" href="/static/doc.css?v=2">
 <link rel="stylesheet" href="/static/theme.css?v=14">
-<link rel="stylesheet" href="/static/glass.css?v=5">
-<link rel="stylesheet" href="/static/cabinet.css?v=6">
+<link rel="stylesheet" href="/static/glass.css?v=6">
+<link rel="stylesheet" href="/static/cabinet.css?v=7">
 </head>
 <body class="dash-body">
 <main class="dash">
@@ -110,7 +110,8 @@
 <dialog id="banksDlg" class="small-dlg">
   <div class="dlg-body">
     <div class="d-dlg-head"><h2>Ставки банков по ипотеке</h2><button type="button" class="close" data-close aria-label="Закрыть">✕</button></div>
-    <p class="note">Готового бесплатного источника ставок банков нет — впишите актуальные (например, со страниц банков). Пустые строки не сохраняются.</p>
+    <p class="note">Впишите ставки, как они есть у банков сейчас: по каждой программе своя колонка, пустое — «нет программы».
+      Кабинет покажет лучшую ставку на вторичку и подставит ставки в калькулятор.</p>
     <div id="banksRows"></div>
     <div class="d-dlg-acts"><button type="button" class="pill light" id="banksAdd">+ Строка</button>
       <button type="button" class="pill" id="banksSave">Сохранить</button></div>
@@ -119,7 +120,8 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
 <script src="/static/icons.js?v=4"></script>
-<script src="/static/cabinet.js?v=5"></script>
+<script src="/static/max.js?v=1"></script>
+<script src="/static/cabinet.js?v=7"></script>
 <script src="/static/bell.js?v=1"></script>
 </body>
 </html>

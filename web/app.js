@@ -641,7 +641,7 @@
     const addr = address(o);
     const phones = o.phones && o.phones.length
       ? `<div class="mc-phones">${o.phones.map((ph) => `<a class="mc-call" href="tel:${esc(ph)}">${esc(ph)}</a>
-          <a class="mc-wa" href="https://wa.me/${ph.replace(/\D/g, "")}" target="_blank" rel="noopener">WhatsApp</a>`).join("")}</div>`
+          <button type="button" class="mc-wa" data-max="${esc(ph)}">MAX</button>`).join("")}</div>`
       : o.phones_masked && o.phones_masked.length
           ? `<div class="mc-phones locked"><span>${esc(o.phones_masked[0])}</span>${me() ? "" : `<button type="button" class="mc-call" data-login>Войти и открыть номер</button>`}</div>` : "";
     // Окошко собираем заново уже с адресом и телефоном (update() вернул бы исходный текст)
@@ -1146,7 +1146,7 @@
         const digits = p.replace(/\D/g, "");
         return `<div class="dv-phone"><a class="dv-phone-num" href="tel:${esc(p)}">${esc(pretty(p))}</a>
           <a class="dv-ic-btn" href="tel:${esc(p)}" aria-label="Позвонить" title="Позвонить">${ic("phone")}</a>
-          <a class="dv-ic-btn" href="https://wa.me/${digits}" target="_blank" rel="noopener" aria-label="Написать в WhatsApp" title="WhatsApp">${ic("chat")}</a></div>`;
+          <button type="button" class="dv-ic-btn dv-max" data-max="${esc(p)}" aria-label="Написать в MAX" title="Написать в MAX">MAX</button></div>`;
       }).join("")}${o.url ? `<a class="dv-site${o.source === "feed" ? " strely" : ""}" href="${esc(o.url)}" target="_blank" rel="noopener">${o.source === "feed"
         ? `${STRELY}<span>Объект партнёра «СТРЕЛЫ» — смотреть на arrowsrealty.ru</span>${ic("external")}` : `${ic("link")}Объявление на сайте агентства`}</a>` : ""}</div>`;
     }
@@ -1442,7 +1442,7 @@
         ${r.invited ? `Пришли по ссылке: ${r.invited}, подтвердили номер: ${r.rewarded}.` : ""}</p>
       <div class="cab-ref-row"><input readonly value="${esc(link)}" aria-label="Ваша ссылка">
         <button type="button" class="pill light" data-copy-ref="${esc(link)}">Копировать</button>
-        <a class="pill light" href="https://wa.me/?text=${encodeURIComponent(text)}" target="_blank" rel="noopener">WhatsApp</a></div></div>`;
+        <button type="button" class="pill light" data-share-text="${esc(text)}">Поделиться</button></div></div>`;
   }
 
   function renderCabinet() {

@@ -1648,11 +1648,14 @@ def api_client_action(request: Request, body: dict | None = None):
         if "error" in d:
             return _err(d["error"], 404)
         p = clients.match_query(d["client"])
+        page = max(1, _num(request.query_params.get("page"), int) or 1)
         qr = search.Query(deal=p["deal"], rooms=p.get("rooms", []), districts=p.get("district", []),
-                          price_min=p.get("price_min"), price_max=p.get("price_max"), size=24)
+                          price_min=p.get("price_min"), price_max=p.get("price_max"), size=60, page=page)
         res = search.search(conn, qr, int(time.time()), has_access(request, user))
         linked = {i["id"] for i in d["items"]}
-        return JSONResponse({"items": [x for x in res["items"] if x["id"] not in linked][:12], "total": res.get("total")})
+        # все подходящие (страницами по 60), уже предложенные клиенту — не повторяем
+        return JSONResponse({"items": [x for x in res["items"] if x["id"] not in linked], "total": res.get("total"),
+                             "linked": len(linked), "more": page * 60 < (res.get("total") or 0), "page": page})
     if what == "items":
         res = clients.set_item(conn, user["id"], cid, _num(body.get("listing_id"), int) or 0, body.get("status"))
     elif what == "note":

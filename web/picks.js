@@ -73,8 +73,7 @@
       ${p.contact_phone ? "" : `<p class="pks-warn">⚠ Укажите свой телефон — клиент увидит только ваш контакт (раскройте подборку).</p>`}
       <div class="pks-share">
         <button type="button" class="pks-btn main" data-copy="${p.id}">🔗 Ссылка</button>
-        <a class="pks-btn" href="https://wa.me/?text=${encodeURIComponent(`${p.title}\n${link(p)}`)}" target="_blank" rel="noopener">WhatsApp</a>
-        <a class="pks-btn" href="https://t.me/share/url?url=${encodeURIComponent(link(p))}&text=${encodeURIComponent(p.title)}" target="_blank" rel="noopener">Telegram</a>
+        <button type="button" class="pks-btn" data-share-text="${esc(`${p.title}\n${link(p)}`)}">Поделиться</button>
         <a class="pks-btn ghosty" href="/c/${esc(p.token)}" target="_blank">👁 Как видит клиент</a>
       </div>
       ${isOpen ? `<form class="pks-edit" data-edit="${p.id}">

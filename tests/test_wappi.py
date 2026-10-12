@@ -120,6 +120,7 @@ def test_verify_codes_while_collection_paused(conn, monkeypatch):
     monkeypatch.setattr(config, "WAPPI_TOKENS", {"wa": "t", "tg": "", "max": ""})
     monkeypatch.setattr(config, "WAPPI_PROFILES", ["wa:p1"])
     monkeypatch.setattr(config, "WAPPI_ENABLED", False)
+    monkeypatch.setattr(config, "VERIFY_CHANNELS", ["wa"])   # механизм тот же для MAX (по умолчанию — только MAX)
     wappi._pending_cache["t"] = 0
     u = accounts.upsert_email_user(conn, "agent@example.ru")
     info, err = agent.start_verification(conn, u["id"], "+7 918 111-22-33")

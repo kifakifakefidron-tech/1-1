@@ -24,7 +24,7 @@
       r.price_min && r.price_max ? `${money(r.price_min, r.deal)} – ${money(r.price_max, r.deal)}` : r.price_max ? `до ${money(r.price_max, r.deal)}` : "",
       ...r.districts, ...r.complexes.map((c) => `ЖК ${c}`)].filter(Boolean);
     const phones = access && r.phones && r.phones.length
-      ? r.phones.map((p) => `<a class="pill" href="tel:${esc(p)}">${esc(p)}</a><a class="pill light" href="https://wa.me/${p.replace(/\D/g, "")}" target="_blank" rel="noopener">WhatsApp</a>`).join("")
+      ? r.phones.map((p) => `<a class="pill" href="tel:${esc(p)}">${esc(p)}</a><button type="button" class="pill light" data-max="${esc(p)}">MAX</button>`).join("")
       : r.phones_count ? `<span class="rq-lock">📞 +7 ••• •••-••-•• — по подписке</span>` : "";
     return `<li class="rq-item" style="--d:${Math.min(i, 12) * 40}ms">
       <div class="rq-chips">${chips.map((c) => `<span class="chip on">${esc(c)}</span>`).join("")}</div>

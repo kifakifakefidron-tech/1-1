@@ -15,4 +15,5 @@ RUN useradd --create-home --uid 1000 strely && mkdir -p /app/data && chown strel
 USER strely
 
 EXPOSE 8090
-CMD ["uvicorn", "app.server:app", "--host", "0.0.0.0", "--port", "8090", "--workers", "2", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# WEB_WORKERS в .env — сколько процессов сайта (по числу ядер сервера: nproc); по умолчанию 2
+CMD ["sh", "-c", "exec uvicorn app.server:app --host 0.0.0.0 --port 8090 --workers ${WEB_WORKERS:-2} --proxy-headers --forwarded-allow-ips '*'"]

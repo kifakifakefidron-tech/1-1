@@ -97,21 +97,31 @@
 
   // ─── ипотека в крае (ЦБ) + ставки банков ──────────────────────────
   let mortRates = {};
+  const PROG = { secondary: "Вторичка", new: "Новостр.", family: "Семейная", ihc: "ИЖС" };
   function mortgage(m, banks) {
     const b = (banks && banks.items) || [];
-    const bankHtml = b.length ? `<div class="wm-banks">${b.slice(0, 5).map((x) => `<div><span>${esc(x.bank)}${x.program ? ` · ${esc(x.program)}` : ""}</span><b>${pct(x.rate)}</b></div>`).join("")}</div>` : "";
-    const edit = me.is_admin ? `<button type="button" class="wm-edit" id="banksEdit">${b.length ? "Изменить ставки банков" : "+ Добавить ставки банков"}</button>` : "";
-    if (!m) { put("wMort", `${head("percent", "Ипотека")}<p class="g-empty">Статистика Банка России загрузится позже.</p>${bankHtml}${edit}`, 2); return; }
-    const d = m.data;
-    mortRates = { sec: d.secondary, new: d.new, all: d.all };
-    put("wMort", `${head("percent", "Ипотека · Краснодарский край")}
-      <div class="wm-rows">
-        ${d.secondary != null ? `<div class="wm-row main"><span>Вторичка</span><b>${pct(d.secondary)}</b></div>` : ""}
-        <div class="wm-row"><span>Новостройки</span><b>${pct(d.new)}</b></div>
-        <div class="wm-row"><span>Все кредиты</span><b>${pct(d.all)}</b></div>
-      </div>
-      <p class="g-sub">Средние ставки по выданным кредитам за ${esc((d.month || "").toLowerCase())}, с учётом льготных программ</p>
-      ${bankHtml}${edit}`, 2);
+    const d = m ? m.data : null;
+    const edit = me.is_admin ? `<button type="button" class="wm-edit" id="banksEdit">${b.length ? "Изменить ставки банков" : "+ Внести ставки банков"}</button>` : "";
+    const best = (k) => { const v = b.map((x) => x[k]).filter((x) => x != null); return v.length ? Math.min(...v) : null; };
+    mortRates = { sec: best("secondary") ?? (d && d.secondary), new: best("new") ?? (d && d.new), family: best("family") };
+    const avg = d ? `<p class="g-sub wm-avg">В среднем по краю за ${esc((d.month || "").toLowerCase())} (ЦБ): вторичка ${d.secondary != null ? pct(d.secondary) : "—"},
+      новостройки ${pct(d.new)}</p>` : "";
+    if (!b.length) {   // ставок банков ещё нет — показываем средние ЦБ
+      put("wMort", `${head("percent", "Ипотека · Краснодарский край")}
+        ${d ? `<div class="wm-rows">${d.secondary != null ? `<div class="wm-row main"><span>Вторичка</span><b>${pct(d.secondary)}</b></div>` : ""}
+          <div class="wm-row"><span>Новостройки</span><b>${pct(d.new)}</b></div></div>
+          <p class="g-sub">Средние ставки по выданным кредитам за ${esc((d.month || "").toLowerCase())} (ЦБ). Ставки конкретных банков появятся, когда их внесут.</p>`
+          : `<p class="g-empty">Данные загрузятся позже.</p>`}${edit}`, 2);
+      return;
+    }
+    const cols = Object.keys(PROG).filter((k) => b.some((x) => x[k] != null));
+    const bs = best("secondary");
+    const upd = banks.ts ? new Date(banks.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "short" }) : "";
+    put("wMort", `${head("percent", "Ипотека · ставки банков", upd ? `<span class="g-sub" style="margin:0">на ${upd}</span>` : "")}
+      ${bs != null ? `<div class="wm-best"><span>Вторичка — от</span><b>${pct(bs)}</b></div>` : ""}
+      <table class="wm-t"><thead><tr><th>Банк</th>${cols.map((k) => `<th>${PROG[k]}</th>`).join("")}</tr></thead>
+        <tbody>${b.slice(0, 8).map((x) => `<tr><td>${esc(x.bank)}</td>${cols.map((k) => `<td${x[k] != null && x[k] === best(k) ? ' class="top"' : ""}>${x[k] != null ? pct(x[k]) : "—"}</td>`).join("")}</tr>`).join("")}</tbody></table>
+      ${avg}${edit}`, 2);
   }
 
   // ─── курсы ЦБ ─────────────────────────────────────────────────────
@@ -201,9 +211,9 @@
   // ─── ипотечный калькулятор ───────────────────────────────────────
   const calc = { price: 6, down: 20, rate: 11, years: 20 };
   function calcHtml() {
-    const presets = [["sec", "Вторичка"], ["new", "Новостройки"]].filter(([k]) => mortRates[k] != null)
+    const presets = [["sec", "Вторичка"], ["new", "Новостройки"], ["family", "Семейная"]].filter(([k]) => mortRates[k] != null)
       .map(([k, t]) => `<button type="button" data-rate="${mortRates[k]}">${t} ${pct(mortRates[k])}</button>`).join("")
-      + `<button type="button" data-rate="6">Семейная 6%</button>`;
+      + (mortRates.family == null ? `<button type="button" data-rate="6">Семейная 6%</button>` : "");
     put("wCalc", `${head("calc", "Ипотечный калькулятор")}
       <div class="wq-grid"><div class="wq-in">
         <div class="wq-f"><label>Цена объекта <b id="qPriceV"></b></label><input type="range" id="qPrice" min="1" max="40" step="0.1" value="${calc.price}"></div>
@@ -274,7 +284,7 @@
     put("wRef", `${head("gift", "Приведи коллегу")}
       <p class="g-sub" style="margin:0">Коллега подтвердит номер агента — вам <b>+${r.days} дней</b> доступа.${r.invited ? ` Пришли: ${r.invited}, подтвердили: ${r.rewarded}.` : ""}</p>
       <div class="wr-link"><input readonly value="${esc(link)}" aria-label="Ваша ссылка"><button type="button" class="pill light" id="refCopy">${ic("link")}</button>
-        <a class="pill light" href="https://wa.me/?text=${encodeURIComponent(text)}" target="_blank" rel="noopener">${ic("chat")}</a></div>`, 12);
+        <button type="button" class="pill light" data-share-text="${esc(text)}" aria-label="Поделиться">${ic("share")}</button></div>`, 12);
   }
   async function admin() {
     if (!me.is_admin) return;
@@ -293,12 +303,15 @@
 
   // ─── ставки банков (админ) ────────────────────────────────────────
   function bankRow(x = {}) {
-    return `<div class="bank-row"><input placeholder="Банк" value="${esc(x.bank || "")}"><input placeholder="Программа (вторичка, семейная…)" value="${esc(x.program || "")}">
-      <input placeholder="%" inputmode="decimal" value="${x.rate != null ? esc(String(x.rate).replace(".", ",")) : ""}"><button type="button" data-bank-del aria-label="Убрать">✕</button></div>`;
+    const v = (k) => (x[k] != null ? esc(String(x[k]).replace(".", ",")) : "");
+    return `<div class="bank-row"><input data-k="bank" placeholder="Банк" value="${esc(x.bank || "")}">
+      ${Object.keys(PROG).map((k) => `<input data-k="${k}" placeholder="—" inputmode="decimal" value="${v(k)}" aria-label="${PROG[k]}">`).join("")}
+      <button type="button" data-bank-del aria-label="Убрать">✕</button></div>`;
   }
   function openBanks() {
     const items = (dash.widgets.banks && dash.widgets.banks.items) || [];
-    $("banksRows").innerHTML = (items.length ? items : [{}, {}, {}]).map(bankRow).join("");
+    $("banksRows").innerHTML = `<div class="bank-row head"><span>Банк</span>${Object.values(PROG).map((t) => `<span>${t}, %</span>`).join("")}<span></span></div>`
+      + (items.length ? items : [{}, {}, {}, {}]).map(bankRow).join("");
     $("banksDlg").showModal();
   }
 
@@ -334,10 +347,11 @@
     else if (b.id === "banksAdd") $("banksRows").insertAdjacentHTML("beforeend", bankRow());
     else if (b.hasAttribute("data-bank-del")) b.closest(".bank-row").remove();
     else if (b.id === "banksSave") {
-      const items = [...document.querySelectorAll(".bank-row")].map((row) => {
-        const [bank, program, rate] = [...row.querySelectorAll("input")].map((i) => i.value.trim());
-        return { bank, program, rate };
-      }).filter((x) => x.bank && x.rate);
+      const items = [...document.querySelectorAll(".bank-row:not(.head)")].map((row) => {
+        const o = {};
+        row.querySelectorAll("input").forEach((i) => { o[i.dataset.k] = i.value.trim(); });
+        return o;
+      }).filter((x) => x.bank);
       const r = await call("/api/admin/banks", { items });
       if (!r.ok) { toast(r.data.detail || "Не получилось сохранить"); return; }
       dash.widgets.banks = r.data;

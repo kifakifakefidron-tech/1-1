@@ -223,26 +223,46 @@ def mortgage(conn: sqlite3.Connection, force: bool = False) -> dict | None:
     return _cached(conn, "mortgage", 86400, _mortgage_fetch, force)
 
 
-# ─── ставки банков (ведёт админ) ─────────────────────────────────────────
+# ─── ставки банков (ведёт админ): строка = банк, колонки = программы ────────
+PROGRAMS = {"secondary": "Вторичка", "new": "Новостройка", "family": "Семейная", "ihc": "ИЖС / дом"}
+
+
+def _rate(v) -> float | None:
+    try:
+        x = round(float(str(v).replace(",", ".").replace("%", "").strip()), 2)
+    except (TypeError, ValueError):
+        return None
+    return x if 0 < x < 50 else None
+
+
 def banks(conn: sqlite3.Connection) -> dict:
     raw = db.get_state(conn, "bank_rates")
-    return json.loads(raw) if raw else {"ts": None, "items": []}
+    data = json.loads(raw) if raw else {"ts": None, "items": []}
+    items = []
+    for x in data.get("items", []):   # старый формат {bank, program, rate} → колонки
+        if "rate" in x and not any(k in x for k in PROGRAMS):
+            prog = (x.get("program") or "").lower()
+            key = "new" if "нов" in prog else "family" if "сем" in prog else "ihc" if ("ижс" in prog or "дом" in prog) else "secondary"
+            x = {"bank": x["bank"], key: x["rate"]}
+        items.append(x)
+    return {"ts": data.get("ts"), "items": items, "programs": PROGRAMS}
 
 
 def set_banks(conn: sqlite3.Connection, items: list) -> dict:
     clean = []
-    for x in items[:30]:
+    for x in items[:40]:
         bank = str(x.get("bank") or "").strip()[:40]
-        program = str(x.get("program") or "").strip()[:60]
-        try:
-            rate = round(float(str(x.get("rate") or "").replace(",", ".")), 2)
-        except ValueError:
-            continue
-        if bank and 0 < rate < 50:
-            clean.append({"bank": bank, "program": program, "rate": rate})
+        row = {"bank": bank}
+        for k in PROGRAMS:
+            r = _rate(x.get(k))
+            if r is not None:
+                row[k] = r
+        if bank and len(row) > 1:
+            clean.append(row)
+    clean.sort(key=lambda r: (r.get("secondary") is None, r.get("secondary") or 99))   # дешёвая вторичка — выше
     data = {"ts": int(time.time()), "items": clean}
     db.set_state(conn, "bank_rates", json.dumps(data, ensure_ascii=False))
-    return data
+    return {**data, "programs": PROGRAMS}
 
 
 def all_widgets(conn: sqlite3.Connection) -> dict:

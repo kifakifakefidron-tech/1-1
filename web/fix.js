@@ -409,7 +409,7 @@
       <div class="fx-pd-acts">${d.banned
         ? `<button type="button" class="chip" data-unban-phone="${esc(d.phone)}">Вернуть номер</button>`
         : `<button type="button" class="chip danger" data-ban-phone="${esc(d.phone)}">🚫 Удалить всё от номера</button>`}
-        <a class="chip" href="https://wa.me/${d.phone.replace(/\D/g, "")}" target="_blank" rel="noopener">WhatsApp</a></div>
+        <button type="button" class="chip" data-max="${esc(d.phone)}">MAX</button></div>
       <ul class="fx-pd-list">${d.listings.map((o) => `<li class="${o.is_active ? "" : "off"}">
         ${o.photo ? `<img src="${esc(o.photo)}" alt="" loading="lazy">` : `<span class="fx-pd-noph"></span>`}
         <div><a href="/?open=${o.id}" target="_blank">${esc(o.title)}</a>

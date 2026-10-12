@@ -130,7 +130,7 @@ YOOKASSA_SECRET = os.getenv("YOOKASSA_SECRET", "").strip()
 # Наш номер, на который агент пишет код из MAX или WhatsApp (номер профиля Wappi)
 VERIFY_NUMBER = os.getenv("VERIFY_NUMBER", "").strip()
 # Через какие мессенджеры принимаем код (профили Wappi): max, wa
-VERIFY_CHANNELS = [c.strip() for c in os.getenv("VERIFY_CHANNELS", "max,wa").split(",") if c.strip()]
+VERIFY_CHANNELS = [c.strip() for c in os.getenv("VERIFY_CHANNELS", "max").split(",") if c.strip()]
 OWN_LISTING_DAYS = int(os.getenv("OWN_LISTING_DAYS", "30"))  # сколько живёт свой объект без подтверждения
 PHOTOS_DIR = os.getenv("PHOTOS_DIR", str(Path(DB_PATH).parent / "photos"))
 MAX_PHOTOS = int(os.getenv("MAX_PHOTOS", "12"))

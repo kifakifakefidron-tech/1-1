@@ -291,3 +291,18 @@
 /* клиенты: 6 этапов (без «отказа») */
 .wc-pipe.cl { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 @media (max-width: 720px) { .wc-pipe.cl { grid-template-columns: repeat(6, minmax(64px, 1fr)); } .w-clients { order: -8; } }
+
+/* ипотека: таблица ставок банков */
+.wm-best { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+.wm-best span { color: var(--ink-2); font-size: 14px; }
+.wm-best b { font: 600 34px/1 var(--display); color: var(--gold); letter-spacing: -.02em; }
+.wm-t { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.wm-t th { text-align: right; font-weight: 500; color: var(--ink-3); font-size: 11.5px; padding: 0 0 6px 6px; }
+.wm-t th:first-child, .wm-t td:first-child { text-align: left; padding-left: 0; }
+.wm-t td { text-align: right; padding: 6px 0 6px 6px; border-top: 1px solid var(--glass-line); color: var(--ink-2); white-space: nowrap; }
+.wm-t td:first-child { color: var(--ink); overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
+.wm-t td.top { color: var(--gold); font-weight: 600; }
+.wm-avg { margin-top: 10px; font-size: 12px; }
+.bank-row { grid-template-columns: 1.4fr repeat(4, .8fr) 26px !important; }
+.bank-row.head span { font-size: 11.5px; color: var(--ink-3); }
+#banksDlg { width: min(680px, calc(100vw - 24px)); }

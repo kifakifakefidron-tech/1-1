@@ -160,7 +160,7 @@
     $("dSub").textContent = c ? [data.kinds[c.kind], c.phone].filter(Boolean).join(" · ") : "Заполните, кто это и что ищет — сервис подберёт объекты";
     const digits = c && c.phone ? c.phone.replace(/\D/g, "") : "";
     $("dActs").innerHTML = digits ? `<a href="tel:${esc(c.phone)}" aria-label="Позвонить">${ic("phone")}</a>
-      <a href="https://wa.me/${digits}" target="_blank" rel="noopener" aria-label="WhatsApp">${ic("chat")}</a>` : "";
+      <button type="button" class="c-max" data-max="${esc(c.phone)}" aria-label="Написать в MAX" title="Написать в MAX">MAX</button>` : "";
     $("dItemsN").textContent = cur && cur.items.length ? cur.items.length : "";
     document.querySelectorAll('.c-tabs [data-tab]:not([data-tab="card"])').forEach((b) => { b.hidden = !cur; });
   }
@@ -204,17 +204,29 @@
     const r = await call(`/api/clients?id=${cur.client.id}`);
     if (r.ok) { cur = r.data; header(); stagesHTML(); itemsHTML(); logHTML(); tasksHTML(); }
   }
-  async function match() {
-    $("dMatchList").dataset.loaded = "1";
-    $("dMatchList").innerHTML = `<p class="g-empty">Ищем…</p>`;
-    const r = await call(`/api/clients/${cur.client.id}/match`);
-    const items = r.ok ? r.data.items : [];
-    $("dMatchList").innerHTML = items.length ? items.map((o) => `<div class="c-it">
+  let matchPage = 1;
+  function matchItem(o) {
+    return `<div class="c-it">
         ${o.photos && o.photos[0] ? `<img src="${esc(o.photos[0])}" alt="" loading="lazy">` : `<span class="noimg"></span>`}
         <div><a href="/?open=${o.id}" target="_blank">${esc(o.complex ? `ЖК ${o.complex}` : o.title)}</a>
           <small>${esc(o.title)} · ${esc(money(o.price, o.deal))} ₽${o.district ? ` · ${esc(o.district)}` : ""}</small></div>
-        <button type="button" class="pill light" data-offer="${o.id}">Предложить</button></div>`).join("")
-      : `<p class="g-empty">${wish(cur.client) ? "Сейчас подходящих нет — уточните пожелания или загляните позже." : "Укажите в карточке комнаты, бюджет или районы — и сервис подберёт объекты."}</p>`;
+        <button type="button" class="pill light" data-offer="${o.id}">Предложить</button></div>`;
+  }
+  async function match(more = false) {
+    const box = $("dMatchList");
+    box.dataset.loaded = "1";
+    matchPage = more ? matchPage + 1 : 1;
+    if (!more) box.innerHTML = `<p class="g-empty">Ищем все подходящие…</p>`;
+    const r = await call(`/api/clients/${cur.client.id}/match?page=${matchPage}`);
+    const d = r.ok ? r.data : { items: [], total: 0 };
+    const old = box.querySelector(".c-more");
+    if (old) old.remove();
+    if (!more) {
+      $("dMatchN").textContent = d.total ? `${num(Math.max(0, d.total - (d.linked || 0)))}` : "";
+      box.innerHTML = d.items.length ? "" : `<p class="g-empty">${wish(cur.client) ? "Сейчас подходящих нет — уточните пожелания или загляните позже." : "Укажите в карточке комнаты, бюджет или районы — и сервис подберёт объекты."}</p>`;
+    }
+    box.insertAdjacentHTML("beforeend", d.items.map(matchItem).join(""));
+    if (d.more) box.insertAdjacentHTML("beforeend", `<button type="button" class="pill light c-more" data-match-more>Показать ещё</button>`);
   }
 
   // ─── события ───────────────────────────────────────────────────────
@@ -240,6 +252,7 @@
       return;
     }
     if (t.id === "dMatch") { match(); return; }
+    if (t.hasAttribute("data-match-more")) { t.disabled = true; match(true); return; }
     if (t.id === "dDelete" && cur) {
       if (!confirm(`Удалить клиента «${cur.client.name}» со всей историей?`)) return;
       await call("/api/clients", { id: cur.client.id }, "DELETE");

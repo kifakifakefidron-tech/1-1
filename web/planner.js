@@ -88,7 +88,7 @@
         ${l ? `<a class="pl-obj" href="/?open=${l.id}" target="_blank">${l.photo ? `<img src="${esc(l.photo)}" alt="" loading="lazy">` : ""}
           <span><b>${esc(l.title)}</b>${esc(money(l.price, l.deal))}${l.is_active ? "" : " · снят с сайта"}<small>${esc(place(l))}</small></span></a>` : ""}
         ${e.contact_name || e.contact_phone ? `<div class="pl-contact">${esc(e.contact_name || "")}
-          ${phone ? `<a href="tel:${esc(e.contact_phone)}">${esc(e.contact_phone)}</a><a href="https://wa.me/${phone}" target="_blank" rel="noopener">WhatsApp</a>` : ""}</div>` : ""}
+          ${phone ? `<a href="tel:${esc(e.contact_phone)}">${esc(e.contact_phone)}</a><button type="button" data-max="${esc(e.contact_phone)}">MAX</button>` : ""}</div>` : ""}
         ${e.place ? `<div class="pl-place">📍 ${esc(e.place)}</div>` : ""}
         ${e.note ? `<p class="pl-note">${esc(e.note)}</p>` : ""}
         <div class="pl-ev-acts">
