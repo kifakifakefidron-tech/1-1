@@ -1,16 +1,31 @@
-/* Планер: показы, созвоны, встречи, задачи + свои заметки. API: /api/planner, /api/planner/notes.
-   Ссылки: ?add=show&listing=ID — новое событие с объектом; ?event=ID — открыть событие (из уведомления). */
+/* Планер: большой календарь месяца (события плашками в днях, перетаскивание на другой день), справа — расписание
+   выбранного дня; цвет у каждого события, фильтр по видам, поиск, счётчики месяца; свои заметки.
+   API: /api/planner (обзор; ?from&to — события и счётчики периода; POST событие / {id, done} / {id, ts}; DELETE {id}),
+   /api/planner/notes. Ссылки: ?add=show&listing=ID[&client=ID] — новое событие; ?event=ID — открыть событие; ?tab=notes. */
 (() => {
   "use strict";
   const $ = (id) => document.getElementById(id);
+  const ic = (n) => (window.ic ? window.ic(n) : "");
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const KINDS = { show: "🏠 Показ", call: "📞 Созвон", meet: "🤝 Встреча", task: "✅ Задача" };
-  const STATUSES = { call: "📞 Звонил", show: "👀 Показ", think: "🤔 Думает", refuse: "❌ Отказ", deal: "✅ Сделка" };
+  const KINDS = { show: "Показ", call: "Созвон", meet: "Встреча", task: "Задача" };
+  const KIC = { show: "home", call: "phone", meet: "users", task: "check" };
+  const KFORMS = { show: ["показ", "показа", "показов"], call: ["созвон", "созвона", "созвонов"],
+    meet: ["встреча", "встречи", "встреч"], task: ["задача", "задачи", "задач"] };
+  const KCOLOR = { show: "gold", call: "sky", meet: "violet", task: "lime" };   // цвет по умолчанию — по виду события
+  const COLORS = { gold: "Золото", teal: "Бирюза", sky: "Небо", violet: "Сирень", coral: "Коралл", rose: "Роза", lime: "Лайм", slate: "Графит" };
+  const STATUSES = { call: "Звонил", show: "Показ", think: "Думает", refuse: "Отказ", deal: "Сделка" };
   const MONTHS = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
-  const WD = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
-  let data = null, month = new Date(), pickedDay = "", dayEvents = null, editing = null, kind = "show";
-  month.setDate(1);
+  const MONTHS_G = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+  let data = null, monthEvents = [], stats = null, editing = null, kind = "show", color = "", colorTouched = false;
+  let month = new Date(); month.setDate(1); month.setHours(0, 0, 0, 0);
+  const pad = (n) => String(n).padStart(2, "0");
+  const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  let selDay = dayKey(new Date());
+  let hidden = new Set();
+  try { hidden = new Set(JSON.parse(localStorage.getItem("plHidden") || "[]")); } catch { /* */ }
+  let q = "";
+  const objects = new Map();   // объекты, которые видели (избранное + найденные поиском)
 
   async function call(url, body, method) {
     const opts = { credentials: "same-origin", method: method || (body !== undefined ? "POST" : "GET") };
@@ -28,151 +43,265 @@
     clearTimeout(toast.timer);
     toast.timer = setTimeout(() => { try { t.hidePopover(); } catch { t.hidden = true; } }, ms);
   }
-  const pad = (n) => String(n).padStart(2, "0");
-  const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  const time = (ts) => new Date(ts * 1000).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  const hm = (ts) => new Date(ts * 1000).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  const dur = (m) => (m < 60 ? `${m} мин` : m % 60 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : `${m / 60} ч`);
   const money = (p, deal) => (!p ? "" : deal === "rent" ? `${Math.round(p / 1000).toLocaleString("ru-RU")} тыс. ₽/мес`
     : p >= 1e6 ? `${(p / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} млн ₽` : `${p.toLocaleString("ru-RU")} ₽`);
-  function dayTitle(d) {
-    const t = new Date(); t.setHours(0, 0, 0, 0);
-    const x = new Date(d); x.setHours(0, 0, 0, 0);
-    const diff = Math.round((x - t) / 86400000);
-    const name = x.toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
-    return diff === 0 ? `Сегодня, ${name}` : diff === 1 ? `Завтра, ${name}` : diff === -1 ? `Вчера, ${name}` : name[0].toUpperCase() + name.slice(1);
-  }
   const place = (l) => [l.complex && `ЖК ${l.complex}`, l.street && `ул. ${l.street}${l.house ? ", " + l.house : ""}`, l.district]
     .filter(Boolean).join(" · ");
+  const colorOf = (e) => e.color || KCOLOR[e.kind] || "gold";
+  const fromKey = (k) => new Date(`${k}T00:00`);
+  function dayName(k) {
+    const d = fromKey(k), t = new Date(); t.setHours(0, 0, 0, 0);
+    const diff = Math.round((d - t) / 86400000);
+    const s = `${d.getDate()} ${MONTHS_G[d.getMonth()]}, ${d.toLocaleDateString("ru-RU", { weekday: "long" })}`;
+    return diff === 0 ? `Сегодня · ${s}` : diff === 1 ? `Завтра · ${s}` : diff === -1 ? `Вчера · ${s}` : s;
+  }
+  const matches = (e) => {
+    if (hidden.has(e.kind)) return false;
+    if (!q) return true;
+    const hay = [e.title, e.contact_name, e.contact_phone, e.place, e.note, e.listing && e.listing.title,
+      e.listing && e.listing.complex].filter(Boolean).join(" ").toLowerCase();
+    return q.toLowerCase().split(/\s+/).every((w) => hay.includes(w));
+  };
 
   // ─── загрузка ───
+  function gridRange() {
+    const start = new Date(month); start.setDate(1 - ((month.getDay() + 6) % 7));
+    const end = new Date(start); end.setDate(start.getDate() + 42);
+    return [start, end];
+  }
+  async function loadMonth() {
+    const [a, b] = gridRange();
+    const r = await call(`/api/planner?from=${Math.floor(a / 1000)}&to=${Math.floor(b / 1000)}`);
+    monthEvents = r.ok ? r.data.events : [];
+    const m0 = Math.floor(month / 1000), m1 = Math.floor(new Date(month.getFullYear(), month.getMonth() + 1, 1) / 1000);
+    stats = { total: 0, done: 0, by_kind: {} };
+    for (const e of monthEvents) {
+      if (e.ts < m0 || e.ts >= m1) continue;
+      stats.total++; stats.done += e.done ? 1 : 0; stats.by_kind[e.kind] = (stats.by_kind[e.kind] || 0) + 1;
+    }
+    monthEvents.forEach((e) => { if (e.listing) objects.set(e.listing.id, e.listing); });
+  }
   async function load() {
     const r = await call("/api/planner");
     if (r.status === 401) { $("plGuest").hidden = false; return false; }
     data = r.data;
+    (data.favorites || []).forEach((l) => objects.set(l.id, l));
     $("plApp").hidden = false;
-    renderMonth(); renderAgenda(); renderNotes();
+    await loadMonth();
+    renderAll();
+    greet();
     return true;
   }
+  async function greet() {
+    let name = "";
+    try { const m = await call("/api/me"); name = (m.data.me && (m.data.me.name || "").split(" ")[0]) || ""; } catch { /* */ }
+    const h = new Date().getHours();
+    const hello = h < 5 ? "Доброй ночи" : h < 12 ? "Доброе утро" : h < 18 ? "Добрый день" : "Добрый вечер";
+    $("pvHello").textContent = `${hello}${name ? ", " + name : ""}!`;
+    const today = dayKey(new Date()), now = Date.now() / 1000;
+    const list = monthEvents.filter((e) => dayKey(new Date(e.ts * 1000)) === today && !e.done);
+    const next = list.find((e) => e.ts + (e.dur_min || 60) * 60 > now);
+    $("pvSub").textContent = !list.length ? "Сегодня свободно — самое время запланировать показы."
+      : `Сегодня ${list.length} ${plural(list.length, "дело", "дела", "дел")}${next ? ` · ближайшее в ${hm(next.ts)} — ${next.title}` : ""}`;
+  }
+  const plural = (n, one, few, many) => {
+    const m10 = n % 10, m100 = n % 100;
+    return m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many;
+  };
 
-  // ─── календарь на месяц ───
-  function renderMonth() {
-    $("plMonthName").textContent = `${MONTHS[month.getMonth()]} ${month.getFullYear()}`;
-    const first = new Date(month); const shift = (first.getDay() + 6) % 7;
-    const start = new Date(first); start.setDate(1 - shift);
+  // ─── шапка календаря: месяц/год, счётчики, фильтр видов ───
+  function renderHead() {
+    const ms = $("pvMonth"), ys = $("pvYear");
+    ms.innerHTML = MONTHS.map((m, i) => `<option value="${i}"${i === month.getMonth() ? " selected" : ""}>${m[0].toUpperCase() + m.slice(1)}</option>`).join("");
+    const y0 = new Date().getFullYear();
+    ys.innerHTML = [y0 - 1, y0, y0 + 1, y0 + 2].map((y) => `<option value="${y}"${y === month.getFullYear() ? " selected" : ""}>${y}</option>`).join("");
+    const s = stats || { total: 0, done: 0, by_kind: {} };
+    $("pvStats").innerHTML = s.total
+      ? `<span><b>${s.total}</b> ${plural(s.total, "событие", "события", "событий")}</span>`
+        + Object.keys(KINDS).filter((k) => s.by_kind[k]).map((k) => `<span class="c-${KCOLOR[k]}"><i></i>${s.by_kind[k]} ${plural(s.by_kind[k], ...KFORMS[k])}</span>`).join("")
+        + (s.done ? `<span class="ok">${ic("check")}${s.done} сделано</span>` : "")
+      : `<span class="muted">В этом месяце пока пусто</span>`;
+    $("pvKinds").innerHTML = Object.entries(KINDS).map(([k, t]) => `<button type="button" class="pv-k c-${KCOLOR[k]}${hidden.has(k) ? " off" : ""}"
+      data-kind-toggle="${k}" aria-pressed="${!hidden.has(k)}"><i></i>${t}</button>`).join("");
+  }
+
+  // ─── сетка месяца ───
+  function pill(e) {
+    return `<button type="button" class="pv-pill c-${colorOf(e)}${e.done ? " done" : ""}" data-ev="${e.id}" draggable="true"
+      title="${esc(hm(e.ts) + " · " + e.title)}"><i></i><span><b>${hm(e.ts)}</b> ${esc(e.title)}</span></button>`;
+  }
+  function renderGrid() {
+    const [start] = gridRange();
     const today = dayKey(new Date());
-    let html = WD.map((w) => `<span class="pl-wd">${w}</span>`).join("");
+    const byDay = {};
+    for (const e of monthEvents) if (matches(e)) (byDay[dayKey(new Date(e.ts * 1000))] ||= []).push(e);
+    let html = "";
     for (let i = 0; i < 42; i++) {
       const d = new Date(start); d.setDate(start.getDate() + i);
-      const k = dayKey(d);
-      const kinds = (data.days[k] || []);
-      const dots = [...new Set(kinds)].slice(0, 4).map((x) => `<i class="k-${x}"></i>`).join("");
-      html += `<button type="button" class="pl-day${d.getMonth() !== month.getMonth() ? " out" : ""}${k === today ? " today" : ""}${k === pickedDay ? " on" : ""}"
-        data-day="${k}"><span>${d.getDate()}</span><em>${dots}</em>${kinds.length > 1 ? `<small>${kinds.length}</small>` : ""}</button>`;
+      const k = dayKey(d), list = (byDay[k] || []).sort((a, b) => a.ts - b.ts);
+      const cls = ["pv-cell", d.getMonth() !== month.getMonth() ? "out" : "", k === today ? "today" : "", k === selDay ? "on" : "",
+        i % 7 >= 5 ? "we" : "", list.length ? "has" : "", d < fromKey(today) ? "past" : ""].filter(Boolean).join(" ");
+      html += `<div class="${cls}" data-day="${k}" role="button" tabindex="0" aria-label="${esc(dayName(k))}${list.length ? `, событий: ${list.length}` : ""}">
+        <span class="pv-num">${d.getDate()}</span>
+        <div class="pv-pills">${list.slice(0, 3).map(pill).join("")}${list.length > 3 ? `<span class="pv-more">ещё ${list.length - 3}</span>` : ""}</div>
+        <span class="pv-dots">${list.slice(0, 5).map((e) => `<i class="c-${colorOf(e)}"></i>`).join("")}</span>
+        <button type="button" class="pv-plus" data-add-day="${k}" aria-label="Добавить в этот день" tabindex="-1">${ic("plus")}</button></div>`;
     }
     $("plGrid").innerHTML = html;
   }
 
-  // ─── список дел ───
-  function evHTML(e, showDate) {
+  // ─── расписание дня (справа) ───
+  function card(e, withDate) {
     const l = e.listing;
-    const phone = e.contact_phone ? e.contact_phone.replace(/\D/g, "") : "";
-    const sub = [l ? l.title : "", e.contact_name, !l && e.place ? e.place : ""].filter(Boolean).join(" · ");
-    return `<article class="pl-ev k-${e.kind}${e.done ? " done" : ""}" data-ev="${e.id}">
-      <button type="button" class="pl-ev-done${e.done ? " on" : ""}" data-done="${e.id}" title="${e.done ? "Вернуть в планы" : "Готово"}" aria-label="Готово">✓</button>
-      <div class="pl-ev-row" data-ev-toggle="${e.id}">
-        <div class="pl-ev-time"><b>${time(e.ts)}</b>${showDate ? `<small>${new Date(e.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</small>` : ""}</div>
-        <div class="pl-ev-sum"><h3><span class="pl-ev-ic">${(KINDS[e.kind] || "•").split(" ")[0]}</span>${esc(e.title)}${e.remind_min && !e.done ? ` <span class="pl-bell" title="Напомним заранее">🔔</span>` : ""}</h3>
-          ${sub ? `<small>${esc(sub)}</small>` : ""}</div>
-        <span class="pl-ev-arrow"></span>
+    const end = e.ts + (e.dur_min || 60) * 60;
+    const phone = e.contact_phone || "";
+    const sub = [KINDS[e.kind], l ? (l.complex ? `ЖК ${l.complex}` : l.title) : "", !l && e.place ? e.place : ""].filter(Boolean).join(" · ");
+    return `<article class="pv-ev c-${colorOf(e)}${e.done ? " done" : ""}" data-ev-open="${e.id}" draggable="true" data-ev="${e.id}">
+      <span class="pv-ev-bar"></span>
+      <div class="pv-ev-top">
+        <h3>${esc(e.title)}</h3>
+        <button type="button" class="pv-check${e.done ? " on" : ""}" data-done="${e.id}" aria-label="${e.done ? "Вернуть в планы" : "Отметить сделанным"}"
+          title="${e.done ? "Вернуть в планы" : "Сделано"}">${ic("check")}</button>
       </div>
-      <div class="pl-ev-main">
-        ${l ? `<a class="pl-obj" href="/?open=${l.id}" target="_blank">${l.photo ? `<img src="${esc(l.photo)}" alt="" loading="lazy">` : ""}
-          <span><b>${esc(l.title)}</b>${esc(money(l.price, l.deal))}${l.is_active ? "" : " · снят с сайта"}<small>${esc(place(l))}</small></span></a>` : ""}
-        ${e.contact_name || e.contact_phone ? `<div class="pl-contact">${esc(e.contact_name || "")}
-          ${phone ? `<a href="tel:${esc(e.contact_phone)}">${esc(e.contact_phone)}</a><button type="button" data-max="${esc(e.contact_phone)}">MAX</button>` : ""}</div>` : ""}
-        ${e.place ? `<div class="pl-place">📍 ${esc(e.place)}</div>` : ""}
-        ${e.note ? `<p class="pl-note">${esc(e.note)}</p>` : ""}
-        <div class="pl-ev-acts">
-          <button type="button" class="chip" data-edit="${e.id}">✎ Изменить</button>
-          <a class="chip" href="/api/planner/${e.id}.ics" title="Скачать в календарь телефона">📅 В календарь телефона</a>
-        </div>
-      </div></article>`;
+      ${sub ? `<p class="pv-ev-sub">${esc(sub)}</p>` : ""}
+      <div class="pv-ev-meta"><span>${ic("clock")}${withDate ? `${new Date(e.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}, ` : ""}${hm(e.ts)} – ${hm(end)}</span>
+        <span>${dur(e.dur_min || 60)}${e.remind_min && !e.done ? ` · ${ic("bell")}` : ""}</span></div>
+      ${l ? `<a class="pv-obj" href="/?open=${l.id}">${l.photo ? `<img src="${esc(l.photo)}" alt="" loading="lazy">` : `<span class="pv-obj-ph">${ic("home")}</span>`}
+        <span><b>${esc(money(l.price, l.deal) || l.title)}</b><small>${esc(place(l) || l.title)}${l.is_active ? "" : " · снят с сайта"}</small></span></a>` : ""}
+      ${e.contact_name || phone ? `<div class="pv-contact"><span class="pv-ava">${esc((e.contact_name || "?").trim()[0] || "?").toUpperCase()}</span>
+        <span class="pv-cname">${esc(e.contact_name || phone)}</span>
+        ${phone ? `<a class="pv-mini" href="tel:${esc(phone)}" aria-label="Позвонить">${ic("phone")}</a><button type="button" class="pv-mini max" data-max="${esc(phone)}">MAX</button>` : ""}</div>` : ""}
+      ${e.note ? `<p class="pv-ev-note">${esc(e.note)}</p>` : ""}
+    </article>`;
   }
-  function groupByDay(list) {
-    const out = [];
-    for (const e of list) {
-      const k = dayKey(new Date(e.ts * 1000));
-      if (!out.length || out[out.length - 1].k !== k) out.push({ k, ts: e.ts, items: [] });
-      out[out.length - 1].items.push(e);
-    }
-    return out;
-  }
-  function renderAgenda() {
-    const empty = `<div class="pl-empty"><b>Пока ничего не запланировано</b>Нажмите «+ Показ» или «+ Созвон» вверху —
-      или «📅 Запланировать» в окне объекта из избранного.</div>`;
-    if (pickedDay) {
-      const list = dayEvents || [];
-      $("plAgendaTitle").textContent = dayTitle(new Date(`${pickedDay}T12:00`));
-      $("plAllDays").hidden = false;
-      $("plAgenda").innerHTML = list.length ? list.map((e) => evHTML(e)).join("")
-        : `<div class="pl-empty">В этот день ничего нет. <button type="button" class="link" data-add-day="${pickedDay}">+ Добавить</button></div>`;
+  function renderDay() {
+    const list = $("plAgenda");
+    $("pvDayAdd").dataset.addDay = selDay;
+    if (q) {   // поиск — все найденные события месяца
+      const found = monthEvents.filter(matches).sort((a, b) => a.ts - b.ts);
+      $("pvDayTitle").textContent = `Найдено: ${found.length}`;
+      $("pvDayName").textContent = `«${q}» · ${MONTHS[month.getMonth()]}`;
+      list.innerHTML = found.map((e) => card(e, true)).join("") || `<div class="pv-empty">${ic("search")}<b>Ничего не нашлось</b>Попробуйте другое слово или другой месяц.</div>`;
       return;
     }
-    $("plAgendaTitle").textContent = "Ближайшее";
-    $("plAllDays").hidden = true;
+    $("pvDayTitle").textContent = "Запланировано";
+    $("pvDayName").textContent = dayName(selDay);
+    const today = dayKey(new Date());
+    const items = monthEvents.filter((e) => dayKey(new Date(e.ts * 1000)) === selDay && matches(e)).sort((a, b) => a.ts - b.ts);
     let html = "";
-    if (data.overdue.length) {
-      html += `<h3 class="pl-day-h overdue">Просрочено · ${data.overdue.length}</h3>` + data.overdue.map((e) => evHTML(e, true)).join("");
+    if (selDay === today && data.overdue.length) {
+      html += `<details class="pv-overdue"><summary>${ic("alert")}Просрочено · ${data.overdue.length}</summary>${data.overdue.map((e) => card(e, true)).join("")}</details>`;
     }
-    for (const g of groupByDay(data.upcoming)) html += `<h3 class="pl-day-h">${esc(dayTitle(new Date(g.ts * 1000)))}</h3>` + g.items.map((e) => evHTML(e)).join("");
-    $("plAgenda").innerHTML = html || empty;
-  }
-  async function pickDay(k) {
-    pickedDay = pickedDay === k ? "" : k;
-    renderMonth();
-    if (pickedDay) {
-      const from = Math.floor(new Date(`${k}T00:00`).getTime() / 1000);
-      const r = await call(`/api/planner?from=${from}&to=${from + 86400}`);
-      dayEvents = r.ok ? r.data.events : [];
+    const now = Date.now() / 1000;
+    let lastHour = "", nowShown = selDay !== today;
+    for (const e of items) {
+      if (!nowShown && e.ts > now) { html += `<div class="pv-now"><span>Сейчас ${hm(now)}</span></div>`; nowShown = true; }
+      const h = `${pad(new Date(e.ts * 1000).getHours())}:00`;
+      if (h !== lastHour) { html += `<div class="pv-hour">${h}</div>`; lastHour = h; }
+      html += card(e);
     }
-    renderAgenda();
+    if (items.length && !nowShown) html += `<div class="pv-now"><span>Сейчас ${hm(now)}</span></div>`;
+    if (!items.length) {
+      html += `<div class="pv-empty">${ic("calendar")}<b>${selDay < today ? "В этот день ничего не было" : "Свободный день"}</b>
+        ${selDay >= today ? `Запланируйте показ или созвон:<div class="pv-empty-acts">
+          <button type="button" class="chip" data-add="show" data-on-day="${selDay}">${ic("home")}Показ</button>
+          <button type="button" class="chip" data-add="call" data-on-day="${selDay}">${ic("phone")}Созвон</button>
+          <button type="button" class="chip" data-add="task" data-on-day="${selDay}">${ic("check")}Задача</button></div>` : ""}</div>`;
+    }
+    list.innerHTML = html;
   }
-  const allEvents = () => [...data.overdue, ...data.upcoming, ...(dayEvents || [])];
+  function renderAll() { renderHead(); renderGrid(); renderDay(); }
+
+  async function goMonth(d) {
+    month = new Date(d.getFullYear(), d.getMonth(), 1);
+    $("plGrid").classList.add("fade");
+    await loadMonth();
+    renderAll();
+    requestAnimationFrame(() => $("plGrid").classList.remove("fade"));
+  }
+  async function pickDay(k, scroll) {
+    selDay = k;
+    const d = fromKey(k);
+    if (d.getMonth() !== month.getMonth() || d.getFullYear() !== month.getFullYear()) await goMonth(d);
+    else { renderGrid(); renderDay(); }
+    if (scroll && innerWidth < 900) $("pvDay").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  const allEvents = () => [...data.overdue, ...data.upcoming, ...monthEvents];
+  const findEv = (id) => allEvents().find((x) => x.id === id);
+
+  // ─── перетаскивание события на другой день ───
+  let dragId = 0;
+  document.addEventListener("dragstart", (e) => {
+    const t = e.target.closest && e.target.closest("[data-ev]");
+    if (!t) return;
+    dragId = Number(t.dataset.ev);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(dragId));
+    document.body.classList.add("pv-dragging");
+  });
+  document.addEventListener("dragend", () => { dragId = 0; document.body.classList.remove("pv-dragging"); document.querySelectorAll(".pv-cell.drop").forEach((c) => c.classList.remove("drop")); });
+  document.addEventListener("dragover", (e) => {
+    const c = dragId && e.target.closest(".pv-cell");
+    if (!c) return;
+    e.preventDefault();
+    document.querySelectorAll(".pv-cell.drop").forEach((x) => x !== c && x.classList.remove("drop"));
+    c.classList.add("drop");
+  });
+  document.addEventListener("drop", async (e) => {
+    const c = dragId && e.target.closest(".pv-cell");
+    if (!c) return;
+    e.preventDefault();
+    const ev = findEv(dragId);
+    if (!ev) return;
+    const old = new Date(ev.ts * 1000), nd = fromKey(c.dataset.day);
+    nd.setHours(old.getHours(), old.getMinutes(), 0, 0);
+    const ts = Math.floor(nd / 1000);
+    if (ts === ev.ts) return;
+    const r = await call("/api/planner", { id: ev.id, ts });
+    if (!r.ok) { toast(r.data.detail || "Не получилось перенести"); return; }
+    toast(`Перенесено на ${nd.getDate()} ${MONTHS_G[nd.getMonth()]}, ${hm(ts)}`);
+    await reload(c.dataset.day);
+  });
 
   // ─── окно события ───
   function fillListings(selected) {
     const fav = data.favorites || [];
-    $("evListing").innerHTML = `<option value="">— без объекта —</option>` + fav.map((l) =>
-      `<option value="${l.id}"${l.id === selected ? " selected" : ""}>${esc(l.title)}${l.price ? " · " + esc(money(l.price, l.deal)) : ""}${l.complex ? " · ЖК " + esc(l.complex) : ""}${l.status ? " · " + STATUSES[l.status] : ""}</option>`).join("")
-      + (fav.length ? "" : `<option value="" disabled>В избранном пока пусто — добавьте объект ♡</option>`);
+    const sel = $("evListing");
+    const extra = selected && !fav.some((l) => l.id === selected) && objects.get(selected) ? [objects.get(selected)] : [];
+    sel.innerHTML = `<option value="">Без объекта</option>` + [...extra, ...fav].map((l) =>
+      `<option value="${l.id}"${l.id === selected ? " selected" : ""}>${esc(l.complex ? `ЖК ${l.complex}` : l.title)}${l.price ? " · " + esc(money(l.price, l.deal)) : ""}${l.status ? " · " + STATUSES[l.status] : ""}</option>`).join("");
     showObj();
   }
   function showObj() {
-    const id = Number($("evListing").value);
-    const l = (data.favorites || []).find((x) => x.id === id);
-    $("evObj").innerHTML = l ? `<a class="pl-obj" href="/?open=${l.id}" target="_blank">${l.photo ? `<img src="${esc(l.photo)}" alt="">` : ""}
-      <span><b>${esc(l.title)}</b>${esc(money(l.price, l.deal))}<small>${esc(place(l))}</small></span></a>` : "";
+    const l = objects.get(Number($("evListing").value));
+    $("evObj").innerHTML = l ? `<a class="pv-obj" href="/?open=${l.id}">${l.photo ? `<img src="${esc(l.photo)}" alt="">` : `<span class="pv-obj-ph">${ic("home")}</span>`}
+      <span><b>${esc(l.title)}</b><small>${esc(money(l.price, l.deal))}${place(l) ? " · " + esc(place(l)) : ""}</small></span></a>` : "";
+  }
+  async function findObjects(text) {   // поиск любого объекта на 1+1 — для окна события
+    const [a, b] = await Promise.all(["sale", "rent"].map((deal) =>
+      call(`/api/listings?deal=${deal}&size=8&q=${encodeURIComponent(text)}`)));
+    const items = [...(a.ok ? a.data.items : []), ...(b.ok ? b.data.items : [])].slice(0, 12);
+    items.forEach((l) => objects.set(l.id, { ...l, photo: (l.photos || [])[0] }));
+    return items.map((l) => ({ value: l.id, label: `${l.complex ? `ЖК ${l.complex}` : l.title} · ${money(l.price, l.deal)}` }));
   }
   function renderKinds() {
-    const KIC = { show: "home", call: "phone", meet: "users", task: "check" };
     $("evKinds").innerHTML = Object.entries(KINDS).map(([k, v]) => `<button type="button" role="radio" aria-checked="${k === kind}"
-      class="ev-kind${k === kind ? " on" : ""}" data-kind="${k}">${window.ic ? window.ic(KIC[k]) : ""}<span>${esc(v.split(" ").slice(1).join(" "))}</span></button>`).join("");
+      class="ev-kind c-${KCOLOR[k]}${k === kind ? " on" : ""}" data-kind="${k}">${ic(KIC[k])}<span>${esc(v)}</span></button>`).join("");
   }
-  // свои элементы выбора вместо браузерных (pickers.js) — один раз
+  function renderColors() {
+    const cur = color || KCOLOR[kind];
+    $("evColors").innerHTML = Object.entries(COLORS).map(([c, t]) => `<button type="button" role="radio" aria-checked="${c === cur}"
+      class="ev-color c-${c}${c === cur ? " on" : ""}" data-color-pick="${c}" title="${t}" aria-label="${t}">${ic("check")}</button>`).join("");
+  }
   function upgradeForm() {
     const f = $("evForm");
-    if (!window.Pick || f.dataset.pk) return;
-    f.dataset.pk = "1";
+    if (!window.Pick || f.dataset.up) return;
+    f.dataset.up = "1";
     Pick.date(f.date); Pick.time(f.time, { from: 7, to: 22 });
     Pick.chips(f.dur_min); Pick.chips(f.remind_min);
-    Pick.select($("evListing"));
-  }
-  function quick() {
-    const t = new Date();
-    const days = [["Сегодня", 0], ["Завтра", 1], ["Послезавтра", 2]].map(([l, n]) => {
-      const d = new Date(t); d.setDate(t.getDate() + n); return `<button type="button" class="chip" data-qdate="${dayKey(d)}">${l}</button>`;
-    });
-    const hours = ["10:00", "12:00", "15:00", "18:00"].map((h) => `<button type="button" class="chip" data-qtime="${h}">${h}</button>`);
-    $("evQuick").innerHTML = days.join("") + hours.join("");
+    Pick.select($("evListing"), { remote: findObjects, remoteTitle: "Объекты на 1+1", searchPlaceholder: "Избранное или любой: ЖК, улица, «2к фмр»" });
   }
   const CLIENT_ID = Number(new URLSearchParams(location.search).get("client")) || null;
 
@@ -182,8 +311,10 @@
     f.reset();
     $("evErr").hidden = true;
     kind = ev ? ev.kind : preset.kind || "show";
-    renderKinds(); quick();
-    $("evTitle").textContent = ev ? "Изменить событие" : "Новое событие";
+    color = ev ? ev.color || "" : "";
+    colorTouched = !!(ev && ev.color);
+    renderKinds(); renderColors();
+    $("evTitle").textContent = ev ? "Событие" : "Новое событие";
     $("evDel").hidden = !ev;
     const base = ev ? new Date(ev.ts * 1000) : (() => {
       const d = preset.day ? new Date(`${preset.day}T10:00`) : new Date(Date.now() + 3600 * 1000);
@@ -198,10 +329,9 @@
       f.remind_min.value = String(ev.remind_min ?? 60);
     }
     let lid = ev ? ev.listing_id : preset.listing || null;
-    if (lid && !(data.favorites || []).some((x) => x.id === lid)) {   // объект не из избранного (пришли из окна объекта)
+    if (lid && !objects.has(lid)) {
       const r = await call(`/api/listings/${lid}`);
-      if (r.ok) data.favorites = [{ ...r.data, photo: (r.data.photos || [])[0] }, ...(data.favorites || [])];
-      else lid = null;
+      if (r.ok) objects.set(lid, { ...r.data, photo: (r.data.photos || [])[0] }); else lid = null;
     }
     fillListings(lid);
     if (!ev && lid) await prefillFromListing(lid);
@@ -210,12 +340,11 @@
     const dlg = $("evDlg");
     if (!dlg.open) dlg.showModal();
   }
-  // Объект выбран — подставить заголовок, место и номер агента (если номер виден по подписке)
   async function prefillFromListing(id) {
     const f = $("evForm");
-    const l = (data.favorites || []).find((x) => x.id === id);
+    const l = objects.get(id);
     if (!l) return;
-    if (!f.title.value) f.title.value = `${KINDS[kind].split(" ").slice(1).join(" ")}: ${l.title}`;
+    if (!f.title.value) f.title.value = `${KINDS[kind]}: ${l.complex ? `ЖК ${l.complex}` : l.title}`;
     if (!f.place.value) f.place.value = place(l);
     if (!f.contact_phone.value) {
       const r = await call(`/api/listings/${id}`);
@@ -228,20 +357,21 @@
     const ts = Math.floor(new Date(`${f.date.value}T${f.time.value || "10:00"}`).getTime() / 1000);
     const body = { kind, title: f.title.value, ts, dur_min: Number(f.dur_min.value), listing_id: Number(f.listing_id.value) || null,
       contact_name: f.contact_name.value, contact_phone: f.contact_phone.value, place: f.place.value, note: f.note.value,
-      remind_min: Number(f.remind_min.value), done: editing ? editing.done : 0,
-      client_id: editing ? editing.client_id : CLIENT_ID };   // событие по клиенту CRM (/planner?add=show&client=ID)
+      remind_min: Number(f.remind_min.value), done: editing ? editing.done : 0, color: colorTouched ? color : "",
+      client_id: editing ? editing.client_id : CLIENT_ID };
     if (editing) body.id = editing.id;
     const r = await call("/api/planner", body);
     if (!r.ok) { $("evErr").textContent = r.data.detail || "Не получилось сохранить."; $("evErr").hidden = false; return; }
     $("evDlg").close();
-    toast(editing ? "✓ Сохранено" : `✓ Запланировано на ${new Date(ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}`, 3000);
-    await reload();
+    toast(editing ? "Сохранено" : `Запланировано на ${new Date(ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}`, 3000);
+    await reload(dayKey(new Date(ts * 1000)));
   }
-  async function reload() {
+  async function reload(day) {
     const r = await call("/api/planner");
-    if (r.ok) data = r.data;
-    if (pickedDay) { const k = pickedDay; pickedDay = ""; await pickDay(k); } else { renderMonth(); renderAgenda(); }
-    renderNotes();
+    if (r.ok) { data = r.data; (data.favorites || []).forEach((l) => objects.set(l.id, l)); }
+    if (day) { selDay = day; const d = fromKey(day); month = new Date(d.getFullYear(), d.getMonth(), 1); }
+    await loadMonth();
+    renderAll(); renderNotes(); greet();
   }
 
   // ─── заметки ───
@@ -249,12 +379,12 @@
     $("plNoteList").innerHTML = data.notes.map((n) => `<div class="pl-n${n.pinned ? " pinned" : ""} c-${n.color || "none"}" data-note="${n.id}">
       <textarea rows="4" maxlength="5000" data-note-text="${n.id}">${esc(n.text)}</textarea>
       <div class="pl-n-acts">
-        <button type="button" class="pl-n-pin${n.pinned ? " on" : ""}" data-pin="${n.id}" title="${n.pinned ? "Открепить" : "Закрепить сверху"}">📌</button>
+        <button type="button" class="pl-n-pin${n.pinned ? " on" : ""}" data-pin="${n.id}" title="${n.pinned ? "Открепить" : "Закрепить сверху"}">${ic("pushpin")}</button>
         ${["", "yellow", "green", "red", "blue"].map((c) => `<button type="button" class="pl-n-color c-${c || "none"}${(n.color || "") === c ? " on" : ""}" data-color="${c}" data-id="${n.id}" aria-label="Цвет"></button>`).join("")}
         <small>${new Date(n.updated * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</small>
-        <button type="button" class="pl-n-del" data-ndel="${n.id}" title="Удалить">🗑</button>
+        <button type="button" class="pl-n-del" data-ndel="${n.id}" title="Удалить">${ic("trash")}</button>
       </div></div>`).join("") || `<p class="note">Своих заметок пока нет.</p>`;
-    $("plObjNotes").innerHTML = data.object_notes.map((n) => `<li><a href="/?open=${n.listing_id}" target="_blank">${esc(n.title)}</a>
+    $("plObjNotes").innerHTML = data.object_notes.map((n) => `<li><a href="/?open=${n.listing_id}">${esc(n.title)}</a>
       ${n.status ? `<span class="chip on">${STATUSES[n.status] || ""}</span>` : ""}${n.is_active ? "" : ` <small>снят с сайта</small>`}
       ${n.text ? `<p>${esc(n.text)}</p>` : ""}</li>`).join("") || `<li class="note">Пока нет. В окне объекта можно поставить статус и написать заметку.</li>`;
   }
@@ -267,36 +397,50 @@
     if (r.data.note && r.data.note.deleted) data.notes = data.notes.filter((x) => x.id !== id);
   }
 
-  // ─── события ───
+  // ─── нажатия ───
+  let clickTimer = 0;
   document.addEventListener("click", async (e) => {
-    const tog = e.target.closest("[data-ev-toggle]");
-    if (tog && !e.target.closest("button, a")) { tog.closest(".pl-ev").classList.toggle("open"); return; }
-    const t = e.target.closest("button, [data-day]");
+    const t = e.target.closest("button, [data-day], [data-ev-open]");
     if (!t) return;
-    if (t.dataset.add) { openEvent(null, { kind: t.dataset.add, day: pickedDay || "" }); return; }
-    if (t.dataset.addDay) { openEvent(null, { day: t.dataset.addDay }); return; }
-    if (t.dataset.month) { month.setMonth(month.getMonth() + Number(t.dataset.month)); renderMonth(); return; }
-    if (t.dataset.day) { pickDay(t.dataset.day); return; }
-    if (t.id === "plAllDays") { pickedDay = ""; dayEvents = null; renderMonth(); renderAgenda(); return; }
+    if (t.dataset.add) { openEvent(null, { kind: t.dataset.add, day: t.dataset.onDay || selDay }); return; }
+    if (t.dataset.addDay !== undefined && t.dataset.addDay) { openEvent(null, { day: t.dataset.addDay }); return; }
+    if (t.dataset.done) {
+      const ev = findEv(Number(t.dataset.done));
+      const done = !(ev && ev.done);
+      t.classList.toggle("on", done);
+      t.closest(".pv-ev") && t.closest(".pv-ev").classList.toggle("done", done);
+      await call("/api/planner", { id: Number(t.dataset.done), done });
+      toast(done ? "Сделано — отлично!" : "Снова в планах", 1600);
+      await reload(selDay); return;
+    }
+    if (t.dataset.ev && t.classList.contains("pv-pill")) { openEvent(findEv(Number(t.dataset.ev))); return; }
+    if (t.dataset.evOpen && !e.target.closest("a, button")) { openEvent(findEv(Number(t.dataset.evOpen))); return; }
+    if (t.dataset.month) { goMonth(new Date(month.getFullYear(), month.getMonth() + Number(t.dataset.month), 1)); return; }
+    if (t.dataset.dayStep) { const d = fromKey(selDay); d.setDate(d.getDate() + Number(t.dataset.dayStep)); pickDay(dayKey(d)); return; }
+    if (t.id === "pvToday") { pickDay(dayKey(new Date())); return; }
+    if (t.dataset.day) {   // один щелчок — выбрать день, двойной — новое событие в этот день
+      const k = t.dataset.day;
+      if (clickTimer && t.dataset.day === clickTimer.k) { clearTimeout(clickTimer.id); clickTimer = 0; openEvent(null, { day: k }); return; }
+      clickTimer = { k, id: setTimeout(() => { clickTimer = 0; }, 320) };
+      pickDay(k, true); return;
+    }
+    if (t.dataset.kindToggle) {
+      const k = t.dataset.kindToggle;
+      if (hidden.has(k)) hidden.delete(k); else hidden.add(k);
+      try { localStorage.setItem("plHidden", JSON.stringify([...hidden])); } catch { /* */ }
+      renderAll(); return;
+    }
     if (t.dataset.tab) {
       document.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b === t));
-      $("plCal").hidden = t.dataset.tab !== "cal"; $("plNotes").hidden = t.dataset.tab !== "notes"; return;
+      $("plCal").hidden = t.dataset.tab !== "cal"; $("plNotes").hidden = t.dataset.tab !== "notes";
+      $("pvKinds").hidden = t.dataset.tab !== "cal"; return;
     }
-    if (t.dataset.kind) { kind = t.dataset.kind; renderKinds(); return; }
-    if (t.dataset.qdate) { $("evForm").date.value = t.dataset.qdate; return; }
-    if (t.dataset.qtime) { $("evForm").time.value = t.dataset.qtime; return; }
-    if (t.dataset.edit) { openEvent(allEvents().find((x) => x.id === Number(t.dataset.edit))); return; }
-    if (t.dataset.done) {
-      const ev = allEvents().find((x) => x.id === Number(t.dataset.done));
-      const done = !(ev && ev.done);
-      await call("/api/planner", { id: Number(t.dataset.done), done });
-      toast(done ? "✓ Готово" : "Снова в планах", 1600);
-      await reload(); return;
-    }
+    if (t.dataset.kind) { kind = t.dataset.kind; renderKinds(); if (!colorTouched) renderColors(); return; }
+    if (t.dataset.colorPick) { color = t.dataset.colorPick; colorTouched = true; renderColors(); return; }
     if (t.id === "evDel" && editing) {
       if (!confirm("Удалить событие?")) return;
       await call("/api/planner", { id: editing.id }, "DELETE");
-      $("evDlg").close(); toast("Удалено"); await reload(); return;
+      $("evDlg").close(); toast("Удалено"); await reload(selDay); return;
     }
     if (t.hasAttribute("data-close")) { t.closest("dialog").close(); return; }
     if (t.id === "plPhone") {
@@ -306,8 +450,8 @@
       $("phoneDlg").showModal(); return;
     }
     if (t.id === "plFeedCopy") {
-      try { await navigator.clipboard.writeText($("plFeed").value); toast("✓ Ссылка скопирована"); }
-      catch { $("plFeed").select(); document.execCommand("copy"); toast("✓ Ссылка скопирована"); }
+      try { await navigator.clipboard.writeText($("plFeed").value); toast("Ссылка скопирована"); }
+      catch { $("plFeed").select(); document.execCommand("copy"); toast("Ссылка скопирована"); }
       return;
     }
     if (t.dataset.pin) { const n = data.notes.find((x) => x.id === Number(t.dataset.pin)); await saveNote(n.id, { pinned: n.pinned ? 0 : 1 }); await reload(); return; }
@@ -317,6 +461,13 @@
       await saveNote(Number(t.dataset.ndel), { text: "" }); renderNotes(); return;
     }
   });
+  document.addEventListener("keydown", (e) => {   // день с клавиатуры: Enter — выбрать
+    if (e.key === "Enter" && e.target.classList && e.target.classList.contains("pv-cell")) pickDay(e.target.dataset.day);
+  });
+  $("pvMonth").addEventListener("change", (e) => goMonth(new Date(month.getFullYear(), Number(e.target.value), 1)));
+  $("pvYear").addEventListener("change", (e) => goMonth(new Date(Number(e.target.value), month.getMonth(), 1)));
+  let qTimer = 0;
+  $("pvQ").addEventListener("input", (e) => { clearTimeout(qTimer); qTimer = setTimeout(() => { q = e.target.value.trim(); renderGrid(); renderDay(); }, 200); });
   $("evListing").addEventListener("change", () => { showObj(); prefillFromListing(Number($("evListing").value)); });
   $("evForm").addEventListener("submit", saveEvent);
   let noteTimer = 0;
@@ -325,7 +476,7 @@
     if (!id) return;
     clearTimeout(noteTimer);
     const text = e.target.value;
-    if (!text.trim()) return;   // пустую заметку удаляем только кнопкой 🗑
+    if (!text.trim()) return;   // пустую заметку удаляем только кнопкой
     noteTimer = setTimeout(() => saveNote(id, { text }), 700);
   });
   $("plNoteNew").addEventListener("submit", async (e) => {
@@ -338,9 +489,11 @@
     data.notes.unshift(r.data.note);
     renderNotes();
   });
+  document.querySelectorAll("[data-ic]").forEach((el) => { el.outerHTML = ic(el.dataset.ic); });
 
   load().then(async (ok) => {
     if (!ok) return;
+    renderNotes();
     const sp = new URLSearchParams(location.search);
     if (sp.get("add")) {
       await openEvent(null, { kind: KINDS[sp.get("add")] ? sp.get("add") : "show", listing: Number(sp.get("listing")) || null });
@@ -348,20 +501,18 @@
         const r = await call(`/api/clients?id=${CLIENT_ID}`);
         if (r.ok) { const f = $("evForm"); f.contact_name.value = r.data.client.name || ""; if (r.data.client.phone) f.contact_phone.value = r.data.client.phone; }
       }
-    }
-    else if (sp.get("event")) {
+    } else if (sp.get("event")) {
       const id = Number(sp.get("event"));
-      let ev = allEvents().find((x) => x.id === id);
-      if (!ev) {   // старое событие — ищем за 2 месяца назад
+      let ev = findEv(id);
+      if (!ev) {
         const now = Math.floor(Date.now() / 1000);
         const r = await call(`/api/planner?from=${now - 62 * 86400}&to=${now + 400 * 86400}`);
         ev = r.ok ? r.data.events.find((x) => x.id === id) : null;
       }
       if (ev) {
-        const d = new Date(ev.ts * 1000); month = new Date(d.getFullYear(), d.getMonth(), 1);
-        await pickDay(dayKey(d));
-        const card = document.querySelector(`[data-ev="${id}"]`);
-        if (card) { card.classList.add("hl", "open"); card.scrollIntoView({ block: "center" }); }
+        await pickDay(dayKey(new Date(ev.ts * 1000)));
+        const c = document.querySelector(`.pv-ev[data-ev="${id}"]`);
+        if (c) { c.classList.add("hl"); c.scrollIntoView({ block: "center", behavior: "smooth" }); }
       }
     }
     if (sp.get("tab") === "notes") document.querySelector('[data-tab="notes"]').click();

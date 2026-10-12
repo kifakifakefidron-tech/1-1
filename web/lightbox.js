@@ -63,6 +63,9 @@
     box.classList.toggle("single", urls.length < 2);
     box.querySelector(".lb-thumbs").innerHTML = urls.length > 1
       ? urls.map((u, k) => `<button type="button" data-i="${k}" aria-label="Фото ${k + 1}"><img src="${u.replace(/"/g, "&quot;")}" alt="" loading="lazy"></button>`).join("") : "";
+    // внутри открытого окна (dialog) — иначе браузер не даёт нажимать стрелки и крестик
+    const host = [...document.querySelectorAll("dialog[open]")].filter((d) => { try { return d.matches(":modal"); } catch { return true; } }).pop() || document.body;
+    if (box.parentElement !== host) { try { box.hidePopover(); } catch { /* */ } host.appendChild(box); }
     try { box.showPopover(); } catch { /* старый браузер — просто поверх страницы */ }
     box.classList.add("on");
     document.documentElement.classList.add("lb-open");

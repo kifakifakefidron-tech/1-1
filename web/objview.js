@@ -22,7 +22,8 @@
     box.setAttribute("popover", "manual");   // верхний слой — поверх уже открытых окон страницы (dialog)
     box.innerHTML = `<span class="ov-spin" aria-hidden="true"></span>
       <iframe title="Объект" src="/?open=${id}&embed=1" allow="clipboard-write; web-share"></iframe>`;
-    document.body.appendChild(box);
+    const host = [...document.querySelectorAll("dialog[open]")].filter((d) => { try { return d.matches(":modal"); } catch { return true; } }).pop() || document.body;   // ссылка внутри открытого окна (карточка клиента) — окно объекта кладём в него, иначе оно «за окном» и не нажимается
+    host.appendChild(box);
     try { box.showPopover(); } catch { box.classList.add("open"); }
     const fr = box.querySelector("iframe");
     fr.addEventListener("load", () => fr.focus());   // показываем, когда окно объекта само скажет «готово»

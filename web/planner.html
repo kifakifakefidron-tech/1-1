@@ -12,9 +12,9 @@
 <link rel="stylesheet" href="/static/style.css?v=25">
 <link rel="stylesheet" href="/static/motion.css?v=34">
 <link rel="stylesheet" href="/static/doc.css?v=2">
-<link rel="stylesheet" href="/static/planner.css?v=4">
+<link rel="stylesheet" href="/static/planner.css?v=5">
 <link rel="stylesheet" href="/static/theme.css?v=14">
-<link rel="stylesheet" href="/static/glass.css?v=11">
+<link rel="stylesheet" href="/static/glass.css?v=12">
 </head>
 <body>
 <header class="nav"><div class="nav-in">
@@ -23,36 +23,60 @@
   <nav class="nav-links doc-nav"><a class="nav-link" href="/?fav=1">Избранное</a><a class="nav-link on" href="/planner">Планер</a><a class="nav-link" href="/picks">Подборки</a><a class="nav-link" href="/requests">Запросы</a><a class="nav-link" href="/market">Аналитика</a><a class="nav-link" href="/cabinet">Кабинет</a><a class="nav-cta" href="/">← К поиску</a></nav>
 </div></header>
 
-<main class="doc pl">
-  <div class="pl-title"><h1>Планер</h1>
-    <div class="pl-title-acts"><button type="button" class="icon-btn pl-phone" id="plPhone" title="В календарь телефона" aria-label="В календарь телефона">📲</button>
-      <button type="button" class="pill pl-new" data-add="show">+ Новое событие</button></div></div>
+<main class="pv">
+  <header class="pv-head">
+    <div class="pv-hello"><h1 id="pvHello">Планер</h1><p id="pvSub">Показы, созвоны, встречи и задачи — в одном календаре</p></div>
+    <div class="pv-tools">
+      <label class="pv-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="pvQ" type="search" placeholder="Найти событие, клиента, адрес" autocomplete="off" aria-label="Найти событие"></label>
+      <button type="button" class="pv-round" id="plPhone" title="В календарь телефона" aria-label="В календарь телефона"><i data-ic="device"></i></button>
+      <button type="button" class="pill pv-add" data-add="show"><i data-ic="plus"></i>Событие</button>
+    </div>
+  </header>
   <div id="plGuest" class="note-box" hidden>Планер доступен после входа. <a href="/?login=1">Войти</a></div>
 
   <div id="plApp" hidden>
-    <div class="seg-group pl-tabs">
-      <button type="button" class="seg on" data-tab="cal">Календарь</button>
-      <button type="button" class="seg" data-tab="notes">Заметки</button>
+    <div class="pv-bar">
+      <div class="seg-group pl-tabs">
+        <button type="button" class="seg on" data-tab="cal">Календарь</button>
+        <button type="button" class="seg" data-tab="notes">Заметки</button>
+      </div>
+      <div class="pv-filter" id="pvKinds" role="group" aria-label="Показывать"></div>
     </div>
 
-    <section id="plCal" class="pl-cal">
-      <div class="pl-month">
-        <div class="pl-month-head">
-          <button type="button" class="icon-btn" data-month="-1" aria-label="Предыдущий месяц">‹</button>
-          <b id="plMonthName"></b>
-          <button type="button" class="icon-btn" data-month="1" aria-label="Следующий месяц">›</button>
+    <section id="plCal" class="pv-board">
+      <div class="pv-cal">
+        <div class="pv-cal-h">
+          <div class="pv-when">
+            <select id="pvMonth" aria-label="Месяц"></select>
+            <select id="pvYear" aria-label="Год"></select>
+          </div>
+          <div class="pv-stats" id="pvStats"></div>
+          <div class="pv-nav">
+            <button type="button" class="pv-today" id="pvToday">Сегодня</button>
+            <button type="button" class="pv-round sm" data-month="-1" aria-label="Предыдущий месяц"><i data-ic="chevron-left"></i></button>
+            <button type="button" class="pv-round sm" data-month="1" aria-label="Следующий месяц"><i data-ic="chevron"></i></button>
+          </div>
         </div>
-        <div class="pl-grid" id="plGrid"></div>
-        <p class="note pl-legend"><i class="k-show"></i>показ <i class="k-call"></i>созвон <i class="k-meet"></i>встреча <i class="k-task"></i>задача</p>
+        <div class="pv-wd"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
+        <div class="pv-grid" id="plGrid"></div>
+        <p class="pv-hint">Нажмите на день — справа его расписание. Дважды — новое событие. Событие можно перетащить на другой день.</p>
       </div>
-      <div class="pl-agenda">
-        <div class="pl-agenda-head"><h2 id="plAgendaTitle">Ближайшее</h2>
-          <button type="button" class="chip" id="plAllDays" hidden>← Всё ближайшее</button></div>
-        <div id="plAgenda"></div>
-      </div>
+
+      <aside class="pv-day" id="pvDay">
+        <div class="pv-day-h">
+          <div><b id="pvDayTitle">Запланировано</b><small id="pvDayName"></small></div>
+          <div class="pv-day-nav">
+            <button type="button" class="pv-round sm" data-add-day="" id="pvDayAdd" aria-label="Добавить в этот день"><i data-ic="plus"></i></button>
+            <button type="button" class="pv-round sm" data-day-step="-1" aria-label="Предыдущий день"><i data-ic="chevron-left"></i></button>
+            <button type="button" class="pv-round sm" data-day-step="1" aria-label="Следующий день"><i data-ic="chevron"></i></button>
+          </div>
+        </div>
+        <div id="plAgenda" class="pv-list"></div>
+      </aside>
     </section>
 
-    <section id="plNotes" hidden>
+    <section id="plNotes" class="pv-notes" hidden>
       <form id="plNoteNew" class="pl-note-new">
         <textarea id="plNoteText" rows="2" maxlength="5000" placeholder="Новая заметка: что сделать, кому перезвонить, идеи…"></textarea>
         <button type="submit" class="pill">Добавить</button>
@@ -75,13 +99,17 @@
       <p class="ev-lbl">Когда</p>
       <div class="ev-when"><input type="date" name="date" required><input type="time" name="time" required step="300"></div>
       <p class="ev-lbl sm">Длится</p>
-      <select name="dur_min">
+      <select name="dur_min" data-pick="chips">
         <option value="15">15 мин</option><option value="30">30 мин</option><option value="60" selected>1 час</option>
         <option value="90">1,5 часа</option><option value="120">2 часа</option></select>
       <div class="chips pl-quick" id="evQuick" hidden></div>
     </section>
     <section class="ev-sec">
-      <p class="ev-lbl">Объект из избранного</p>
+      <p class="ev-lbl">Цвет</p>
+      <div class="ev-colors" id="evColors" role="radiogroup" aria-label="Цвет события"></div>
+    </section>
+    <section class="ev-sec">
+      <p class="ev-lbl">Объект <small>— из избранного или найдите любой на 1+1</small></p>
       <select name="listing_id" id="evListing"></select>
       <div id="evObj"></div>
     </section>
@@ -93,7 +121,7 @@
     </section>
     <section class="ev-sec">
       <p class="ev-lbl">Напомнить <small>— в «Уведомлениях» на сайте и на почту</small></p>
-      <select name="remind_min">
+      <select name="remind_min" data-pick="chips">
         <option value="0">не надо</option><option value="15">за 15 мин</option><option value="30">за 30 мин</option>
         <option value="60" selected>за час</option><option value="180">за 3 часа</option><option value="1440">за день</option></select>
     </section>
@@ -125,9 +153,9 @@
 <script src="/static/icons.js?v=4"></script>
 <script src="/static/max.js?v=1"></script>
 <script src="/static/rail.js?v=2"></script>
-<script src="/static/pickers.js?v=1"></script>
-<script src="/static/planner.js?v=5"></script>
-<script src="/static/objview.js?v=1"></script>
+<script src="/static/pickers.js?v=5"></script>
+<script src="/static/planner.js?v=7"></script>
+<script src="/static/objview.js?v=2"></script>
 <script src="/static/bell.js?v=4"></script>
 </body>
 </html>

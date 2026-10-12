@@ -18,6 +18,7 @@ from . import config
 
 KINDS = {"show": "🏠 Показ", "call": "📞 Созвон", "meet": "🤝 Встреча", "task": "✅ Задача"}
 REMINDS = (0, 15, 30, 60, 180, 1440)
+COLORS = ("gold", "teal", "sky", "violet", "coral", "rose", "lime", "slate")   # цвет события (пусто — по виду)
 MSK = timezone(timedelta(hours=3))
 MAX_EVENTS = 5000
 MAX_NOTES = 500
@@ -70,7 +71,7 @@ def overview(conn: sqlite3.Connection, user_id: int, now: int | None = None) -> 
     return {"overdue": overdue, "upcoming": upcoming, "days": days, "notes": notes(conn, user_id),
             "favorites": favorites(conn, user_id),
             "object_notes": object_notes(conn, user_id), "now": now, "today": t0,
-            "feed": feed_url(user_id), "kinds": KINDS}
+            "feed": feed_url(user_id), "kinds": KINDS, "colors": COLORS}
 
 
 def favorites(conn: sqlite3.Connection, user_id: int) -> list[dict]:
@@ -129,7 +130,8 @@ def save_event(conn: sqlite3.Connection, user_id: int, body: dict) -> dict:
         client_id = None
     if client_id and not conn.execute("SELECT 1 FROM clients WHERE id = ? AND user_id = ?", (client_id, user_id)).fetchone():
         client_id = None
-    vals = dict(kind=kind, title=title, ts=ts, dur_min=dur, listing_id=listing_id, client_id=client_id,
+    color = body.get("color") if body.get("color") in COLORS else None
+    vals = dict(kind=kind, title=title, ts=ts, dur_min=dur, listing_id=listing_id, client_id=client_id, color=color,
                 contact_name=str(body.get("contact_name") or "").strip()[:100],
                 contact_phone=_clean_phone(str(body.get("contact_phone") or "")),
                 place=str(body.get("place") or "").strip()[:200],
@@ -145,16 +147,16 @@ def save_event(conn: sqlite3.Connection, user_id: int, body: dict) -> dict:
         # перенесли время или напоминание — напомнить заново
         reminded = "0" if (old["ts"] != ts or old["remind_min"] != remind) else "reminded"
         conn.execute(f"""UPDATE planner_events SET kind=:kind, title=:title, ts=:ts, dur_min=:dur_min, listing_id=:listing_id,
-                            client_id=:client_id,
+                            client_id=:client_id, color=:color,
                             contact_name=:contact_name, contact_phone=:contact_phone, place=:place, note=:note,
                             remind_min=:remind_min, done=:done, reminded={reminded}, updated=:now
                          WHERE id=:id AND user_id=:uid""", {**vals, "now": now, "id": int(eid), "uid": user_id})
     else:
         if conn.execute("SELECT COUNT(*) FROM planner_events WHERE user_id = ?", (user_id,)).fetchone()[0] >= MAX_EVENTS:
             return {"error": "Слишком много событий — удалите старые."}
-        cur = conn.execute("""INSERT INTO planner_events (user_id, kind, title, ts, dur_min, listing_id, client_id, contact_name,
+        cur = conn.execute("""INSERT INTO planner_events (user_id, kind, title, ts, dur_min, listing_id, client_id, color, contact_name,
                                   contact_phone, place, note, remind_min, done, reminded, created, updated)
-                              VALUES (:uid, :kind, :title, :ts, :dur_min, :listing_id, :client_id, :contact_name, :contact_phone,
+                              VALUES (:uid, :kind, :title, :ts, :dur_min, :listing_id, :client_id, :color, :contact_name, :contact_phone,
                                   :place, :note, :remind_min, :done, 0, :now, :now)""", {**vals, "uid": user_id, "now": now})
         eid = cur.lastrowid
         if client_id:   # в историю клиента
@@ -165,6 +167,27 @@ def save_event(conn: sqlite3.Connection, user_id: int, body: dict) -> dict:
     conn.commit()
     r = conn.execute(f"{_SELECT} WHERE e.id = ?", (int(eid),)).fetchone()
     return _event_row(r)
+
+
+def move(conn: sqlite3.Connection, user_id: int, eid: int, ts: int) -> bool:
+    """Перетащили событие на другой день/время — напомнить заново."""
+    if not 1_600_000_000 < ts < 4_000_000_000:
+        return False
+    cur = conn.execute("UPDATE planner_events SET ts = ?, reminded = 0, updated = ? WHERE id = ? AND user_id = ?",
+                       (ts, int(time.time()), eid, user_id))
+    conn.commit()
+    return cur.rowcount == 1
+
+
+def month_stats(conn: sqlite3.Connection, user_id: int, frm: int, to: int) -> dict:
+    """Сколько каких событий в периоде и сколько уже сделано — для шапки календаря."""
+    out = {"total": 0, "done": 0, "by_kind": {}}
+    for kind, n, done in conn.execute("""SELECT kind, COUNT(*), SUM(done) FROM planner_events
+                                         WHERE user_id = ? AND ts >= ? AND ts < ? GROUP BY kind""", (user_id, frm, to)):
+        out["by_kind"][kind] = n
+        out["total"] += n
+        out["done"] += done or 0
+    return out
 
 
 def set_done(conn: sqlite3.Connection, user_id: int, eid: int, done: bool) -> None:

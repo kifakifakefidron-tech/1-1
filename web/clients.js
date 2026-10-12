@@ -241,6 +241,9 @@
     $("fKind").innerHTML = Object.entries(data.kinds).map(([k, t]) => `<button type="button" class="chip${form.kind === k ? " on" : ""}" data-fkind="${k}">${esc(t)}</button>`).join("");
     $("fRooms").innerHTML = ROOMS.map(([k, t]) => `<button type="button" class="chip${form.rooms.includes(k) ? " on" : ""}" data-froom="${k}">${t}</button>`).join("");
     $("fDistricts").innerHTML = form.districts.map((d) => `<button type="button" class="chip on" data-fdel="${esc(d)}">${esc(d)} ✕</button>`).join("");
+    const sel = $("fDistrictAdd");   // отмеченные в списке = чипы (убрали чип — снялась галочка)
+    [...sel.options].forEach((o) => { o.selected = form.districts.includes(o.value); });
+    sel.dispatchEvent(new Event("pk-refresh"));
   }
   function header() {
     const c = cur ? cur.client : null;
@@ -390,12 +393,10 @@
   $("cDlg").addEventListener("close", () => history.replaceState(null, "", "/clients"));
   let qTimer = 0;
   $("cQ").addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(load, 300); });
-  // район: свой список с поиском (pickers.js) — выбрали → чип, список снова «+ добавить район»
+  // районы: список с галочками и поиском (pickers.js) — можно отметить сразу несколько
   $("fDistrictAdd").addEventListener("change", (e) => {
-    const v = e.target.value;
-    if (v && !form.districts.includes(v)) { form.districts.push(v); renderFormChips(); }
-    e.target.value = "";
-    e.target.dispatchEvent(new Event("pk-refresh"));
+    form.districts = [...e.target.selectedOptions].map((o) => o.value).filter(Boolean);
+    renderFormChips();
   });
 
   document.querySelectorAll("[data-ic]").forEach((el) => { el.outerHTML = ic(el.dataset.ic); });
@@ -406,10 +407,10 @@
     else if (sp.has("new")) open(null);
     const m = await call("/api/meta");
     districts = (m.ok && m.data.districts) || [];
-    $("fDistrictAdd").innerHTML = `<option value="">+ добавить район</option>` + districts.map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join("");
+    $("fDistrictAdd").innerHTML = districts.map((d) => `<option value="${esc(d)}"${form.districts.includes(d) ? " selected" : ""}>${esc(d)}</option>`).join("");
     if (window.Pick) {
       const f = $("pCard");
-      Pick.select($("fDistrictAdd"));
+      Pick.multi($("fDistrictAdd"), { placeholder: "Выбрать районы" });
       Pick.date(f.next_day, { clearable: true, placeholder: "Дата" });
       Pick.time(f.next_time, { placeholder: "Время" });
     }

@@ -897,13 +897,18 @@ def api_planner(request: Request, body: dict | None = None):
         if set(body) == {"id", "done"}:
             planner.set_done(conn, user["id"], int(body["id"]), bool(body["done"]))
             return JSONResponse({"ok": True})
+        if set(body) == {"id", "ts"}:   # перетащили на другой день
+            ok = planner.move(conn, user["id"], int(body["id"]), int(body["ts"]))
+            return JSONResponse({"ok": True}) if ok else _err("Не получилось перенести.")
         if _too_often(request, "planner", 300, 3600):
             return _err("Слишком часто — попробуйте позже.", 429)
         res = planner.save_event(conn, user["id"], body)
         return _err(res["error"]) if "error" in res else JSONResponse({"event": res})
     q = request.query_params
     if q.get("from") and q.get("to"):
-        return JSONResponse({"events": planner.events(conn, user["id"], int(q["from"]), int(q["to"]))})
+        frm, to = int(q["from"]), int(q["to"])
+        return JSONResponse({"events": planner.events(conn, user["id"], frm, to),
+                             "stats": planner.month_stats(conn, user["id"], frm, to)})
     return JSONResponse(planner.overview(conn, user["id"]))
 
 
