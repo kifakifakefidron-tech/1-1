@@ -337,6 +337,7 @@ def complex_key(name: str | None) -> str | None:
 _LINE_TAIL = re.compile(r"\s+(?:очередь|оч|литер|лит|корпус|корп|секция|дом)(?:\s+\d+\w*)*$|\s+\d+\s*(?:очередь|оч)$")
 _HOUSE_RE = re.compile(r"^(?P<name>.+?)\s+(?P<house>\d{1,3}(?:\s*[а-я](?![а-я\d]))?(?:\s*(?:к|корп|лит)\s*\d+)?(?:\s+\d{1,3}(?:\s*к\s*\d+)?)?)$")
 _STREET_MARK = re.compile(r"^(?:ул|улица|пр кт|проспект|пер|переулок|проезд|бульвар|б р|шоссе)\s+")
+_STREET_POST_MARK = re.compile(r"\s+(?:улица|ул|переулок|пер|проезд|пр д|проспект|пр кт|бульвар|б р|шоссе|тупик)(?=\s+\d|$)")
 _SETTLEMENT_RE = re.compile(
     r"(?:^|[\s,(])(?i:ст-ца|ст\.|станица|х\.|хут\.|хутор|пос\.|посёлок|поселок|пгт|аул|село|с\.|п\.|г\.|город)\s*"
     r"(?P<name>[А-ЯЁ][А-ЯЁа-яё]+(?:[ -][А-ЯЁ][А-ЯЁа-яё]+)?)")
@@ -370,20 +371,25 @@ def _complex_from_line(w: str) -> Complex | None:
 
 
 def _street_from_line(w: str, raw: str) -> tuple[str, str | None] | None:
+    marked = bool(_STREET_MARK.match(w))
     w = _STREET_MARK.sub("", w)
+    # тип улицы после названия: «Ленинский переулок 14», «Ростовское шоссе 30»
+    w2 = _STREET_POST_MARK.sub("", w)
+    marked, w = marked or w2 != w, w2
     m = _HOUSE_RE.match(w)
     name, house = (m.group("name"), m.group("house")) if m else (w, None)
     if len(name) < 4 or name in _SKIP_LINE:
         return None
     known = any(name == key for key, _ in _streets())
-    # Улицы нет в справочнике, но строка — явно «Название + дом»: «Краеведа Соловьева 2к2», «5я Дорожная 68к1»
+    # Улицы нет в справочнике, но строка — явно «Название + дом»: «Краеведа Соловьева 2к2», «5я Дорожная 68к1»;
+    # или прямо написано «улица/переулок…» и есть номер дома
     looks = not (set(name.split()) & _NOT_STREET) and (
-        (bool(house) and bool(_STREET_LIKE.match(name))) or bool(_STREET_SURNAME.match(name)))
+        (bool(house) and (bool(_STREET_LIKE.match(name)) or marked)) or bool(_STREET_SURNAME.match(name)))
     if not (known or looks):
         return None
     # Номер дома — как написано в строке («62/1», «2к2», «1/4к21»), без числа из названия («5я Дорожная»)
     hm = re.search(r"(?<![\w])\d+(?:/\d+)?(?:\s*[а-яА-Я](?![а-яА-Я]))?(?:\s*/?\s*(?:к|корп\.?|лит\.?)\s*\d+)?\s*$", raw.strip())
-    pretty = re.sub(r"^(\d+)\s*[яЯ]\s+", r"-я ", pretty_name(name))   # «5Я Дорожная» → «5-я Дорожная»
+    pretty = re.sub(r"^(\d+)\s*[яЯ]\s+", r"\1-я ", pretty_name(name))   # «5Я Дорожная» → «5-я Дорожная»
     return pretty, (hm.group(0).replace(" ", "") if house and hm else None)
 
 

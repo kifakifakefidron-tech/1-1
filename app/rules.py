@@ -173,6 +173,9 @@ _AREA_LABEL_RE = re.compile(
     re.IGNORECASE,
 )
 _LAND_RE = re.compile(r"(?P<num>\d+(?:[.,]\d+)?)\s*(?P<unit>сот\w*|сот\.?|га\b|гектар\w*)", re.IGNORECASE)
+_AREA_SPLIT_RE = re.compile(
+    r"(?<![\d/])(?P<num>\d+(?:[.,]\d+)?)\s*/\s*\d+(?:[.,]\d+)?(?:\s*/\s*\d+(?:[.,]\d+)?)?\s*(?:м2|м²|кв\.?\s?м\.?|квм|м\b)",
+    re.IGNORECASE)
 
 
 def extract_areas(text: str) -> tuple[float | None, float | None]:
@@ -188,6 +191,12 @@ def extract_areas(text: str) -> tuple[float | None, float | None]:
             land = v
             break
     area = None
+    # «Площадь: 38/20/12м» — общая/жилая/кухня: берём первую (общую), а не кухню перед «м»
+    m = _AREA_SPLIT_RE.search(text)
+    if m:
+        v = _to_number(m.group("num"))
+        if v and 8 <= v <= 20_000:
+            return v, land
     for m in _AREA_RE.finditer(text):
         v = _to_number(m.group("num"))
         if v and 8 <= v <= 20_000:
@@ -342,10 +351,31 @@ _STREET_RE = re.compile(
 )
 
 
+# Тип улицы ПОСЛЕ названия: «Ленинский переулок 14», «Виноградная улица, 133», «Ростовское шоссе 30».
+# Название — 1–3 слова с большой буквы, последнее — как у названий улиц (Ленинский, Красная, Тургенева…)
+_STREET_POST_RE = re.compile(
+    r"(?:^|(?<=[\s,:;(]))(?P<name>[А-ЯЁ][а-яё]+(?:[\s-][А-ЯЁа-яё][а-яё]+){0,2}?)\s+"
+    r"(?:улица|ул\.?|переулок|пер\.?|проезд|пр-д|проспект|пр-кт|бульвар|б-р|шоссе|тупик)(?![а-яё])"
+    r"(?:[ \t]*,?[ \t]*(?:д\.?[ \t]*)?(?P<house>\d{1,4}(?:[ \t]?[а-яА-Я](?![а-яё\d]))?(?:/\d{1,3})?(?:[ \t]?к(?:орп)?\.?[ \t]?\d)?))?",
+)
+_POST_NAME_END = re.compile(r"(?:ая|яя|ой|ий|ый|ое|ее|ин|ын|ов|ев|ёв|ова|ева|ёва|ина|ына|ского|цкого|ых|их|ого|его|ая)$", re.IGNORECASE)
+
+
+def _street_postfix(text: str) -> tuple[str | None, str | None]:
+    for m in _STREET_POST_RE.finditer(text):
+        name = re.sub(r"\s+", " ", m.group("name")).strip(" .-")
+        if len(name) >= 3 and _POST_NAME_END.search(name.split()[-1]):
+            return name, (m.group("house") or "").replace(" ", "") or None
+    return None, None
+
+
 def extract_street(text: str) -> tuple[str | None, str | None]:
     m = _STREET_RE.search(text)
-    if not m:
-        return None, None
+    pm = next((x for x in _STREET_POST_RE.finditer(text)
+               if _POST_NAME_END.search(x.group("name").split()[-1])), None)
+    # «Ленинский переулок 14 к2»: тип улицы стоит после названия — иначе «переулок 14 к2» прочитался бы как улица «14 к»
+    if not m or (pm and pm.start() < m.start()):
+        return _street_postfix(text)
     name = re.sub(r"\s+", " ", m.group("name")).strip(" .-")
     house = (m.group("house") or "").replace(" ", "") or None
     if len(name) < 3:
