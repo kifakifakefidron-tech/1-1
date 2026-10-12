@@ -65,6 +65,13 @@ def tick(conn) -> dict:
         widgets.refresh(conn)   # погода, ставка ЦБ, курсы, ипотека — заранее, чтобы кабинет открывался мгновенно
     except Exception:  # noqa: BLE001
         log.exception("виджеты кабинета не обновились")
+    try:
+        from . import bankrates
+        if bankrates.remind(conn):   # ставки банков устарели — напомнить админу
+            notify.alert(conn, "banks", "Ставки банков в кабинете устарели — вставьте свежий обзор ставок в «Ставки банков».",
+                         every_s=6 * 86400)
+    except Exception:  # noqa: BLE001
+        log.exception("напоминание о ставках не отправилось")
     synced = feed.maybe_sync(conn)
     if synced:
         stats["feed"] = synced

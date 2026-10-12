@@ -112,3 +112,21 @@ def parse_message(text: str, retries: int = 2) -> dict:
     global failures
     failures += 1
     raise LLMError(str(last))
+
+
+def ask_json(system: str, user: str, max_tokens: int = 3000) -> dict:
+    """Один запрос с ответом-JSON (для вспомогательных задач: разобрать вставленный текст и т. п.). Бросает LLMError."""
+    body = {"model": config.DEEPSEEK_MODEL, "temperature": 0, "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"},
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user[:20000]}]}
+    req = urllib.request.Request(config.DEEPSEEK_URL, data=json.dumps(body).encode(), method="POST",
+                                 headers={"Authorization": f"Bearer {config.DEEPSEEK_API_KEY}", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read())
+        parsed = json.loads(data["choices"][0]["message"]["content"])
+    except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError) as e:
+        raise LLMError(str(e)) from e
+    if not isinstance(parsed, dict):
+        raise LLMError("ответ не объект")
+    return parsed

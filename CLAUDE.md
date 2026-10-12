@@ -351,6 +351,13 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   ПОДБОРКА для клиента — без «1+1» и ссылок на сервис (иконка house.svg, referrer no-referrer); PICK_DOMAIN в .env —
   нейтральный адрес: ссылки picks.url, с основного адреса 301, Caddy на нём отдаёт только /c, /api/c, нужные /static и фото.
   Вход помнится SESSION_DAYS (180) после ПОСЛЕДНЕГО захода (кука продлевается в /api/me). Запросы покупателей — только админу.
+- 13.10 (вечер): СТАВКИ БАНКОВ — app/bankrates.py: banki.ru/Домклик не копируем, сайт ДОМ.РФ закрыт защитой от роботов
+  (servicepipe JS-challenge) — НЕ обходим. Поэтому админ вставляет текст обзора (ДОМ.РФ «Обзор ставок по ипотеке в банках»
+  или страницы банков) в окно «Ставки банков» → POST /api/admin/banks {text, program} → parse (правила: таблица с шапкой
+  программ, фразы «Банк 15,9%», несколько банков в строке; рефинансирование пропускаем; DeepSeek llm.ask_json — если ключ
+  есть) → строки подсвечены, админ проверяет и сохраняет (merge поверх прежних). Старше 7 дней — worker bankrates.remind:
+  уведомление админам (/cabinet?banks=1 открывает окно) + notify.alert; в блоке ипотеки дата «на …» краснеет.
+  Средние по краю (ЦБ) — как раньше, сами. Счётчик «клиентов ждут звонка» убран из меню и кабинета (решение Артёма).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
@@ -359,7 +366,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 169 тестов
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 172 теста
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены

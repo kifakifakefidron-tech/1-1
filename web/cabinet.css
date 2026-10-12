@@ -300,3 +300,17 @@ body.d-arranging { cursor: grabbing; user-select: none; }
 body.d-arranging .g:not(.lifting) { opacity: .85; }
 @media (hover: none) { .g-grip { opacity: .7; } }
 .d-prof-acts { display: flex; gap: 8px; flex-wrap: wrap; } .d-prof-acts .pill { text-decoration: none; }
+
+/* ставки банков: вставить текст обзора → разобрать → проверить → сохранить */
+.bk-paste { display: grid; gap: 10px; margin: 6px 0 14px; padding: 14px; border-radius: 18px; border: 1px solid rgba(227, 203, 143, .3);
+  background: rgba(227, 203, 143, .06); }
+.bk-step { display: flex; gap: 10px; align-items: flex-start; margin: 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.45; }
+.bk-step b { display: grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 50%; background: var(--gold); color: #0f2f2e; font-size: 12px; }
+.bk-step a { color: var(--gold); }
+.bk-paste textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--glass-line);
+  background: rgba(0, 0, 0, .18); color: var(--ink); font: 13.5px/1.45 var(--body); resize: vertical; }
+.bk-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.bk-lbl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--ink-3); }
+.bk-lbl .pk-btn { width: auto; min-height: 36px; padding: 6px 12px; border-radius: 999px; }
+.bank-row.fresh input { border-color: rgba(182, 219, 122, .6) !important; background: rgba(182, 219, 122, .08) !important; }
+.wm-upd.old { color: #f6b8a4 !important; }

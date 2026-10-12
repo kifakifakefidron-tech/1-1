@@ -21,7 +21,7 @@ from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Re
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import (accounts, agent, autolearn, brain, buyers, clients, dashboard, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
+from . import (accounts, agent, autolearn, bankrates, brain, buyers, clients, dashboard, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
                market, notify, payments, picks, planner, region, search, settings, stats, tg, wappi, widgets)
 from .rules import TYPE_LABELS
 
@@ -1818,11 +1818,17 @@ def api_widgets(request: Request, body: dict | None = None):
 
 
 def api_admin_banks(request: Request, body: dict | None = None):
-    """Ставки банков по ипотеке (ведёт админ): POST {items: [{bank, program, rate}]}."""
+    """Ставки банков по ипотеке (ведёт админ): POST {items: [{bank, secondary, new, family, ihc}]} — сохранить;
+    {text, program} — разобрать вставленный текст обзора (ничего не сохраняет: админ проверяет и жмёт «Сохранить»)."""
     _, err = _need_admin(request)
     if err:
         return err
-    return JSONResponse(widgets.set_banks(db.get(), (body or {}).get("items") or []))
+    body = body or {}
+    if "text" in body:
+        db.flush(db.get())   # разбор может спросить нейросеть — базу не держим
+        res = bankrates.parse(str(body.get("text") or ""), str(body.get("program") or "secondary"))
+        return JSONResponse(res)
+    return JSONResponse(widgets.set_banks(db.get(), body.get("items") or []))
 
 
 def api_admin_learn(request: Request, body: dict | None = None):

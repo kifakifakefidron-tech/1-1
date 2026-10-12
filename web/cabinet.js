@@ -116,7 +116,9 @@
     const cols = Object.keys(PROG).filter((k) => b.some((x) => x[k] != null));
     const bs = best("secondary");
     const upd = banks.ts ? new Date(banks.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "short" }) : "";
-    put("wMort", `${head("percent", "Ипотека · ставки банков", upd ? `<span class="g-sub" style="margin:0">на ${upd}</span>` : "")}
+    const age = banks.ts ? Math.floor((Date.now() / 1000 - banks.ts) / 86400) : 0;
+    put("wMort", `${head("percent", "Ипотека · ставки банков", upd ? `<span class="g-sub wm-upd${age >= 7 ? " old" : ""}" style="margin:0"
+        title="${age >= 7 ? `Ставкам ${age} дн. — пора обновить` : "Обновлено"}">на ${upd}</span>` : "")}
       ${bs != null ? `<div class="wm-best"><span>Вторичка — от</span><b>${pct(bs)}</b></div>` : ""}
       <table class="wm-t"><thead><tr><th>Банк</th>${cols.map((k) => `<th>${PROG[k]}</th>`).join("")}</tr></thead>
         <tbody>${b.slice(0, 8).map((x) => `<tr><td>${esc(x.bank)}</td>${cols.map((k) => `<td${x[k] != null && x[k] === best(k) ? ' class="top"' : ""}>${x[k] != null ? pct(x[k]) : "—"}</td>`).join("")}</tr>`).join("")}</tbody></table>
@@ -308,10 +310,46 @@
       <button type="button" data-bank-del aria-label="Убрать">✕</button></div>`;
   }
   function openBanks() {
-    const items = (dash.widgets.banks && dash.widgets.banks.items) || [];
+    const bk = dash.widgets.banks || {};
+    renderBankRows(bk.items || []);
+    const days = bk.ts ? Math.floor((Date.now() / 1000 - bk.ts) / 86400) : null;
+    $("banksAge").textContent = days == null ? "Ставок ещё нет." : `Сейчас в таблице ставки от ${new Date(bk.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}${days >= 7 ? ` — им уже ${days} дн., пора обновить` : ""}.`;
+    $("banksParsed").hidden = true;
+    $("banksText").value = "";
+    $("banksDlg").showModal();
+  }
+  function renderBankRows(items) {
     $("banksRows").innerHTML = `<div class="bank-row head"><span>Банк</span>${Object.values(PROG).map((t) => `<span>${t}, %</span>`).join("")}<span></span></div>`
       + (items.length ? items : [{}, {}, {}, {}]).map(bankRow).join("");
-    $("banksDlg").showModal();
+  }
+  const bankRowsNow = () => [...document.querySelectorAll(".bank-row:not(.head)")].map((row) => {
+    const o = {};
+    row.querySelectorAll("input").forEach((i) => { o[i.dataset.k] = i.value.trim(); });
+    return o;
+  }).filter((x) => x.bank);
+  async function parseBanks() {
+    const text = $("banksText").value.trim();
+    if (!text) { toast("Сначала вставьте текст обзора"); return; }
+    const btn = $("banksParse");
+    btn.disabled = true; btn.textContent = "Разбираем…";
+    const r = await call("/api/admin/banks", { text, program: $("banksProg").value });
+    btn.disabled = false; btn.textContent = "Разобрать";
+    const out = $("banksParsed");
+    out.hidden = false;
+    if (!r.ok || !r.data.items.length) { out.textContent = "Не нашли ставок банков в этом тексте — попробуйте скопировать таблицу целиком."; return; }
+    // новые поверх прежних: найденные банки и программы заменяются, остальное остаётся
+    const by = new Map(bankRowsNow().map((x) => [x.bank.toLowerCase(), x]));
+    for (const x of r.data.items) {
+      const cur = by.get(x.bank.toLowerCase()) || { bank: x.bank };
+      for (const k of Object.keys(PROG)) if (x[k] != null) cur[k] = x[k];
+      by.set(x.bank.toLowerCase(), cur);
+    }
+    const fresh = new Set(r.data.items.map((x) => x.bank.toLowerCase()));
+    renderBankRows([...by.values()]);
+    document.querySelectorAll(".bank-row:not(.head)").forEach((row) => {
+      if (fresh.has(row.querySelector('[data-k="bank"]').value.trim().toLowerCase())) row.classList.add("fresh");
+    });
+    out.textContent = `Нашли банков: ${r.data.items.length}${r.data.how !== "rules" ? " (помогла нейросеть)" : ""} — они подсвечены. Проверьте и нажмите «Сохранить».`;
   }
 
   async function load() {
@@ -331,6 +369,7 @@
     weather(w.weather); rate(w.keyrate); mortgage(w.mortgage, w.banks); fx(w.currency);
     day(); clientsW(); crm(); news(); market(); calcHtml(); admin();
     layout();
+    if (me.is_admin && new URLSearchParams(location.search).has("banks")) { openBanks(); history.replaceState(null, "", "/cabinet"); }
   }
 
   // ─── что ждёт внимания (те же счётчики, что в меню слева) ─────────
@@ -339,7 +378,6 @@
     const chips = [
       [c.plan_overdue, "alert", `просрочено: ${c.plan_overdue}`, "/planner", "hot"],
       [c.plan_today, "calendar", `дел сегодня: ${c.plan_today}`, "/planner", ""],
-      [c.clients_due, "users", `клиентов ждут звонка: ${c.clients_due}`, "/clients", "hot"],
       [c.work, "heart", `объектов в работе: ${c.work}`, "/work", ""],
       [me.unread, "bell", `новых уведомлений: ${me.unread}`, "/notifications", ""],
     ].filter(([n]) => n);
@@ -428,12 +466,9 @@
     } else if (b.id === "banksEdit") openBanks();
     else if (b.id === "banksAdd") $("banksRows").insertAdjacentHTML("beforeend", bankRow());
     else if (b.hasAttribute("data-bank-del")) b.closest(".bank-row").remove();
+    else if (b.id === "banksParse") parseBanks();
     else if (b.id === "banksSave") {
-      const items = [...document.querySelectorAll(".bank-row:not(.head)")].map((row) => {
-        const o = {};
-        row.querySelectorAll("input").forEach((i) => { o[i.dataset.k] = i.value.trim(); });
-        return o;
-      }).filter((x) => x.bank);
+      const items = bankRowsNow();
       const r = await call("/api/admin/banks", { items });
       if (!r.ok) { toast(r.data.detail || "Не получилось сохранить"); return; }
       dash.widgets.banks = r.data;

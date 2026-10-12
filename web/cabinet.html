@@ -14,7 +14,7 @@
 <link rel="stylesheet" href="/static/doc.css?v=2">
 <link rel="stylesheet" href="/static/theme.css?v=14">
 <link rel="stylesheet" href="/static/glass.css?v=14">
-<link rel="stylesheet" href="/static/cabinet.css?v=9">
+<link rel="stylesheet" href="/static/cabinet.css?v=10">
 </head>
 <body class="dash-body">
 <main class="dash">
@@ -97,8 +97,19 @@
 <dialog id="banksDlg" class="small-dlg">
   <div class="dlg-body">
     <div class="d-dlg-head"><h2>Ставки банков по ипотеке</h2><button type="button" class="close" data-close aria-label="Закрыть">✕</button></div>
-    <p class="note">Впишите ставки, как они есть у банков сейчас: по каждой программе своя колонка, пустое — «нет программы».
-      Кабинет покажет лучшую ставку на вторичку и подставит ставки в калькулятор.</p>
+    <section class="bk-paste">
+      <p class="bk-step"><b>1</b><span>Откройте свежий обзор ставок — например, еженедельный «Обзор ставок по ипотеке в банках» ДОМ.РФ
+        (<a href="https://xn--h1alcedd.xn--d1aqf.xn--p1ai/news/" target="_blank" rel="noopener">дом.рф/news ↗</a>) или страницы банков.</span></p>
+      <p class="bk-step"><b>2</b><span>Выделите текст или таблицу со ставками, скопируйте и вставьте сюда — сервис сам разложит по банкам и программам.</span></p>
+      <textarea id="banksText" rows="5" placeholder="Вставьте сюда текст обзора: «Сбербанк — 19,4%…» или таблицу с колонками «Новостройка / Вторичка / Семейная»…"></textarea>
+      <div class="bk-row"><label class="bk-lbl">Если в тексте не сказано, на что ставка, — это
+        <select id="banksProg"><option value="secondary">вторичка</option><option value="new">новостройка</option>
+          <option value="family">семейная</option><option value="ihc">ИЖС / дом</option></select></label>
+        <button type="button" class="pill" id="banksParse">Разобрать</button></div>
+      <p class="note" id="banksParsed" hidden></p>
+    </section>
+    <p class="bk-step"><b>3</b><span>Проверьте таблицу и нажмите «Сохранить». Новые ставки заменяют старые только у найденных банков.</span></p>
+    <p class="note" id="banksAge"></p>
     <div id="banksRows"></div>
     <div class="d-dlg-acts"><button type="button" class="pill light" id="banksAdd">+ Строка</button>
       <button type="button" class="pill" id="banksSave">Сохранить</button></div>
@@ -109,8 +120,8 @@
 <script src="/static/icons.js?v=4"></script>
 <script src="/static/pickers.js?v=5"></script>
 <script src="/static/max.js?v=1"></script>
-<script src="/static/rail.js?v=5"></script>
-<script src="/static/cabinet.js?v=10"></script>
+<script src="/static/rail.js?v=6"></script>
+<script src="/static/cabinet.js?v=11"></script>
 <script src="/static/objview.js?v=2"></script>
 <script src="/static/bell.js?v=4"></script>
 </body>
