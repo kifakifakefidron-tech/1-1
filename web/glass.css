@@ -93,11 +93,15 @@ dialog::backdrop { background: rgba(0, 18, 18, .5); backdrop-filter: blur(6px); 
 .hero > :nth-child(2) { animation-delay: .06s; } .hero > :nth-child(3) { animation-delay: .12s; }
 .hero > :nth-child(4) { animation-delay: .18s; } .hero > :nth-child(5) { animation-delay: .24s; }
 @keyframes heroIn { from { opacity: 0; transform: translateY(14px); filter: blur(4px); } }
+/* телефон: первый экран компактный — объекты видны сразу; карта и кабинет и так в нижней панели */
 @media (max-width: 760px) {
-  .hero { margin: 12px 0 14px; padding: 22px 18px 20px; border-radius: 24px; }
-  .hero-sub { font-size: 14.5px; margin-top: 10px; }
-  .hero-stats { gap: 8px 22px; margin-top: 16px; }
-  .hero-stats b { font-size: 22px; }
-  .hero-actions { margin-top: 16px; }
-  .hero-actions .pill { flex: 1 1 auto; justify-content: center; }
+  .hero { margin: 8px 0 12px; padding: 16px 16px 14px; border-radius: 22px; }
+  .hero-eyebrow { font-size: 11.5px; padding: 4px 10px; margin-bottom: 10px; }
+  .hero-title { font-size: 23px; line-height: 1.12; }
+  .hero-title br { display: none; }
+  .hero-sub, .hero-actions { display: none; }
+  .hero-stats { gap: 6px 20px; margin-top: 12px; }
+  .hero-stats b { font-size: 20px; }
+  .hero-stats span { font-size: 11.5px; }
+  .hero-x { top: 10px; right: 10px; width: 28px; height: 28px; }
 }

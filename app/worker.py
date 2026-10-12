@@ -35,6 +35,11 @@ def tick(conn) -> dict:
         stats["purged"] = purged
     llm.failures = 0
     stats["processed"] = ingest.process_pending(conn, limit=300, budget_s=60)
+    if config.WAPPI_ENABLED:
+        from . import media
+        got = media.attach(conn)   # фото из альбомов — в карточки объектов
+        if got["photos"]:
+            stats["photos"] = got["photos"]
     stats["queue"] = conn.execute("SELECT COUNT(*) FROM messages WHERE status='new'").fetchone()[0]
     from . import autolearn, osmaddr
     if osmaddr.maybe_refresh(conn):   # справочник адресов OSM — раз в месяц (≈20 с)

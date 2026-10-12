@@ -174,6 +174,12 @@ CREATE TABLE IF NOT EXISTS saved_searches (
     sent_at INTEGER, active INTEGER NOT NULL DEFAULT 1
 );
 -- Выученные точки: админ поправил объект на карте → эта точка для того же дома/ЖК во всех объявлениях
+-- Фото из чатов (app/media.py): картинки альбомов — к объявлению того же агента
+CREATE TABLE IF NOT EXISTS chat_media (
+    id INTEGER PRIMARY KEY, source TEXT NOT NULL, profile_id TEXT, chat_id TEXT NOT NULL, sender TEXT, msg_id TEXT NOT NULL,
+    ts INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'new', listing_id INTEGER, url TEXT, UNIQUE (source, msg_id)
+);
+CREATE INDEX IF NOT EXISTS ix_chat_media_status ON chat_media (status, ts);
 -- Справочник адресов из OpenStreetMap (app/osmaddr.py): дом → точка
 CREATE TABLE IF NOT EXISTS osm_addr (
     street_key TEXT NOT NULL, street TEXT NOT NULL, house_key TEXT NOT NULL, city TEXT NOT NULL DEFAULT '',

@@ -19,7 +19,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
-from . import agent, config, db, ingest, region
+from . import agent, config, db, ingest, media, region
 
 log = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ def _text(m: dict) -> str:
         v = m.get(k)
         if isinstance(v, str) and v.strip():
             return v
-    return ""
+    return media.caption(m)   # фото с подписью: текст объявления — в подписи (у WhatsApp — body.caption)
 
 
 def _sender_phone(m: dict) -> str | None:
@@ -128,12 +128,17 @@ def _store(conn: sqlite3.Connection, source: str, profile_id: str, m: dict,
     if m.get("isDeleted"):
         return False, ts
     text = _text(m)
-    if len(text) < 30:
+    is_photo = is_group and media.kind(m) == "image"
+    if len(text) < 30 and not is_photo:
         return False, ts
     cid = str(chat_id or m.get("chatId") or m.get("chat_id") or "")
     chat_name = (chat_name or m.get("chat_name") or m.get("chatName") or m.get("chat_title")
                  or region.chat_name(conn, source, cid))
     if region.is_excluded(conn, source, cid, chat_name):   # чат другого города или отключён в админке
+        return False, ts
+    if is_photo:   # фото из альбома объявления — привяжем к объекту (app/media.py)
+        media.remember(conn, source, profile_id, cid, _sender_phone(m), str(m.get("id") or ""), ts)
+    if len(text) < 30:
         return False, ts
     mid = ingest.add_message(
         conn, source=source, text=text, ts=ts or int(time.time()), profile_id=profile_id,

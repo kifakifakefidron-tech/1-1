@@ -1,5 +1,7 @@
 """Опрос Wappi: свой токен на тип аккаунта, WhatsApp — одним запросом,
 Telegram/MAX — через список чатов; личные чаты пропускаем, прочитанным не отмечаем."""
+import json
+
 from app import config, wappi
 
 from .conftest import NOW
@@ -134,3 +136,30 @@ def test_verify_codes_while_collection_paused(conn, monkeypatch):
     assert agent.verified_phones(conn, u["id"]) == ["+79181112233"]
     assert conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 0   # из групп ничего не сохранили
     assert wappi.poll_verify_only(conn) == 0                                  # больше никто не ждёт — Wappi не трогаем
+
+
+def test_album_photos_attach_to_listing(conn, monkeypatch, tmp_path):
+    """Объявление подписью к фото + ещё фото альбомом: текст разбирается, фото попадают в карточку."""
+    from app import ingest, media
+    monkeypatch.setattr(config, "WAPPI_TOKENS", {"wa": "t", "tg": "", "max": ""})
+    monkeypatch.setattr(config, "WAPPI_PROFILES", ["wa:p1"])
+    monkeypatch.setattr(config, "PHOTOS_DIR", str(tmp_path / "photos"))
+    img = lambda mid, t, cap="": {"id": mid, "type": "image", "chatId": "1@g.us", "from": "79181112233@c.us", "time": t,
+                                  "body": {"mimetype": "image/jpeg", "caption": cap}}
+    msgs = [img("a1", NOW - 30, AD), img("a2", NOW - 20), img("a3", NOW - 10),
+            {"id": "x", "type": "image", "chatId": "1@g.us", "from": "79990000000@c.us", "time": NOW, "body": {"mimetype": "image/jpeg"}}]
+
+    def fake_get(path, params, token):
+        if path.endswith("/message/media/download"):
+            return {"file_link": f"https://files.example/{params['message_id']}"}
+        return {"messages": msgs}
+
+    monkeypatch.setattr(wappi, "_get", fake_get)
+    monkeypatch.setattr(media, "_fetch", lambda link: b"\xff\xd8\xff" + link.encode() * 200)
+    assert wappi.poll_all(conn) == 1                          # текст из подписи к фото — объявление
+    assert conn.execute("SELECT COUNT(*) FROM chat_media").fetchone()[0] == 4
+    ingest.process_pending(conn)
+    res = media.attach(conn)
+    lid = conn.execute("SELECT listing_id FROM listing_events").fetchone()[0]
+    photos = json.loads(conn.execute("SELECT photos FROM listings WHERE id = ?", (lid,)).fetchone()[0])
+    assert res["photos"] == 3 and len(photos) == 3            # фото чужого номера к объекту не прилипло

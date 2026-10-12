@@ -282,6 +282,11 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
 - Адреса: повторный разбор старых (autolearn.fix_streets STREET_FIX_V=3: нет улицы / «14 к» / «-я» → parser.address_from_text),
   улицы-даты («1 Мая», «40 лет Победы» — geo._STREET_DATE), «Проверить решения сервиса» — только сомнительные (соседний дом,
   середина улицы, центр ЖК/района, район «по соседям»; точный дом OSM/фида/правок — нет).
+- Фото из чатов (app/media.py, таблица chat_media): wappi._store запоминает картинки из групп; worker media.attach
+  (только при WAPPI_ENABLED) привязывает к объявлению того же отправителя в том же чате ±3 мин (из сообщения — ровно
+  один объект; портянки и карточки с owner_user_id не трогаем), качает {api}/message/media/download → file_link →
+  data/photos/<id>/. wappi._text теперь читает подпись к фото (body.caption) — раньше объявления подписью к фото терялись.
+  Путь для Telegram/MAX (/tapi|/maxapi/sync/message/media/download) — проверить по журналу при включении.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
@@ -290,7 +295,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 154 тестов
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 156 тестов
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены
