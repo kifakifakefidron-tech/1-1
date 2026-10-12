@@ -1,9 +1,43 @@
 # Caddy сам получает и продлевает HTTPS-сертификат для адреса из SITE_DOMAIN (.env)
 {$SITE_DOMAIN} {
 	encode zstd gzip
-	@static path /static/*
-	header @static Cache-Control "public, max-age=31536000, immutable"
-	reverse_proxy web:8090
+
+	# Защита в браузере: только HTTPS, файлы не «угадываются» по содержимому, сайт нельзя встроить
+	# в чужую страницу (свои окна объектов — можно), чужим сайтам не уходит полный адрес страницы.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), payment=(), usb=()"
+		-Server
+	}
+
+	# Больше 15 МБ запросов сайту не нужно (самое большое — фото агента) — огромные отбрасываем сразу
+	request_body {
+		max_size 15MB
+	}
+
+	# Стили, скрипты, картинки сайта и фото агентов отдаёт сам Caddy — быстро и без нагрузки на Python.
+	# У файлов сайта в адресе версия (?v=), поэтому браузер хранит их год.
+	handle_path /static/* {
+		root * /srv/web
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+	@photo path_regexp photo ^/photos/[0-9]+/[0-9a-f]{16}\.(jpg|png|webp)$
+	handle @photo {
+		root * /srv/data
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	handle {
+		reverse_proxy web:8090 {
+			# сайт перегружен/перезапускается — короткая понятная пауза вместо долгого ожидания
+			lb_try_duration 5s
+		}
+	}
 }
 
 # Прежние адреса (OLD_DOMAINS в .env, через запятую: «31-130-132-118.sslip.io, www.ваш-домен.ru») —

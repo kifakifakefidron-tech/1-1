@@ -92,6 +92,14 @@ def tick(conn) -> dict:
             stats["market_snapshot"] = True
     except Exception:  # noqa: BLE001
         log.exception("снимок рынка не записался")
+    try:
+        from . import backup
+        name = backup.maybe_backup(conn)   # раз в сутки ночью — копия базы в data/backups
+        if name:
+            stats["backup"] = name
+    except Exception as e:  # noqa: BLE001
+        log.exception("резервная копия не сделана")
+        notify.alert(conn, "backup", f"Резервная копия базы не сделана: {e!r}"[:400], every_s=86400)
     db.set_state(conn, "worker_tick", str(int(time.time())))   # для админки: фоновая работа жива
     return stats
 

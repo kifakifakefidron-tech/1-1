@@ -13,6 +13,9 @@ PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
 PRAGMA busy_timeout=10000;
 PRAGMA foreign_keys=ON;
+PRAGMA temp_store=MEMORY;
+PRAGMA cache_size=-32000;
+PRAGMA mmap_size=268435456;
 
 CREATE TABLE IF NOT EXISTS messages (
     id          INTEGER PRIMARY KEY,
@@ -337,6 +340,17 @@ MIGRATIONS = [
 _local = threading.local()
 
 
+# То, что действует только на одно соединение (WAL хранится в самом файле базы)
+PER_CONNECTION = """
+PRAGMA synchronous=NORMAL;
+PRAGMA busy_timeout=10000;
+PRAGMA foreign_keys=ON;
+PRAGMA temp_store=MEMORY;
+PRAGMA cache_size=-32000;
+PRAGMA mmap_size=268435456;
+"""
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     for table, col, decl in MIGRATIONS:
         cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
@@ -413,6 +427,10 @@ def _backfill_prices(conn: sqlite3.Connection) -> None:
     conn.executemany("INSERT INTO price_history (listing_id, ts, price) VALUES (?,?,?)", rows)
 
 
+_ready: set[str] = set()   # базы, для которых в этом процессе уже проверены таблицы и обновления
+_ready_lock = threading.Lock()
+
+
 def connect(path: str | None = None) -> sqlite3.Connection:
     p = path or config.DB_PATH
     if p != ":memory:":
@@ -421,8 +439,15 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     from . import geo  # noqa: PLC0415 — ключ ЖК для фильтра (разные написания одного ЖК)
     conn.create_function("cxkey", 1, geo.complex_key, deterministic=True)
-    conn.executescript(SCHEMA)
-    _migrate(conn)
+    # Таблицы и обновления базы проверяем один раз на процесс, а не на каждое соединение
+    # (у сайта десятки потоков — раньше каждый новый поток прогонял всю схему и брал базу на запись)
+    with _ready_lock:
+        if p == ":memory:" or p not in _ready:
+            conn.executescript(SCHEMA)
+            _migrate(conn)
+            _ready.add(p)
+        else:
+            conn.executescript(PER_CONNECTION)
     return conn
 
 

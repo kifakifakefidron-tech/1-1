@@ -88,8 +88,11 @@ def _who(request: Request) -> str:
 
 
 def _too_often(request: Request, key: str, limit: int, per_s: int, who: str | None = None) -> bool:
-    q = _hits[f"{key}:{who or _who(request)}"]
     now = time.time()
+    if len(_hits) > 20000:   # память не растёт бесконечно: давно молчащих забываем (самый долгий лимит — сутки)
+        for k in [k for k, q in list(_hits.items()) if not q or q[-1] < now - 86400]:
+            _hits.pop(k, None)
+    q = _hits[f"{key}:{who or _who(request)}"]
     while q and q[0] < now - per_s:
         q.popleft()
     if len(q) >= limit:
@@ -117,9 +120,19 @@ def bot_username() -> str | None:
     return _bot_name
 
 
+MAX_BODY = 12_000_000   # самое большое — фото агента (до 3 МБ, в base64 ≈ 4 МБ) и контуры районов
+
+
 async def _body(request: Request) -> dict:
+    size = 0
+    chunks = []
+    async for chunk in request.stream():   # без Content-Length (chunked) тоже не больше MAX_BODY
+        size += len(chunk)
+        if size > MAX_BODY:
+            return {}
+        chunks.append(chunk)
     try:
-        data = await request.json()
+        data = json.loads(b"".join(chunks) or b"null")
     except Exception:  # noqa: BLE001 — пустое или кривое тело
         return {}
     return data if isinstance(data, dict) else {}
@@ -141,6 +154,8 @@ def threaded(fn):
 
     async def endpoint(request: Request):
         t0 = time.perf_counter()
+        if (_num(request.headers.get("content-length"), int) or 0) > MAX_BODY:   # огромный запрос — не читаем в память
+            return _err("Слишком большой запрос.", 413)
         body = await _body(request) if request.method in ("POST", "PUT", "DELETE", "PATCH") else None
         resp = await run_in_threadpool(guarded, request, body)
         if request.method != "GET" and resp.status_code < 400 and request.url.path.startswith(("/api/agent", "/api/admin")):
@@ -255,19 +270,30 @@ _cache_lock = threading.Lock()
 CACHE_S = 15
 
 
-def _cached(request: Request, compute) -> Response:
+_computing: dict[str, threading.Lock] = {}
+
+
+def _cached(request: Request, compute, ttl: int = CACHE_S) -> Response:
     # cache_ver меняется при правках агентов/админа — второй процесс сайта тоже сразу видит новое
     key = f"{db.get_state(db.get(), 'cache_ver', '0')}:{request.url.path}?{request.url.query}"
-    now = time.time()
     hit = _cache.get(key)
-    if hit and now - hit[0] < CACHE_S:
+    if hit and time.time() - hit[0] < ttl:
         return Response(hit[1], media_type="application/json")
-    body = json.dumps(compute(), ensure_ascii=False).encode()
+    # Один и тот же ответ считаем один раз: пришли сто человек разом — остальные ждут готового (не 100 расчётов)
     with _cache_lock:
-        if len(_cache) > 2000:
-            for k in [k for k, (t, _) in _cache.items() if now - t >= CACHE_S] or list(_cache)[:1000]:
-                _cache.pop(k, None)
-        _cache[key] = (now, body)
+        lock = _computing.setdefault(key, threading.Lock())
+    with lock:
+        hit = _cache.get(key)
+        now = time.time()
+        if hit and now - hit[0] < ttl:
+            return Response(hit[1], media_type="application/json")
+        body = json.dumps(compute(), ensure_ascii=False).encode()
+        with _cache_lock:
+            if len(_cache) > 3000:
+                for k in [k for k, (t, _) in _cache.items() if now - t >= 120] or list(_cache)[:1500]:
+                    _cache.pop(k, None)
+                    _computing.pop(k, None)
+            _cache[key] = (now, body)
     return Response(body, media_type="application/json")
 
 
@@ -328,11 +354,11 @@ def _raw_phones(conn, lid: int) -> list[str]:
 
 
 def api_facets(request: Request, body: dict | None = None):
-    return _cached(request, lambda: search.facets(db.get(), query_from(request), int(time.time())))
+    return _cached(request, lambda: search.facets(db.get(), query_from(request), int(time.time())), ttl=60)
 
 
 def api_map(request: Request, body: dict | None = None):
-    return _cached(request, lambda: search.map_points(db.get(), query_from(request), int(time.time())))
+    return _cached(request, lambda: search.map_points(db.get(), query_from(request), int(time.time())), ttl=45)
 
 
 def api_districts_map(request: Request, body: dict | None = None):
@@ -343,6 +369,10 @@ def api_districts_map(request: Request, body: dict | None = None):
 
 
 def api_stats(request: Request, body: dict | None = None):
+    return _cached(request, _stats, ttl=120)   # цифры первого экрана — каждому посетителю, считаем раз в 2 минуты
+
+
+def _stats() -> dict:
     conn = db.get()
     one = lambda sql, *p: conn.execute(sql, p).fetchone()[0]  # noqa: E731
     day = int(time.time()) - 86400
@@ -353,7 +383,7 @@ def api_stats(request: Request, body: dict | None = None):
         return conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {where}", params).fetchone()[0]
 
     sale, rent = visible("sale"), visible("rent")
-    return JSONResponse({
+    return ({
         "active": sale + rent, "sale": sale, "rent": rent,
         "new_24h": visible("sale", new_days=1) + visible("rent", new_days=1),
         "messages_24h": one("SELECT COUNT(*) FROM messages WHERE ts >= ?", day),
@@ -374,7 +404,8 @@ def api_login(request: Request, body: dict | None = None):
         token = accounts.create_session(conn, user["id"], request.headers.get("user-agent", ""))
         resp = _session_response(request, {"ok": True, "me": accounts.me(conn, accounts.get_user(conn, user["id"]))},
                                  token)
-        resp.set_cookie(COOKIE, _sign(config.ACCESS_CODE), max_age=180 * 86400, httponly=True, samesite="lax")
+        resp.set_cookie(COOKIE, _sign(config.ACCESS_CODE), max_age=180 * 86400, httponly=True, samesite="lax",
+                        secure=request.headers.get("x-forwarded-proto", request.url.scheme) == "https")
         return resp
     return JSONResponse({"ok": False, "detail": "Код не подошёл. Проверьте и введите ещё раз."}, status_code=403)
 
@@ -746,8 +777,8 @@ def api_notices(request: Request, body: dict | None = None):
 def api_notices_peek(request: Request, body: dict | None = None):
     """Для колокольчика в шапке: сколько непрочитанных и 3 самых свежих непрочитанных (быстро, без проверок)."""
     user = current_user(request)
-    if user is None:
-        return _err("Нужно войти.", 401)
+    if user is None:   # гость: ответ «не вошёл» без ошибки — колокольчик перестаёт спрашивать
+        return JSONResponse({"guest": True, "unread": 0, "latest": []})
     conn = db.get()
     rows = conn.execute("""SELECT id, ts, kind, title, body, url FROM notices WHERE user_id = ? AND read = 0
                            ORDER BY id DESC LIMIT 3""", (user["id"],)).fetchall()

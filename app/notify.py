@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import sqlite3
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from . import config, db, mailer, tg
 
@@ -96,6 +98,13 @@ def check_health(conn: sqlite3.Connection, wappi_errors: dict[str, str], llm_fai
             resolve(conn, "silence", "Сообщения из чатов снова поступают.")
     for profile, err in wappi_errors.items():
         alert(conn, f"wappi:{profile}", f"Wappi {profile} отвечает ошибкой: {err[:300]}")
+    if config.SITE_URL.startswith("https") and (config.SECRET_KEY in ("", "change-me") or len(config.SECRET_KEY) < 24):
+        alert(conn, "secret_key", "В .env не задан надёжный SECRET_KEY — ссылки из писем и календаря можно подделать. "
+                                  "Выполните на сервере: echo SECRET_KEY=$(openssl rand -hex 32) >> .env && docker compose up -d",
+              every_s=86400)
+    disk = shutil.disk_usage(Path(config.DB_PATH).parent) if config.DB_PATH != ":memory:" else None
+    if disk and disk.free < 2 * 2**30:
+        alert(conn, "disk", f"На сервере мало места: свободно {disk.free // 2**20} МБ. Сайт может остановиться.", every_s=6 * 3600)
     if llm_failures >= 3:
         alert(conn, "deepseek", f"DeepSeek не отвечает ({llm_failures} ошибок за цикл) — разбираю правилами. "
                                 f"Проверьте баланс и ключ на platform.deepseek.com.")

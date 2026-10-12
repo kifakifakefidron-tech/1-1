@@ -321,6 +321,18 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   на телефоне — «Все разделы» шторкой (popover .rail-sheet). Объект с любой страницы (кроме главной и админских)
   открывается поверх неё: web/objview.js ловит ссылки /?open=ID → popover с iframe /?open=ID&embed=1 (app.js EMBED:
   только окно объекта, <base target=_top>, закрытие → postMessage {ov:"close"}). Ctrl-клик — новая вкладка.
+- 13.10 АУДИТ (безопасность/нагрузка): db.connect — схема и миграции один раз на процесс (_ready), дальше PER_CONNECTION
+  (+ cache_size, mmap, temp_store); widgets — сайт читает ТОЛЬКО кэш (в сеть ходит worker, после сбоя пауза 10 мин);
+  server._cached(ttl) — один расчёт на одинаковые одновременные запросы (_computing), facets 60 с, map 45 с, /api/stats 120 с;
+  facets склеивает ЖК по ключу в Python (было cxkey на каждый объект — 44→24 мс); тело запроса ≤ MAX_BODY (12 МБ),
+  Caddy request_body 15MB; _hits чистится; кука промокода secure; payments.confirm — продление один раз (UPDATE … WHERE
+  status != 'succeeded') и сверка суммы; /api/notices/peek гостю — {guest:true}, bell.js у гостя больше не опрашивает;
+  бот при недоступном Telegram — пауза до 5 мин; notify: слабый SECRET_KEY и мало места на диске; app/backup.py — копия
+  базы каждую ночь (VACUUM INTO + gzip, data/backups, 7 шт.). Caddyfile: заголовки безопасности (HSTS, nosniff,
+  X-Frame-Options SAMEORIGIN — objview iframe свой), /static и /photos отдаёт Caddy (./web и ./data смонтированы :ro),
+  web тоже монтирует ./web (страницы и скрипты одной версии). docker-compose: журналы 3×20 МБ, Caddy без env_file.
+  Замер 13.10 на ПК (база ×10 = 8160 объектов, 4 процесса): 1000 пользователей (запрос раз в 1–3 с) — 392 запроса/с,
+  0 ошибок, 95 % < 0,04 с; с параллельной записью — без ошибок.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
@@ -329,7 +341,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 161 тест
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 164 теста
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены

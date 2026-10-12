@@ -20,7 +20,8 @@
 - [ ] Домен 1plus1assistant.ru: DNS уже смотрит на сервер (проверено 12.10) — выполнить на сервере команду из чата
       (SITE_DOMAIN=1plus1assistant.ru, OLD_DOMAINS=…) и проверить https://1plus1assistant.ru
 - [ ] Вход админа: в .env на сервере ADMIN_EMAILS=kifakifakefidron@gmail.com, вход на /admin
-- [ ] WEB_WORKERS в .env = число ядер сервера (`nproc`)
+- [ ] WEB_WORKERS в .env = число ядер сервера (`nproc`); если ядер 1–2 — для 1000 посетителей взять тариф 4 ядра / 8 ГБ
+- [ ] `chmod 600 /opt/1plus1/.env`; раз в неделю скачивать копию базы к себе (README «Безопасность и резервные копии»)
 - [ ] ЮKassa (магазин одобрен 12.10): shopId и секретный ключ → .env (PAYMENTS_ENABLED, YOOKASSA_SHOP_ID, YOOKASSA_SECRET,
       SUB_PLANS), HTTP-уведомления → https://1plus1assistant.ru/api/payments/yookassa, «Мой налог» для чеков; оферта и политика
 - [ ] Telegram-бот: Cloudflare Worker из deploy/telegram-worker.js → TELEGRAM_API_BASE в .env; в @BotFather /setdomain

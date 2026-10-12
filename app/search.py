@@ -273,15 +273,17 @@ def facets(conn: sqlite3.Connection, qr: Query, now: int) -> dict:
                 SELECT j.value FROM listings l, json_each(l.extra_districts) j WHERE {where})
             GROUP BY 1 ORDER BY n DESC""",
         params + params).fetchall()
-    # Разные написания одного ЖК — одна строка в фильтре (самое частое написание)
-    complexes = conn.execute(
-        f"""SELECT name, n FROM (
-                SELECT cxkey(l.complex) AS k, l.complex AS name, SUM(COUNT(*)) OVER (PARTITION BY cxkey(l.complex)) AS n,
-                       ROW_NUMBER() OVER (PARTITION BY cxkey(l.complex) ORDER BY COUNT(*) DESC) AS rn
-                FROM listings l WHERE {where} AND l.complex IS NOT NULL GROUP BY k, l.complex)
-            WHERE rn = 1 ORDER BY n DESC LIMIT 300""",
-        params).fetchall()
-    return {"districts": [dict(r) for r in districts], "complexes": [dict(r) for r in complexes]}
+    # Разные написания одного ЖК — одна строка в фильтре (самое частое написание). База считает по написаниям,
+    # а склеиваем по ключу ЖК уже в Python: так ключ считается для сотни названий, а не для каждого объекта
+    groups: dict[str, list] = {}
+    for name, n in conn.execute(f"SELECT l.complex, COUNT(*) FROM listings l WHERE {where} AND l.complex IS NOT NULL "
+                                f"GROUP BY l.complex", params):
+        g = groups.setdefault(geo.complex_key(name), [name, n, 0])
+        if n > g[1]:
+            g[0], g[1] = name, n
+        g[2] += n
+    complexes = sorted(({"name": name, "n": total} for name, _, total in groups.values()), key=lambda c: -c["n"])[:300]
+    return {"districts": [dict(r) for r in districts], "complexes": complexes}
 
 
 def listing_detail(conn: sqlite3.Connection, listing_id: int, with_contacts: bool,

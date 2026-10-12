@@ -20,7 +20,7 @@ import urllib.error
 import urllib.request
 import uuid
 
-from . import accounts, config
+from . import accounts, config, db
 
 log = logging.getLogger(__name__)
 API = "https://api.yookassa.ru/v3/payments"
@@ -86,6 +86,7 @@ def confirm(conn: sqlite3.Connection, provider_id: str) -> bool:
     row = conn.execute("SELECT * FROM payments WHERE provider_id = ?", (provider_id,)).fetchone()
     if row is None or row["status"] == "succeeded":
         return False
+    db.flush(conn)   # не держать базу, пока ждём ЮKassa
     try:
         pay = _request(f"{API}/{provider_id}")
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
@@ -95,6 +96,19 @@ def confirm(conn: sqlite3.Connection, provider_id: str) -> bool:
         conn.execute("UPDATE payments SET status = ? WHERE id = ?", (pay.get("status", "unknown"), row["id"]))
         conn.commit()
         return False
-    conn.execute("UPDATE payments SET status = 'succeeded', paid = ? WHERE id = ?", (int(time.time()), row["id"]))
+    try:
+        paid_sum = float(((pay.get("amount") or {}).get("value")) or 0)
+    except (TypeError, ValueError):
+        paid_sum = 0
+    if paid_sum + 0.001 < float(row["amount"]):
+        log.error("ЮKassa: платёж %s на %s ₽, а тариф %s ₽ — доступ не продлеваю", provider_id, paid_sum, row["amount"])
+        return False
+    # Уведомление ЮKassa и возврат человека на сайт могут прийти одновременно (в разные процессы):
+    # продлеваем только тот, кто первым перевёл платёж в «оплачен» — иначе доступ продлился бы дважды
+    cur = conn.execute("UPDATE payments SET status = 'succeeded', paid = ? WHERE id = ? AND status != 'succeeded'",
+                       (int(time.time()), row["id"]))
+    if cur.rowcount != 1:
+        conn.commit()
+        return False
     accounts.extend(conn, row["user_id"], row["days"])
     return True

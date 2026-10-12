@@ -69,14 +69,17 @@
     remember(n.id);
   }
 
+  let guest = false, lastPeek = 0;
   async function peek() {
+    if (guest || Date.now() - lastPeek < 10000) return;   // гость — спрашивать нечего; чаще раза в 10 с — незачем
+    lastPeek = Date.now();
     let d;
     try {
       const r = await fetch("/api/notices/peek", { credentials: "same-origin" });
-      if (r.status === 401) { if (bell) bell.hidden = true; return; }
       if (!r.ok) return;
       d = await r.json();
     } catch { return; }
+    if (d.guest) { guest = true; if (bell) bell.hidden = true; return; }
     setCount(d.unread);
     const latest = d.latest || [];
     if (known === null) { known = latest.length ? latest[0].id : 0; }
@@ -89,5 +92,5 @@
   peek();
   setInterval(() => { if (!document.hidden) peek(); }, 45000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) peek(); });
-  window.bellPeek = peek;
+  window.bellPeek = () => { lastPeek = 0; guest = false; return peek(); };   // после входа — сразу проверить
 })();

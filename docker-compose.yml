@@ -6,16 +6,29 @@
 # База — один файл в папке ./data на сервере.
 name: oneplusone
 
+# Журналы контейнеров — не больше 3×20 МБ на сервис (иначе за месяцы забивают диск, как было на старом сервере)
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
 services:
   caddy:
     image: caddy:2
     restart: unless-stopped
-    env_file: .env
+    logging: *logging
+    # Caddy нужны только адреса сайта — пароли и ключи из .env ему не передаём
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN}
+      OLD_DOMAINS: ${OLD_DOMAINS:-http://unused.invalid}
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web:/srv/web:ro                    # файлы сайта отдаёт сам Caddy
+      - ./data:/srv/data:ro                  # и фото объектов (наружу — только /photos/<номер>/<имя>.jpg, см. Caddyfile)
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
@@ -24,9 +37,11 @@ services:
   web:
     build: .
     restart: unless-stopped
+    logging: *logging
     env_file: .env
     volumes:
       - ./data:/app/data
+      - ./web:/app/web:ro   # те же файлы, что раздаёт Caddy, — страницы и скрипты всегда одной версии
     ports:
       - "127.0.0.1:8090:8090"   # только для проверки с самого сервера
     healthcheck:
@@ -38,6 +53,7 @@ services:
   worker:
     build: .
     restart: unless-stopped
+    logging: *logging
     env_file: .env
     command: ["nice", "-n", "10", "python", "-m", "app.worker"]  # ниже приоритет — сайт важнее
     volumes:
@@ -46,6 +62,7 @@ services:
   bot:
     build: .
     restart: unless-stopped
+    logging: *logging
     env_file: .env
     command: ["python", "-m", "app.bot"]
     volumes:

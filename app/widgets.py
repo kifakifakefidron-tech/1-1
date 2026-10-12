@@ -38,17 +38,28 @@ def _http(url: str, data: bytes | None = None, headers: dict | None = None, time
         return resp.read()
 
 
+_FAIL_PAUSE = 600   # источник не ответил — следующая попытка не раньше чем через 10 минут
+
+
 def _cached(conn: sqlite3.Connection, key: str, ttl: int, fetch, force: bool = False) -> dict | None:
-    """Свежие данные из кэша; устарели — загрузить заново; сеть подвела — отдать старые."""
+    """Свежие данные из кэша; устарели — загрузить заново; сеть подвела — отдать старые.
+
+    Сайт (кабинет) в сеть НЕ ходит — только читает сохранённое: загружает worker (refresh).
+    Иначе при недоступном источнике каждый посетитель ждал бы его по 15 секунд."""
     raw = db.get_state(conn, f"w:{key}")
     old = json.loads(raw) if raw else None
+    if not _online.get("on") and not force:
+        return old
     if old and not force and time.time() - old["ts"] < ttl:
+        return old
+    if not force and time.time() - float(db.get_state(conn, f"w:{key}:fail") or 0) < _FAIL_PAUSE:
         return old
     try:
         db.flush(conn)   # не держать базу, пока ждём чужой сервер
         data = fetch()
     except Exception as e:  # noqa: BLE001 — источник недоступен: показываем прошлое
         log.warning("виджет %s: %s", key, e)
+        db.set_state(conn, f"w:{key}:fail", str(int(time.time())))
         return old
     if data is None:
         return old
@@ -271,9 +282,16 @@ def all_widgets(conn: sqlite3.Connection) -> dict:
             "mortgage": mortgage(conn), "banks": banks(conn)}
 
 
+_online: dict = {"on": False}
+
+
 def refresh(conn: sqlite3.Connection) -> None:
     """Из worker: обновить устаревшее заранее, чтобы кабинет открывался мгновенно."""
-    weather(conn)
-    keyrate(conn)
-    currency(conn)
-    mortgage(conn)
+    _online["on"] = True
+    try:
+        weather(conn)
+        keyrate(conn)
+        currency(conn)
+        mortgage(conn)
+    finally:
+        _online["on"] = False

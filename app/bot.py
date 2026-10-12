@@ -157,11 +157,14 @@ def main() -> None:
     conn = db.connect()
     offset = int(db.get_state(conn, "tg_offset") or 0)
     log.info("бот запущен")
+    pause = 5
     while True:
         res = api("getUpdates", {"offset": offset, "timeout": 25, "allowed_updates": ["message"]}, timeout=40)
-        if res is None:
-            time.sleep(5)
+        if res is None:   # Telegram недоступен (в России часто) — ждём всё дольше, до 5 минут, а не долбим каждые 5 с
+            time.sleep(pause)
+            pause = min(pause * 2, 300)
             continue
+        pause = 5
         if time.time() - float(db.get_state(conn, "tg_ok") or 0) > 60:
             db.set_state(conn, "tg_ok", str(int(time.time())))  # связь с Telegram есть
         for upd in res.get("result", []):
