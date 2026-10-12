@@ -122,7 +122,14 @@ def save_event(conn: sqlite3.Connection, user_id: int, body: dict) -> dict:
     if listing_id:   # в планере объекты выбираются из избранного — запланированный объект туда и кладём
         conn.execute("""INSERT OR IGNORE INTO favorites (user_id, listing_id, created, price_at)
                         SELECT ?, id, ?, price FROM listings WHERE id = ?""", (user_id, int(time.time()), listing_id))
-    vals = dict(kind=kind, title=title, ts=ts, dur_min=dur, listing_id=listing_id,
+    client_id = body.get("client_id")
+    try:
+        client_id = int(client_id) if client_id else None
+    except (TypeError, ValueError):
+        client_id = None
+    if client_id and not conn.execute("SELECT 1 FROM clients WHERE id = ? AND user_id = ?", (client_id, user_id)).fetchone():
+        client_id = None
+    vals = dict(kind=kind, title=title, ts=ts, dur_min=dur, listing_id=listing_id, client_id=client_id,
                 contact_name=str(body.get("contact_name") or "").strip()[:100],
                 contact_phone=_clean_phone(str(body.get("contact_phone") or "")),
                 place=str(body.get("place") or "").strip()[:200],
@@ -138,17 +145,23 @@ def save_event(conn: sqlite3.Connection, user_id: int, body: dict) -> dict:
         # перенесли время или напоминание — напомнить заново
         reminded = "0" if (old["ts"] != ts or old["remind_min"] != remind) else "reminded"
         conn.execute(f"""UPDATE planner_events SET kind=:kind, title=:title, ts=:ts, dur_min=:dur_min, listing_id=:listing_id,
+                            client_id=:client_id,
                             contact_name=:contact_name, contact_phone=:contact_phone, place=:place, note=:note,
                             remind_min=:remind_min, done=:done, reminded={reminded}, updated=:now
                          WHERE id=:id AND user_id=:uid""", {**vals, "now": now, "id": int(eid), "uid": user_id})
     else:
         if conn.execute("SELECT COUNT(*) FROM planner_events WHERE user_id = ?", (user_id,)).fetchone()[0] >= MAX_EVENTS:
             return {"error": "Слишком много событий — удалите старые."}
-        cur = conn.execute("""INSERT INTO planner_events (user_id, kind, title, ts, dur_min, listing_id, contact_name,
+        cur = conn.execute("""INSERT INTO planner_events (user_id, kind, title, ts, dur_min, listing_id, client_id, contact_name,
                                   contact_phone, place, note, remind_min, done, reminded, created, updated)
-                              VALUES (:uid, :kind, :title, :ts, :dur_min, :listing_id, :contact_name, :contact_phone,
+                              VALUES (:uid, :kind, :title, :ts, :dur_min, :listing_id, :client_id, :contact_name, :contact_phone,
                                   :place, :note, :remind_min, :done, 0, :now, :now)""", {**vals, "uid": user_id, "now": now})
         eid = cur.lastrowid
+        if client_id:   # в историю клиента
+            from datetime import datetime
+            when = datetime.fromtimestamp(ts, MSK).strftime("%d.%m %H:%M")
+            conn.execute("INSERT INTO client_log (client_id, ts, kind, text) VALUES (?,?,?,?)",
+                         (client_id, now, "event", f"{KINDS[kind].split(' ', 1)[1]} {when}: {title}"))
     conn.commit()
     r = conn.execute(f"{_SELECT} WHERE e.id = ?", (int(eid),)).fetchone()
     return _event_row(r)

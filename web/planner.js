@@ -163,6 +163,8 @@
     const hours = ["10:00", "12:00", "15:00", "18:00"].map((h) => `<button type="button" class="chip" data-qtime="${h}">${h}</button>`);
     $("evQuick").innerHTML = days.join("") + hours.join("");
   }
+  const CLIENT_ID = Number(new URLSearchParams(location.search).get("client")) || null;
+
   async function openEvent(ev, preset = {}) {
     editing = ev || null;
     const f = $("evForm");
@@ -213,7 +215,8 @@
     const ts = Math.floor(new Date(`${f.date.value}T${f.time.value || "10:00"}`).getTime() / 1000);
     const body = { kind, title: f.title.value, ts, dur_min: Number(f.dur_min.value), listing_id: Number(f.listing_id.value) || null,
       contact_name: f.contact_name.value, contact_phone: f.contact_phone.value, place: f.place.value, note: f.note.value,
-      remind_min: Number(f.remind_min.value), done: editing ? editing.done : 0 };
+      remind_min: Number(f.remind_min.value), done: editing ? editing.done : 0,
+      client_id: editing ? editing.client_id : CLIENT_ID };   // событие по клиенту CRM (/planner?add=show&client=ID)
     if (editing) body.id = editing.id;
     const r = await call("/api/planner", body);
     if (!r.ok) { $("evErr").textContent = r.data.detail || "Не получилось сохранить."; $("evErr").hidden = false; return; }
@@ -326,7 +329,13 @@
   load().then(async (ok) => {
     if (!ok) return;
     const sp = new URLSearchParams(location.search);
-    if (sp.get("add")) await openEvent(null, { kind: KINDS[sp.get("add")] ? sp.get("add") : "show", listing: Number(sp.get("listing")) || null });
+    if (sp.get("add")) {
+      await openEvent(null, { kind: KINDS[sp.get("add")] ? sp.get("add") : "show", listing: Number(sp.get("listing")) || null });
+      if (CLIENT_ID) {   // из карточки клиента: подставить имя и телефон клиента
+        const r = await call(`/api/clients?id=${CLIENT_ID}`);
+        if (r.ok) { const f = $("evForm"); f.contact_name.value = r.data.client.name || ""; if (r.data.client.phone) f.contact_phone.value = r.data.client.phone; }
+      }
+    }
     else if (sp.get("event")) {
       const id = Number(sp.get("event"));
       let ev = allEvents().find((x) => x.id === id);

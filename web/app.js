@@ -382,7 +382,7 @@
     const b = [];
     const st = myStatus(o.id);
     if (st) b.push(`<span class="mark crm crm-${st}">${STATUSES[st]}</span>`);
-    if (o.source === "feed") b.push(`<span class="mark partner" title="Объект агентства недвижимости «СТРЕЛЫ» — партнёра 1+1">${STRELY}СТРЕЛЫ</span>`);
+    if (o.source === "feed") b.push(`<span class="mark partner" title="Объект партнёра «СТРЕЛЫ»">${STRELY}СТРЕЛЫ</span>`);
     if (o.verified && o.source !== "feed") b.push(`<span class="mark verified" title="Агент подтвердил свой номер в 1+1">✓ Проверенный агент</span>`);
     if (o.first_seen > now - 86400) b.push(`<span class="mark new">Новое</span>`);
     if (o.prev_price && o.price && o.prev_price > o.price && o.price_changed_at > now - 14 * 86400) {
@@ -401,6 +401,28 @@
 
   // знак «СТРЕЛЫ» — две стрелки (бренд агентства-партнёра)
   const STRELY = `<svg class="strely-ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 12.5L8 7M8 7V11M8 7H4"/><path d="M7.5 9.5L13 4M13 4V8M13 4H9"/></svg>`;
+
+  // «Клиенту»: предложить объект клиенту из CRM (/clients) — список клиентов с отметкой, кому уже предложен
+  async function openClientMenu(id) {
+    let dlg = $("clientDlg");
+    if (!dlg) {
+      dlg = document.createElement("dialog");
+      dlg.id = "clientDlg";
+      dlg.className = "small-dlg client-dlg";
+      document.body.appendChild(dlg);
+    }
+    dlg.innerHTML = `<div class="dlg-body"><div class="cm-head"><h2>Предложить клиенту</h2>
+      <button type="button" class="close" data-close-dlg aria-label="Закрыть">✕</button></div><div class="cm-list"><p class="note">Загружаем…</p></div></div>`;
+    if (!dlg.open) dlg.showModal();
+    const r = await call(`/api/clients?listing=${id}`);
+    if (!r.ok) { dlg.querySelector(".cm-list").innerHTML = `<p class="note">Не получилось загрузить клиентов.</p>`; return; }
+    const has = new Map(r.data.items.map((x) => [x.id, x.status]));
+    const ST = { offered: "предложен", liked: "понравился", shown: "показан", rejected: "отказ" };
+    dlg.querySelector(".cm-list").innerHTML = (r.data.clients.length ? r.data.clients.map((c) => `<button type="button" class="cm-it${has.has(c.id) ? " on" : ""}"
+        data-client-add="${c.id}" data-listing="${id}"><span class="cm-ava">${esc((c.name || "К")[0].toUpperCase())}</span>
+        <span class="cm-name">${esc(c.name)}</span><small>${has.has(c.id) ? `уже: ${ST[has.get(c.id)] || ""}` : "предложить"}</small></button>`).join("")
+      : `<p class="note">Клиентов пока нет.</p>`) + `<a class="pill light cm-new" href="/clients?new=1">${ic("plus")}Новый клиент</a>`;
+  }
 
   function itemHTML(o) {
     const hit = hitSince && o.first_seen > hitSince;   // новое в этом поиске — выделяем один раз
@@ -720,6 +742,7 @@
       `<button type="button" class="dv-act${inCmp ? " on" : ""}" data-cmp="${o.id}"><i>⚖</i><span>${inCmp ? "В сравнении" : "Сравнить"}</span></button>`,
       u ? `<a class="dv-act" href="/planner?add=show&listing=${o.id}"><i>📅</i><span>Запланировать</span></a>` : "",
       u ? `<button type="button" class="dv-act" data-pick-open="${o.id}"><i>📁</i><span>В подборку</span></button>` : "",
+      u ? `<button type="button" class="dv-act" data-client-open="${o.id}"><i>${ic("users")}</i><span>Клиенту</span></button>` : "",
       `<button type="button" class="dv-act" data-share="${o.id}"><i>${ic("share")}</i><span>Поделиться</span></button>`,
     ].join("");
 
@@ -1125,7 +1148,7 @@
           <a class="dv-ic-btn" href="tel:${esc(p)}" aria-label="Позвонить" title="Позвонить">${ic("phone")}</a>
           <a class="dv-ic-btn" href="https://wa.me/${digits}" target="_blank" rel="noopener" aria-label="Написать в WhatsApp" title="WhatsApp">${ic("chat")}</a></div>`;
       }).join("")}${o.url ? `<a class="dv-site${o.source === "feed" ? " strely" : ""}" href="${esc(o.url)}" target="_blank" rel="noopener">${o.source === "feed"
-        ? `${STRELY}<span>Объект агентства «СТРЕЛЫ» — смотреть на arrowsrealty.ru</span>${ic("external")}` : `${ic("link")}Объявление на сайте агентства`}</a>` : ""}</div>`;
+        ? `${STRELY}<span>Объект партнёра «СТРЕЛЫ» — смотреть на arrowsrealty.ru</span>${ic("external")}` : `${ic("link")}Объявление на сайте агентства`}</a>` : ""}</div>`;
     }
     if (o.phones_limit) {
       return `<div class="d-locked"><p>На сегодня открыто максимум номеров (${esc(me() && me().views_limit)}). Завтра лимит обновится.</p></div>`;
@@ -1611,6 +1634,15 @@
         try { localStorage.setItem("savedHidden", savedHidden ? "1" : "0"); } catch { /* */ }
         renderSaved(); return;
       }
+      if (t.dataset.clientOpen) { openClientMenu(Number(t.dataset.clientOpen)); return; }
+      if (t.dataset.clientAdd) {
+        call(`/api/clients/${t.dataset.clientAdd}/items`, { listing_id: Number(t.dataset.listing), status: "offered" }).then((r) => {
+          if (r.ok) { toast("Объект добавлен клиенту — он в его карточке"); openClientMenu(Number(t.dataset.listing)); }
+          else toast(r.data.detail || "Не получилось");
+        });
+        return;
+      }
+      if (t.hasAttribute("data-close-dlg")) { t.closest("dialog").close(); return; }
       if (t.dataset.galStep) {
         const g = t.parentElement.querySelector(".dv-gal");
         g.scrollBy({ left: Number(t.dataset.galStep) * g.clientWidth * .8, behavior: "smooth" });

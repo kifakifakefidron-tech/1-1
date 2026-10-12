@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from datetime import datetime
 
-from . import agent, market, widgets
+from . import agent, clients, market, widgets
 from .planner import MSK, events
 
 STATUS_LABELS = {"call": "Звонок", "show": "Показ", "think": "Думает", "deal": "Сделка", "refuse": "Отказ"}
@@ -50,5 +50,6 @@ def build(conn, user) -> dict:
         "notices": notices, "unread": unread, "saved": saved,
         "picks": {"n": picks[0], "views": picks[1]}, "mine": mine, "new_today": new_today,
         "market": _market(conn),
+        "clients": clients.summary(conn, uid),
         "widgets": widgets.all_widgets(conn),
     }

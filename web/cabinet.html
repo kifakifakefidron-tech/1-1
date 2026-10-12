@@ -13,8 +13,8 @@
 <link rel="stylesheet" href="/static/motion.css?v=34">
 <link rel="stylesheet" href="/static/doc.css?v=2">
 <link rel="stylesheet" href="/static/theme.css?v=14">
-<link rel="stylesheet" href="/static/glass.css?v=4">
-<link rel="stylesheet" href="/static/cabinet.css?v=5">
+<link rel="stylesheet" href="/static/glass.css?v=5">
+<link rel="stylesheet" href="/static/cabinet.css?v=6">
 </head>
 <body class="dash-body">
 <main class="dash">
@@ -22,11 +22,12 @@
   <nav class="rail" aria-label="Разделы">
     <a class="rail-logo" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="38" height="38"></a>
     <a class="rail-a on" href="/cabinet" data-tip="Кабинет"><span data-ic="grid"></span></a>
+    <a class="rail-a" href="/clients" data-tip="Клиенты"><span data-ic="users"></span></a>
     <a class="rail-a" href="/" data-tip="Поиск объектов"><span data-ic="search"></span></a>
     <a class="rail-a" href="/?fav=1" data-tip="Избранное и статусы"><span data-ic="heart"></span></a>
     <a class="rail-a" href="/planner" data-tip="Планер"><span data-ic="calendar"></span></a>
     <a class="rail-a" href="/picks" data-tip="Подборки клиентам"><span data-ic="folder"></span></a>
-    <a class="rail-a" href="/requests" data-tip="Запросы покупателей"><span data-ic="users"></span></a>
+    <a class="rail-a" href="/requests" data-tip="Запросы покупателей"><span data-ic="briefcase"></span></a>
     <a class="rail-a" href="/market" data-tip="Аналитика рынка"><span data-ic="chart"></span></a>
     <a class="rail-a" href="/learn" data-tip="Обучение и разбор" id="railLearn" hidden><span data-ic="layers"></span></a>
     <a class="rail-a" href="/admin" data-tip="Админка" id="railAdmin" hidden><span data-ic="sliders"></span></a>
@@ -66,7 +67,9 @@
 
         <!-- день -->
         <section class="g w-day span-2" id="wDay"><div class="g-skel"></div></section>
-        <!-- объекты в работе (CRM) -->
+        <!-- клиенты (CRM) -->
+        <section class="g w-clients span-2" id="wClients"><div class="g-skel"></div></section>
+        <!-- объекты в работе (статусы) -->
         <section class="g w-crm span-2" id="wCrm"><div class="g-skel"></div></section>
 
         <!-- уведомления -->
@@ -116,7 +119,7 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
 <script src="/static/icons.js?v=4"></script>
-<script src="/static/cabinet.js?v=4"></script>
+<script src="/static/cabinet.js?v=5"></script>
 <script src="/static/bell.js?v=1"></script>
 </body>
 </html>

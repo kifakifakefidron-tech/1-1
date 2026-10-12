@@ -21,7 +21,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import (accounts, agent, autolearn, brain, buyers, dashboard, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
+from . import (accounts, agent, autolearn, brain, buyers, clients, dashboard, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
                market, payments, picks, planner, region, search, stats, tg, widgets)
 from .rules import TYPE_LABELS
 
@@ -1605,6 +1605,67 @@ def api_admin_geo_queue(request: Request, body: dict | None = None):
     return JSONResponse({"items": [dict(r) for r in rows], "counts": counts, "learned": learned})
 
 
+def api_clients(request: Request, body: dict | None = None):
+    """CRM: GET — доска клиентов (?q=), ?id= — карточка; POST — сохранить клиента / {id, stage}; DELETE {id}."""
+    user, err = _need_user(request)
+    if err:
+        return err
+    conn = db.get()
+    body = body or {}
+    if request.method == "DELETE":
+        clients.delete(conn, user["id"], _num(body.get("id"), int) or 0)
+        return JSONResponse({"ok": True})
+    if request.method == "POST":
+        if _too_often(request, "clients", 600, 3600):
+            return _err("Слишком часто — попробуйте позже.", 429)
+        if set(body) == {"id", "stage"}:
+            res = clients.set_stage(conn, user["id"], _num(body["id"], int) or 0, str(body["stage"]))
+        else:
+            res = clients.save(conn, user["id"], body)
+        return _err(res["error"]) if "error" in res else JSONResponse(res)
+    q = request.query_params
+    if q.get("id"):
+        res = clients.detail(conn, user["id"], _num(q["id"], int) or 0)
+        return _err(res["error"], 404) if "error" in res else JSONResponse(res)
+    if q.get("listing"):
+        return JSONResponse({"items": clients.for_listing(conn, user["id"], _num(q["listing"], int) or 0),
+                             "clients": [{"id": c["id"], "name": c["name"], "stage": c["stage"]}
+                                         for c in clients.board(conn, user["id"])["items"] if not c["archived"]]})
+    return JSONResponse(clients.board(conn, user["id"], q.get("q", "").strip()[:100]))
+
+
+def api_client_action(request: Request, body: dict | None = None):
+    """POST /api/clients/{id}/items {listing_id, status|null} — объект клиенту; /note {text} — заметка; GET /match — подбор."""
+    user, err = _need_user(request)
+    if err:
+        return err
+    conn = db.get()
+    cid = int(request.path_params["id"])
+    what = request.path_params["what"]
+    body = body or {}
+    if what == "match":
+        d = clients.detail(conn, user["id"], cid)
+        if "error" in d:
+            return _err(d["error"], 404)
+        p = clients.match_query(d["client"])
+        qr = search.Query(deal=p["deal"], rooms=p.get("rooms", []), districts=p.get("district", []),
+                          price_min=p.get("price_min"), price_max=p.get("price_max"), size=24)
+        res = search.search(conn, qr, int(time.time()), has_access(request, user))
+        linked = {i["id"] for i in d["items"]}
+        return JSONResponse({"items": [x for x in res["items"] if x["id"] not in linked][:12], "total": res.get("total")})
+    if what == "items":
+        res = clients.set_item(conn, user["id"], cid, _num(body.get("listing_id"), int) or 0, body.get("status"))
+    elif what == "note":
+        res = clients.add_note(conn, user["id"], cid, body.get("text", ""))
+    else:
+        return _err("Неизвестное действие.", 404)
+    return _err(res["error"]) if "error" in res else JSONResponse(res)
+
+
+def clients_page(request: Request, body: dict | None = None):
+    return _page("clients.html")
+
+
 def api_dashboard(request: Request, body: dict | None = None):
     """Кабинет одним запросом: день, CRM, уведомления, рынок, погода, ставки."""
     user, err = _need_user(request)
@@ -1716,6 +1777,9 @@ routes = [
     Route("/api/admin/recheck", threaded(api_admin_recheck), methods=["POST"]),
     Route("/api/admin/learn", threaded(api_admin_learn)),
     Route("/api/dashboard", threaded(api_dashboard)),
+    Route("/api/clients", threaded(api_clients), methods=["GET", "POST", "DELETE"]),
+    Route("/api/clients/{id:int}/{what}", threaded(api_client_action), methods=["GET", "POST"]),
+    Route("/clients", threaded(clients_page)),
     Route("/api/widgets", threaded(api_widgets)),
     Route("/api/admin/banks", threaded(api_admin_banks), methods=["POST"]),
     Route("/api/admin/learn/knowledge", threaded(api_admin_knowledge), methods=["GET", "POST"]),

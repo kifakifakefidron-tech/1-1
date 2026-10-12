@@ -287,3 +287,7 @@
   .w-day { order: -10; } .w-weather { order: -9; } .w-crm { order: -8; } .w-news { order: -7; } .w-quick { order: -6; }
   .w-rate { order: -5; } .w-mort { order: -4; } .w-calc { order: -3; } .w-fx { order: -2; } .w-market { order: -1; }
 }
+
+/* клиенты: 6 этапов (без «отказа») */
+.wc-pipe.cl { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 720px) { .wc-pipe.cl { grid-template-columns: repeat(6, minmax(64px, 1fr)); } .w-clients { order: -8; } }

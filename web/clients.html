@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Клиенты · 1+1</title>
+<meta name="theme-color" content="#023f3e">
+<meta name="robots" content="noindex">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=25">
+<link rel="stylesheet" href="/static/motion.css?v=34">
+<link rel="stylesheet" href="/static/theme.css?v=14">
+<link rel="stylesheet" href="/static/glass.css?v=5">
+<link rel="stylesheet" href="/static/cabinet.css?v=6">
+<link rel="stylesheet" href="/static/clients.css?v=1">
+</head>
+<body class="dash-body">
+<main class="dash">
+  <nav class="rail" aria-label="Разделы">
+    <a class="rail-logo" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="38" height="38"></a>
+    <a class="rail-a" href="/cabinet" data-tip="Кабинет"><span data-ic="grid"></span></a>
+    <a class="rail-a on" href="/clients" data-tip="Клиенты"><span data-ic="users"></span></a>
+    <a class="rail-a" href="/" data-tip="Поиск объектов"><span data-ic="search"></span></a>
+    <a class="rail-a" href="/?fav=1" data-tip="Избранное и статусы"><span data-ic="heart"></span></a>
+    <a class="rail-a" href="/planner" data-tip="Планер"><span data-ic="calendar"></span></a>
+    <a class="rail-a" href="/picks" data-tip="Подборки клиентам"><span data-ic="folder"></span></a>
+    <a class="rail-a" href="/market" data-tip="Аналитика рынка"><span data-ic="chart"></span></a>
+    <span class="rail-gap"></span>
+  </nav>
+
+  <div class="dash-main">
+    <div class="d-guest" id="cGuest" hidden>
+      <h1>Клиенты</h1>
+      <p>Ваши покупатели и продавцы, этапы сделок, подобранные объекты и история — в одном месте. Войдите, чтобы начать.</p>
+      <a class="pill" href="/?login=1">Войти</a>
+    </div>
+
+    <div id="cApp" hidden>
+      <header class="c-head">
+        <div><p class="d-date">CRM · клиенты и сделки</p><h1 class="d-hello">Клиенты <span class="c-total" id="cTotal"></span></h1></div>
+        <div class="c-tools">
+          <label class="c-search"><span data-ic="search"></span><input id="cQ" type="search" placeholder="Имя, телефон, заметка" autocomplete="off"></label>
+          <div class="c-view" role="group" aria-label="Вид">
+            <button type="button" class="on" data-view="board">Доска</button><button type="button" data-view="list">Список</button>
+          </div>
+          <button type="button" class="pill" id="cNew"><span data-ic="plus"></span>Клиент</button>
+        </div>
+      </header>
+      <div class="c-kinds chips" id="cKinds"></div>
+      <div class="c-board" id="cBoard"></div>
+      <div class="c-list" id="cList" hidden></div>
+      <p class="c-empty" id="cEmpty" hidden>Здесь будут ваши клиенты. Нажмите «+ Клиент» — укажите, что ищет человек, и сервис сам подберёт объекты.</p>
+    </div>
+  </div>
+</main>
+
+<!-- карточка клиента -->
+<dialog id="cDlg" class="c-dlg">
+  <div class="c-dlg-in">
+    <div class="c-dlg-head">
+      <div class="c-dlg-who"><span class="d-ava big" id="dAva"></span><div><h2 id="dName">Новый клиент</h2><p class="note" id="dSub"></p></div></div>
+      <div class="c-dlg-acts" id="dActs"></div>
+      <button type="button" class="close" data-close aria-label="Закрыть">✕</button>
+    </div>
+    <div class="c-stages" id="dStages"></div>
+    <div class="c-tabs" role="tablist">
+      <button type="button" class="on" data-tab="card">Карточка</button>
+      <button type="button" data-tab="items">Объекты <b id="dItemsN"></b></button>
+      <button type="button" data-tab="log">История</button>
+      <button type="button" data-tab="tasks">Дела</button>
+    </div>
+
+    <form class="c-pane" id="pCard" data-pane="card" autocomplete="off">
+      <div class="c-grid">
+        <label class="c-f"><span>Имя</span><input name="name" placeholder="Ирина"></label>
+        <label class="c-f"><span>Телефон</span><input name="phone" inputmode="tel" placeholder="+7 918 …"></label>
+        <div class="c-f wide"><span>Кто это</span><div class="chips" id="fKind"></div></div>
+        <div class="c-f wide"><span>Комнаты</span><div class="chips" id="fRooms"></div></div>
+        <label class="c-f"><span id="fBudgetL">Бюджет от, млн ₽</span><input name="budget_min" inputmode="decimal"></label>
+        <label class="c-f"><span id="fBudgetH">Бюджет до, млн ₽</span><input name="budget_max" inputmode="decimal"></label>
+        <div class="c-f wide"><span>Районы</span><div class="chips" id="fDistricts"></div><input id="fDistrictAdd" placeholder="+ добавить район"></div>
+        <label class="c-f"><span>Следующий шаг</span><input name="next_text" placeholder="Позвонить, отправить подборку…"></label>
+        <label class="c-f"><span>Когда</span><input name="next_date" type="datetime-local"></label>
+        <label class="c-f"><span>Откуда клиент</span><input name="source" placeholder="Авито, рекомендация, звонок…"></label>
+        <label class="c-f wide"><span>Заметка</span><textarea name="note" rows="3" placeholder="Что важно: этаж, ремонт, ипотека, сроки…"></textarea></label>
+      </div>
+      <p class="c-err" id="fErr" hidden></p>
+      <div class="c-form-acts">
+        <button type="button" class="ghost" id="dDelete" hidden>Удалить</button>
+        <button type="button" class="ghost" id="dArchive" hidden>В архив</button>
+        <button type="submit" class="pill">Сохранить</button>
+      </div>
+    </form>
+
+    <div class="c-pane" data-pane="items" hidden>
+      <div class="c-items" id="dItems"></div>
+      <div class="c-match-h"><h3>Подходят по пожеланиям</h3><button type="button" class="pill light" id="dMatch"><span data-ic="sparkle"></span>Подобрать</button></div>
+      <div class="c-items" id="dMatchList"></div>
+    </div>
+
+    <div class="c-pane" data-pane="log" hidden>
+      <form class="c-note" id="dNote"><input name="text" placeholder="Заметка о разговоре, договорённости…" autocomplete="off"><button type="submit" class="pill light">Добавить</button></form>
+      <ul class="c-log" id="dLog"></ul>
+    </div>
+
+    <div class="c-pane" data-pane="tasks" hidden>
+      <div class="c-task-acts" id="dTaskActs"></div>
+      <ul class="c-events" id="dEvents"></ul>
+    </div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
+<script src="/static/icons.js?v=4"></script>
+<script src="/static/clients.js?v=2"></script>
+<script src="/static/bell.js?v=1"></script>
+</body>
+</html>

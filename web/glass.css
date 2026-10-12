@@ -166,3 +166,21 @@ html.lb-open { overflow: hidden; }
 .dv-site.strely span { flex: 1; }
 .dv-site.strely svg.ic { width: 16px; height: 16px; color: var(--gold); }
 .dv-site.strely:hover { text-decoration: none; border-color: rgba(227, 203, 143, .6); }
+
+/* «Предложить клиенту» из окна объекта */
+.client-dlg { width: min(420px, calc(100vw - 24px)); }
+.client-dlg .dlg-body { padding: 20px; }
+.cm-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.cm-head h2 { margin: 0; font: 600 19px var(--display); }
+.cm-list { display: grid; gap: 6px; max-height: 60vh; overflow: auto; }
+.cm-it { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 14px;
+  border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .04); color: var(--ink); text-align: left; cursor: pointer; font: inherit; }
+.cm-it:hover { background: rgba(255, 255, 255, .09); }
+.cm-it.on { border-color: rgba(167, 209, 182, .5); }
+.cm-it.on small { color: var(--ok); }
+.cm-ava { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; color: #0f2f2e;
+  background: linear-gradient(150deg, #f3e8bc, #c9a85c); }
+.cm-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.cm-it small { color: var(--ink-3); font-size: 12px; }
+.cm-new { margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; justify-content: center; text-decoration: none; }
+.cm-new svg { width: 15px; height: 15px; }

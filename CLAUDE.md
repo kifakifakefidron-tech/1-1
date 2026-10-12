@@ -287,6 +287,17 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   один объект; портянки и карточки с owner_user_id не трогаем), качает {api}/message/media/download → file_link →
   data/photos/<id>/. wappi._text теперь читает подпись к фото (body.caption) — раньше объявления подписью к фото терялись.
   Путь для Telegram/MAX (/tapi|/maxapi/sync/message/media/download) — проверить по журналу при включении.
+- CRM (12.10, app/clients.py, /clients, web/clients.*): клиенты (покупатель/продавец/арендатор/арендодатель), этапы
+  new→search→shows→talks→deposit→deal / lost (доска с перетаскиванием и список), пожелания (комнаты, бюджет, районы) →
+  подбор тем же поиском (/api/clients/{id}/match, бюджет +5 %), объекты клиента (предложен/понравился/показан/отказ,
+  попадают в избранное), история client_log (заметки, этапы, объекты, события), следующий шаг (дата+текст), архив.
+  planner_events.client_id (/planner?add=show&client=ID — в историю клиента). Окно объекта — «Клиенту» (/api/clients?listing=).
+  Кабинет — виджет «Клиенты» (dashboard → clients.summary). Чужие клиенты недоступны (user_id).
+- Лимиты частоты (server._too_often): за Docker все посетители видны с ОДНОГО адреса → лимиты по аккаунту (сессии),
+  вход по почте — по адресу почты (было: 5 кодов в час на весь сайт — вход ломался всем).
+- Фото: lightbox.js (просмотр на странице, popover поверх dialog, свайп/стрелки/миниатюры, data-lb), рамки 1:1.
+  «СТРЕЛЫ» — фирменная капсула .mark.partner, ссылка «Объект партнёра «СТРЕЛЫ» — смотреть на arrowsrealty.ru».
+- banki.ru и подобные агрегаторы — НЕ копируем автоматически (их база, правила сайта); ставки банков ведёт админ.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
@@ -295,7 +306,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 155 тестов
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 160 тестов
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены

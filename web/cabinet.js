@@ -145,6 +145,24 @@
         <a class="pill light" href="/planner?add=task">${ic("plus")}Задача</a></div>`, 4);
   }
 
+  // ─── клиенты (CRM) ───────────────────────────────────────────────
+  const CL_C = { new: "#b8c8e4", search: "#8fd1cb", shows: "#e3cb8f", talks: "#d9b3e6", deposit: "#f0b77a", deal: "#a7d1b6", lost: "#e2a596" };
+  function clientsW() {
+    const c = dash.clients || { stages: [], next: [], total: 0 };
+    const max = Math.max(1, ...c.stages.map((s) => s.n));
+    const nxt = c.next.map((x) => {
+      const over = x.next_ts * 1000 < Date.now();
+      return `<a class="wn-it${over ? " unread" : ""}" href="/clients?id=${x.id}"><b>${esc(x.name)} — ${esc(x.next_text || "связаться")}</b>
+        <small${over ? ' style="color:var(--bad)"' : ""}>${new Date(x.next_ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</small></a>`;
+    }).join("");
+    put("wClients", `${head("users", "Клиенты", `<a class="g-link" href="/clients">Все клиенты →</a>`)}
+      ${c.total ? `<div class="wc-pipe cl">${c.stages.filter((s) => s.key !== "lost").map((s) => `<a class="wc-st" href="/clients"><b>${s.n}</b><span>${esc(s.label)}</span>
+        <div class="wc-bar"><i style="--w:${Math.round(s.n / max * 100)}%;--c:${CL_C[s.key]}"></i></div></a>`).join("")}</div>
+        ${nxt ? `<p class="wd-gt" style="margin-top:14px">Следующие шаги</p>${nxt}` : ""}`
+        : `<p class="g-empty">Ведите покупателей и продавцов: этапы сделки, подобранные объекты, история и напоминания — в одном месте.</p>`}
+      <div class="wd-acts"><a class="pill light" href="/clients?new=1">${ic("plus")}Клиент</a></div>`, 5);
+  }
+
   // ─── объекты в работе (статусы) ──────────────────────────────────
   const ST_COLOR = { call: "#b8c8e4", show: "#e3cb8f", think: "#d9b3e6", deal: "#a7d1b6", refuse: "#e2a596" };
   function crm() {
@@ -238,7 +256,7 @@
     put("wQuick", `${head("sparkle", "Быстро")}<div class="wa-grid">
       ${a("/", "search", "Найти объект")}${a("/planner?add=show", "calendar", "Запланировать показ")}
       ${a("/picks", "folder", "Подборка клиенту")}${a("/?agent=1", "tag", "Моё объявление")}
-      ${a("/requests", "users", "Запросы покупателей")}${a("/market", "chart", "Цены по районам")}</div>`, 10);
+      ${a("/clients?new=1", "users", "Новый клиент")}${a("/market", "chart", "Цены по районам")}</div>`, 10);
   }
   async function saved() {
     const r = await call("/api/saved");
@@ -298,7 +316,7 @@
     dash = r.data;
     const w = dash.widgets;
     weather(w.weather); rate(w.keyrate); mortgage(w.mortgage, w.banks); fx(w.currency);
-    day(); crm(); news(); market(); calcHtml(); admin();
+    day(); clientsW(); crm(); news(); market(); calcHtml(); admin();
   }
 
   // ─── события ─────────────────────────────────────────────────────

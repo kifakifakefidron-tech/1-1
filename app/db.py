@@ -174,6 +174,24 @@ CREATE TABLE IF NOT EXISTS saved_searches (
     sent_at INTEGER, active INTEGER NOT NULL DEFAULT 1
 );
 -- Выученные точки: админ поправил объект на карте → эта точка для того же дома/ЖК во всех объявлениях
+-- CRM агента (app/clients.py): клиенты, объекты клиента, история
+CREATE TABLE IF NOT EXISTS clients (
+    id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL, phone TEXT, kind TEXT NOT NULL DEFAULT 'buyer', stage TEXT NOT NULL DEFAULT 'new',
+    deal TEXT NOT NULL DEFAULT 'sale', budget_min INTEGER, budget_max INTEGER, rooms TEXT NOT NULL DEFAULT '[]',
+    districts TEXT NOT NULL DEFAULT '[]', note TEXT, next_ts INTEGER, next_text TEXT, source TEXT,
+    archived INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL, updated INTEGER NOT NULL, stage_ts INTEGER
+);
+CREATE INDEX IF NOT EXISTS ix_clients_user ON clients (user_id, archived, stage);
+CREATE TABLE IF NOT EXISTS client_items (
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'offered', note TEXT, ts INTEGER NOT NULL, PRIMARY KEY (client_id, listing_id)
+);
+CREATE TABLE IF NOT EXISTS client_log (
+    id INTEGER PRIMARY KEY, client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    ts INTEGER NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_client_log ON client_log (client_id, ts);
 -- Фото из чатов (app/media.py): картинки альбомов — к объявлению того же агента
 CREATE TABLE IF NOT EXISTS chat_media (
     id INTEGER PRIMARY KEY, source TEXT NOT NULL, profile_id TEXT, chat_id TEXT NOT NULL, sender TEXT, msg_id TEXT NOT NULL,
@@ -312,7 +330,8 @@ MIGRATIONS = [
     ("listings", "price_wrong", "INTEGER"),
     ("listings", "geo_src", "TEXT"),        # откуда точка, если её поставил сервис сам (app/autolearn.py)
     ("listings", "district_src", "TEXT"),
-    ("listings", "place_conflict", "TEXT"),  # источники спорят: «rule:…» (правило ≠ карта), «votes:…» (карта ≠ соседи)   # откуда район, если его поставил сервис сам: map | vote-house | vote-cx                     # какую ошибочную цену разбор давал (её и не принимаем)   # админ сам поставил продажу/аренду — автоматика не трогает                     # свой текст объявления для клиента (вместо исходного)                              # статус агента по объекту: call | show | think | refuse | deal                   # % к медиане м² по ЖК/району (hooks.update_market_diff)
+    ("listings", "place_conflict", "TEXT"),
+    ("planner_events", "client_id", "INTEGER"),   # событие по клиенту (CRM)  # источники спорят: «rule:…» (правило ≠ карта), «votes:…» (карта ≠ соседи)   # откуда район, если его поставил сервис сам: map | vote-house | vote-cx                     # какую ошибочную цену разбор давал (её и не принимаем)   # админ сам поставил продажу/аренду — автоматика не трогает                     # свой текст объявления для клиента (вместо исходного)                              # статус агента по объекту: call | show | think | refuse | deal                   # % к медиане м² по ЖК/району (hooks.update_market_diff)
 ]
 
 _local = threading.local()
