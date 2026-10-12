@@ -73,3 +73,13 @@ def test_learn_overview_and_knowledge(env):
     left = c.get("/api/admin/learn/knowledge").json()["items"]
     assert len(left) == len(items) - 2
     assert c.get("/learn").status_code == 200
+
+
+def test_flats_without_complex_are_not_a_queue():
+    assert "nocomplex" not in brain.QUEUE and brain.queue_key("place", "nocomplex") == "nodistrict"
+
+
+def test_polygon_name_matches_settlement_district(env):
+    _, conn = env
+    districtmap.save_polygon(conn, "Российский", "district", KAT)
+    assert districtmap.district_at(conn, 45.01, 38.91)[0] == "п. Российский"

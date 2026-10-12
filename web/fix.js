@@ -235,6 +235,7 @@
 
   // ─── карта ────────────────────────────────────────────────────────────
   function showGeo(it) {
+    $("fxOffer").innerHTML = "";
     let start = it.lat ? [it.lat, it.lon] : [45.035, 38.975];
     if (!map) {
       map = L.map("fxMap", { attributionControl: false });
@@ -273,10 +274,39 @@
       const where = [d && `район <b>${esc(d)}</b>`, cx && `ЖК <b>${esc(cx)}</b>`].filter(Boolean).join(", ");
       const clash = d && item.district && d !== item.district && !(item.extra_districts || []).includes(d);
       $("fxGeoNow").innerHTML = `Точка: ${ll.lat.toFixed(6)}, ${ll.lng.toFixed(6)}${where ? ` · по карте районов: ${where}` : " · вне контуров районов"}`
-        + (clash ? `<br><span class="fx-clash">У объекта район «${esc(item.district)}» — точка в другом районе. Проверьте.</span>` : "")
-        + (d && !item.district ? `<br><span class="note">Района у объекта нет — после сохранения встанет «${esc(d)}».</span>` : "");
+        + (clash ? `<br><span class="fx-clash">У объекта район «${esc(item.district)}» — точка в другом районе. Проверьте.</span>` : "");
+      offerFromPoint(d, cx);
     }, 250);
   }
+  // Район (и ЖК) по точке — первой подсказкой; точку только что вставили/передвинули и района нет — выбираем сразу,
+  // район другой — кнопка «Поставить район по точке»
+  function offerFromPoint(d, cx) {
+    document.querySelectorAll("#fxDistricts .chip.by-point, #fxComplexes .chip.by-point").forEach((b) => b.remove());
+    $("fxOffer").innerHTML = "";
+    if (d) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = `chip by-point${d === chosenDistrict ? " on" : ""}`;
+      chip.dataset.district = d;
+      chip.innerHTML = `${ic("pin")} ${esc(d)} <small>по точке на карте</small>`;
+      $("fxDistricts").prepend(chip);
+      if (geoDirty && !chosenDistrict) {
+        pickDistrict(d);
+        $("fxOffer").innerHTML = `<span class="fx-offer-ok">${ic("check")} Район по точке: <b>${esc(d)}</b> — выбран</span>`;
+      } else if (geoDirty && d !== chosenDistrict && !extraDistricts.includes(d)) {
+        $("fxOffer").innerHTML = `<button type="button" class="pill light" data-district="${esc(d)}">${ic("pin")} Поставить район по точке: «${esc(d)}»</button>`;
+      }
+    }
+    if (cx && !$("fxComplex").value.trim()) {
+      const c = document.createElement("button");
+      c.type = "button";
+      c.className = "chip by-point";
+      c.dataset.complex = cx;
+      c.innerHTML = `ЖК ${esc(cx)} <small>по точке</small>`;
+      $("fxComplexes").prepend(c);
+    }
+  }
+
   function parseCoords(text) {
     let t = String(text || "").trim();
     try { t = decodeURIComponent(t); } catch { /* */ }

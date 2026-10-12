@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
-from . import autolearn, learning
+from . import autolearn, districtmap, learning
 
 _AUTO_GEO = "('feed-house', 'feed-cx', 'map-cx', 'map-district', 'osm-house', 'osm-near', 'osm-street')"
 VISIBLE = ("l.is_active = 1 AND (l.district IS NOT NULL OR l.complex IS NOT NULL OR l.street IS NOT NULL "
@@ -35,9 +35,6 @@ QUEUES: list[dict] = [
     {"key": "approx", "mode": "geo", "label": "Точка примерная",
      "hint": "Стоит по улице или району — уточните дом",
      "where": "l.geo_status = 'approx'"},
-    {"key": "nocomplex", "mode": "place", "label": "Квартиры без ЖК",
-     "hint": "Не находятся фильтром по ЖК",
-     "where": "l.complex IS NULL AND l.type IN ('flat', 'new') AND l.district IS NOT NULL AND l.admin_fixed = 0"},
     {"key": "auto", "mode": "place", "label": "Проверить решения сервиса",
      "hint": "Район или точку сервис поставил сам — проверьте выборочно",
      "where": f"((l.district_src IS NOT NULL AND l.admin_fixed = 0) OR (l.geo_src IN {_AUTO_GEO} "
@@ -48,7 +45,7 @@ QUEUES: list[dict] = [
 QUEUE = {q["key"]: q for q in QUEUES}
 # старые ссылки (/fix?mode=geo&kind=none, вкладки админки, письма) → единая очередь
 ALIASES = {("geo", "none"): "nogeo", ("geo", "pending"): "nogeo", ("geo", "approx"): "approx", ("geo", "auto"): "auto",
-           ("place", "nodistrict"): "nodistrict", ("place", "nocomplex"): "nocomplex", ("place", "auto"): "auto",
+           ("place", "nodistrict"): "nodistrict", ("place", "nocomplex"): "nodistrict", ("place", "auto"): "auto",
            ("place", "fixed"): "fixed"}
 
 
@@ -69,8 +66,7 @@ def overview(conn: sqlite3.Connection) -> dict:
     total = one(f"SELECT COUNT(*) FROM listings l WHERE {VISIBLE}")
     ready = one(f"""SELECT COUNT(*) FROM listings l WHERE {VISIBLE} AND l.lat IS NOT NULL
                     AND l.geo_status IN ('ok', 'manual', 'learned', 'feed')
-                    AND (l.district IS NOT NULL OR l.settlement IS NOT NULL)
-                    AND (l.type NOT IN ('flat', 'new') OR l.complex IS NOT NULL) AND l.place_conflict IS NULL""")
+                    AND (l.district IS NOT NULL OR l.settlement IS NOT NULL) AND l.place_conflict IS NULL""")
     c = counts(conn)
     geo = dict(conn.execute(f"""SELECT CASE WHEN l.geo_status IN ('manual', 'learned') THEN 'yours'
                                        WHEN l.geo_status = 'feed' OR l.geo_src IN ('feed-house', 'feed-cx') THEN 'feed'
@@ -86,7 +82,13 @@ def overview(conn: sqlite3.Connection) -> dict:
                                         COUNT(*) FROM listings l WHERE {VISIBLE} GROUP BY 1""").fetchall())
     rules = dict(conn.execute("SELECT kind, COUNT(*) FROM learned_rules GROUP BY kind").fetchall())
     rep = conn.execute("SELECT value FROM state WHERE key = 'recheck_report'").fetchone()
+    # районы из объявлений, которых нет на вашей карте: их объекты не проверяются по карте
+    drawn = {n for n, kind, *_ in districtmap._polys(conn) if kind == "district"}
+    uncontoured = [{"name": d, "n": n} for d, n in conn.execute(
+        f"""SELECT l.district, COUNT(*) FROM listings l WHERE {VISIBLE} AND l.district IS NOT NULL
+            GROUP BY l.district ORDER BY 2 DESC""").fetchall() if d not in drawn]
     return {
+        "uncontoured": uncontoured,
         "total": total, "ready": ready, "queues": [{k: q[k] for k in ("key", "label", "hint", "mode")} | {"n": c[q["key"]]}
                                                    for q in QUEUES],
         "pipeline": {

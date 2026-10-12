@@ -124,3 +124,12 @@
 .fx-conflict > svg { flex: none; width: 20px; height: 20px; color: var(--bad); }
 .fx-conflict b { color: var(--ink); }
 .fx-conflict small { display: block; margin-top: 2px; }
+/* район по точке — первой подсказкой */
+.fx-block .chip.by-point { border-color: color-mix(in srgb, var(--gold) 55%, transparent); }
+.fx-block .chip.by-point svg { width: 14px; height: 14px; color: var(--gold); }
+.fx-offer:empty { display: none; }
+.fx-offer { margin: 4px 0 8px; }
+.fx-offer .pill { display: inline-flex; align-items: center; gap: 8px; }
+.fx-offer .pill svg, .fx-offer-ok svg { width: 16px; height: 16px; }
+.fx-offer-ok { display: inline-flex; align-items: center; gap: 8px; color: var(--ok); font-size: 14px; }
+.fx-offer-ok b { color: var(--ink); }

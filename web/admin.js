@@ -92,7 +92,7 @@
         ["Квартира, аренда", money(s.prices.rent_median, "rent")]])),
       box("Качество разбора", kv([
         ["Без района", `${n0(Q.no_district)} ${fix("nodistrict", "place")}`, "не находятся фильтром по району"],
-        ["Квартиры без ЖК", `${n0(Q.flats_no_complex)} ${fix("nocomplex", "place")}`],
+        ["Квартиры без ЖК", n0(Q.flats_no_complex), "это нормально: не у всех домов есть ЖК"],
         ["Нет точки на карте", `${n0(Q.no_map)} ${fix("none", "geo")}`],
         ["Точка примерная", `${n0(Q.approx_map)} ${fix("approx", "geo")}`],
         ["Без цены", n0(Q.no_price)], ["Без площади", n0(Q.no_area)], ["Без фото", n0(Q.no_photo)],

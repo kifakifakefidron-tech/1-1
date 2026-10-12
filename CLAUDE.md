@@ -15,7 +15,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   папка `/opt/1plus1`), чтобы не задеть старое приложение с рассылкой (она критична, 24/7).
   На старый сервер не заходим.
 - Сервис называется **«1+1»**, отдельно от бренда СТРЕЛЫ и домена arrowsrealty.ru
-  (домен там на Тильде). Пока своего домена нет — адрес `31-130-132-118.sslip.io`.
+  (домен там на Тильде). Домен — `1plus1assistant.ru` (с 12.10; до этого `31-130-132-118.sslip.io`, перенаправляется).
   HTTPS — Caddy в docker-compose (`Caddyfile`, адрес из `SITE_DOMAIN` в `.env`).
 - Подготовка сервера — `setup.sh` (Docker, data/, .env с SECRET_KEY и SITE_DOMAIN, ufw).
 - Пароли/ключи пользователь вписывает в `.env` на сервере сам; в чат их не присылать.
@@ -253,6 +253,16 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   точки с числами), перепроверка (запуск/откат), всё выученное одним списком (правила + точки, поиск, «Забыть» —
   brain.forget), инструменты. API: /api/admin/learn, /api/admin/learn/knowledge (GET/POST). В админке вкладки
   «Карта» и «ЖК и районы» заменены ссылкой «Обучение и разбор»; /admin?tab=<вкладка> открывает нужную.
+- 12.10 — ТОЧНОСТЬ АДРЕСА И РАЙОНА: «Квартиры без ЖК» убраны из разбора (норма; brain alias nocomplex → nodistrict),
+  «готово» = точный дом + район. /fix: после вставки координат/переноса метки — /api/admin/fix?at → чип «по точке на карте»
+  первым (offerFromPoint), района нет — выбирается сам, другой — кнопка «Поставить район по точке», ЖК по контуру — чипом.
+  osmaddr: улица по одной фамилии/с инициалом («Жигуленко» → «Евгении Жигуленко», by_last, только если однозначно;
+  STREET_FIX_V=2 — старые объекты прогоняются заново). autolearn.cx_base_key: «Самолёт 2», «… 3 очередь», «Инсити (…)» →
+  основное название для точки ЖК и голосов района (сам ЖК в карточке не меняем). districtmap.canon: контур «Российский»
+  = «п. Российский». Метка фида дальше 1 км от своего дома по справочнику → «Спорные» (place_conflict 'feed:').
+  /learn: «Районы из объявлений, которых нет на вашей карте» (brain.overview uncontoured).
+- ДОМЕН (12.10): 1plus1assistant.ru (рег. reg.ru, NS ns1/ns2.reg.ru). A-записи @ и www → 31.130.132.118 (были на парковке
+  reg.ru 95.163.244.138). В .env: SITE_DOMAIN=1plus1assistant.ru, OLD_DOMAINS=31-130-132-118.sslip.io, www.1plus1assistant.ru.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
@@ -261,7 +271,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 145 тестов
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 149 тестов
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены

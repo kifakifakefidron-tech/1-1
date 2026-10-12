@@ -31,7 +31,7 @@
     const waiting = d.queues.filter((q) => !["auto", "fixed"].includes(q.key)).reduce((a, q) => a + q.n, 0);
     $("lnReady").innerHTML = `
       <div class="ln-stat"><b>${n0(d.total)}</b><span>объектов на сайте</span></div>
-      <div class="ln-stat ok"><b>${pct}%</b><span>готово полностью: точный дом на карте, район${""}, ЖК у квартир — ${n0(d.ready)}</span>
+      <div class="ln-stat ok"><b>${pct}%</b><span>готово полностью: точный дом на карте и район — ${n0(d.ready)}</span>
         <i class="ln-bar"><i style="width:${pct}%"></i></i></div>
       <div class="ln-stat"><b>${n0(waiting)}</b><span>ждут решения (объект может быть в нескольких очередях)</span></div>`;
     const first = d.queues.find((q) => q.n && !["auto", "fixed"].includes(q.key));
@@ -45,6 +45,14 @@
       <li class="${s.bad ? "bad" : s.warn ? "warn" : ""}"><span>${esc(s.label)}</span><b>${n0(s.n)}${s.unit ? ` <small>${s.unit}</small>` : ""}</b></li>`).join("")}</ol></div>`;
     $("lnPipes").innerHTML = pipe("Район", d.pipeline.district) + pipe("Точка на карте", d.pipeline.point);
     renderRecheck(d.recheck);
+    const unc = d.uncontoured || [];
+    $("lnUnc").hidden = !unc.length;
+    $("lnUnc").innerHTML = `<h3>Районы из объявлений, которых нет на вашей карте — ${unc.length}</h3>
+      <p class="note">Объекты этих районов сервис не может проверить по карте. Обведите район на карте районов
+        (или, если это другое название уже обведённого района, объедините их в «Справочнике»).</p>
+      <div class="chips">${unc.slice(0, 40).map((u) => `<span class="chip">${esc(u.name)} <b>${n0(u.n)}</b></span>`).join("")}</div>
+      <div class="ln-acts"><a class="pill light" href="/admin/map">Обвести на карте районов</a>
+        <a class="pill light" href="/admin?tab=districts">Справочник районов</a></div>`;
     const K = d.knowledge;
     $("lnKnowCards").innerHTML = [
       [K.rules, "ваших правил", "дом, ЖК, улица → район; названия ЖК"], [K.points, "ваших точек", "дом и ЖК на карте"],
@@ -65,6 +73,7 @@
         <div><dt>ЖК найден по контуру</dt><dd>${n0(R.complexes)}</dd></div>
         <div><dt>Оставлено по вашим правилам</dt><dd>${n0(R.kept_rule)}</dd></div>
         <div><dt>Дом у границы — оставлено</dt><dd>${n0(R.kept_border)}</dd></div>
+        <div><dt>Метка фида далеко от адреса — в «Спорные»</dt><dd>${n0(R.feed_far)}</dd></div>
       </dl>` : `<p class="note">Ещё не запускалась — фоновая работа запустит сама в ближайшие минуты.</p>`) + `
       <div class="ln-acts"><button type="button" class="pill light" data-recheck="run">Перепроверить сейчас</button>
         <a class="pill light" href="/fix?kind=auto">Проверить решения сервиса</a>

@@ -148,8 +148,14 @@ def index(conn: sqlite3.Connection) -> dict:
         names = {k: v["name"] for k, v in streets.items()}
         for name in geo.street_names():   # улицы нашего справочника — тоже «правильные»
             names.setdefault(street_key(name), name)
+        # «Жигуленко» → «Евгении Жигуленко», «Покрышкина» → «Александра Покрышкина»: агенты пишут только фамилию
+        by_last: dict[str, set] = {}
+        for k in streets:
+            parts = k.split()
+            if len(parts) > 1 and not parts[-1].isdigit():
+                by_last.setdefault(parts[-1], set()).add(k)
         _index.clear()
-        _index.update(ver=ver, streets=streets, names=names, keys=sorted(names), fixed={})
+        _index.update(ver=ver, streets=streets, names=names, keys=sorted(names), fixed={}, by_last=by_last)
     return _index
 
 
@@ -184,10 +190,23 @@ def fix_street(conn: sqlite3.Connection, street: str | None) -> str | None:
         return None
     idx = index(conn)
     k = street_key(street)
-    if not k or k in idx["names"] or len(k) < 5:
+    if not k or k in idx["streets"]:
         return None
     if k in idx["fixed"]:
         return idx["fixed"][k]
+    # только фамилия или с инициалом: «Жигуленко», «Л. Позднякова», «Героя Яцкова И» → полное название из справочника
+    core = " ".join(w for w in k.split() if len(w) > 1 or w.isdigit())   # инициалы убираем, номер улицы — нет
+    if core in idx["streets"] and core != k:
+        idx["fixed"][k] = idx["streets"][core]["name"]
+        return idx["fixed"][k]
+    parts = core.split()
+    full = idx["by_last"].get(parts[-1], set()) if parts and len(parts[-1]) >= 5 and not parts[-1].isdigit() else set()
+    if len(parts) == 1 and len(full) == 1:
+        idx["fixed"][k] = idx["streets"][next(iter(full))]["name"]
+        return idx["fixed"][k]
+    if k in idx["names"] or len(k) < 5:
+        idx["fixed"][k] = None
+        return None
     digits = re.findall(r"\d+", k)
     # Опечатка = 1 ошибка (пропуск, лишняя, замена, перестановка букв); в длинных названиях — до 2.
     # «Жемчужина» ≠ «Жемчужная» (2 ошибки в коротком слове) — не трогаем: это скорее ЖК, а не улица.

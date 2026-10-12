@@ -57,3 +57,24 @@ def test_ingest_fixes_street_and_autolearn_places_point(conn, add):
     autolearn.fill_points(conn)
     r = conn.execute("SELECT lat, lon, geo_status, geo_src FROM listings WHERE id = ?", (lid,)).fetchone()
     assert (r["lat"], r["lon"], r["geo_status"], r["geo_src"]) == (45.061, 38.991, "ok", "osm-house")
+
+
+def test_surname_only_streets(conn):
+    tsv = TSV + "\n45.0900\t38.9300\tулица Евгении Жигуленко\t11\t\n45.0910\t38.9310\tулица Лётчика Позднякова\t2\t"
+    osmaddr.load(conn, tsv)
+    assert osmaddr.fix_street(conn, "Жигуленко") == "Евгении Жигуленко"
+    assert osmaddr.fix_street(conn, "Л. Позднякова") == "Лётчика Позднякова"
+    assert osmaddr.point(conn, "Жигуленко", "11", None)[:2] == (45.09, 38.93)
+    assert osmaddr.fix_street(conn, "Красная") is None   # и так есть в справочнике
+
+
+def test_complex_base_name_and_feed_far_conflict(conn, add):
+    from app import autolearn
+    assert autolearn.cx_base_key("Самолёт-3 очередь") == autolearn.cx_base_key("Самолет 2") == "cxb:самолет"
+    assert autolearn.cx_base_key("Жилой квартал") is None
+    osmaddr.load(conn, TSV)
+    conn.execute("""INSERT INTO listings (source, type, deal, street, house, lat, lon, geo_status, is_active, first_seen,
+                    last_seen, title) VALUES ('feed', 'flat', 'sale', 'Красная', '167', 45.2, 38.8, 'feed', 1, 1, 1, 'фид')""")
+    conn.commit()
+    assert autolearn.recheck_all(conn)["feed_far"] == 1
+    assert conn.execute("SELECT place_conflict FROM listings WHERE source = 'feed'").fetchone()[0].startswith("feed:")

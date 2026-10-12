@@ -88,3 +88,8 @@
 }
 .ln-q { text-align: left; }
 .ln-row .chip { justify-self: end; width: auto; }
+
+.ln-unc { margin-top: 12px; }
+.ln-unc h3 { margin: 0 0 6px; font: 600 16px var(--head); color: var(--gold); }
+.ln-unc .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ln-unc .chip b { margin-left: 4px; font-weight: 600; opacity: .75; }

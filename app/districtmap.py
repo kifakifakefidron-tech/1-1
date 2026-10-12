@@ -91,10 +91,22 @@ def import_map(conn: sqlite3.Connection, xml_bytes: bytes | None = None) -> dict
     return {"districts": len(items), "added": added}
 
 
+def canon(name: str, kind: str = "district") -> str:
+    """Название контура → наше название района: «Российский» на карте = «п. Российский» в объявлениях."""
+    if kind != "district":
+        return name
+    for cand in (name, f"п. {name}", f"х. {name}", f"ст. {name}"):
+        d = geo.canonical_district(cand)
+        if d:
+            return d
+    return name
+
+
 def _polys(conn: sqlite3.Connection) -> list:
     if time.time() - _cache["t"] > 300:
         _cache.update(t=time.time(), polys=[
-            (r["name"], r["kind"], json.loads(r["polys"]), r["area"], (r["lat_min"], r["lat_max"], r["lon_min"], r["lon_max"]))
+            (canon(r["name"], r["kind"]), r["kind"], json.loads(r["polys"]), r["area"],
+             (r["lat_min"], r["lat_max"], r["lon_min"], r["lon_max"]))
             for r in conn.execute("SELECT * FROM district_polygons ORDER BY area")])
     return _cache["polys"]
 
@@ -492,7 +504,7 @@ def public_polygons(conn: sqlite3.Connection) -> list[dict]:
         for r in conn.execute(f"""SELECT name, polys FROM district_polygons
                                   WHERE kind = 'district' AND source IN ({",".join("?" * len(sources))})
                                   ORDER BY source = 'admin' DESC, area DESC""", sources):
-            name = geo.canonical_district(r["name"]) or r["name"]
+            name = canon(r["name"])
             if name in seen:
                 continue
             seen.add(name)

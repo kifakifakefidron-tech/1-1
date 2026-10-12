@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import sqlite3
 import time
 from collections import Counter, defaultdict
 
-from . import districtmap, geocode, learning, osmaddr
+from . import districtmap, geo, geocode, learning, osmaddr
+from .textnorm import words
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +35,30 @@ GEO_SRC = {"feed-house": "тот же дом в фиде СТРЕЛ", "feed-cx":
            "learned": "ваши правки точек", "geocoder": "поиск по адресу (проверен)"}
 DISTRICT_SRC = {"map": "по карте районов (точка внутри контура)", "vote-house": "так в других объявлениях этого дома",
                 "vote-cx": "так в других объявлениях этого ЖК"}
+
+
+_CX_TAIL = re.compile(r"(?:\s+(?:очередь|оч|литер|лит|корпус|корп|секция|дом|этап|фаза|жк))*(?:\s+\d+[а-я]?)+$"
+                      r"|\s+(?:очередь|оч|литер|лит|этап)$")
+
+
+def cx_base_key(name: str | None) -> str | None:
+    """Основное название ЖК — для точки и района: «Самолёт 2», «Самолет-3 очередь», «Инсити (Российская улица, 267/3к1)»
+    → «самолет», «инсити». Сам ЖК в карточке не меняем — только узнаём, что это тот же комплекс."""
+    if not name:
+        return None
+    w = words(re.sub(r"\(.*?\)", " ", name))
+    w = re.sub(r"^(?:жк|ж к|жилой комплекс|жилой квартал)\s+", "", w)
+    for _ in range(3):   # «самолет 3 очередь» → «самолет 3» → «самолет»
+        w = _CX_TAIL.sub("", w).strip()
+    if len(w) < 3 or w in GENERIC_CX:
+        return None
+    rec = geo.resolve_complex(w)
+    if rec:   # в справочнике бывает «Урал (Ural)» — скобки и номера убираем и у него
+        w2 = words(re.sub(r"\(.*?\)", " ", rec.name))
+        for _ in range(3):
+            w2 = _CX_TAIL.sub("", w2).strip()
+        w = w2 or w
+    return "cxb:" + w
 
 
 def _centroid(ring) -> tuple[float, float]:
@@ -106,10 +132,34 @@ class Known:
                     del self.cx[k]
         for k in [k for k in self.cx if k.removeprefix("cx:") in GENERIC_CX]:
             del self.cx[k]
+        # «Самолёт 2» / «Самолёт 3» → точка ЖК «Самолёт»: контур или середина объектов фида всех очередей
+        self.cx_base: dict[str, tuple[tuple[float, float], str]] = {}
+        base_pts: dict[str, list] = defaultdict(list)
+        for name, kind, polys, _a, _bb in districtmap._polys(conn):
+            if kind == "complex":
+                b = cx_base_key(name)
+                if b and b not in self.cx_base:
+                    self.cx_base[b] = (_centroid(_main_ring(polys)), "map-cx")
+        for r in conn.execute("""SELECT complex, lat, lon FROM listings WHERE source = 'feed' AND geo_status = 'feed'
+                                 AND lat IS NOT NULL AND complex IS NOT NULL"""):
+            b = cx_base_key(r["complex"])
+            if b:
+                base_pts[b].append((r["lat"], r["lon"]))
+        for b, pts in base_pts.items():
+            mid = (sorted(p[0] for p in pts)[len(pts) // 2], sorted(p[1] for p in pts)[len(pts) // 2])
+            spread = sorted(geocode._km(mid, p) for p in pts)[len(pts) // 2]
+            if b in self.cx_base:
+                if geocode._km(self.cx_base[b][0], mid) > CX_FAR_KM:   # контур и фид спорят — не верим никому
+                    del self.cx_base[b]
+            elif spread <= CX_SPREAD_KM:
+                self.cx_base[b] = ((round(mid[0], 6), round(mid[1], 6)), "feed-cx")
 
     def cx_point(self, row):
         k = learning.cx_key(row["complex"])
-        return self.cx.get(k) if k else None
+        if k and k in self.cx:
+            return self.cx[k]
+        b = cx_base_key(row["complex"])
+        return self.cx_base.get(b) if b else None
 
     def point(self, row) -> tuple[float, float, str, str] | None:
         """(lat, lon, geo_status, geo_src) из уже известного — без геокодера."""
@@ -183,6 +233,9 @@ def recheck_geocoder(conn: sqlite3.Connection, known: Known | None = None) -> in
     return n
 
 
+STREET_FIX_V = 2   # 2 — улица по одной фамилии («Жигуленко» → «Евгении Жигуленко»)
+
+
 def fix_streets(conn: sqlite3.Connection) -> int:
     """Опечатки в улицах уже собранных объектов («Командоская» → «Командорская»); точку ищем заново."""
     from .ingest import _reindex, make_search_text
@@ -216,6 +269,9 @@ def _votes(conn: sqlite3.Connection):
         k = learning.cx_key(r["complex"])
         if k:
             by_cx[k][r["district"]] += w
+        b = cx_base_key(r["complex"])
+        if b and b != k:
+            by_cx[b][r["district"]] += w
     return by_house, by_cx
 
 
@@ -242,6 +298,9 @@ def candidates(conn: sqlite3.Connection, row, votes=None) -> list[tuple[str, str
         out.append((w[0], "vote-house"))
     k = learning.cx_key(row["complex"])
     w = _winner(by_cx.get(k)) if k else None
+    if not w:   # «Самолёт 2» без своих голосов — как у ЖК «Самолёт» в целом
+        b = cx_base_key(row["complex"])
+        w = _winner(by_cx.get(b)) if b else None
     if w:
         out.append((w[0], "vote-cx"))
     return out
@@ -286,6 +345,7 @@ SERVICE_UID = 0          # «пользователь» сервиса в жур
 NEAR_BORDER_KM = 0.15    # дом у самой границы района из объявления — район агента не трогаем
 HOUSE_SRC = ("osm-house", "osm-near", "feed-house", "learned")
 RECHECK_EVERY_S = 3600
+FEED_FAR_KM = 1.0        # метка фида дальше этого от своего дома по справочнику — в «Спорные»
 
 
 def _has_rule(rs: dict, row) -> bool:
@@ -330,7 +390,18 @@ def recheck_all(conn: sqlite3.Connection) -> dict:
     conn.commit()
     # 2) районы и 3) ЖК — по точке
     rs = learning.rules(conn, fresh=True)
-    conn.execute("UPDATE listings SET place_conflict = NULL WHERE place_conflict LIKE 'rule:%'")
+    conn.execute("UPDATE listings SET place_conflict = NULL WHERE place_conflict LIKE 'rule:%' OR place_conflict LIKE 'feed:%'")
+    # Точка из фида СТРЕЛ далеко от своего же адреса (в справочнике адресов есть этот дом) — ошибка в координатах на сайте
+    for r in conn.execute("""SELECT * FROM listings WHERE is_active = 1 AND source = 'feed' AND geo_status = 'feed'
+                             AND street IS NOT NULL AND house IS NOT NULL""").fetchall():
+        hit = osmaddr.point(conn, r["street"], r["house"], r["settlement"])
+        if hit and hit[3] == "osm-house":
+            km = geocode._km((r["lat"], r["lon"]), hit[:2])
+            if km > FEED_FAR_KM:
+                conn.execute("UPDATE listings SET place_conflict = ? WHERE id = ?",
+                             (f"feed:метка из фида СТРЕЛ стоит в {km:.1f} км от дома «{r['street']}, {r['house']}» по справочнику "
+                              "адресов — поставьте точку здесь (запомнится) или поправьте координаты на сайте СТРЕЛ", r["id"]))
+                rep["feed_far"] += 1
     # что вы откатили — больше не трогаем (иначе каждый час возвращалось бы снова)
     undone = {(r[0], r[1]) for r in conn.execute(
         "SELECT listing_id, field FROM listing_edits WHERE user_id = ? AND reverted = 1", (SERVICE_UID,))}
@@ -448,9 +519,10 @@ def run(conn: sqlite3.Connection) -> dict:
         conn.commit()
     ver = conn.execute("SELECT value FROM state WHERE key = 'osm_addr_ts'").fetchone()
     done = conn.execute("SELECT value FROM state WHERE key = 'osm_street_fix'").fetchone()
-    if ver and (done is None or done[0] != ver[0]):   # справочник адресов обновился — исправить опечатки в улицах
+    want = f"{ver[0]}:{STREET_FIX_V}" if ver else None
+    if ver and (done is None or done[0] != want):   # справочник обновился или правила улиц стали умнее — пройти заново
         out["streets"] = fix_streets(conn)
-        conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('osm_street_fix', ?)", (ver[0],))
+        conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('osm_street_fix', ?)", (want,))
         conn.commit()
     out["points"] = fill_points(conn, known)
     out.update(fill_districts(conn))
