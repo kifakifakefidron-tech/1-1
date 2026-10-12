@@ -1,5 +1,5 @@
 """Кабинет агента: подтверждение номера кодом из мессенджера, «Мои объявления», правка только своего,
-свой объект на 30 дней с письмом «актуален?», журнал правок с откатом, фото."""
+свой объект на 20 дней с письмом «актуален?», журнал правок с откатом, фото."""
 import base64
 import time
 
@@ -124,7 +124,7 @@ def test_own_listing_lifecycle(env, monkeypatch):
     lid = r.json()["id"]
     row = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
     assert row["source"] == "own" and row["price"] == 4_200_000 and row["title"].startswith("1-к квартира")
-    assert row["expires_at"] > time.time() + 29 * 86400
+    assert row["expires_at"] > time.time() + 19 * 86400
     assert c.get(f"/api/listings/{lid}").json()["phones"] == ["+79181112233"]
     assert lid in [i["id"] for i in c.get("/api/listings?q=хорошая").json()["items"]]
     # Фото
@@ -141,7 +141,7 @@ def test_own_listing_lifecycle(env, monkeypatch):
     # «Да» — продлили
     page = c.get(f"/agent/confirm?l={lid}&a=yes&t={agent.confirm_token(lid, 'yes')}")
     assert "продлён" in page.text
-    assert conn.execute("SELECT expires_at FROM listings WHERE id = ?", (lid,)).fetchone()[0] > time.time() + 29 * 86400
+    assert conn.execute("SELECT expires_at FROM listings WHERE id = ?", (lid,)).fetchone()[0] > time.time() + 19 * 86400
     # Чужая/поддельная ссылка не работает; «Нет» — снят сразу
     assert "неверна" in c.get(f"/agent/confirm?l={lid}&a=no&t=bad").text
     c.get(f"/agent/confirm?l={lid}&a=no&t={agent.confirm_token(lid, 'no')}")
@@ -172,21 +172,25 @@ def test_admin_reverts_edit(env, monkeypatch):
     assert conn.execute("SELECT price FROM listings WHERE id = ?", (lid,)).fetchone()[0] == 7_500_000
 
 
-def test_own_actuality_notice_backfilled(env):
+def test_own_actuality_reminders_10_5_2_1(env):
+    """Свой объект живёт 20 дней; «ещё актуален?» — за 10, 5, 2 и 1 день до конца, каждое по одному разу."""
     from app import notices
     c, conn, _ = env
     u = _login(c, conn)
     _verify(c, conn)
     lid = c.post("/api/agent/listings", json={"type": "land", "price": "900000", "land": "6", "district": "ФМР"}).json()["id"]
-    # письмо «актуален?» ушло старой версией — уведомления на сайте нет
-    conn.execute("UPDATE listings SET expires_at = ?, confirm_sent = ? WHERE id = ?",
-                 (int(time.time()) + 86400, int(time.time()) - 10, lid))
-    conn.commit()
-    agent.expire_own(conn)
-    own = [n for n in notices.items(conn, u["id"]) if n["kind"] == "own"]
-    assert len(own) == 1 and len(own[0]["actions"]) == 2
-    agent.expire_own(conn)
-    assert len([n for n in notices.items(conn, u["id"]) if n["kind"] == "own"]) == 1   # без повторов
+    now = int(time.time())
+    own = lambda: [n for n in notices.items(conn, u["id"]) if n["kind"] == "own"]  # noqa: E731
+    assert agent.expire_own(conn)["asked"] == 0 and not own()            # 20 дней впереди — рано
+    for days, total in ((10, 1), (9, 1), (5, 2), (2, 3), (1, 4)):
+        conn.execute("UPDATE listings SET expires_at = ? WHERE id = ?", (now + days * 86400 - 60, lid))
+        conn.commit()
+        agent.expire_own(conn)
+        assert len(own()) == total, days
+    assert len(own()[0]["actions"]) == 2
+    # продлили — напоминания начнутся заново
+    c.get(f"/agent/confirm?l={lid}&a=yes&t={agent.confirm_token(lid, 'yes')}")
+    assert conn.execute("SELECT confirm_stage FROM listings WHERE id = ?", (lid,)).fetchone()[0] is None
 
 
 def test_own_listing_needs_place(env):

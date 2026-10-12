@@ -60,7 +60,7 @@
     const track = [`<li><b>${fav}</b> ${plural(fav, "объект", "объекта", "объектов")} в избранном — сообщим, если изменится цена
         или объект снимут с сайта. <a href="/work">Открыть «В работе» →</a></li>`];
     if (data.own) track.push(`<li><b>${data.own}</b> ${plural(data.own, "ваш объект", "ваших объекта", "ваших объектов")} —
-        напомним подтвердить актуальность за 3 дня до конца срока. <a href="/?agent=1">Кабинет агента →</a></li>`);
+        напомним подтвердить актуальность за 10, 5, 2 и 1 день до конца срока. <a href="/my">Мои объекты →</a></li>`);
     if (!data.is_admin && data.access_until) {
       const d = new Date(data.access_until * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
       track.push(`<li>Доступ к номерам ${data.access_until * 1000 > Date.now() ? `до <b>${d}</b> — предупредим за 2 дня до конца` : "закончился"}.</li>`);

@@ -83,7 +83,7 @@
           `<button type="button" class="wk-tab${k === tab ? " on" : ""}" data-tab="${k}">${t}<b>${n[k]}</b></button>`).join("")}</nav>
         <div class="wk-grid my-grid">${shown.map(itemCard).join("") || `<div class="wk-empty">${ic("home")}<b>${items.length ? "Здесь пусто" : "Пока нет объявлений"}</b>
           ${items.length ? "" : "Как только вы разместите объект в чатах с подтверждённым номером — он появится здесь. Или добавьте объект сами."}</div>`}</div>` : ""}
-      <p class="my-rules">${ic("help")}Менять можно только объявления с вашим подтверждённым номером. Свой объект висит ${data.own_days} дней — за 3 дня
+      <p class="my-rules">${ic("help")}Менять можно только объявления с вашим подтверждённым номером. Свой объект висит ${data.own_days} дней — за 10, 5, 2 и 1 день
         до конца придёт письмо «ещё актуален?»: «да» — продлим, «нет» — снимем сразу, без ответа — снимем по сроку. Все правки сохраняются в журнале.</p>`;
     $("verifyForm").addEventListener("submit", (e) => { e.preventDefault(); startVerify($("verifyPhone").value.trim()); });
   }

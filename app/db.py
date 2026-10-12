@@ -300,7 +300,8 @@ MIGRATIONS = [
     ("listings", "owner_user_id", "INTEGER"),                 # кто управляет карточкой (первый правящий)
     ("listings", "owner_edited_at", "INTEGER"),
     ("listings", "expires_at", "INTEGER"),                    # свой объект: снять после этого времени
-    ("listings", "confirm_sent", "INTEGER"),                  # когда отправили письмо «ещё актуален?»
+    ("listings", "confirm_sent", "INTEGER"),
+    ("listings", "confirm_stage", "INTEGER"),   # за сколько дней до конца уже напомнили (10 → 5 → 2 → 1)                  # когда отправили письмо «ещё актуален?»
     ("listings", "sold_at", "INTEGER"),                       # агент отметил «продано/снято»
     ("listings", "prev_price", "INTEGER"),                    # прошлая цена (для «цена снизилась»)
     ("listings", "price_changed_at", "INTEGER"),

@@ -5,7 +5,7 @@
   * номер подтверждается сообщением с кодом СО СВОЕГО номера на наш номер в MAX/WhatsApp (через Wappi);
   * править можно только объявления со своим подтверждённым номером; первый правящий становится
     владельцем карточки — другие агенты с тем же номером в карточке её уже не меняют;
-  * свои объекты добавляют только подписчики; объект живёт 30 дней: за 3 дня — письмо «актуален?»,
+  * свои объекты добавляют только подписчики; объект живёт 20 дней: за 10, 5, 2 и 1 день — «актуален?»,
     «да» — продлили, «нет» — снят сразу, без ответа — снят по сроку;
   * все правки пишутся в журнал, админ может откатить.
 """
@@ -241,7 +241,7 @@ def edit_listing(conn: sqlite3.Connection, user: sqlite3.Row, listing_id: int, d
             _log(conn, listing_id, user["id"], "status", "active", "sold")
         elif status == "active" and not row["is_active"]:
             conn.execute("""UPDATE listings SET is_active = 1, sold_at = NULL, last_seen = ?, owner_user_id = ?,
-                            expires_at = CASE WHEN source = 'own' THEN ? ELSE expires_at END WHERE id = ?""",
+                            expires_at = CASE WHEN source = 'own' THEN ? ELSE expires_at END, confirm_stage = NULL WHERE id = ?""",
                          (now, user["id"], now + config.OWN_LISTING_DAYS * DAY, listing_id))
             _log(conn, listing_id, user["id"], "status", "sold", "active")
     conn.commit()
@@ -307,7 +307,7 @@ def confirm(conn: sqlite3.Connection, listing_id: int, action: str, token: str) 
         return "gone"
     now = int(time.time())
     if action == "yes":
-        conn.execute("UPDATE listings SET expires_at = ?, last_seen = ?, is_active = 1, confirm_sent = NULL WHERE id = ?",
+        conn.execute("UPDATE listings SET expires_at = ?, last_seen = ?, is_active = 1, confirm_sent = NULL, confirm_stage = NULL WHERE id = ?",
                      (now + config.OWN_LISTING_DAYS * DAY, now, listing_id))
     else:
         conn.execute("UPDATE listings SET is_active = 0, sold_at = ? WHERE id = ?", (now, listing_id))
@@ -316,43 +316,46 @@ def confirm(conn: sqlite3.Connection, listing_id: int, action: str, token: str) 
     return action
 
 
+REMIND_DAYS = (10, 5, 2, 1)   # напоминания «ещё актуален?» за столько дней до конца срока (решение Артёма 13.10)
+
+
+def _days_word(n: int) -> str:
+    return "день" if n % 10 == 1 and n % 100 != 11 else "дня" if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else "дней"
+
+
 def expire_own(conn: sqlite3.Connection, send_mail=None) -> dict:
-    """Раз в цикл worker: письмо за 3 дня до конца срока; по сроку — снять."""
+    """Раз в цикл worker: свой объект живёт OWN_LISTING_DAYS; за 10, 5, 2 и 1 день до конца — «ещё актуален?»
+    (на сайте и письмом, с кнопками «да, продлить» / «нет, снять»); по сроку — снять."""
     now = int(time.time())
     sent = 0
     for r in conn.execute("""SELECT l.*, u.email FROM listings l JOIN users u ON u.id = l.owner_user_id
-                             WHERE l.source = 'own' AND l.is_active = 1 AND l.confirm_sent IS NULL
-                             AND l.expires_at < ?""", (now + 3 * DAY,)).fetchall():
+                             WHERE l.source = 'own' AND l.is_active = 1 AND l.expires_at >= ? AND l.expires_at < ?""",
+                          (now, now + max(REMIND_DAYS) * DAY + 60)).fetchall():
+        left = max(1, -(-(r["expires_at"] - now) // DAY))   # дней до конца, с округлением вверх
+        stage = min(d for d in REMIND_DAYS if left <= d)
+        if r["confirm_stage"] is not None and r["confirm_stage"] <= stage:
+            continue   # это напоминание уже было
         yes = f"{config.SITE_URL}/agent/confirm?l={r['id']}&a=yes&t={confirm_token(r['id'], 'yes')}"
         no = f"{config.SITE_URL}/agent/confirm?l={r['id']}&a=no&t={confirm_token(r['id'], 'no')}"
+        when = f"через {left} {_days_word(left)}" if left > 1 else "завтра"
         notices.add(conn, r["owner_user_id"], "own", "Ваш объект ещё актуален?",
-                    f"«{r['title']}» будет снят с сайта через 3 дня, если не подтвердить.", listing_id=r["id"],
-                    url=f"/?open={r['id']}", actions=[{"label": f"Да, продлить на {config.OWN_LISTING_DAYS} дней", "url": yes},
-                                                      {"label": "Нет, снять", "url": no}])
+                    f"«{r['title']}» будет снят с сайта {when}, если не подтвердить.", listing_id=r["id"],
+                    url=f"/my/edit?id={r['id']}", dedup_s=0,
+                    actions=[{"label": f"Да, продлить на {config.OWN_LISTING_DAYS} дней", "url": yes},
+                             {"label": "Нет, снять", "url": no}])
         if r["email"] and send_mail:
             send_mail(r["email"], f"1+1: объект ещё актуален? {r['title']}",
-                      f"Ваш объект «{r['title']}» будет снят с сайта через 3 дня.\n\n"
+                      f"Ваш объект «{r['title']}» будет снят с сайта {when}.\n\n"
                       f"Ещё продаётся — продлить на {config.OWN_LISTING_DAYS} дней:\n{yes}\n\n"
                       f"Уже продан или неактуален — снять сейчас:\n{no}")
             sent += 1
-        conn.execute("UPDATE listings SET confirm_sent = ? WHERE id = ?", (now, r["id"]))
-    # Письмо уже ушло (например, старой версией сайта), а уведомления на сайте нет — добавляем
-    for r in conn.execute("""SELECT l.id, l.title, l.owner_user_id FROM listings l WHERE l.source = 'own' AND l.is_active = 1
-                             AND l.confirm_sent IS NOT NULL AND l.expires_at >= ? AND NOT EXISTS (
-                                 SELECT 1 FROM notices n WHERE n.kind = 'own' AND n.listing_id = l.id AND n.ts >= l.confirm_sent - 60)""",
-                          (now,)).fetchall():
-        yes = f"{config.SITE_URL}/agent/confirm?l={r['id']}&a=yes&t={confirm_token(r['id'], 'yes')}"
-        no = f"{config.SITE_URL}/agent/confirm?l={r['id']}&a=no&t={confirm_token(r['id'], 'no')}"
-        notices.add(conn, r["owner_user_id"], "own", "Ваш объект ещё актуален?",
-                    f"«{r['title']}» скоро будет снят с сайта, если не подтвердить.", listing_id=r["id"],
-                    url=f"/?open={r['id']}", actions=[{"label": f"Да, продлить на {config.OWN_LISTING_DAYS} дней", "url": yes},
-                                                      {"label": "Нет, снять", "url": no}])
+        conn.execute("UPDATE listings SET confirm_sent = ?, confirm_stage = ? WHERE id = ?", (now, stage, r["id"]))
     gone = conn.execute("SELECT id, title, owner_user_id FROM listings WHERE source = 'own' AND is_active = 1 "
                         "AND expires_at < ?", (now,)).fetchall()
     for r in gone:
         notices.add(conn, r["owner_user_id"], "own", "Объект снят по сроку",
-                    f"«{r['title']}» не подтвердили вовремя. Вернуть можно в кабинете агента → «Вернуть».",
-                    listing_id=r["id"], url="/?agent=1")
+                    f"«{r['title']}» не подтвердили вовремя. Вернуть можно в «Мои объекты» → «Вернуть на сайт».",
+                    listing_id=r["id"], url="/my")
     expired = conn.execute("UPDATE listings SET is_active = 0 WHERE source = 'own' AND is_active = 1 AND expires_at < ?",
                            (now,)).rowcount
     conn.commit()

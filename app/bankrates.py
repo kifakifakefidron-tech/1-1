@@ -66,6 +66,63 @@ def _num(s: str) -> float | None:
     return v if 1 <= v < 40 else None
 
 
+# Таблица ДОМ.РФ «Ставки предложения по рыночным продуктам»: Банк | Первичный рынок | Вторичный рынок | Рефинансирование.
+# Скопированная со страницы, она бывает строками («Сбербанк  18,7  18,7  21,5») или столбиком (банк, затем по значению
+# в строке), с изменениями к прошлой неделе («+0,44») и пометками «не предоставляет», «Для з/п клиентов».
+COL_WORDS = [("new", r"первичн|новострой"), ("secondary", r"вторичн|готов\w* жиль"), ("refi", r"рефинанс"),
+             ("family", r"семейн"), ("ihc", r"ижс|индивидуальн\w* дом")]
+GAP_RE = re.compile(r"не предоставля|для з/?п|зарплатн|нет программ|^[—–-]$", re.I)
+CHANGE_RE = re.compile(r"^[\^+−-]\s*\+?\d+[.,]?\d*$|^[↑↓▲▼^]")
+SKIP_RE = re.compile(r"средневзвешен|показать детальн|изменение к предыдущ|ставки предложения|^банк$|^п\.п\.?$", re.I)
+
+
+def parse_table(text: str) -> list[dict]:
+    cols: list[str] = []
+    rows: list[dict] = []
+    cur = None
+    for raw in text.replace("\u00a0", " ").splitlines():
+        cells = [c.strip() for c in re.split(r"\t|\s{2,}|\|", raw) if c.strip()]
+        for cell in cells:
+            low = cell.lower()
+            if SKIP_RE.search(low):
+                if "средневзвешен" in low:   # итоговая строка — конец таблицы, её цифры не банк
+                    cur = None
+                continue
+            hits = [k for k, pat in COL_WORDS if re.search(pat, low)]
+            if hits and not re.search(r"\d", cell) and not _bank(cell):   # заголовок колонки
+                if not rows:
+                    for k in hits:
+                        if k not in cols:
+                            cols.append(k)
+                continue
+            if CHANGE_RE.search(cell.replace(" ", "")):   # изменение к прошлой неделе — не ставка
+                continue
+            if GAP_RE.search(low):
+                if cur is not None:
+                    cur["vals"].append(None)
+                continue
+            m = re.fullmatch(r"(\d{1,2}[.,]\d{1,2}|\d{1,2})\s*%?", cell)
+            if m:
+                if cur is not None:
+                    cur["vals"].append(_num(m.group(1)))
+                continue
+            # текст — название банка (начинает новую строку таблицы)
+            if re.search(r"[а-яёa-z]", low) and len(cell) <= 60:
+                cur = {"bank": _bank(cell) or cell.strip("«»\"*"), "vals": []}
+                rows.append(cur)
+    if len(cols) < 2:
+        return []
+    out = []
+    for r in rows:
+        row = {"bank": r["bank"]}
+        for k, v in zip(cols, r["vals"]):
+            if k in widgets.PROGRAMS and v is not None:
+                row[k] = v
+        if len(row) > 1:
+            out.append(row)
+    return out
+
+
 def parse_rules(text: str, hint: str = "secondary") -> list[dict]:
     """Без нейросети: таблица (шапка с программами → колонки по порядку) или фразы «Банк … 15,9%»."""
     rows: dict[str, dict] = {}
@@ -125,7 +182,8 @@ LLM_PROMPT = """Тебе дают текст про ипотечные став�
 def parse(text: str, hint: str = "secondary") -> dict:
     """Разобрать вставленный текст. Возвращает {items, how}: how = 'rules' | 'ai' | 'ai+rules'."""
     text = (text or "")[:20000]
-    rules = parse_rules(text, hint)
+    table = parse_table(text)   # таблица ДОМ.РФ и похожие — надёжнее всего
+    rules = bankrates_merge_rules(table, parse_rules(text, hint)) if table else parse_rules(text, hint)
     if not llm.available():
         return {"items": rules, "how": "rules"}
     try:
@@ -148,6 +206,12 @@ def parse(text: str, hint: str = "secondary") -> dict:
     names = {r["bank"].lower() for r in ai}
     extra = [r for r in rules if r["bank"].lower() not in names]
     return {"items": ai + extra, "how": "ai+rules" if extra else "ai"}
+
+
+def bankrates_merge_rules(table: list[dict], phrases: list[dict]) -> list[dict]:
+    """Таблица главнее; из фраз — только банки, которых в таблице нет."""
+    have = {r["bank"].lower() for r in table}
+    return table + [r for r in phrases if r["bank"].lower() not in have]
 
 
 def merge(old: list[dict], new: list[dict]) -> list[dict]:

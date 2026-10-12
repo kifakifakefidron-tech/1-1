@@ -34,3 +34,59 @@ def test_remind_when_stale(conn, monkeypatch):
     assert bankrates.remind(conn, now + 8 * 86400) is True                    # неделя прошла — напоминание
     assert bankrates.remind(conn, now + 9 * 86400) is False                   # и не каждый день
     assert conn.execute("SELECT COUNT(*) FROM notices WHERE title LIKE 'Пора обновить ставки%'").fetchone()[0] == 1
+
+
+DOMRF_COLUMN = """Ставки предложения по рыночным продуктам (на квартиру)
+Изменение к предыдущей неделе, п.п.
+Показать детальные данные
+Банк
+Первичный рынок
+Вторичный рынок
+Рефинансирование
+Сбербанк
+18,7
+18,7
+21,5
+Промсвязьбанк
+18,49
++0,44
+18,49
++0,44
+17,99
++0,2
+Газпромбанк
+Для з/п клиентов
+Для з/п клиентов
+Для з/п клиентов
+Банк Кубань Кредит
+15,9
+15,9
+15,9
+Россельхозбанк
+не предоставляет
+не предоставляет
+не предоставляет
+Средневзвешенная ставка
+18,74
++0,01
+18,69
+18,38"""
+
+DOMRF_ROWS = """Банк\tПервичный рынок\tВторичный рынок\tРефинансирование
+Сбербанк\t18,7\t18,7\t21,5
+Т-Банк\t16,9\t16,9\t16,9
+Газпромбанк\tДля з/п клиентов\tДля з/п клиентов\tДля з/п клиентов
+Транскапиталбанк\t16,85\t16,85\t16,75
+Средневзвешенная ставка\t18,74\t18,69\t18,38"""
+
+
+def test_domrf_table_column_and_rows(monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "")
+    for text in (DOMRF_COLUMN, DOMRF_ROWS):
+        by = {r["bank"]: r for r in bankrates.parse(text)["items"]}
+        assert by["Сбербанк"] == {"bank": "Сбербанк", "new": 18.7, "secondary": 18.7}   # рефинансирование не берём
+        assert "Газпромбанк" not in by and "Россельхозбанк" not in by                    # «для з/п», «не предоставляет»
+        assert not any("средневзвеш" in b.lower() for b in by)
+    by = {r["bank"]: r for r in bankrates.parse(DOMRF_COLUMN)["items"]}
+    assert by["ПСБ"]["secondary"] == 18.49 and by["Кубань Кредит"]["new"] == 15.9       # «+0,44» — не ставка
+    assert {r["bank"]: r for r in bankrates.parse(DOMRF_ROWS)["items"]}["Транскапиталбанк"]["secondary"] == 16.85
