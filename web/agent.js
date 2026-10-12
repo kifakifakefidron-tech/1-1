@@ -95,7 +95,21 @@
           ${viaWa ? `<a class="pill light" href="https://wa.me/${digits}?text=${encodeURIComponent(text)}" target="_blank" rel="noopener">Открыть WhatsApp</a>` : ""}
           ${viaMax ? `<button type="button" class="pill light" data-copy="${esc(to)}">Скопировать наш номер для MAX</button>` : ""}
         </div>
-        <p class="note" id="verifyWait">Ждём сообщение… Обычно это занимает до 2 минут. Окно можно не закрывать.</p></div>`;
+        <button type="button" class="pill agent-check" id="verifyCheck">Я отправил — проверить</button>
+        <p class="note" id="verifyWait">Отправили? Нажмите «Проверить» — посмотрим сразу. Или просто подождите: сами проверяем раз в 1–2 минуты.</p></div>`;
+    $("verifyCheck").addEventListener("click", async (e) => {
+      const b = e.currentTarget, w = $("verifyWait");
+      b.disabled = true; b.classList.add("busy"); b.textContent = "Проверяем…";
+      const r = await call("/api/agent/verify", { phone: ph, check: true });
+      b.disabled = false; b.classList.remove("busy"); b.textContent = "Проверить ещё раз";
+      if (r.ok && r.data.status === "ok") { clearInterval(waitTimer); toast("Номер подтверждён"); open(); return; }
+      if (w) {
+        w.textContent = r.data.detail || "Пока не пришло — попробуйте через минуту.";
+        w.classList.add("warn");
+        w.animate([{ opacity: 0, transform: "translateY(4px)" }, { opacity: 1, transform: "none" }], { duration: 300, easing: "ease-out" });
+      }
+      if (r.ok && r.data.status === "expired") clearInterval(waitTimer);
+    });
     let tries = 0;
     clearInterval(waitTimer);
     waitTimer = setInterval(async () => {
@@ -103,7 +117,7 @@
       const s = await call(`/api/agent/verify?phone=${encodeURIComponent(ph)}`);
       if (s.ok && s.data.status === "ok") {
         clearInterval(waitTimer);
-        toast("✓ Номер подтверждён");
+        toast("Номер подтверждён");
         open();
       } else if (s.ok && s.data.status === "expired") {
         clearInterval(waitTimer);

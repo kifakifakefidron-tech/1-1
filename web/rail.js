@@ -1,43 +1,67 @@
-/* 1+1 · меню слева на всех страницах (как в кабинете): на компьютере — стеклянный «рельс» иконок с подсказками,
-   на телефоне — нижняя панель из главных разделов (на главной её роль играет своя .tabbar).
+/* 1+1 · меню слева на всех страницах: на компьютере — стеклянный «рельс» со ВСЕМИ разделами и подсказкой
+   (название + зачем) при наведении; на телефоне — нижняя панель из главных разделов + «Все разделы» шторкой
+   (на главной её роль играет своя .tabbar).
    Не показывается на странице оплаты и на странице подборки для клиента. */
 (() => {
   "use strict";
   const path = location.pathname;
-  if (path === "/pay" || path.startsWith("/c/")) return;
+  if (path === "/pay" || path.startsWith("/c/") || new URLSearchParams(location.search).has("embed")) return;
   const ic = (n) => (window.ic ? window.ic(n) : "");
   const params = new URLSearchParams(location.search);
+  // все разделы сайта: название + коротко, зачем (подсказка при наведении; на телефоне — меню «Ещё»)
   const ITEMS = [
-    { href: "/", icon: "search", tip: "Поиск объектов", main: true, on: () => path === "/" && !params.has("fav") },
-    { href: "/cabinet", icon: "grid", tip: "Кабинет", main: true, user: true },
-    { href: "/clients", icon: "users", tip: "Клиенты", main: true, user: true },
-    { href: "/?fav=1", icon: "heart", tip: "Избранное и статусы", main: true, user: true, on: () => path === "/" && params.has("fav") },
-    { href: "/planner", icon: "calendar", tip: "Планер", main: true, user: true },
-    { href: "/picks", icon: "folder", tip: "Подборки клиентам", user: true },
-    { href: "/requests", icon: "briefcase", tip: "Запросы покупателей" },
-    { href: "/market", icon: "chart", tip: "Аналитика рынка" },
-    { href: "/notifications", icon: "bell", tip: "Уведомления", user: true, bell: true },
+    { href: "/", icon: "search", tip: "Поиск объектов", desc: "Все объекты из чатов: фильтры, карта, районы", main: true,
+      on: () => path === "/" && !params.has("fav") && !params.has("agent") },
+    { href: "/cabinet", icon: "grid", tip: "Кабинет", desc: "Ваш день: задачи, ставки, погода, сводка", main: true, user: true },
+    { href: "/?agent=1", icon: "home", tip: "Мои объекты", desc: "Подтвердите номер и управляйте своими объявлениями", user: true,
+      on: () => path === "/" && params.has("agent") },
+    { href: "/clients", icon: "users", tip: "Клиенты", desc: "Клиенты по этапам сделки и подбор объектов", main: true, user: true },
+    { href: "/?fav=1", icon: "heart", tip: "Избранное", desc: "Сохранённые объекты и статусы работы с ними", main: true, user: true,
+      on: () => path === "/" && params.has("fav") },
+    { href: "/planner", icon: "calendar", tip: "Планер", desc: "Показы, звонки и встречи с напоминаниями", main: true, user: true },
+    { href: "/picks", icon: "folder", tip: "Подборки", desc: "Ссылка с объектами для клиента — без чужих номеров", user: true },
+    { href: "/requests", icon: "briefcase", tip: "Запросы покупателей", desc: "Кто что ищет — запросы агентов из чатов" },
+    { href: "/market", icon: "chart", tip: "Аналитика рынка", desc: "Цена за метр по районам и ЖК, динамика" },
+    { href: "/notifications", icon: "bell", tip: "Уведомления", desc: "Новые объекты по поискам, снижение цен", user: true, bell: true },
+    { sep: true },
+    { href: "/pay", icon: "card", tip: "Подписка", desc: "Доступ к номерам агентов и тарифы" },
+    { href: "/how", icon: "help", tip: "Как это работает", desc: "Коротко о сервисе и ответы на вопросы" },
     { sep: true, admin: true },
-    { href: "/learn", icon: "layers", tip: "Обучение и разбор", admin: true, also: ["/fix", "/admin/map"] },
-    { href: "/admin", icon: "sliders", tip: "Админка", admin: true },
+    { href: "/learn", icon: "layers", tip: "Обучение и разбор", desc: "Очереди разбора, что выучил сервис", admin: true, also: ["/fix", "/admin/map"] },
+    { href: "/admin", icon: "sliders", tip: "Админка", desc: "Пользователи, чаты, номера, статистика", admin: true },
   ];
   const isOn = (it) => (it.on ? it.on() : path === it.href || (it.also || []).includes(path) || (it.href !== "/" && path.startsWith(it.href + "/")));
+  const tipHTML = (t, d) => `<span class="rail-tip" role="tooltip"><b>${t}</b>${d ? `<small>${d}</small>` : ""}</span>`;
 
   function build(me) {
     const rail = document.createElement("nav");
     rail.className = "rail rail-g";
     rail.setAttribute("aria-label", "Разделы");
     const items = ITEMS.filter((it) => (!it.user || me) && (!it.admin || (me && me.is_admin)));
+    const who = me ? (me.name || me.email || "").replace(/[<>"]/g, "") : "";
     rail.innerHTML = `<a class="rail-logo" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="38" height="38"></a>`
       + items.map((it) => it.sep ? `<span class="rail-sep"></span>`
-        : `<a class="rail-a${isOn(it) ? " on" : ""}${it.main ? " main" : ""}" href="${it.href}" data-tip="${it.tip}" aria-label="${it.tip}">${ic(it.icon)}${it.bell ? `<b class="rail-n" hidden></b>` : ""}</a>`).join("")
+        : `<a class="rail-a${isOn(it) ? " on" : ""}${it.main ? " main" : ""}" href="${it.href}" aria-label="${it.tip}">${ic(it.icon)}${it.bell ? `<b class="rail-n" hidden></b>` : ""}${tipHTML(it.tip, it.desc)}</a>`).join("")
       + `<span class="rail-gap"></span>`
-      + (me ? `<a class="rail-ava" href="/cabinet" data-tip="Кабинет · ${(me.name || me.email || "").replace(/"/g, "")}">${((me.name || me.email || "1").trim()[0] || "1").toUpperCase()}</a>`
-        : `<a class="rail-a main" href="/?login=1" data-tip="Войти" aria-label="Войти">${ic("user")}</a>`);
+      + `<button type="button" class="rail-a main rail-more" aria-label="Все разделы" aria-expanded="false">${ic("grid")}</button>`
+      + (me ? `<a class="rail-ava" href="/cabinet" aria-label="Кабинет">${((me.name || me.email || "1").trim()[0] || "1").toUpperCase()}${tipHTML("Кабинет", who)}</a>`
+        : `<a class="rail-a main" href="/?login=1" aria-label="Войти">${ic("user")}${tipHTML("Войти", "Неделя бесплатно — без карты")}</a>`);
     document.body.prepend(rail);
     document.body.classList.add("has-rail");
     if (document.querySelector(".tabbar")) document.body.classList.add("has-tabbar");
     if (window.__bellN) window.railBell(window.__bellN);
+
+    // телефон: «Все разделы» — шторка со списком всех страниц и пояснениями
+    const sheet = document.createElement("div");
+    sheet.className = "rail-sheet";
+    sheet.setAttribute("popover", "auto");
+    sheet.innerHTML = `<div class="rs-in"><span class="rs-grab"></span><b class="rs-h">Разделы</b>`
+      + items.filter((it) => !it.sep).map((it) => `<a class="rs-a${isOn(it) ? " on" : ""}" href="${it.href}">${ic(it.icon)}<span><b>${it.tip}</b><small>${it.desc || ""}</small></span></a>`).join("")
+      + `</div>`;
+    document.body.appendChild(sheet);
+    const more = rail.querySelector(".rail-more");
+    more.addEventListener("click", () => { try { sheet.togglePopover(); } catch { sheet.classList.toggle("open"); } });
+    sheet.addEventListener("toggle", (e) => more.setAttribute("aria-expanded", e.newState === "open"));
   }
 
   async function init() {

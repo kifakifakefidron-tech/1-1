@@ -139,6 +139,41 @@ def test_verify_codes_while_collection_paused(conn, monkeypatch):
     assert wappi.poll_verify_only(conn) == 0                                  # больше никто не ждёт — Wappi не трогаем
 
 
+def test_verify_check_now_max(conn, monkeypatch):
+    """Кнопка «Я отправил — проверить» (MAX): личка читается сразу; код с чужого номера — понятное объяснение."""
+    from app import accounts, agent
+    monkeypatch.setattr(config, "WAPPI_TOKENS", {"wa": "", "tg": "", "max": "t"})
+    monkeypatch.setattr(config, "WAPPI_PROFILES", ["max:p1"])
+    monkeypatch.setattr(config, "VERIFY_CHANNELS", ["max"])
+    monkeypatch.setattr(wappi.time, "sleep", lambda s: None)
+    wappi.seen_codes.clear()
+    u = accounts.upsert_email_user(conn, "agent@example.ru")
+    info, _ = agent.start_verification(conn, u["id"], "+7 918 111-22-33")
+    sender = {"v": "79990001122"}
+
+    def fake_get(path, params, token):
+        if path.endswith("/chats/get"):   # личный чат MAX: id без минуса, номер — в поле phone
+            return {"dialogs": [{"id": "205160429", "last_timestamp": NOW * 1000}]}
+        return {"messages": [{"id": "m1", "chatId": "205160429", "time": NOW * 1000, "from": sender["v"],
+                              "phone": sender["v"], "body": f"1+1-{info['code']}"}]}
+
+    monkeypatch.setattr(wappi, "_get", fake_get)
+    res = agent.check_result(conn, u["id"], info["phone"], wappi.seen_codes, wappi.check_now(conn))
+    assert res["status"] == "pending" and "+7 999 000-11-22" in res["detail"]
+    sender["v"] = "79181112233"
+    res = agent.check_result(conn, u["id"], info["phone"], wappi.seen_codes, wappi.check_now(conn))
+    assert res["status"] == "ok" and agent.verified_phones(conn, u["id"]) == ["+79181112233"]
+
+
+def test_verify_check_not_configured(conn, monkeypatch):
+    from app import accounts, agent
+    monkeypatch.setattr(config, "WAPPI_PROFILES", [])
+    u = accounts.upsert_email_user(conn, "agent2@example.ru")
+    info, _ = agent.start_verification(conn, u["id"], "+7 918 111-22-44")
+    res = agent.check_result(conn, u["id"], info["phone"], [], wappi.check_now(conn))
+    assert res["status"] == "pending" and "не работает" in res["detail"]
+
+
 def test_album_photos_attach_to_listing(conn, monkeypatch, tmp_path):
     """Объявление подписью к фото + ещё фото альбомом: текст разбирается, фото попадают в карточку."""
     from app import ingest, media

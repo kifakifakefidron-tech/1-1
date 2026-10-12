@@ -5,6 +5,7 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>';
+  if (new URLSearchParams(location.search).has("embed")) return;   // окно объекта поверх другой страницы — без плашек
   const onNotices = location.pathname === "/notifications";
   let bell = document.querySelector("[data-bell]");
   let known = null;   // id самого свежего уведомления на момент загрузки страницы

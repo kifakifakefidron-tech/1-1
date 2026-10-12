@@ -8,6 +8,16 @@
   const $ = (id) => document.getElementById(id);
   const ic = (n) => (window.ic ? window.ic(n) : "");   // тонкие иконки (web/icons.js)
   const PAGE_SIZE = 32;  // делится и на 4 (компьютер), и на 2 (телефон)
+  // ?embed=1 — окно объекта поверх другой страницы сайта (web/objview.js): показываем только окно объекта,
+  // ссылки уводят всю вкладку, а закрытие окна сообщаем странице, которая его открыла
+  const EMBED = new URLSearchParams(location.search).has("embed") && window.parent !== window;
+  if (EMBED) {
+    document.documentElement.classList.add("embed");
+    const base = document.createElement("base");
+    base.target = "_top";
+    document.head.appendChild(base);
+  }
+  const toParent = (msg) => { if (EMBED) window.parent.postMessage({ ov: msg }, location.origin); };
 
   const state = {
     q: "", deal: "sale", types: [], rooms: [],
@@ -230,6 +240,11 @@
     const fc = filtersCount();
     $("filterBadge").hidden = !fc;
     $("filterBadge").textContent = fc;
+    // сколько выбрано среди «ещё фильтров» — видно на кнопке, даже когда они свёрнуты
+    const mc = [state.areaMin || state.areaMax, state.landMin || state.landMax, state.notFirst, state.notLast, state.fresh]
+      .filter(Boolean).length + state.districts.length + state.complexes.length;
+    $("moreN").hidden = !mc;
+    $("moreN").textContent = mc;
     $("resetBtn").hidden = !(fc - (state.deal === "rent" ? 1 : 0)) && !state.q;  // кнопка на виду, когда есть что сбрасывать
   }
 
@@ -1333,8 +1348,11 @@
       fb.classList.toggle("on", !!r.data.favorite);
       fb.setAttribute("aria-label", r.data.favorite ? "Убрать из избранного" : "В избранное");
     } else if (r.status === 404) {
-      $("detailBody").innerHTML = `<p class="d-place">Этот объект уже сняли с продажи или обновили. Обновите список — он покажет актуальное.</p>
-        <button type="button" class="pill" data-refresh-list>Обновить список</button>`;
+      $("detailBody").innerHTML = EMBED
+        ? `<p class="d-place">Этот объект уже сняли с продажи или удалили.</p>
+          <button type="button" class="pill" onclick="document.getElementById('detail').close()">Закрыть</button>`
+        : `<p class="d-place">Этот объект уже сняли с продажи или обновили. Обновите список — он покажет актуальное.</p>
+          <button type="button" class="pill" data-refresh-list>Обновить список</button>`;
       document.querySelectorAll(`.item[data-id="${id}"]`).forEach((el) => el.remove());
     } else {
       $("detailBody").innerHTML = `<p class="d-place">Не получилось загрузить объект — похоже, пропала связь.</p>
@@ -1786,7 +1804,7 @@
       const open = $("more").hidden;
       $("more").hidden = !open;
       $("moreBtn").setAttribute("aria-expanded", open);
-      $("moreBtn").textContent = open ? "Скрыть фильтры" : "Ещё фильтры";
+      $("moreBtn").querySelector("span").textContent = open ? "Скрыть фильтры" : "Ещё фильтры";
     });
     $("resetBtn").addEventListener("click", () => {
       Object.assign(state, {
@@ -1809,7 +1827,7 @@
     }
     $("filterBtn").addEventListener("click", openSheet);
     // Уведомление о cookie — один раз, запоминаем в браузере
-    try { if (!localStorage.getItem("cookieOk")) $("cookieBar").hidden = false; } catch { /* приватный режим */ }
+    try { if (!EMBED && !localStorage.getItem("cookieOk")) $("cookieBar").hidden = false; } catch { /* приватный режим */ }
     $("cookieOk").addEventListener("click", () => {
       try { localStorage.setItem("cookieOk", "1"); } catch { /* приватный режим */ }
       $("cookieBar").classList.add("bye");
@@ -1826,7 +1844,7 @@
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
     $("refreshBtn").addEventListener("click", reloadList);
     $("newPill").addEventListener("click", reloadList);
-    setInterval(checkNew, 60000);
+    if (!EMBED) setInterval(checkNew, 60000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) checkNew(); });
     // Фото проявляются плавно, когда загрузились
     document.addEventListener("load", (e) => {
@@ -1902,7 +1920,7 @@
       const prev = detailStack.pop();
       if (prev) openDetail(prev);
     });
-    detail.addEventListener("close", () => { detailStack = []; openedId = 0; setOpenParam(null); });
+    detail.addEventListener("close", () => { detailStack = []; openedId = 0; setOpenParam(null); toParent("close"); });
 
     $("accountBtn").addEventListener("click", () => (me() ? (location.href = "/cabinet") : openLogin()));
 
@@ -1993,6 +2011,17 @@
 
   async function init() {
     readUrl();
+    if (EMBED) {   // только окно объекта: без списка, карты и первого экрана
+      try { meta = await getJSON("/api/meta"); } catch { /* */ }
+      renderTypes();
+      renderAccount();
+      syncControls();
+      bind();
+      const id = Number(new URLSearchParams(location.search).get("open"));
+      if (id) await openDetail(id);
+      toParent($("detail").open ? "ready" : "gone");   // объект сняли/удалили — странице-хозяину нечего показывать
+      return;
+    }
     initHero();
     try { meta = await getJSON("/api/meta"); } catch { /* страница всё равно покажет список */ }
     renderTypes();
@@ -2001,7 +2030,7 @@
         || state.fresh || state.districts.length || state.complexes.length) {
       $("more").hidden = false;
       $("moreBtn").setAttribute("aria-expanded", "true");
-      $("moreBtn").textContent = "Скрыть фильтры";
+      $("moreBtn").querySelector("span").textContent = "Скрыть фильтры";
     }
     syncControls();
     bind();

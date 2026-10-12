@@ -310,6 +310,17 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   ADMIN_EMAILS. Письма — с Date и Message-ID (mailer._headers), иначе Gmail их не принимает. Процессов сайта — WEB_WORKERS
   (= число ядер, `nproc`). Нагрузка 12.10 на живом сайте: 50 одновременно — без ошибок, 150 — 95 % ответов < 2 с, 300 — ломается
   (≈100–150 активных пользователей одновременно).
+- 12.10 (ночь): подтверждение номера — кнопка «Я отправил — проверить» (POST /api/agent/verify {phone, check:true} →
+  wappi.check_now: сразу читает личку профилей VERIFY_CHANNELS; agent.check_result объясняет: код пришёл с другого номера /
+  номер отправителя не виден (админу — notify.alert) / сообщения нет / приём не настроен). MAX: номер — поле phone/from
+  сообщения (по докам Wappi), запасной — номер из чата (_chat_phone). wappi.seen_codes — последние 50 личных сообщений с цифрами.
+  Главная: шапка с логотипом, без «обновляется каждые 2 минуты»; цифры /api/stats считаются ТЕМ ЖЕ search._where, что и
+  список (sale/rent/new_24h) — «в продаже» = число над списком. Фильтры — группы с подписями (.f-grid/.f-group/.f-seg),
+  «Ещё фильтры» — кнопка со счётчиком #moreN, поиск без квадратных углов. Меню слева (rail.js) — ВСЕ разделы
+  (+ «Мои объекты» /?agent=1, «Подписка», «Как это работает»), подсказка .rail-tip (название + зачем) плавно;
+  на телефоне — «Все разделы» шторкой (popover .rail-sheet). Объект с любой страницы (кроме главной и админских)
+  открывается поверх неё: web/objview.js ловит ссылки /?open=ID → popover с iframe /?open=ID&embed=1 (app.js EMBED:
+  только окно объекта, <base target=_top>, закрытие → postMessage {ov:"close"}). Ctrl-клик — новая вкладка.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
@@ -318,7 +329,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 158 тестов
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 161 тест
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены

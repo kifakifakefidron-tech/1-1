@@ -16,7 +16,7 @@
 <link rel="stylesheet" href="/static/style.css?v=25">
 <link rel="stylesheet" href="/static/motion.css?v=34">
 <link rel="stylesheet" href="/static/theme.css?v=14">
-<link rel="stylesheet" href="/static/glass.css?v=8">
+<link rel="stylesheet" href="/static/glass.css?v=11">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -60,11 +60,20 @@
 <main class="wrap">
   <section class="hero" id="hero" aria-label="1+1 — о сервисе">
     <button type="button" class="hero-x" id="heroX" aria-label="Скрыть приветствие" title="Скрыть"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
-    <p class="hero-eyebrow"><span class="live-dot" aria-hidden="true"></span>Краснодар · обновляется каждые 2 минуты</p>
-    <h1 class="hero-title">Все объекты из риелторских чатов — <br><em>в одном поиске</em></h1>
-    <p class="hero-sub">Вторичка, новостройки, дома и коммерция. Без дублей, с картой районов, ценой за метр и номерами агентов.</p>
+    <div class="hero-brand">
+      <svg class="logo hero-logo" viewBox="0 0 100 100" aria-hidden="true">
+        <g class="walls" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+          <path pathLength="1" d="M4 40V4h92v92H4V60"/><path pathLength="1" d="M49 4v12"/>
+          <path pathLength="1" d="M49 27v13h47"/><path pathLength="1" d="M49 59h13"/>
+          <path pathLength="1" d="M72 59h24"/><path pathLength="1" d="M49 59v37"/></g>
+        <text class="logo-txt" x="27" y="56.5" text-anchor="middle">1+1</text></svg>
+      <span><b>1+1</b><small>поиск объектов Краснодара</small></span>
+    </div>
+    <h1 class="hero-title">Вся база риелторских чатов Краснодара — <em>в одном поиске</em></h1>
+    <p class="hero-sub">Объявления агентов из десятков чатов: без повторов, на карте районов, с ценой за метр и номером агента.</p>
     <div class="hero-stats" id="heroStats">
-      <div><b data-k="active">—</b><span>объектов сейчас</span></div>
+      <div><b data-k="sale">—</b><span>в продаже</span></div>
+      <div><b data-k="rent">—</b><span>в аренде</span></div>
       <div><b data-k="new_24h">—</b><span>новых за сутки</span></div>
       <div><b data-k="districts">—</b><span>районов на карте</span></div>
     </div>
@@ -98,25 +107,31 @@
       <button type="button" data-deal="sale" class="seg on">Продажа</button>
       <button type="button" data-deal="rent" class="seg">Аренда</button>
     </div>
-    <div class="row" id="types" role="group" aria-label="Тип объекта"></div>
-    <div class="row">
-      <div class="chips" id="rooms" role="group" aria-label="Комнаты">
-        <button type="button" data-room="0" class="chip">Студия</button>
-        <button type="button" data-room="1" class="chip">1</button>
-        <button type="button" data-room="2" class="chip">2</button>
-        <button type="button" data-room="3" class="chip">3</button>
-        <button type="button" data-room="4" class="chip">4+</button>
-      </div>
-      <div class="price-slider" id="priceSlider">
-        <div class="ps-top"><span class="range-label">Цена</span><b id="priceValue">любая</b></div>
-        <div class="ps-track">
-          <div class="ps-fill" id="psFill"></div>
-          <input type="range" id="psMin" min="0" max="10" step="1" value="0" aria-label="Цена от">
-          <input type="range" id="psMax" min="0" max="10" step="1" value="10" aria-label="Цена до">
-        </div>
-        <input type="hidden" id="priceMin"><input type="hidden" id="priceMax">
-      </div>
-      <button type="button" class="more-btn" id="moreBtn" aria-expanded="false">Ещё фильтры</button>
+    <div class="f-grid">
+      <div class="f-group"><span class="f-lbl">Что ищем</span>
+        <div class="chips f-chips" id="types" role="group" aria-label="Тип объекта"></div></div>
+      <div class="f-group"><span class="f-lbl">Комнаты</span>
+        <div class="chips f-seg" id="rooms" role="group" aria-label="Комнаты">
+          <button type="button" data-room="0" class="chip">Студия</button>
+          <button type="button" data-room="1" class="chip">1</button>
+          <button type="button" data-room="2" class="chip">2</button>
+          <button type="button" data-room="3" class="chip">3</button>
+          <button type="button" data-room="4" class="chip">4+</button>
+        </div></div>
+      <div class="f-group f-price">
+        <div class="price-slider" id="priceSlider">
+          <div class="ps-top"><span class="f-lbl">Цена</span><b id="priceValue">любая</b></div>
+          <div class="ps-track">
+            <div class="ps-fill" id="psFill"></div>
+            <input type="range" id="psMin" min="0" max="10" step="1" value="0" aria-label="Цена от">
+            <input type="range" id="psMax" min="0" max="10" step="1" value="10" aria-label="Цена до">
+          </div>
+          <input type="hidden" id="priceMin"><input type="hidden" id="priceMax">
+        </div></div>
+      <div class="f-group f-more-g">
+        <button type="button" class="more-btn" id="moreBtn" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+          <span>Ещё фильтры</span><b class="more-n" id="moreN" hidden></b></button></div>
     </div>
     <div class="more" id="more" hidden>
       <div class="field">
@@ -129,8 +144,11 @@
         <input id="landMin" inputmode="decimal" placeholder="от" aria-label="Участок от">
         <input id="landMax" inputmode="decimal" placeholder="до" aria-label="Участок до">
       </div>
-      <label class="check"><input type="checkbox" id="notFirst"> Не первый этаж</label>
-      <label class="check"><input type="checkbox" id="notLast"> Не последний</label>
+      <div class="field f-floor">
+        <span class="range-label">Этаж</span>
+        <label class="check"><input type="checkbox" id="notFirst"> Не первый</label>
+        <label class="check"><input type="checkbox" id="notLast"> Не последний</label>
+      </div>
       <label class="field">
         <span class="range-label">Присылали</span>
         <select id="fresh">
@@ -368,12 +386,12 @@
 
 <script src="/static/icons.js?v=4"></script>
 <script src="/static/max.js?v=1"></script>
-<script src="/static/rail.js?v=1"></script>
+<script src="/static/rail.js?v=2"></script>
 <script src="/static/combo.js?v=2"></script>
 <script src="/static/yasel.js?v=2"></script>
-<script src="/static/bell.js?v=2"></script>
+<script src="/static/bell.js?v=3"></script>
 <script src="/static/lightbox.js?v=1"></script>
-<script src="/static/app.js?v=78"></script>
-<script src="/static/agent.js?v=5"></script>
+<script src="/static/app.js?v=81"></script>
+<script src="/static/agent.js?v=7"></script>
 </body>
 </html>

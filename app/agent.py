@@ -91,6 +91,38 @@ def verification_status(conn: sqlite3.Connection, user_id: int, phone: str) -> s
     return "pending"
 
 
+def _pretty(phone: str) -> str:
+    d = "".join(ch for ch in phone if ch.isdigit())
+    return f"+7 {d[1:4]} {d[4:7]}-{d[7:9]}-{d[9:11]}" if len(d) == 11 else phone
+
+
+def check_result(conn: sqlite3.Connection, user_id: int, phone_raw: str, seen: list[dict], info: dict) -> dict:
+    """Ответ кнопке «Я отправил — проверить»: подтверждено или понятное объяснение, что пошло не так."""
+    phone = rules.normalize_phone(phone_raw) or phone_raw
+    status = verification_status(conn, user_id, phone)
+    if status != "pending":
+        return {"status": status, "detail": "" if status == "ok" else "Код устарел — запросите новый."}
+    row = conn.execute("SELECT code FROM phone_codes WHERE user_id = ? AND phone = ? AND status = 'pending' ORDER BY id DESC LIMIT 1",
+                       (user_id, phone)).fetchone()
+    code = row[0] if row else ""
+    hits = [s for s in seen if code and code in s["codes"]]
+    if hits and not hits[-1]["phone"]:
+        why = ("Сообщение с кодом пришло, но мессенджер не показал номер отправителя. "
+               "Мы получили сигнал и исправим — попробуйте чуть позже или напишите нам.")
+    elif hits:
+        why = (f"Код пришёл с номера {_pretty(rules.normalize_phone(hits[-1]['phone']) or hits[-1]['phone'])}, а подтверждаете "
+               f"{_pretty(phone)}. Отправьте код с того номера, который подтверждаете.")
+    elif not info.get("configured"):
+        why = "Приём кодов сейчас не работает. Напишите нам — подтвердим номер вручную."
+    elif info.get("errors"):
+        why = "Не получилось связаться с мессенджером. Попробуйте ещё раз через минуту."
+    else:
+        to = _pretty(rules.normalize_phone(config.VERIFY_NUMBER) or config.VERIFY_NUMBER)
+        why = (f"Сообщение пока не пришло. Проверьте: в MAX на номер {to}, с номера {_pretty(phone)}, "
+               f"текст «1+1-{code}». Если только что отправили — нажмите ещё раз через 10–20 секунд.")
+    return {"status": "pending", "detail": why, "seen_code": bool(hits)}
+
+
 # ─── мои объявления ────────────────────────────────────────────────────────
 def _phone_like(phones: list[str]) -> tuple[str, list]:
     return " OR ".join("l.phones LIKE ?" for _ in phones), [f'%"{p}"%' for p in phones]

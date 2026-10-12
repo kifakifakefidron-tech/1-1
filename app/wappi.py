@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -150,6 +152,9 @@ def _store(conn: sqlite3.Connection, source: str, profile_id: str, m: dict,
 
 _pending_cache: dict = {"t": 0.0, "v": False}
 _verify_only: dict = {"on": False}
+_check_lock = threading.Lock()
+# Что недавно пришло в личку с цифрами — чтобы кнопка «Я отправил — проверить» могла объяснить, что не так
+seen_codes: list[dict] = []
 
 
 def _verify_pending(conn) -> bool:
@@ -161,8 +166,8 @@ def _verify_pending(conn) -> bool:
 
 def _personal_phone(m: dict, chat_id: str | None) -> str | None:
     """Номер собеседника в личном чате: WhatsApp — «79181234567@c.us», у MAX/Telegram — поле с телефоном."""
-    for k in ("phone", "sender_phone", "senderPhone", "from_phone"):
-        if m.get(k):
+    for k in ("phone", "sender_phone", "senderPhone", "from_phone", "_chat_phone"):
+        if m.get(k) and _sender_phone({"from": str(m[k])}):
             return str(m[k])
     for k in ("sender", "from", "author", "contact"):
         v = m.get(k)
@@ -177,7 +182,11 @@ def _check_code(conn, profile_id: str, source: str, m: dict, chat_id: str | None
         return
     _show_fields(f"{source}:{profile_id}", "личное сообщение", m)
     phone = _personal_phone(m, chat_id)
-    if agent.check_message(conn, phone, text):
+    ok = agent.check_message(conn, phone, text)
+    seen_codes.append({"t": time.time(), "source": source, "phone": phone,
+                       "codes": re.findall(r"(?<!\d)(\d{6})(?!\d)", text), "ok": ok})
+    del seen_codes[:-50]
+    if ok:
         log.info("Номер агента подтверждён через %s", source)
         _pending_cache["t"] = 0
     elif phone is None:
@@ -276,6 +285,8 @@ def _poll_by_chats(conn, profile, source, profile_id, token, cursor) -> tuple[in
             fresh = [m for m in batch if _fresh(m, cursor)]
             received += len(fresh)
             for m in fresh:
+                if c.get("_personal") and not m.get("_chat_phone"):   # номер собеседника может быть только у чата
+                    m = {**m, "_chat_phone": _chat_phone(c)}
                 ok, ts = _store(conn, source, profile_id, m, chat_id=chat_id, chat_name=chat_name,
                                 group=not c.get("_personal"))
                 added += ok
@@ -284,6 +295,16 @@ def _poll_by_chats(conn, profile, source, profile_id, token, cursor) -> tuple[in
                 break
         time.sleep(0.2)  # бережно к Wappi
     return added, received, newest
+
+
+def _chat_phone(c: dict) -> str | None:
+    for k in ("phone", "contact_phone", "phone_number"):
+        if c.get(k):
+            return str(c[k])
+    contact = c.get("contact")
+    if isinstance(contact, dict):
+        return contact.get("phone") or contact.get("phone_number")
+    return None
 
 
 def _chat_link(source: str, c: dict) -> str | None:
@@ -383,6 +404,29 @@ def poll_verify_only(conn: sqlite3.Connection) -> int:
     finally:
         _verify_only["on"] = False
     return 1
+
+
+def check_now(conn: sqlite3.Connection) -> dict:
+    """Кнопка «Я отправил — проверить»: сразу читаем личку нашего номера (не ждём фонового цикла)."""
+    profiles = [p for p in config.WAPPI_PROFILES
+                if p.partition(":")[0] in config.VERIFY_CHANNELS and config.WAPPI_TOKENS.get(p.partition(":")[0])]
+    if not profiles:
+        return {"configured": False, "errors": []}
+    _pending_cache.update(t=time.time(), v=True)
+    if not _check_lock.acquire(timeout=30):   # другой агент уже проверяет — его проверка прочтёт и наше сообщение
+        return {"configured": True, "errors": []}
+    try:
+        for p in profiles:
+            errors.pop(p, None)
+        was, _verify_only["on"] = _verify_only["on"], True
+        try:
+            for p in profiles:
+                poll_profile(conn, p)
+        finally:
+            _verify_only["on"] = was
+        return {"configured": True, "errors": [errors[p] for p in profiles if p in errors]}
+    finally:
+        _check_lock.release()
 
 
 def poll_all(conn: sqlite3.Connection) -> int:

@@ -22,7 +22,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import (accounts, agent, autolearn, brain, buyers, clients, dashboard, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
-               market, payments, picks, planner, region, search, stats, tg, widgets)
+               market, notify, payments, picks, planner, region, search, stats, tg, wappi, widgets)
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -346,9 +346,16 @@ def api_stats(request: Request, body: dict | None = None):
     conn = db.get()
     one = lambda sql, *p: conn.execute(sql, p).fetchone()[0]  # noqa: E731
     day = int(time.time()) - 86400
+    now = int(time.time())
+
+    def visible(deal: str, **kw) -> int:   # считаем ровно так же, как список на главной (те же правила показа)
+        where, params = search._where(search.Query(deal=deal, **kw), now)
+        return conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {where}", params).fetchone()[0]
+
+    sale, rent = visible("sale"), visible("rent")
     return JSONResponse({
-        "active": one("SELECT COUNT(*) FROM listings WHERE is_active=1"),
-        "new_24h": one("SELECT COUNT(*) FROM listings WHERE first_seen >= ?", day),
+        "active": sale + rent, "sale": sale, "rent": rent,
+        "new_24h": visible("sale", new_days=1) + visible("rent", new_days=1),
         "messages_24h": one("SELECT COUNT(*) FROM messages WHERE ts >= ?", day),
         "duplicates_merged": one("SELECT COUNT(*) FROM listing_events WHERE match != 'new'"),
         "districts": one("SELECT COUNT(DISTINCT district) FROM listings WHERE is_active=1 AND district IS NOT NULL"),
@@ -947,6 +954,21 @@ def api_agent_verify(request: Request, body: dict | None = None):
     conn = db.get()
     if request.method == "GET":
         return JSONResponse({"status": agent.verification_status(conn, user["id"], request.query_params.get("phone", ""))})
+    if (body or {}).get("check"):   # «Я отправил — проверить»: читаем личку сразу, не ждём фонового цикла
+        phone = str(body.get("phone", ""))[:40]
+        if agent.verification_status(conn, user["id"], phone) != "pending":
+            return JSONResponse(agent.check_result(conn, user["id"], phone, [], {}))
+        if _too_often(request, "agent_check", 30, 900):
+            return _err("Слишком часто — подождите пару минут.", 429)
+        db.flush(conn)
+        info = wappi.check_now(conn)
+        res = agent.check_result(conn, user["id"], phone, wappi.seen_codes, info)
+        if res.get("seen_code") and res["status"] == "pending":   # код пришёл, но не подошёл — сообщим админу
+            db.flush(conn)
+            notify.alert(conn, f"verify_phone:{user['id']}",
+                         f"Агент (аккаунт {user['id']}) прислал код подтверждения, но номер не совпал или не виден: {res['detail']}",
+                         every_s=3600)
+        return JSONResponse(res)
     if not config.VERIFY_NUMBER:
         return _err("Подтверждение номера ещё не настроено. Напишите нам.", 503)
     if _too_often(request, "agent_verify", 10, 3600):
