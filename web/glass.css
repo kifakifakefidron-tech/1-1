@@ -105,3 +105,64 @@ dialog::backdrop { background: rgba(0, 18, 18, .5); backdrop-filter: blur(6px); 
   .hero-stats span { font-size: 11.5px; }
   .hero-x { top: 10px; right: 10px; width: 28px; height: 28px; }
 }
+
+/* ─── просмотр фото (lightbox.js): фото целиком, тёмное стекло, миниатюры ─── */
+.lb { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0;
+  display: none; grid-template-rows: auto minmax(0, 1fr) auto; background: rgba(1, 22, 22, .9); color: #f3e8bc;
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); z-index: 1000; }
+.lb.on { display: grid; animation: lbIn .28s var(--ease) both; }
+@keyframes lbIn { from { opacity: 0; } }
+.lb-top { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; }
+.lb-count { font: 500 14px var(--body); letter-spacing: .04em; opacity: .85; }
+.lb-x, .lb-nav { display: grid; place-items: center; border: 1px solid rgba(255, 255, 255, .16); border-radius: 50%; cursor: pointer;
+  background: rgba(255, 255, 255, .08); color: #f3e8bc; transition: background var(--dur-1) var(--ease); }
+.lb-x { width: 44px; height: 44px; }
+.lb-x:hover, .lb-nav:hover { background: rgba(255, 255, 255, .18); }
+.lb svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.lb-stage { position: relative; display: grid; place-items: center; min-height: 0; padding: 0 70px; }
+.lb-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 10px; box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+  transition: opacity .2s var(--ease); user-select: none; -webkit-user-drag: none; }
+.lb.loading .lb-img { opacity: .35; }
+.lb-spin { position: absolute; width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, .15);
+  border-top-color: #e3cb8f; animation: spin .8s linear infinite; opacity: 0; pointer-events: none; }
+.lb.loading .lb-spin { opacity: 1; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.lb-nav { position: absolute; top: 50%; width: 50px; height: 50px; margin-top: -25px; }
+.lb-nav.prev { left: 14px; } .lb-nav.next { right: 14px; }
+.lb.single .lb-nav, .lb.single .lb-thumbs { display: none; }
+.lb-thumbs { display: flex; gap: 8px; justify-content: safe center; overflow-x: auto; padding: 12px 16px calc(14px + env(safe-area-inset-bottom));
+  scrollbar-width: none; }
+.lb-thumbs::-webkit-scrollbar { display: none; }
+.lb-thumbs button { flex: 0 0 auto; width: 58px; height: 58px; padding: 0; border-radius: 10px; overflow: hidden; cursor: pointer;
+  border: 2px solid transparent; background: none; opacity: .55; transition: opacity var(--dur-1), border-color var(--dur-1); }
+.lb-thumbs button.on { opacity: 1; border-color: #e3cb8f; }
+.lb-thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; }
+html.lb-open { overflow: hidden; }
+@media (max-width: 640px) {
+  .lb-stage { padding: 0 6px; }
+  .lb-nav { display: none; }   /* на телефоне — свайп */
+  .lb-thumbs button { width: 48px; height: 48px; }
+}
+
+/* ─── фото: единая квадратная рамка 1 : 1 в карточках и в окне объекта ─── */
+.item-photo { aspect-ratio: 1 / 1; }
+.dv-gal { gap: 8px; }
+.dv-gal a { width: 168px; height: 168px; border-radius: 14px; overflow: hidden; cursor: zoom-in; background: rgba(255, 255, 255, .05); }
+.dv-gal img, .dv-gal.one img { width: 100%; height: 100%; max-width: none; object-fit: cover; border-radius: 0; transition: transform .5s var(--ease); }
+.dv-gal a:first-child img { border-radius: 0; }
+.dv-gal a:hover img { transform: scale(1.04); }
+.dv-gal.one a { width: min(340px, 100%); height: auto; aspect-ratio: 1 / 1; }
+@media (max-width: 640px) { .dv-gal a { width: 138px; height: 138px; } }
+
+/* ─── «СТРЕЛЫ» — агентство-партнёр: фирменная капсула и ссылка на их сайт ─── */
+.mark.partner { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px 3px 7px; border: 0; border-radius: 999px;
+  font: 700 10.5px/1.4 var(--body); letter-spacing: .12em; color: #0f2f2e;
+  background: linear-gradient(135deg, #f3e8bc, #e3cb8f 50%, #c9a85c); box-shadow: 0 3px 10px rgba(201, 168, 92, .3), inset 0 1px 0 rgba(255, 255, 255, .5); }
+.strely-ic { width: 13px; height: 13px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.dv-site.strely { gap: 10px; padding: 12px 14px; margin-top: 8px; border: 1px solid rgba(227, 203, 143, .35); border-radius: 14px;
+  background: linear-gradient(135deg, rgba(227, 203, 143, .14), rgba(227, 203, 143, .04)); color: var(--ink); font-weight: 500; }
+.dv-site.strely .strely-ic { width: 26px; height: 26px; padding: 5px; border-radius: 8px; color: #0f2f2e;
+  background: linear-gradient(135deg, #f3e8bc, #c9a85c); }
+.dv-site.strely span { flex: 1; }
+.dv-site.strely svg.ic { width: 16px; height: 16px; color: var(--gold); }
+.dv-site.strely:hover { text-decoration: none; border-color: rgba(227, 203, 143, .6); }

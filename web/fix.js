@@ -127,7 +127,7 @@
     if (it.photo) $("fxPhoto").src = it.photo;
     // карточка целиком: все фото, параметры, номера
     const photos = it.photos || [];
-    $("fxGal").innerHTML = photos.length > 1 ? photos.map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="" loading="lazy"></a>`).join("") : "";
+    $("fxGal").innerHTML = photos.length > 1 ? photos.map((u) => `<a href="${esc(u)}"><img src="${esc(u)}" alt="" loading="lazy"></a>`).join("") : "";
     const rooms = it.rooms == null ? null : it.rooms === 0 ? "студия" : `${it.rooms}-комн.`;
     $("fxFacts").innerHTML = [rooms, it.area && `${it.area} м²`, it.land && `участок ${it.land} сот.`,
       it.floor && `этаж ${it.floor}${it.floors ? "/" + it.floors : ""}`, it.deal === "rent" ? "аренда" : "продажа",

@@ -382,7 +382,7 @@
     const b = [];
     const st = myStatus(o.id);
     if (st) b.push(`<span class="mark crm crm-${st}">${STATUSES[st]}</span>`);
-    if (o.source === "feed") b.push(`<span class="mark partner">Партнёр</span>`);
+    if (o.source === "feed") b.push(`<span class="mark partner" title="Объект агентства недвижимости «СТРЕЛЫ» — партнёра 1+1">${STRELY}СТРЕЛЫ</span>`);
     if (o.verified && o.source !== "feed") b.push(`<span class="mark verified" title="Агент подтвердил свой номер в 1+1">✓ Проверенный агент</span>`);
     if (o.first_seen > now - 86400) b.push(`<span class="mark new">Новое</span>`);
     if (o.prev_price && o.price && o.prev_price > o.price && o.price_changed_at > now - 14 * 86400) {
@@ -398,6 +398,9 @@
   // «На 1+1 — 5 дней»: сколько объявление уже у нас (с первого появления в чатах риелторов)
   const onSite = (n) => (n < 1 ? "Новое на 1+1" : `На 1+1 — ${daysText(n)}`);
   const updated = (ts) => { const a = fmtAgo(ts); return a ? `обновлено ${a}` : ""; };
+
+  // знак «СТРЕЛЫ» — две стрелки (бренд агентства-партнёра)
+  const STRELY = `<svg class="strely-ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 12.5L8 7M8 7V11M8 7H4"/><path d="M7.5 9.5L13 4M13 4V8M13 4H9"/></svg>`;
 
   function itemHTML(o) {
     const hit = hitSince && o.first_seen > hitSince;   // новое в этом поиске — выделяем один раз
@@ -702,7 +705,7 @@
     ].filter(([, v]) => v != null && v !== "").map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("");
     const photos = o.photos || [];
     const gallery = photos.length
-      ? `<div class="dv-gal-wrap"><div class="dv-gal${photos.length === 1 ? " one" : ""}">${photos.map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="" ${i ? 'loading="lazy"' : ""}></a>`).join("")}</div>
+      ? `<div class="dv-gal-wrap"><div class="dv-gal${photos.length === 1 ? " one" : ""}" data-lb="obj">${photos.map((u, i) => `<a href="${esc(u)}" aria-label="Открыть фото ${i + 1}"><img src="${esc(u)}" alt="" ${i ? 'loading="lazy"' : ""}></a>`).join("")}</div>
         ${photos.length > 1 ? `<button type="button" class="ph-nav prev" data-gal-step="-1" aria-label="Назад">${ic("chevron-left")}</button>
           <button type="button" class="ph-nav next" data-gal-step="1" aria-label="Вперёд">${ic("chevron")}</button>` : ""}</div>`
       : "";
@@ -1121,7 +1124,8 @@
         return `<div class="dv-phone"><a class="dv-phone-num" href="tel:${esc(p)}">${esc(pretty(p))}</a>
           <a class="dv-ic-btn" href="tel:${esc(p)}" aria-label="Позвонить" title="Позвонить">${ic("phone")}</a>
           <a class="dv-ic-btn" href="https://wa.me/${digits}" target="_blank" rel="noopener" aria-label="Написать в WhatsApp" title="WhatsApp">${ic("chat")}</a></div>`;
-      }).join("")}${o.url ? `<a class="dv-site" href="${esc(o.url)}" target="_blank" rel="noopener">${ic("link")}Объявление на сайте агентства</a>` : ""}</div>`;
+      }).join("")}${o.url ? `<a class="dv-site${o.source === "feed" ? " strely" : ""}" href="${esc(o.url)}" target="_blank" rel="noopener">${o.source === "feed"
+        ? `${STRELY}<span>Объект агентства «СТРЕЛЫ» — смотреть на arrowsrealty.ru</span>${ic("external")}` : `${ic("link")}Объявление на сайте агентства`}</a>` : ""}</div>`;
     }
     if (o.phones_limit) {
       return `<div class="d-locked"><p>На сегодня открыто максимум номеров (${esc(me() && me().views_limit)}). Завтра лимит обновится.</p></div>`;
