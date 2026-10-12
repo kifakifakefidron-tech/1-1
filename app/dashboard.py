@@ -8,7 +8,7 @@ from datetime import datetime
 from . import agent, clients, market, widgets
 from .planner import MSK, events
 
-STATUS_LABELS = {"call": "Звонок", "show": "Показ", "think": "Думает", "deal": "Сделка", "refuse": "Отказ"}
+STATUS_LABELS = {"call": "Звонок", "show": "Показ", "think": "Думает", "refuse": "Отказ"}
 _market_cache: dict = {"t": 0.0, "v": None}
 
 

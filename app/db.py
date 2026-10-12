@@ -376,6 +376,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
                     WHEN NEW.price IS NOT NULL AND NEW.price IS NOT OLD.price
                     BEGIN INSERT INTO price_history (listing_id, ts, price)
                           VALUES (NEW.id, CAST(strftime('%s','now') AS INTEGER), NEW.price); END""")
+    if not conn.execute("SELECT 1 FROM state WHERE key = 'notes_no_deal'").fetchone():   # статус «Сделка» у объектов убран
+        conn.execute("UPDATE notes SET status = NULL WHERE status = 'deal'")
+        conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('notes_no_deal', '1')")
     if not conn.execute("SELECT 1 FROM state WHERE key = 'price_hist_v1'").fetchone():
         _backfill_prices(conn)
         conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('price_hist_v1', '1')")

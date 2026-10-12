@@ -103,7 +103,12 @@
     const edit = me.is_admin ? `<button type="button" class="wm-edit" id="banksEdit">${b.length ? "Изменить ставки банков" : "+ Внести ставки банков"}</button>` : "";
     const best = (k) => { const v = b.map((x) => x[k]).filter((x) => x != null); return v.length ? Math.min(...v) : null; };
     mortRates = { sec: best("secondary") ?? (d && d.secondary), new: best("new") ?? (d && d.new), family: best("family") };
-    const avg = d ? `<p class="g-sub wm-avg">В среднем по краю за ${esc((d.month || "").toLowerCase())} (ЦБ): вторичка ${d.secondary != null ? pct(d.secondary) : "—"},
+    // средняя по рынку: из таблицы ДОМ.РФ, которую вставил админ; если её нет — средние ЦБ по краю
+    const ma = banks && banks.avg;
+    const avg = ma && (ma.secondary != null || ma.new != null)
+      ? `<p class="g-sub wm-avg">Средневзвешенная ставка по рынку на ${new Date(ma.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}:
+        вторичка ${ma.secondary != null ? pct(ma.secondary) : "—"}, новостройки ${ma.new != null ? pct(ma.new) : "—"}</p>`
+      : d ? `<p class="g-sub wm-avg">В среднем по краю за ${esc((d.month || "").toLowerCase())} (ЦБ): вторичка ${d.secondary != null ? pct(d.secondary) : "—"},
       новостройки ${pct(d.new)}</p>` : "";
     if (!b.length) {   // ставок банков ещё нет — показываем средние ЦБ
       put("wMort", `${head("percent", "Ипотека · Краснодарский край")}
@@ -327,6 +332,7 @@
     row.querySelectorAll("input").forEach((i) => { o[i.dataset.k] = i.value.trim(); });
     return o;
   }).filter((x) => x.bank);
+  let parsedAvg = null;   // «Средневзвешенная ставка» из вставленной таблицы
   async function parseBanks() {
     const text = $("banksText").value.trim();
     if (!text) { toast("Сначала вставьте текст обзора"); return; }
@@ -349,7 +355,9 @@
     document.querySelectorAll(".bank-row:not(.head)").forEach((row) => {
       if (fresh.has(row.querySelector('[data-k="bank"]').value.trim().toLowerCase())) row.classList.add("fresh");
     });
-    out.textContent = `Нашли банков: ${r.data.items.length}${r.data.how !== "rules" ? " (помогла нейросеть)" : ""} — они подсвечены. Проверьте и нажмите «Сохранить».`;
+    parsedAvg = r.data.avg || null;
+    const a = parsedAvg ? ` Средневзвешенная по рынку: вторичка ${parsedAvg.secondary ?? "—"}%, новостройки ${parsedAvg.new ?? "—"}%.` : "";
+    out.textContent = `Нашли банков: ${r.data.items.length}${String(r.data.how).includes("ai") ? " (помогла нейросеть)" : ""} — они подсвечены.${a} Проверьте и нажмите «Сохранить».`;
   }
 
   async function load() {
@@ -469,7 +477,8 @@
     else if (b.id === "banksParse") parseBanks();
     else if (b.id === "banksSave") {
       const items = bankRowsNow();
-      const r = await call("/api/admin/banks", { items });
+      const r = await call("/api/admin/banks", { items, avg: parsedAvg });
+      parsedAvg = null;
       if (!r.ok) { toast(r.data.detail || "Не получилось сохранить"); return; }
       dash.widgets.banks = r.data;
       mortgage(dash.widgets.mortgage, r.data);

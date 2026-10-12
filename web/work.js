@@ -12,7 +12,6 @@
     call: { t: "Звонил", c: "sky", help: "Связались с агентом — дальше показ или «думает»." },
     show: { t: "Показ", c: "gold", help: "Объекты, которые показывали или покажете. Запланируйте показ в планере." },
     think: { t: "Думает", c: "violet", help: "Клиент думает — не забудьте перезвонить." },
-    deal: { t: "Сделка", c: "lime", help: "Успешные сделки." },
     refuse: { t: "Отказ", c: "coral", help: "Не подошло — останется для истории, можно вернуть." },
   };
   let items = [], tab = new URLSearchParams(location.search).get("status") || "all", q = "", sort = "touched";
@@ -38,7 +37,7 @@
   const short = (n) => (Math.abs(n) >= 1e6 ? `${(n / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} млн` : `${Math.round(n / 1000).toLocaleString("ru-RU")} тыс`);
   const head = (o) => (o.complex ? `ЖК ${o.complex}` : o.district || (o.street ? `ул. ${o.street}` : o.title));
   const place = (o) => [o.district, o.street && `ул. ${o.street}${o.house ? ", " + o.house : ""}`].filter(Boolean).join(" · ");
-  const st = (o) => o.status || "none";
+  const st = (o) => (o.status && ST[o.status] ? o.status : "none");
   const ago = (ts) => {
     const d = Math.floor((Date.now() / 1000 - ts) / 86400);
     return d <= 0 ? "сегодня" : d === 1 ? "вчера" : d < 7 ? `${d} дн. назад` : new Date(ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
@@ -60,7 +59,7 @@
 
   function renderTabs() {
     const n = (k) => items.filter((o) => k === "all" || st(o) === k).length;
-    const keys = ["all", "none", "call", "show", "think", "deal", "refuse"];
+    const keys = ["all", "none", "call", "show", "think", "refuse"];
     const nav = $("wkTabs");
     nav.innerHTML = `<i class="wk-ind" aria-hidden="true"></i>` + keys.map((k) => `<button type="button" class="wk-tab${k === tab ? " on" : ""} ${k === "all" ? "" : "c-" + ST[k].c}"
       data-tab="${k}" aria-pressed="${k === tab}">${k === "all" ? "" : "<i></i>"}${k === "all" ? "Все" : ST[k].t}<b>${n(k)}</b></button>`).join("");

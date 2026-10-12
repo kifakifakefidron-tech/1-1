@@ -1828,7 +1828,7 @@ def api_admin_banks(request: Request, body: dict | None = None):
         db.flush(db.get())   # разбор может спросить нейросеть — базу не держим
         res = bankrates.parse(str(body.get("text") or ""), str(body.get("program") or "secondary"))
         return JSONResponse(res)
-    return JSONResponse(widgets.set_banks(db.get(), body.get("items") or []))
+    return JSONResponse(widgets.set_banks(db.get(), body.get("items") or [], body.get("avg")))
 
 
 def api_admin_learn(request: Request, body: dict | None = None):

@@ -85,8 +85,9 @@ def parse_table(text: str) -> list[dict]:
         for cell in cells:
             low = cell.lower()
             if SKIP_RE.search(low):
-                if "средневзвешен" in low:   # итоговая строка — конец таблицы, её цифры не банк
-                    cur = None
+                if "средневзвешен" in low:   # итоговая строка — средняя ставка по рынку (её цифры — не банк)
+                    cur = {"bank": "__avg__", "vals": []}
+                    rows.append(cur)
                 continue
             hits = [k for k, pat in COL_WORDS if re.search(pat, low)]
             if hits and not re.search(r"\d", cell) and not _bank(cell):   # заголовок колонки
@@ -115,6 +116,11 @@ def parse_table(text: str) -> list[dict]:
     out = []
     for r in rows:
         row = {"bank": r["bank"]}
+        if r["bank"] == "__avg__":
+            avg = {k: v for k, v in zip(cols, r["vals"]) if k in widgets.PROGRAMS and v is not None}
+            if avg:
+                out.append({"bank": "__avg__", **avg})
+            continue
         for k, v in zip(cols, r["vals"]):
             if k in widgets.PROGRAMS and v is not None:
                 row[k] = v
@@ -183,7 +189,17 @@ def parse(text: str, hint: str = "secondary") -> dict:
     """Разобрать вставленный текст. Возвращает {items, how}: how = 'rules' | 'ai' | 'ai+rules'."""
     text = (text or "")[:20000]
     table = parse_table(text)   # таблица ДОМ.РФ и похожие — надёжнее всего
+    avg = next(({k: v for k, v in r.items() if k != "bank"} for r in table if r["bank"] == "__avg__"), None)
+    table = [r for r in table if r["bank"] != "__avg__"]
+    res = _parse_items(text, hint, table)
+    res["avg"] = avg   # «Средневзвешенная ставка» из таблицы — средняя по рынку вместо средней ЦБ
+    return res
+
+
+def _parse_items(text: str, hint: str, table: list[dict]) -> dict:
     rules = bankrates_merge_rules(table, parse_rules(text, hint)) if table else parse_rules(text, hint)
+    if table:   # таблицу правила читают точно — нейросеть не нужна
+        return {"items": rules, "how": "table"}
     if not llm.available():
         return {"items": rules, "how": "rules"}
     try:

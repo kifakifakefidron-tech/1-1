@@ -14,7 +14,7 @@
     meet: ["встреча", "встречи", "встреч"], task: ["задача", "задачи", "задач"] };
   const KCOLOR = { show: "gold", call: "sky", meet: "violet", task: "lime" };   // цвет по умолчанию — по виду события
   const COLORS = { gold: "Золото", teal: "Бирюза", sky: "Небо", violet: "Сирень", coral: "Коралл", rose: "Роза", lime: "Лайм", slate: "Графит" };
-  const STATUSES = { call: "Звонил", show: "Показ", think: "Думает", refuse: "Отказ", deal: "Сделка" };
+  const STATUSES = { call: "Звонил", show: "Показ", think: "Думает", refuse: "Отказ" };
   const MONTHS = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
   const MONTHS_G = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
   let data = null, monthEvents = [], stats = null, editing = null, kind = "show", color = "", colorTouched = false;

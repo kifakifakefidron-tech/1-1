@@ -256,10 +256,10 @@ def banks(conn: sqlite3.Connection) -> dict:
             key = "new" if "нов" in prog else "family" if "сем" in prog else "ihc" if ("ижс" in prog or "дом" in prog) else "secondary"
             x = {"bank": x["bank"], key: x["rate"]}
         items.append(x)
-    return {"ts": data.get("ts"), "items": items, "programs": PROGRAMS}
+    return {"ts": data.get("ts"), "items": items, "programs": PROGRAMS, "avg": data.get("avg")}
 
 
-def set_banks(conn: sqlite3.Connection, items: list) -> dict:
+def set_banks(conn: sqlite3.Connection, items: list, avg: dict | None = None) -> dict:
     clean = []
     for x in items[:40]:
         bank = str(x.get("bank") or "").strip()[:40]
@@ -271,7 +271,11 @@ def set_banks(conn: sqlite3.Connection, items: list) -> dict:
         if bank and len(row) > 1:
             clean.append(row)
     clean.sort(key=lambda r: (r.get("secondary") is None, r.get("secondary") or 99))   # дешёвая вторичка — выше
-    data = {"ts": int(time.time()), "items": clean}
+    prev = json.loads(db.get_state(conn, "bank_rates") or "{}")
+    # средневзвешенная по рынку (из таблицы ДОМ.РФ): новая — если прислали, иначе прежняя
+    clean_avg = {k: r for k in PROGRAMS if (r := _rate((avg or {}).get(k))) is not None}
+    data = {"ts": int(time.time()), "items": clean,
+            "avg": {**clean_avg, "ts": int(time.time())} if clean_avg else prev.get("avg")}
     db.set_state(conn, "bank_rates", json.dumps(data, ensure_ascii=False))
     return {**data, "programs": PROGRAMS}
 

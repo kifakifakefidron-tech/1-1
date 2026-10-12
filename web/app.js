@@ -386,7 +386,7 @@
   }
 
   // Статусы по объекту — простая CRM агента (видит только он)
-  const STATUSES = { call: "📞 Звонил", show: "👀 Показ", think: "🤔 Думает", refuse: "❌ Отказ", deal: "✅ Сделка" };
+  const STATUSES = { call: "📞 Звонил", show: "👀 Показ", think: "🤔 Думает", refuse: "❌ Отказ" };
   let favItems = [], favStatus = "";
   const myStatus = (id) => (me() && me().statuses ? me().statuses[id] : null);
 

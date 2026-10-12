@@ -90,3 +90,13 @@ def test_domrf_table_column_and_rows(monkeypatch):
     by = {r["bank"]: r for r in bankrates.parse(DOMRF_COLUMN)["items"]}
     assert by["ПСБ"]["secondary"] == 18.49 and by["Кубань Кредит"]["new"] == 15.9       # «+0,44» — не ставка
     assert {r["bank"]: r for r in bankrates.parse(DOMRF_ROWS)["items"]}["Транскапиталбанк"]["secondary"] == 16.85
+
+
+def test_domrf_average_row_saved(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "")
+    res = bankrates.parse(DOMRF_COLUMN)
+    assert res["avg"] == {"new": 18.74, "secondary": 18.69}
+    saved = widgets.set_banks(conn, res["items"], res["avg"])
+    assert saved["avg"]["secondary"] == 18.69
+    again = widgets.set_banks(conn, res["items"])          # сохранили без новой таблицы — средняя остаётся прежней
+    assert again["avg"]["new"] == 18.74 and widgets.banks(conn)["avg"]["secondary"] == 18.69

@@ -145,7 +145,7 @@ def same_elsewhere(conn: sqlite3.Connection, row: sqlite3.Row, limit: int = 10) 
 
 # ─── заметки ───────────────────────────────────────────────────────────────
 # Статусы по объекту — простая CRM агента (видит только он сам)
-NOTE_STATUSES = ("call", "show", "think", "refuse", "deal")
+NOTE_STATUSES = ("call", "show", "think", "refuse")   # «Сделка» убрана (решение Артёма 13.10): сделки — в CRM клиентов
 
 
 def get_note(conn: sqlite3.Connection, user_id: int, listing_id: int) -> str:
