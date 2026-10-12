@@ -191,6 +191,15 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
     )
 
 
+def address_from_text(fragment: str) -> tuple[str | None, str | None]:
+    """Улица и дом из куска объявления — теми же правилами, что при разборе (без нейросети)."""
+    street, house = rules.extract_street(fragment)
+    if not street:
+        lp = geo.place_from_lines(fragment)
+        street, house = lp.get("street"), lp.get("house") or house
+    return street, house
+
+
 def _llm_fragments(objs: list[dict], text: str, chunks: list[str]) -> list[str]:
     """Кусок текста каждого объекта по номерам строк из ответа нейросети."""
     lines = text.splitlines()

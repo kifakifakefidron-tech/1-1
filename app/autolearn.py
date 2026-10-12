@@ -233,23 +233,33 @@ def recheck_geocoder(conn: sqlite3.Connection, known: Known | None = None) -> in
     return n
 
 
-STREET_FIX_V = 2   # 2 — улица по одной фамилии («Жигуленко» → «Евгении Жигуленко»)
+STREET_FIX_V = 3   # 2 — улица по одной фамилии; 3 — заново достать адрес («Ленинский переулок 14», «1 Мая 428»)
+_BROKEN_STREET = re.compile(r"^\d+\s*[а-яА-Я]?$|\x01")   # «14 к», «14А», «\x01-я Дорожная» — улица разобрана с ошибкой
 
 
 def fix_streets(conn: sqlite3.Connection) -> int:
     """Опечатки в улицах уже собранных объектов («Командоская» → «Командорская»); точку ищем заново."""
     from .ingest import _reindex, make_search_text
+    from .parser import address_from_text
     n = 0
-    for r in conn.execute("""SELECT * FROM listings WHERE is_active = 1 AND street IS NOT NULL AND admin_fixed = 0
-                             AND source != 'own'""").fetchall():
-        new = osmaddr.fix_street(conn, r["street"])
-        if not new or new == r["street"]:
+    for r in conn.execute("""SELECT * FROM listings WHERE is_active = 1 AND admin_fixed = 0
+                             AND source NOT IN ('own', 'feed')""").fetchall():
+        street, house = r["street"], r["house"]
+        # улицы нет или она разобрана с ошибкой — достаём адрес из текста заново (правила стали умнее)
+        if (not street or _BROKEN_STREET.search(street)) and r["fragment"]:
+            s2, h2 = address_from_text(r["fragment"])
+            if s2 and not _BROKEN_STREET.search(s2):
+                street, house = s2, h2 or house   # дом — из того же разбора (старый мог быть частью «14 к2»)
+        if not street:
             continue
-        d = {**dict(r), "street": new}
+        street = osmaddr.fix_street(conn, street) or street
+        if street == r["street"] and house == r["house"]:
+            continue
+        d = {**dict(r), "street": street, "house": house}
         d["search_text"] = make_search_text(d)
-        conn.execute("""UPDATE listings SET street = ?, search_text = ?,
+        conn.execute("""UPDATE listings SET street = ?, house = ?, search_text = ?,
                         geo_status = CASE WHEN geo_status IN ('manual', 'learned', 'feed') THEN geo_status ELSE 'pending' END
-                        WHERE id = ?""", (new, d["search_text"], r["id"]))
+                        WHERE id = ?""", (street, house, d["search_text"], r["id"]))
         _reindex(conn, r["id"], d["search_text"])
         n += 1
     conn.commit()

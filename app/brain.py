@@ -17,7 +17,9 @@ import sqlite3
 
 from . import autolearn, districtmap, learning
 
-_AUTO_GEO = "('feed-house', 'feed-cx', 'map-cx', 'map-district', 'osm-house', 'osm-near', 'osm-street')"
+# точный дом (справочник, фид, ваши правки) — надёжно, не проверяем; сомнительно — соседний дом, улица, центр ЖК/района
+_AUTO_GEO = "('feed-cx', 'map-cx', 'map-district', 'osm-near', 'osm-street')"
+_SURE_GEO = "('osm-house', 'feed-house', 'learned')"
 VISIBLE = ("l.is_active = 1 AND (l.district IS NOT NULL OR l.complex IS NOT NULL OR l.street IS NOT NULL "
            "OR l.settlement IS NOT NULL)")
 
@@ -36,9 +38,10 @@ QUEUES: list[dict] = [
      "hint": "Стоит по улице или району — уточните дом",
      "where": "l.geo_status = 'approx'"},
     {"key": "auto", "mode": "place", "label": "Проверить решения сервиса",
-     "hint": "Район или точку сервис поставил сам — проверьте выборочно",
-     "where": f"((l.district_src IS NOT NULL AND l.admin_fixed = 0) OR (l.geo_src IN {_AUTO_GEO} "
-              "AND l.geo_status NOT IN ('manual', 'feed')))"},
+     "hint": "Сомнительные решения сервиса: соседний дом, середина улицы, центр ЖК, район «по соседям» — выборочно",
+     "where": f"((l.admin_fixed = 0 AND (l.district_src IN ('vote-house', 'vote-cx') OR (l.district_src = 'map' "
+              f"AND COALESCE(l.geo_src, '') NOT IN {_SURE_GEO} AND l.geo_status NOT IN ('manual', 'learned', 'feed')))) "
+              f"OR (l.geo_src IN {_AUTO_GEO} AND l.geo_status NOT IN ('manual', 'feed')))"},
     {"key": "fixed", "mode": "place", "label": "Поправлено вами", "hint": "Ваши правки — можно пересмотреть",
      "where": "l.admin_fixed = 1"},
 ]

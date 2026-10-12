@@ -105,7 +105,7 @@ def collect(conn: sqlite3.Connection, now: int | None = None) -> dict:
         "learned_points": one("SELECT COUNT(*) FROM geo_learned"),
         # поставил сервис сам (app/autolearn.py): по фиду, контурам ЖК и районов, соседним объявлениям
         "auto_points": one(f"SELECT COUNT(*) FROM listings WHERE {VISIBLE} AND geo_src IN "
-                           "('feed-house', 'feed-cx', 'map-cx', 'map-district', 'osm-house', 'osm-near', 'osm-street') AND geo_status NOT IN ('manual', 'feed')"),
+                           "('feed-cx', 'map-cx', 'map-district', 'osm-near', 'osm-street') AND geo_status NOT IN ('manual', 'feed')"),
         "osm_addr": one("SELECT COUNT(*) FROM osm_addr"),
         "auto_districts": one(f"SELECT COUNT(*) FROM listings WHERE {VISIBLE} AND district_src IS NOT NULL AND admin_fixed = 0"),
     }

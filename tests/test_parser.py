@@ -229,3 +229,15 @@ def test_new_district_names_not_confused_with_complexes():
     assert geo.find_district_in_text("2к квартира ЖК Аврора 5 млн") is None        # ЖК, а не район
     assert geo.find_district_in_text("2к квартира мкр Аврора 5 млн") == "Аврора"
     assert geo.find_district_in_text("ЖК Катюша, студия") is None
+
+
+def test_street_type_after_name_and_date_streets():
+    from app import parser
+    base = "Округ Прикубанский. Калинино\n● {addr}\n▸1 к.кв.    6/8 Кирпич\nПлощадь: 38/20/12м\nЦена: 3 950 000₽"
+    for addr, want in [("Ленинский переулок 14", ("Ленинский", "14")), ("Ленинский переулок 14 к2", ("Ленинский", "14к2")),
+                       ("Виноградная улица, 133", ("Виноградная", "133")), ("1 мая 428", ("1 Мая", "428")),
+                       ("40 лет Победы 33/5", ("40 лет Победы", "33/5")), ("ул. 5-я Дорожная 68к1", ("5-я Дорожная", "68к1"))]:
+        street, house = parser.address_from_text(base.format(addr=addr))
+        assert (street.lower(), house) == (want[0].lower(), want[1]), addr
+    _, objs = parser.parse(base.format(addr="Калинина 350/6"), use_llm=False)
+    assert objs[0].area == 38 and objs[0].street == "Калинина" and objs[0].house == "350/6"
