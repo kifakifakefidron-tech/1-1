@@ -46,7 +46,7 @@
   // ─── доска и список ─────────────────────────────────────────────────
   function visible() { return data.items.filter((c) => !c.archived && (!kindFilter || c.kind === kindFilter)); }
   function cardHTML(c) {
-    return `<button type="button" class="c-card" draggable="true" data-open="${c.id}">
+    return `<button type="button" class="c-card" data-open="${c.id}">
       <div class="c-card-row"><b>${esc(c.name)}</b><span class="c-tag">${esc(data.kinds[c.kind] || "")}</span></div>
       ${wish(c) ? `<small>${esc(wish(c))}</small>` : ""}
       ${nextHTML(c)}
@@ -85,37 +85,100 @@
     return true;
   }
 
-  // перетаскивание карточки в другой этап
-  let dragId = null;
-  document.addEventListener("dragstart", (e) => {
-    const c = e.target.closest(".c-card");
-    if (!c) return;
-    dragId = Number(c.dataset.open);
-    c.classList.add("dragging");
-    e.dataTransfer.effectAllowed = "move";
-  });
-  document.addEventListener("dragend", (e) => { const c = e.target.closest(".c-card"); if (c) c.classList.remove("dragging"); });
-  document.addEventListener("dragover", (e) => {
-    const col = e.target.closest(".c-col");
-    if (!col || dragId == null) return;
-    e.preventDefault();
-    document.querySelectorAll(".c-col.drop").forEach((x) => x !== col && x.classList.remove("drop"));
-    col.classList.add("drop");
-  });
-  document.addEventListener("drop", async (e) => {
-    const col = e.target.closest(".c-col");
-    document.querySelectorAll(".c-col.drop").forEach((x) => x.classList.remove("drop"));
-    if (!col || dragId == null) return;
-    e.preventDefault();
-    const id = dragId, stage = col.dataset.stage;
-    dragId = null;
+  // ─── перетаскивание карточки в другой этап: плавно, с «призраком», доска листается у краёв ───
+  // Мышь — сразу после сдвига на 6 px; палец — долгое нажатие (≈0,3 с), чтобы не мешать прокрутке.
+  let drag = null, justDragged = false;
+  async function moveTo(id, stage) {
     const c = data.items.find((x) => x.id === id);
     if (!c || c.stage === stage) return;
     c.stage = stage;
     render();
+    const el = document.querySelector(`.c-col[data-stage="${stage}"] .c-card[data-open="${id}"]`);
+    if (el) el.animate([{ transform: "scale(1.04)", boxShadow: "0 0 0 2px #e3cb8f" }, { transform: "none", boxShadow: "none" }], { duration: 500, easing: "ease-out" });
     const r = await call("/api/clients", { id, stage });
     if (!r.ok) { toast("Не получилось перенести"); load(); } else toast(`${c.name} → ${data.stages[stage]}`);
+  }
+  function beginDrag(st, ev) {
+    const r = st.card.getBoundingClientRect();
+    const ghost = st.card.cloneNode(true);
+    ghost.classList.add("c-ghost");
+    ghost.style.width = `${r.width}px`;
+    document.body.appendChild(ghost);
+    st.card.classList.add("dragging");
+    document.body.classList.add("c-dragging");
+    drag = { ...st, ghost, offX: ev.clientX - r.left, offY: ev.clientY - r.top, x: ev.clientX, y: ev.clientY, col: null };
+    if (navigator.vibrate && st.touch) navigator.vibrate(12);
+    follow(ev);
+    autoScroll();
+  }
+  function follow(ev) {
+    drag.x = ev.clientX; drag.y = ev.clientY;
+    drag.ghost.style.transform = `translate(${ev.clientX - drag.offX}px, ${ev.clientY - drag.offY}px) rotate(2.5deg) scale(1.03)`;
+    const under = document.elementFromPoint(ev.clientX, ev.clientY);
+    const col = under && under.closest(".c-col");
+    if (col !== drag.col) {
+      if (drag.col) drag.col.classList.remove("drop");
+      if (col) col.classList.add("drop");
+      drag.col = col;
+    }
+  }
+  function autoScroll(t) {
+    if (!drag) return;
+    const dt = drag.t && t ? Math.min(t - drag.t, 50) / 1000 : 0;
+    drag.t = t;
+    // чем ближе к краю, тем быстрее (до ~900 px/с), одинаково на любом экране
+    const b = $("cBoard"), r = b.getBoundingClientRect(), edge = 90;
+    const depth = drag.x < r.left + edge ? -(r.left + edge - drag.x) : drag.x > r.right - edge ? drag.x - (r.right - edge) : 0;
+    const k = Math.min(Math.abs(depth) / edge, 1);
+    const v = Math.sign(depth) * Math.round(900 * k * k * dt);
+    if (v) {
+      b.scrollLeft += v;
+      const under = document.elementFromPoint(drag.x, drag.y);   // доска уехала — колонка под пальцем другая
+      const col = under && under.closest(".c-col");
+      if (col !== drag.col) { if (drag.col) drag.col.classList.remove("drop"); if (col) col.classList.add("drop"); drag.col = col; }
+    }
+    requestAnimationFrame(autoScroll);
+  }
+  function endDrag() {
+    const d = drag;
+    drag = null;
+    document.body.classList.remove("c-dragging");
+    d.card.classList.remove("dragging");
+    if (d.col) d.col.classList.remove("drop");
+    justDragged = true;
+    setTimeout(() => { justDragged = false; }, 50);
+    const target = d.col && d.col.dataset.stage;
+    const to = target && d.col.querySelector(".c-col-body");
+    if (to) {   // «призрак» мягко садится в колонку
+      const r = to.getBoundingClientRect();
+      d.ghost.style.transition = "transform .28s cubic-bezier(.22,1,.36,1), opacity .28s";
+      d.ghost.style.transform = `translate(${r.left}px, ${r.top}px) rotate(0) scale(1)`;
+      d.ghost.style.opacity = "0";
+      setTimeout(() => d.ghost.remove(), 280);
+    } else d.ghost.remove();
+    if (target) moveTo(d.id, target);
+  }
+  document.addEventListener("pointerdown", (e) => {
+    const card = e.target.closest(".c-board .c-card");
+    if (!card || e.button > 0) return;
+    const st = { card, id: Number(card.dataset.open), x0: e.clientX, y0: e.clientY, touch: e.pointerType !== "mouse" };
+    let timer = st.touch ? setTimeout(() => beginDrag(st, { clientX: st.lx ?? st.x0, clientY: st.ly ?? st.y0 }), 300) : 0;
+    const move = (ev) => {
+      st.lx = ev.clientX; st.ly = ev.clientY;
+      if (drag) { ev.preventDefault(); follow(ev); return; }
+      const dist = Math.hypot(ev.clientX - st.x0, ev.clientY - st.y0);
+      if (!st.touch && dist > 6) beginDrag(st, ev);
+      else if (st.touch && dist > 10) { clearTimeout(timer); stop(); }   // палец поехал — это прокрутка
+    };
+    const up = () => { clearTimeout(timer); if (drag) endDrag(); stop(); };
+    function stop() { removeEventListener("pointermove", move); removeEventListener("pointerup", up); removeEventListener("pointercancel", up); }
+    addEventListener("pointermove", move, { passive: false });
+    addEventListener("pointerup", up);
+    addEventListener("pointercancel", up);
   });
+  // пока тащим пальцем — страница не прокручивается
+  document.addEventListener("touchmove", (e) => { if (drag) e.preventDefault(); }, { passive: false });
+  document.addEventListener("click", (e) => { if (justDragged && e.target.closest(".c-card")) { e.stopPropagation(); e.preventDefault(); } }, true);
 
   // ─── карточка клиента ──────────────────────────────────────────────
   function tab(name) {
@@ -126,8 +189,32 @@
   function stagesHTML() {
     const keys = Object.keys(data.stages), at = cur ? keys.indexOf(cur.client.stage) : 0;
     $("dStages").hidden = !cur;
-    $("dStages").innerHTML = keys.map((k, i) => `<button type="button" data-stage="${k}" class="${i === at ? "on" : i < at && k !== "lost" ? "past" : ""}"
-      style="--c:${STAGE_C[k]}">${esc(data.stages[k])}</button>`).join("");
+    // кнопки уже есть (тот же клиент обновился) — не пересобираем, иначе плашка «прыгнет»
+    if (cur && $("dStages").dataset.cid === String(cur.client.id) && $("dStages").querySelector(".c-stage-ind")) {
+      slideStage(cur.client.stage);
+      return;
+    }
+    $("dStages").dataset.cid = cur ? cur.client.id : "";
+    $("dStages").innerHTML = `<i class="c-stage-ind" aria-hidden="true"></i>` + keys.map((k, i) => `<button type="button" data-stage="${k}"
+      class="${i === at ? "on" : i < at && k !== "lost" ? "past" : ""}" style="--c:${STAGE_C[k]}">${esc(data.stages[k])}</button>`).join("");
+    requestAnimationFrame(() => slideStage(cur ? cur.client.stage : keys[0], false));
+  }
+  // плашка выбранного этапа плавно переезжает к нажатому
+  function slideStage(stage, animate = true) {
+    const box = $("dStages"), ind = box.querySelector(".c-stage-ind"), b = box.querySelector(`[data-stage="${stage}"]`);
+    if (!ind || !b) return;
+    if (!animate) ind.style.transition = "none";
+    ind.style.width = `${b.offsetWidth}px`;
+    ind.style.transform = `translateX(${b.offsetLeft}px)`;
+    ind.style.background = STAGE_C[stage];
+    if (!animate) { void ind.offsetWidth; ind.style.transition = ""; }
+    const keys = Object.keys(data.stages), at = keys.indexOf(stage);
+    box.querySelectorAll("[data-stage]").forEach((x, i) => {
+      x.classList.toggle("on", x === b);
+      x.classList.toggle("past", i < at && x.dataset.stage !== "lost");
+    });
+    const sl = b.offsetLeft - box.clientWidth / 2 + b.offsetWidth / 2;   // на телефоне — прокрутить к выбранному
+    box.scrollTo({ left: sl, behavior: animate ? "smooth" : "auto" });
   }
   function fillForm() {
     const c = cur ? cur.client : { kind: "buyer", rooms: [], districts: [], deal: "sale" };
@@ -139,7 +226,9 @@
     f.budget_min.value = c.budget_min ? String(+(c.budget_min / unit).toFixed(2)).replace(".", ",") : "";
     f.budget_max.value = c.budget_max ? String(+(c.budget_max / unit).toFixed(2)).replace(".", ",") : "";
     f.next_text.value = c.next_text || ""; f.source.value = c.source || ""; f.note.value = c.note || "";
-    f.next_date.value = c.next_ts ? new Date(c.next_ts * 1000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
+    const nd = c.next_ts ? new Date(c.next_ts * 1000 - new Date().getTimezoneOffset() * 60000).toISOString() : "";
+    f.next_day.value = nd ? nd.slice(0, 10) : ""; f.next_time.value = nd ? nd.slice(11, 16) : "";
+    if (window.Pick) Pick.refresh(f);
     renderFormChips();
     $("fErr").hidden = true;
     $("dDelete").hidden = $("dArchive").hidden = !cur;
@@ -174,6 +263,7 @@
           <option value="__del">Убрать</option></select></div>`).join("")
       : `<p class="g-empty">Объектов пока нет. Нажмите «Подобрать» — сервис найдёт подходящие по пожеланиям, или добавьте из окна объекта кнопкой «Клиенту».</p>`;
   }
+  function upgradeItems() { if (window.Pick) $("dItems").querySelectorAll("select[data-item]").forEach((s) => Pick.select(s)); }
   function logHTML() {
     const ico = { note: "note", stage: "layers", object: "home", event: "calendar", new: "user", next: "clock" };
     $("dLog").innerHTML = cur.log.map((x) => `<li>${ic(ico[x.kind] || "note")}<span>${esc(x.text)}</span>
@@ -194,7 +284,7 @@
       const r = await call(`/api/clients?id=${id}`);
       if (!r.ok) { toast("Клиент не найден"); return; }
       cur = r.data;
-      itemsHTML(); logHTML(); tasksHTML();
+      itemsHTML(); upgradeItems(); logHTML(); tasksHTML();
     } else cur = null;
     header(); stagesHTML(); fillForm(); tab("card");
     if (!$("cDlg").open) $("cDlg").showModal();
@@ -202,7 +292,7 @@
   }
   async function refreshCur() {
     const r = await call(`/api/clients?id=${cur.client.id}`);
-    if (r.ok) { cur = r.data; header(); stagesHTML(); itemsHTML(); logHTML(); tasksHTML(); }
+    if (r.ok) { cur = r.data; header(); stagesHTML(); itemsHTML(); upgradeItems(); logHTML(); tasksHTML(); }
   }
   let matchPage = 1;
   function matchItem(o) {
@@ -239,6 +329,7 @@
     if (t.dataset.view) { view = t.dataset.view; document.querySelectorAll("[data-view]").forEach((b) => b.classList.toggle("on", b === t)); render(); return; }
     if (t.dataset.tab) { tab(t.dataset.tab); return; }
     if (t.dataset.stage && t.closest("#dStages") && cur) {
+      slideStage(t.dataset.stage);   // сразу, не дожидаясь сервера
       const r = await call("/api/clients", { id: cur.client.id, stage: t.dataset.stage });
       if (r.ok) { await refreshCur(); load(); toast(`Этап: ${data.stages[t.dataset.stage]}`); }
       return;
@@ -277,14 +368,14 @@
     const f = e.target;
     const body = { name: f.name.value, phone: f.phone.value, kind: form.kind, rooms: form.rooms, districts: form.districts,
       budget_min: f.budget_min.value, budget_max: f.budget_max.value, next_text: f.next_text.value, source: f.source.value,
-      note: f.note.value, next_ts: f.next_date.value ? Math.floor(new Date(f.next_date.value).getTime() / 1000) : null,
+      note: f.note.value, next_ts: f.next_day.value ? Math.floor(new Date(`${f.next_day.value}T${f.next_time.value || "10:00"}`).getTime() / 1000) : null,
       stage: cur ? cur.client.stage : "new", archived: cur ? cur.client.archived : 0 };
     if (cur) body.id = cur.client.id;
     const r = await call("/api/clients", body);
     if (!r.ok) { $("fErr").textContent = r.data.detail || "Не получилось сохранить"; $("fErr").hidden = false; return; }
     const isNew = !cur;
     cur = r.data;
-    header(); stagesHTML(); itemsHTML(); logHTML(); tasksHTML();
+    header(); stagesHTML(); itemsHTML(); upgradeItems(); logHTML(); tasksHTML();
     load();
     toast(isNew ? "Клиент добавлен — подберите объекты" : "Сохранено");
     if (isNew) { history.replaceState(null, "", `/clients?id=${cur.client.id}`); tab("items"); }
@@ -299,12 +390,12 @@
   $("cDlg").addEventListener("close", () => history.replaceState(null, "", "/clients"));
   let qTimer = 0;
   $("cQ").addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(load, 300); });
-  // район: пишем — подсказываем из справочника
+  // район: свой список с поиском (pickers.js) — выбрали → чип, список снова «+ добавить район»
   $("fDistrictAdd").addEventListener("change", (e) => {
-    const v = e.target.value.trim();
-    const hit = districts.find((d) => d.toLowerCase() === v.toLowerCase()) || districts.find((d) => d.toLowerCase().startsWith(v.toLowerCase()));
-    if (hit && !form.districts.includes(hit)) { form.districts.push(hit); renderFormChips(); }
+    const v = e.target.value;
+    if (v && !form.districts.includes(v)) { form.districts.push(v); renderFormChips(); }
     e.target.value = "";
+    e.target.dispatchEvent(new Event("pk-refresh"));
   });
 
   document.querySelectorAll("[data-ic]").forEach((el) => { el.outerHTML = ic(el.dataset.ic); });
@@ -315,10 +406,12 @@
     else if (sp.has("new")) open(null);
     const m = await call("/api/meta");
     districts = (m.ok && m.data.districts) || [];
-    const dl = document.createElement("datalist");
-    dl.id = "districtList";
-    dl.innerHTML = districts.map((d) => `<option value="${esc(d)}">`).join("");
-    document.body.appendChild(dl);
-    $("fDistrictAdd").setAttribute("list", "districtList");
+    $("fDistrictAdd").innerHTML = `<option value="">+ добавить район</option>` + districts.map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join("");
+    if (window.Pick) {
+      const f = $("pCard");
+      Pick.select($("fDistrictAdd"));
+      Pick.date(f.next_day, { clearable: true, placeholder: "Дата" });
+      Pick.time(f.next_time, { placeholder: "Время" });
+    }
   })();
 })();

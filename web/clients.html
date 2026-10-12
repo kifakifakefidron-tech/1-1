@@ -13,9 +13,9 @@
 <link rel="stylesheet" href="/static/style.css?v=25">
 <link rel="stylesheet" href="/static/motion.css?v=34">
 <link rel="stylesheet" href="/static/theme.css?v=14">
-<link rel="stylesheet" href="/static/glass.css?v=7">
+<link rel="stylesheet" href="/static/glass.css?v=8">
 <link rel="stylesheet" href="/static/cabinet.css?v=8">
-<link rel="stylesheet" href="/static/clients.css?v=1">
+<link rel="stylesheet" href="/static/clients.css?v=3">
 </head>
 <body class="dash-body">
 <main class="dash">
@@ -70,9 +70,9 @@
         <div class="c-f wide"><span>Комнаты</span><div class="chips" id="fRooms"></div></div>
         <label class="c-f"><span id="fBudgetL">Бюджет от, млн ₽</span><input name="budget_min" inputmode="decimal"></label>
         <label class="c-f"><span id="fBudgetH">Бюджет до, млн ₽</span><input name="budget_max" inputmode="decimal"></label>
-        <div class="c-f wide"><span>Районы</span><div class="chips" id="fDistricts"></div><input id="fDistrictAdd" placeholder="+ добавить район"></div>
+        <div class="c-f wide"><span>Районы</span><div class="c-dist"><div class="chips" id="fDistricts"></div><select id="fDistrictAdd"></select></div></div>
         <label class="c-f"><span>Следующий шаг</span><input name="next_text" placeholder="Позвонить, отправить подборку…"></label>
-        <label class="c-f"><span>Когда</span><input name="next_date" type="datetime-local"></label>
+        <div class="c-f"><span>Когда</span><div class="c-when"><input name="next_day" type="date"><input name="next_time" type="time"></div></div>
         <label class="c-f"><span>Откуда клиент</span><input name="source" placeholder="Авито, рекомендация, звонок…"></label>
         <label class="c-f wide"><span>Заметка</span><textarea name="note" rows="3" placeholder="Что важно: этаж, ремонт, ипотека, сроки…"></textarea></label>
       </div>
@@ -106,7 +106,8 @@
 <script src="/static/icons.js?v=4"></script>
 <script src="/static/max.js?v=1"></script>
 <script src="/static/rail.js?v=1"></script>
-<script src="/static/clients.js?v=4"></script>
+<script src="/static/pickers.js?v=1"></script>
+<script src="/static/clients.js?v=7"></script>
 <script src="/static/bell.js?v=2"></script>
 </body>
 </html>

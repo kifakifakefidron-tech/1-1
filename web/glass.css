@@ -242,3 +242,57 @@ html.lb-open { overflow: hidden; }
   body.has-rail:not(.has-tabbar) { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
   body.has-tabbar .rail-g { display: none; }   /* на главной — своя нижняя панель */
 }
+
+/* ─── свои элементы выбора (pickers.js) ─── */
+.pk-src { display: none !important; }
+.pk-btn { display: inline-flex; align-items: center; gap: 8px; width: 100%; min-height: 46px; padding: 10px 14px; border-radius: 14px; cursor: pointer;
+  border: 1px solid var(--glass-line); background: rgba(0, 0, 0, .16); color: var(--ink); font: 500 15px var(--body); text-align: left;
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
+.pk-btn:hover { border-color: var(--glass-line-2); background: rgba(255, 255, 255, .05); }
+.pk-btn.open { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(227, 203, 143, .15); }
+.pk-btn svg { width: 18px; height: 18px; flex: none; fill: none; stroke: var(--gold); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.pk-btn .pk-val { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk-btn.empty .pk-val { color: var(--ink-3); }
+.pk-btn .pk-chev { width: 16px; height: 16px; stroke: var(--ink-3); transition: transform var(--dur-2) var(--ease); }
+.pk-btn.open .pk-chev { transform: rotate(180deg); }
+.pk-panel { position: fixed; inset: auto; margin: 0; padding: 12px; width: 300px; max-height: min(420px, 80vh); overflow: auto; border-radius: 18px;
+  border: 1px solid var(--glass-line-2); background: rgba(4, 56, 55, .97); color: var(--ink); box-shadow: 0 24px 60px rgba(0, 12, 12, .5);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); opacity: 0; transform: translateY(-6px) scale(.98); transform-origin: top left;
+  transition: opacity .2s var(--ease), transform .22s var(--ease); }
+.pk-panel.in { opacity: 1; transform: none; }
+.pk-panel.sheet { left: 0 !important; right: 0; bottom: 0; top: auto !important; width: auto; max-height: 75vh; border-radius: 22px 22px 0 0;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); transform: translateY(30px); }
+.pk-panel.sheet.in { transform: none; }
+.pk-quick, .pk-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pk-quick { margin-bottom: 10px; }
+.pk-chip { padding: 7px 12px; border-radius: 999px; border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .05); color: var(--ink-2);
+  font: 500 13px var(--body); cursor: pointer; transition: background var(--dur-1), color var(--dur-1), border-color var(--dur-1), transform var(--dur-2) var(--spring); }
+.pk-chip:hover { background: rgba(255, 255, 255, .1); color: var(--ink); }
+.pk-chip:active { transform: scale(.95); }
+.pk-chip.on { background: var(--gold); border-color: var(--gold); color: #0f2f2e; font-weight: 600; }
+.pk-cal-h { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 8px; }
+.pk-cal-h b { font: 600 15px var(--display); text-transform: capitalize; }
+.pk-nav { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .05); color: var(--ink); font-size: 18px; cursor: pointer; }
+.pk-week, .pk-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
+.pk-week span { font-size: 11px; color: var(--ink-3); padding: 4px 0; text-transform: uppercase; }
+.pk-day { aspect-ratio: 1; border: 0; border-radius: 10px; background: none; color: var(--ink); font: 500 14px var(--body); cursor: pointer;
+  transition: background var(--dur-1); }
+.pk-day:hover { background: rgba(255, 255, 255, .1); }
+.pk-day.today { box-shadow: inset 0 0 0 1.5px var(--gold); }
+.pk-day.on { background: var(--gold); color: #0f2f2e; font-weight: 700; }
+.pk-day.past { color: var(--ink-3); opacity: .55; }
+.pk-lbl { margin: 2px 0 6px; font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.pk-hours { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-bottom: 10px; }
+.pk-mins { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.pk-cell { padding: 9px 0; border-radius: 10px; border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .04); color: var(--ink);
+  font: 600 14px var(--body); font-variant-numeric: tabular-nums; cursor: pointer; transition: background var(--dur-1), color var(--dur-1); }
+.pk-cell:hover { background: rgba(255, 255, 255, .1); }
+.pk-cell.on { background: var(--gold); color: #0f2f2e; border-color: var(--gold); }
+.pk-ok { width: 100%; margin-top: 12px; padding: 11px; border: 0; border-radius: 12px; background: linear-gradient(135deg, #f3e8bc, #c9a85c);
+  color: #0f2f2e; font: 600 14px var(--body); cursor: pointer; }
+.pk-search { width: 100%; margin-bottom: 8px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--glass-line); background: rgba(0, 0, 0, .2);
+  color: var(--ink); font-size: 14px; box-sizing: border-box; }
+.pk-opts { display: grid; gap: 2px; }
+.pk-opt { padding: 10px 12px; border: 0; border-radius: 10px; background: none; color: var(--ink); text-align: left; font: 14px var(--body); cursor: pointer; }
+.pk-opt:hover { background: rgba(255, 255, 255, .08); }
+.pk-opt.on { background: rgba(227, 203, 143, .16); color: var(--gold); font-weight: 600; }

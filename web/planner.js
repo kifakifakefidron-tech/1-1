@@ -153,7 +153,18 @@
       <span><b>${esc(l.title)}</b>${esc(money(l.price, l.deal))}<small>${esc(place(l))}</small></span></a>` : "";
   }
   function renderKinds() {
-    $("evKinds").innerHTML = Object.entries(KINDS).map(([k, v]) => `<button type="button" class="chip${k === kind ? " on" : ""}" data-kind="${k}">${v}</button>`).join("");
+    const KIC = { show: "home", call: "phone", meet: "users", task: "check" };
+    $("evKinds").innerHTML = Object.entries(KINDS).map(([k, v]) => `<button type="button" role="radio" aria-checked="${k === kind}"
+      class="ev-kind${k === kind ? " on" : ""}" data-kind="${k}">${window.ic ? window.ic(KIC[k]) : ""}<span>${esc(v.split(" ").slice(1).join(" "))}</span></button>`).join("");
+  }
+  // свои элементы выбора вместо браузерных (pickers.js) — один раз
+  function upgradeForm() {
+    const f = $("evForm");
+    if (!window.Pick || f.dataset.pk) return;
+    f.dataset.pk = "1";
+    Pick.date(f.date); Pick.time(f.time, { from: 7, to: 22 });
+    Pick.chips(f.dur_min); Pick.chips(f.remind_min);
+    Pick.select($("evListing"));
   }
   function quick() {
     const t = new Date();
@@ -194,6 +205,8 @@
     }
     fillListings(lid);
     if (!ev && lid) await prefillFromListing(lid);
+    upgradeForm();
+    if (window.Pick) Pick.refresh(f);
     const dlg = $("evDlg");
     if (!dlg.open) dlg.showModal();
   }

@@ -18,10 +18,12 @@
 ## 👤 Ждёт действий от Артёма
 - [ ] Домен 1plus1assistant.ru: DNS уже смотрит на сервер (проверено 12.10) — выполнить на сервере команду из чата
       (SITE_DOMAIN=1plus1assistant.ru, OLD_DOMAINS=…) и проверить https://1plus1assistant.ru
-- [ ] ЮKassa: заявка как самозанятый, shopId и секретный ключ → .env (PAYMENTS_ENABLED, YOOKASSA_SHOP_ID, YOOKASSA_SECRET,
+- [ ] Вход админа: в .env на сервере ADMIN_EMAILS=kifakifakefidron@gmail.com, вход на /admin
+- [ ] WEB_WORKERS в .env = число ядер сервера (`nproc`)
+- [ ] ЮKassa (магазин одобрен 12.10): shopId и секретный ключ → .env (PAYMENTS_ENABLED, YOOKASSA_SHOP_ID, YOOKASSA_SECRET,
       SUB_PLANS), HTTP-уведомления → https://1plus1assistant.ru/api/payments/yookassa, «Мой налог» для чеков; оферта и политика
 - [ ] Telegram-бот: Cloudflare Worker из deploy/telegram-worker.js → TELEGRAM_API_BASE в .env; в @BotFather /setdomain
-- [ ] Подтверждение номера агента: VERIFY_NUMBER в .env (номер, подключённый в Wappi) — теперь работает и при паузе сбора
+- [ ] Подтверждение номера агента: VERIFY_NUMBER=+79618571772 в .env (номер MAX в Wappi) — работает и при паузе сбора
 - [ ] На сайте СТРЕЛ (Тильда) у 22 объектов в поле «Координаты» стоит «Загружается» — вписать координаты
 - [ ] Админка → «🗺 Карта районов»: нажать «Загрузить из OpenStreetMap», затем обвести районы без контура
       (ФМР, ЦМР, ЮМР, ЧМР, ГМР, РИП, ЗИП, ККБ…) и проверить объекты по карте
@@ -33,8 +35,6 @@
       и что в кабинете DeepSeek появились запросы
 - [ ] Включить напоминание о балансе в кабинете DeepSeek
 - [ ] Дать промокод паре коллег на тест (админка → Промокоды)
-- [ ] Вписать в .env на сервере `VERIFY_NUMBER=+7…` — номер, подключённый в Wappi (MAX/WhatsApp),
-      на который агенты будут присылать код подтверждения
 
 ## 🔍 Проверить после обновления
 - [ ] Планер: напоминание приходит на почту; подписка календаря на iPhone/Google (ссылка в «📲 В календарь телефона»)
