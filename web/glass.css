@@ -435,3 +435,15 @@ html.embed body { visibility: hidden; overflow: hidden; }
 html.embed body::before, html.embed body::after { display: none !important; }
 html.embed dialog, html.embed [popover] { visibility: visible; }
 html.embed dialog::backdrop { background: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+
+/* счётчики в меню слева: дела на сегодня, клиенты «пора связаться», объекты в работе */
+.rail-c { position: absolute; top: 3px; right: 2px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; display: grid; place-items: center;
+  font: 700 10px var(--body); color: #0f2f2e; background: #cfe3e1; box-shadow: 0 0 0 2px rgba(3, 60, 59, .9); animation: railPop .4s var(--spring) both; }
+.rail-c.hot { background: #f29a7e; color: #2a0f08; }
+.rail-a.on .rail-c { box-shadow: 0 0 0 2px #e3cb8f; }
+@keyframes railPop { from { transform: scale(.4); opacity: 0; } }
+.rs-a .rail-c { position: static; margin-left: auto; box-shadow: none; }
+
+/* палитра цветов событий и статусов (планер, «В работе») */
+.c-gold { --c: #e3cb8f; } .c-teal { --c: #5fd0c0; } .c-sky { --c: #7cc4f5; } .c-violet { --c: #b9a3f5; }
+.c-coral { --c: #f29a7e; } .c-rose { --c: #f08fb6; } .c-lime { --c: #b6db7a; } .c-slate { --c: #9fb3b1; }

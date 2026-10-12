@@ -1494,7 +1494,7 @@
         ${tile("🔔", "Уведомления", 'href="/notifications"', u.unread || "")}
         ${tile("📅", "Планер", 'href="/planner"')}
         ${tile("📁", "Подборки", 'href="/picks"')}
-        ${tile("🙋", "Запросы", 'href="/requests"')}
+        ${u.is_admin ? tile("🙋", "Запросы", 'href="/requests"') : ""}
         ${tile("📊", "Аналитика", 'href="/market"')}
         ${tile("🏷", "Я агент", "data-agent")}
         ${u.is_admin ? tile("⚙", "Админка", 'href="/admin"') : ""}

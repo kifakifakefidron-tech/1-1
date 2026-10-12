@@ -177,8 +177,8 @@
   function crm() {
     const max = Math.max(1, ...dash.crm.map((s) => s.n));
     const total = dash.crm.reduce((a, s) => a + s.n, 0);
-    put("wCrm", `${head("briefcase", "Объекты в работе", `<a class="g-link" href="/?fav=1">Рабочий список →</a>`)}
-      <div class="wc-pipe">${dash.crm.map((s) => `<a class="wc-st" href="/?fav=1&status=${s.key}"><b>${s.n}</b><span>${esc(s.label)}</span>
+    put("wCrm", `${head("briefcase", "Объекты в работе", `<a class="g-link" href="/work">Рабочий список →</a>`)}
+      <div class="wc-pipe">${dash.crm.map((s) => `<a class="wc-st" href="/work?status=${s.key}"><b>${s.n}</b><span>${esc(s.label)}</span>
         <div class="wc-bar"><i style="--w:${Math.round(s.n / max * 100)}%;--c:${ST_COLOR[s.key]}"></i></div></a>`).join("")}</div>
       <div class="wc-foot"><span>В избранном: <b>${dash.favorites}</b></span><span>Со статусом: <b>${total}</b></span>
         <span>Подборок: <b>${dash.picks.n}</b>${dash.picks.views ? ` · просмотров клиентами: <b>${dash.picks.views}</b>` : ""}</span>

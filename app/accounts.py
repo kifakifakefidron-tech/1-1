@@ -49,7 +49,8 @@ def user_by_session(conn: sqlite3.Connection, token: str | None) -> sqlite3.Row 
     if not token:
         return None
     row = conn.execute("SELECT * FROM sessions WHERE token_hash = ?", (_hash(token),)).fetchone()
-    if row is None or row["created"] < time.time() - SESSION_DAYS * DAY:
+    # вход помнится, пока человек заходит хотя бы раз в SESSION_DAYS (срок продлевается при каждом визите)
+    if row is None or max(row["created"], row["last_seen"] or 0) < time.time() - SESSION_DAYS * DAY:
         return None
     user = get_user(conn, row["user_id"])
     if user is None or user["blocked"]:

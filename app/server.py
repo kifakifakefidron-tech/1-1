@@ -17,7 +17,7 @@ from pathlib import Path
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse, Response
+from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
@@ -490,7 +490,34 @@ def _need_user(request: Request):
 
 
 def api_me(request: Request, body: dict | None = None):
-    return JSONResponse({"me": accounts.me(db.get(), current_user(request))})
+    conn = db.get()
+    user = current_user(request)
+    me = accounts.me(conn, user)
+    if me:
+        me["counts"] = _counts(conn, user["id"])   # для меню слева и кабинета: что ждёт внимания
+    resp = JSONResponse({"me": me})
+    tok = request.cookies.get(SESSION)
+    if user and tok:   # продлить куку входа: заходите хотя бы раз в полгода — входить заново не нужно
+        resp.set_cookie(SESSION, tok, max_age=accounts.SESSION_DAYS * 86400, httponly=True, samesite="lax",
+                        secure=request.headers.get("x-forwarded-proto", request.url.scheme) == "https")
+    return resp
+
+
+def _counts(conn: sqlite3.Connection, uid: int) -> dict:
+    """Счётчики-подсказки: дела планера на сегодня (не сделанные), просроченные, объекты в работе, клиенты «пора связаться»."""
+    now = int(time.time())
+    msk = time.gmtime(now + 3 * 3600)
+    day0 = now - (msk.tm_hour * 3600 + msk.tm_min * 60 + msk.tm_sec)
+    one = lambda sql, *p: conn.execute(sql, p).fetchone()[0] or 0  # noqa: E731
+    return {
+        "plan_today": one("SELECT COUNT(*) FROM planner_events WHERE user_id = ? AND done = 0 AND ts >= ? AND ts < ?", uid, day0, day0 + 86400),
+        "plan_overdue": one("SELECT COUNT(*) FROM planner_events WHERE user_id = ? AND done = 0 AND ts < ?", uid, day0),
+        "work": one("SELECT COUNT(*) FROM notes WHERE user_id = ? AND status IN ('call', 'show', 'think')", uid),
+        "favorites": one("SELECT COUNT(*) FROM favorites WHERE user_id = ?", uid),
+        "clients_due": one("""SELECT COUNT(*) FROM clients WHERE user_id = ? AND archived = 0 AND next_ts IS NOT NULL
+                              AND next_ts < ? AND stage NOT IN ('deal', 'lost')""", uid, day0 + 86400),
+        "clients": one("SELECT COUNT(*) FROM clients WHERE user_id = ? AND archived = 0 AND stage NOT IN ('deal', 'lost')", uid),
+    }
 
 
 def api_favorites(request: Request, body: dict | None = None):
@@ -500,7 +527,7 @@ def api_favorites(request: Request, body: dict | None = None):
     # Избранное и объекты «в работе» (со статусом) — вместе: это рабочий список агента
     rows = db.get().execute(f"""
         SELECT l.*, n.status AS crm_status, n.text AS crm_note, COALESCE(n.ts, f.created) AS crm_ts,
-               {search.VERIFIED} AS verified
+               f.created AS fav_at, f.price_at AS fav_price, {search.VERIFIED} AS verified
         FROM listings l
         LEFT JOIN favorites f ON f.listing_id = l.id AND f.user_id = ?
         LEFT JOIN notes n ON n.listing_id = l.id AND n.user_id = ?
@@ -509,7 +536,8 @@ def api_favorites(request: Request, body: dict | None = None):
     items = []
     for r in rows:
         it = search.row_to_item(r, False)
-        it.update(status=r["crm_status"], note=r["crm_note"] or "", favorite=True)
+        it.update(status=r["crm_status"], note=r["crm_note"] or "", favorite=r["fav_at"] is not None,
+                  touched=r["crm_ts"], fav_price=r["fav_price"])
         items.append(it)
     return JSONResponse({"items": items})
 
@@ -867,13 +895,22 @@ def picks_page(request: Request, body: dict | None = None):
     return _page("picks.html")
 
 
+def work_page(request: Request, body: dict | None = None):
+    return _page("work.html")
+
+
 def requests_page(request: Request, body: dict | None = None):
+    user = current_user(request)   # запросы покупателей — только админу (решение Артёма 13.10)
+    if not (user and user["is_admin"]):
+        return RedirectResponse("/", status_code=303)
     return _page("requests.html")
 
 
 def api_requests(request: Request, body: dict | None = None):
-    """Лента запросов покупателей. Телефоны — только с доступом."""
-    user = current_user(request)
+    """Лента запросов покупателей — только админу (решение Артёма 13.10)."""
+    user, err = _need_admin(request)
+    if err:
+        return err
     q = request.query_params
     return JSONResponse(buyers.feed(db.get(), has_access(request, user), q.get("deal", ""), q.get("district", ""),
                                     _num(q.get("rooms"), int), q.get("q", ""), _num(q.get("page"), int) or 1))
@@ -1879,6 +1916,7 @@ routes = [
     Route("/requests", threaded(requests_page)),
     Route("/api/requests", threaded(api_requests)),
     Route("/picks", threaded(picks_page)),
+    Route("/work", threaded(work_page)),
     Route("/cabinet", threaded(cabinet_page)),
     Route("/c/{token}", threaded(pick_page)),
     Route("/api/picks", threaded(api_picks), methods=["GET", "POST", "DELETE"]),

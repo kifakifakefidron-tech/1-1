@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>В работе · 1+1</title>
+<meta name="theme-color" content="#035352">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=25">
+<link rel="stylesheet" href="/static/motion.css?v=34">
+<link rel="stylesheet" href="/static/theme.css?v=14">
+<link rel="stylesheet" href="/static/glass.css?v=15">
+<link rel="stylesheet" href="/static/work.css?v=2">
+</head>
+<body>
+<main class="wk">
+  <header class="wk-head">
+    <div><h1>В работе</h1><p id="wkSub">Избранное и объекты, с которыми вы работаете</p></div>
+    <div class="wk-tools">
+      <label class="wk-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="wkQ" type="search" placeholder="Найти: ЖК, улица, заметка" autocomplete="off" aria-label="Найти объект"></label>
+      <select id="wkSort" aria-label="Порядок">
+        <option value="touched">Сначала последние действия</option>
+        <option value="price_asc">Дешевле</option>
+        <option value="price_desc">Дороже</option>
+        <option value="drop">Цена снизилась</option>
+      </select>
+      <a class="pill" href="/">+ Найти объекты</a>
+    </div>
+  </header>
+  <div id="wkGuest" class="note-box" hidden>Рабочий список доступен после входа. <a href="/?login=1">Войти</a></div>
+
+  <nav class="wk-tabs" id="wkTabs" aria-label="Статус"><i class="wk-ind" aria-hidden="true"></i></nav>
+  <p class="wk-help" id="wkHelp"></p>
+  <div class="wk-grid" id="wkList"></div>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
+<script src="/static/icons.js?v=4"></script>
+<script src="/static/pickers.js?v=6"></script>
+<script src="/static/max.js?v=1"></script>
+<script src="/static/rail.js?v=4"></script>
+<script src="/static/work.js?v=1"></script>
+<script src="/static/objview.js?v=2"></script>
+<script src="/static/bell.js?v=4"></script>
+</body>
+</html>

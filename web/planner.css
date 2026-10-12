@@ -167,8 +167,6 @@
 }
 
 /* ═══ Планер v3 (13.10): большой календарь месяца + расписание дня, цвета событий ═══ */
-.c-gold { --c: #e3cb8f; } .c-teal { --c: #5fd0c0; } .c-sky { --c: #7cc4f5; } .c-violet { --c: #b9a3f5; }
-.c-coral { --c: #f29a7e; } .c-rose { --c: #f08fb6; } .c-lime { --c: #b6db7a; } .c-slate { --c: #9fb3b1; }
 .pv { max-width: 1440px; margin: 0 auto; padding: 22px 28px 60px; }
 .pv-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; margin-bottom: 18px; }
 .pv-hello h1 { margin: 0; font: 600 clamp(26px, 3vw, 36px)/1.1 var(--display); letter-spacing: -.02em; }
