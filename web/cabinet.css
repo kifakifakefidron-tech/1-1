@@ -277,3 +277,26 @@
 .bank-row { grid-template-columns: 1.4fr repeat(4, .8fr) 26px !important; }
 .bank-row.head span { font-size: 11.5px; color: var(--ink-3); }
 #banksDlg { width: min(680px, calc(100vw - 24px)); }
+
+/* что ждёт внимания — под приветствием */
+.d-today { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.d-att { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; text-decoration: none; color: var(--ink);
+  font: 500 13px var(--body); background: rgba(255, 255, 255, .07); border: 1px solid var(--glass-line); transition: background .2s, transform .25s var(--spring); }
+.d-att svg { width: 15px; height: 15px; color: var(--gold); }
+.d-att:hover { background: rgba(255, 255, 255, .13); transform: translateY(-1px); }
+.d-att.hot { border-color: rgba(242, 154, 126, .45); background: rgba(242, 154, 126, .12); }
+.d-att.hot svg { color: #f29a7e; }
+.d-att.calm { color: var(--ink-3); }
+.d-att.calm svg { color: var(--ok); }
+/* перестановка блоков */
+.g-grip { position: absolute; top: 12px; right: 12px; z-index: 3; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px;
+  border: 1px solid var(--glass-line); background: rgba(4, 50, 49, .7); color: var(--ink-3); cursor: grab; touch-action: none;
+  opacity: 0; transition: opacity .2s, background .2s, color .2s; }
+.g-grip svg { width: 16px; height: 16px; fill: currentColor; }
+.g:hover > .g-grip, .g-grip:focus-visible { opacity: 1; }
+.g-grip:hover { color: var(--gold); background: rgba(4, 50, 49, .95); }
+.g.lifting { z-index: 5; transform: scale(1.02); box-shadow: 0 0 0 2px var(--gold), 0 26px 60px rgba(0, 0, 0, .45) !important; transition: transform .2s var(--spring); }
+body.d-arranging { cursor: grabbing; user-select: none; }
+body.d-arranging .g:not(.lifting) { opacity: .85; }
+@media (hover: none) { .g-grip { opacity: .7; } }
+.d-prof-acts { display: flex; gap: 8px; flex-wrap: wrap; } .d-prof-acts .pill { text-decoration: none; }

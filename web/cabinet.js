@@ -321,6 +321,7 @@
     if (!me) { $("dGuest").hidden = false; return; }
     $("dApp").hidden = false;
     header();
+    attention();
     try { Object.assign(calc, JSON.parse(localStorage.getItem("calc") || "{}")); } catch { /* */ }
     quick(); plan(); referral(); saved();
     const r = await call("/api/dashboard");
@@ -329,7 +330,89 @@
     const w = dash.widgets;
     weather(w.weather); rate(w.keyrate); mortgage(w.mortgage, w.banks); fx(w.currency);
     day(); clientsW(); crm(); news(); market(); calcHtml(); admin();
+    layout();
   }
+
+  // ─── что ждёт внимания (те же счётчики, что в меню слева) ─────────
+  function attention() {
+    const c = me.counts || {};
+    const chips = [
+      [c.plan_overdue, "alert", `просрочено: ${c.plan_overdue}`, "/planner", "hot"],
+      [c.plan_today, "calendar", `дел сегодня: ${c.plan_today}`, "/planner", ""],
+      [c.clients_due, "users", `клиентов ждут звонка: ${c.clients_due}`, "/clients", "hot"],
+      [c.work, "heart", `объектов в работе: ${c.work}`, "/work", ""],
+      [me.unread, "bell", `новых уведомлений: ${me.unread}`, "/notifications", ""],
+    ].filter(([n]) => n);
+    $("dToday").innerHTML = chips.length
+      ? chips.map(([, icon, text, href, hot]) => `<a class="d-att${hot ? " hot" : ""}" href="${href}">${ic(icon)}${text}</a>`).join("")
+      : `<span class="d-att calm">${ic("check")}Всё под контролем — срочных дел нет</span>`;
+  }
+
+  // ─── порядок блоков: перетащите блок за ⠿ — сохраняется в аккаунте ───
+  async function layout() {
+    const box = $("bento");
+    const blocks = () => [...box.querySelectorAll(":scope > .g")];
+    blocks().forEach((g) => {
+      if (g.querySelector(":scope > .g-grip")) return;
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "g-grip"; b.title = "Перетащите, чтобы поменять порядок"; b.setAttribute("aria-label", "Переставить блок");
+      b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></svg>';
+      g.appendChild(b);
+    });
+    const r = await call("/api/settings");
+    const order = (r.ok && r.data.settings.cabinet_order) || [];
+    if (order.length) {   // сохранённый порядок; новые блоки, которых в нём нет, — в конце
+      const byId = Object.fromEntries(blocks().map((g) => [g.id, g]));
+      order.forEach((id) => { if (byId[id]) box.appendChild(byId[id]); });
+      blocks().filter((g) => !order.includes(g.id) && g.id !== "wAdmin").forEach((g) => box.appendChild(g));
+      if (byId.wAdmin) box.appendChild(byId.wAdmin);
+    }
+  }
+  let drag = null;
+  function flip(box, move) {   // плавно: соседи переезжают, а не прыгают
+    const before = new Map([...box.children].map((el) => [el, el.getBoundingClientRect()]));
+    move();
+    for (const [el, a] of before) {
+      if (el === drag?.el) continue;
+      const b = el.getBoundingClientRect();
+      const dx = a.left - b.left, dy = a.top - b.top;
+      if (dx || dy) el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: 260, easing: "cubic-bezier(.22,1,.36,1)" });
+    }
+  }
+  document.addEventListener("pointerdown", (e) => {
+    const grip = e.target.closest(".g-grip");
+    if (!grip || e.button > 0) return;
+    e.preventDefault();
+    const el = grip.closest(".g");
+    drag = { el, moved: false };
+    el.classList.add("lifting");
+    document.body.classList.add("d-arranging");
+    grip.setPointerCapture(e.pointerId);
+  });
+  document.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const box = $("bento");
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const target = under && under.closest("#bento > .g");
+    if (!target || target === drag.el || target.id === "wAdmin") return;
+    const r = target.getBoundingClientRect();
+    const after = e.clientY > r.top + r.height / 2 || (e.clientX > r.left + r.width / 2 && Math.abs(e.clientY - (r.top + r.height / 2)) < r.height / 3);
+    const ref = after ? target.nextElementSibling : target;
+    if (ref === drag.el || (ref && ref.previousElementSibling === drag.el && !after)) return;
+    drag.moved = true;
+    flip(box, () => box.insertBefore(drag.el, ref));
+  });
+  document.addEventListener("pointerup", async () => {
+    if (!drag) return;
+    const { el, moved } = drag;
+    drag = null;
+    el.classList.remove("lifting");
+    document.body.classList.remove("d-arranging");
+    if (!moved) { toast("Потяните блок за ⠿, чтобы переставить"); return; }
+    const order = [...$("bento").querySelectorAll(":scope > .g")].map((g) => g.id).filter((id) => id && id !== "wAdmin");
+    const r = await call("/api/settings", { cabinet_order: order });
+    toast(r.ok ? "Порядок блоков сохранён" : "Не сохранилось — попробуйте ещё раз");
+  });
 
   // ─── события ─────────────────────────────────────────────────────
   document.addEventListener("input", (e) => { if (e.target.closest("#wCalc input[type=range]")) recalc(); });

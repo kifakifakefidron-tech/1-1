@@ -39,8 +39,9 @@
       $("pkList").innerHTML = `<li class="pk-empty">${esc(e.message || "Возможно, агент её удалил.")}</li>`;
       return;
     }
-    document.title = `${d.title} · 1+1`;
+    document.title = d.title;
     $("pkTitle").textContent = d.title;
+    applyStyle(d.style || {});
     if (d.note) { $("pkNote").hidden = false; $("pkNote").textContent = d.note; }
     const agent = agentHTML(d);
     if (agent) { $("pkAgent").hidden = false; $("pkAgent").innerHTML = agent; $("pkBar").hidden = false; $("pkBar").innerHTML = agentHTML(d, true); }
@@ -58,6 +59,20 @@
       </div></li>`).join("") || `<li class="pk-empty">В подборке пока нет объектов.</li>`;
     window.__pick = d;
     drawMap(d.items);
+  }
+
+  // вид подборки из настроек агента: цвет, обложка, подпись (имя или агентство)
+  const PALETTE = { gold: "#e3cb8f", teal: "#5fd0c0", sky: "#7cc4f5", violet: "#b9a3f5", coral: "#f29a7e", rose: "#f08fb6", lime: "#b6db7a", slate: "#9fb3b1" };
+  function applyStyle(st) {
+    const c = PALETTE[st.color] || (/^#[0-9a-f]{6}$/i.test(st.color || "") ? st.color : PALETTE.gold);
+    document.documentElement.style.setProperty("--accent", c);
+    document.documentElement.style.setProperty("--gold", c);
+    $("pkBrand").textContent = st.brand || "Подборка объектов";
+    if (st.cover) {
+      $("pkCover").hidden = false;
+      $("pkCover").style.backgroundImage = `url("${st.cover.replace(/"/g, "")}")`;
+      $("pkHead").classList.add("has-cover");
+    }
   }
 
   function drawMap(items) {

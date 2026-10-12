@@ -826,7 +826,7 @@
           ${acc("🙋", "Покупатели под объект", `${buyers.length >= 30 ? "30+" : buyers.length}`, buyersBody, { cls: "good" })}
           ${acc("👥", "Похожие у других агентов", `${same.length}`, sameBody)}
           ${acc("🕓", "История", hist ? `${o.history.length}` : "", histBody)}
-          ${o.can_edit ? `<button type="button" class="dv-acc-btn" data-agent-edit="${o.id}"><span class="dv-acc-ic">✎</span>Изменить моё объявление</button>` : ""}
+          ${o.can_edit ? `<a class="dv-acc-btn" href="/my/edit?id=${o.id}" target="_top"><span class="dv-acc-ic">✎</span>Изменить моё объявление</a>` : ""}
           ${acc("⚙", "Админ", "", adminBody, { cls: "admin" })}
           ${reportHTML(o)}
         </div>
@@ -1496,7 +1496,7 @@
         ${tile("📁", "Подборки", 'href="/picks"')}
         ${u.is_admin ? tile("🙋", "Запросы", 'href="/requests"') : ""}
         ${tile("📊", "Аналитика", 'href="/market"')}
-        ${tile("🏷", "Я агент", "data-agent")}
+        ${tile("🏷", "Мои объекты", 'href="/my"')}
         ${u.is_admin ? tile("⚙", "Админка", 'href="/admin"') : ""}
       </div>
       ${u.is_admin ? `<div class="cab-admin" id="cabAdmin"><div class="cab-stats">${"<div class=\"skel\"><i></i></div>".repeat(8)}</div></div>` : ""}
@@ -2067,7 +2067,7 @@
       else if (!me()) openLogin();
       else if (act === "fav") setFavMode(true);
       else if (act === "cabinet") { location.replace(me() ? "/cabinet" : "/?login=1"); return; }
-      else if (act === "agent") document.dispatchEvent(new CustomEvent("oneplus:agent"));
+      else if (act === "agent") { location.replace("/my"); return; }   // «Мои объекты» — отдельная страница
     }
   }
 

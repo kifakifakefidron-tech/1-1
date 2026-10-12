@@ -45,3 +45,37 @@
 {$OLD_DOMAINS:http://unused.invalid} {
 	redir https://{$SITE_DOMAIN}{uri} permanent
 }
+
+# Нейтральный адрес для подборок клиентам (PICK_DOMAIN в .env). Клиент видит только подборку: никаких ссылок
+# и страниц сервиса — всё остальное отвечает «не найдено», чтобы клиент не обходил агента.
+{$PICK_DOMAIN:http://unused-pick.invalid} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		X-Robots-Tag "noindex"
+		-Server
+	}
+	@pickStatic path /static/style.css /static/motion.css /static/theme.css /static/glass.css /static/pick.css /static/pick.js /static/icons.js /static/icons.svg /static/pickers.js /static/max.js /static/house.svg
+	handle @pickStatic {
+		uri strip_prefix /static
+		root * /srv/web
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+	@photo path_regexp photo ^/photos/[0-9]+/[0-9a-f]{16}\.(jpg|png|webp)$
+	handle @photo {
+		root * /srv/data
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+	@pick path /c/* /api/c/*
+	handle @pick {
+		reverse_proxy web:8090
+	}
+	handle {
+		respond "Страница не найдена" 404
+	}
+}

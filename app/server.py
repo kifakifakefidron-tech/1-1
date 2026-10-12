@@ -22,7 +22,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import (accounts, agent, autolearn, brain, buyers, clients, dashboard, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
-               market, notify, payments, picks, planner, region, search, stats, tg, wappi, widgets)
+               market, notify, payments, picks, planner, region, search, settings, stats, tg, wappi, widgets)
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -871,19 +871,22 @@ def api_pick_public(request: Request, body: dict | None = None):
 
 def pick_page(request: Request, body: dict | None = None):
     """Страница подборки для клиента + превью ссылки в мессенджерах (название, число объектов, фото)."""
+    host = request.headers.get("host", "").split(":")[0].lower()
+    if config.PICK_DOMAIN and host != config.PICK_DOMAIN:   # клиент не должен видеть адрес сервиса
+        return RedirectResponse(f"{config.PICK_URL}/c/{request.path_params['token']}", status_code=301)
     html_text = (WEB / "pick.html").read_text(encoding="utf-8")
     d = picks.public(db.get(), request.path_params["token"], count_view=False)
     if d:
         esc = lambda v: html.escape(str(v), quote=True)  # noqa: E731
         n = len(d["items"])
-        photo = next((i["photos"][0] for i in d["items"] if i["photos"]), "/static/favicon.svg")
+        photo = d["style"]["cover"] or next((i["photos"][0] for i in d["items"] if i["photos"]), "/static/house.svg")
         if photo.startswith("/"):
-            photo = config.SITE_URL + photo
+            photo = config.PICK_URL + photo
         who = f" · {d['contact_name']}" if d["contact_name"] else ""
         desc = f"{n} {'объект' if n % 10 == 1 and n % 100 != 11 else 'объекта' if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else 'объектов'}{who}"
         meta = (f'<meta property="og:type" content="website"><meta property="og:title" content="{esc(d["title"])}">'
                 f'<meta property="og:description" content="{esc(desc)}"><meta property="og:image" content="{esc(photo)}">')
-        html_text = html_text.replace("<title>Подборка · 1+1</title>", f"<title>{esc(d['title'])} · 1+1</title>{meta}", 1)
+        html_text = html_text.replace("<title>Подборка</title>", f"<title>{esc(d['title'])}</title>{meta}", 1)
     return Response(html_text, media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
 
 
@@ -897,6 +900,43 @@ def picks_page(request: Request, body: dict | None = None):
 
 def work_page(request: Request, body: dict | None = None):
     return _page("work.html")
+
+
+def settings_page(request: Request, body: dict | None = None):
+    return _page("settings.html")
+
+
+def my_page(request: Request, body: dict | None = None):
+    return _page("my.html")   # «Мои объекты» и правка объявления (/my/edit) — одна страница, вид выбирает my.js
+
+
+def api_settings(request: Request, body: dict | None = None):
+    """Настройки аккаунта: GET — всё; POST {поля} — сохранить; {cover: dataURL} — обложка подборок;
+    {action: "logout_all"} — выйти на всех устройствах (кроме этого)."""
+    user, err = _need_user(request)
+    if err:
+        return err
+    conn = db.get()
+    body = body or {}
+    if request.method == "POST":
+        if body.get("action") == "logout_all":
+            keep = accounts._hash(request.cookies.get(SESSION) or "")
+            n = conn.execute("DELETE FROM sessions WHERE user_id = ? AND token_hash != ?", (user["id"], keep)).rowcount
+            conn.commit()
+            return JSONResponse({"ok": True, "closed": n})
+        if "cover" in body:
+            if _too_often(request, "cover", 20, 3600):
+                return _err("Слишком много фото за час.", 429)
+            url, why = settings.save_cover(str(body.get("cover") or ""))
+            if not url:
+                return _err(why)
+            body = {"pick_cover": url}
+        settings.save(conn, user["id"], body)
+    st = settings.get(conn, user["id"])
+    sessions = conn.execute("SELECT COUNT(*) FROM sessions WHERE user_id = ?", (user["id"],)).fetchone()[0]
+    return JSONResponse({"settings": st, "name": accounts.get_user(conn, user["id"])["name"] or "",
+                         "email": user["email"], "colors": settings.COLORS, "pick_url": config.PICK_URL,
+                         "pick_domain": bool(config.PICK_DOMAIN), "session_days": accounts.SESSION_DAYS, "sessions": sessions})
 
 
 def requests_page(request: Request, body: dict | None = None):
@@ -1917,6 +1957,10 @@ routes = [
     Route("/api/requests", threaded(api_requests)),
     Route("/picks", threaded(picks_page)),
     Route("/work", threaded(work_page)),
+    Route("/settings", threaded(settings_page)),
+    Route("/my", threaded(my_page)),
+    Route("/my/edit", threaded(my_page)),
+    Route("/api/settings", threaded(api_settings), methods=["GET", "POST"]),
     Route("/cabinet", threaded(cabinet_page)),
     Route("/c/{token}", threaded(pick_page)),
     Route("/api/picks", threaded(api_picks), methods=["GET", "POST", "DELETE"]),

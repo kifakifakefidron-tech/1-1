@@ -45,3 +45,19 @@
   background: rgba(255,255,255,.12); color: #fff; font-size: 34px; cursor: pointer; }
 .pk-nav.prev { left: 10px; } .pk-nav.next { right: 10px; }
 @media (max-width: 600px) { .pk-gal img { height: 200px; } .pk-agent-bar b { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; } }
+
+/* 13.10: без упоминаний сервиса; обложка и цвет — из настроек агента (--accent) */
+:root { --accent: #e3cb8f; }
+.pk-brand { margin: 0; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.pk-head { position: relative; }
+.pk-head.has-cover { margin: -20px -16px 18px; padding: 150px 22px 22px; border-radius: 0 0 30px 30px; overflow: hidden; isolation: isolate; }
+.pk-cover { position: absolute; inset: 0; z-index: -1; background: center / cover no-repeat; }
+.pk-cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(3, 40, 39, .1) 0%, rgba(3, 40, 39, .55) 45%, rgba(3, 52, 51, .97) 100%); }
+.pk-head.has-cover h1 { text-shadow: 0 2px 16px rgba(0, 0, 0, .4); }
+.pk-agent { border-color: var(--accent); }
+.pk-num, .pk-pin { background: var(--accent); }
+.pk .pill:not(.light), .pk-agent-bar .pill:not(.light) { background: var(--accent); border-color: var(--accent); color: #0f2f2e; }
+.pk-agent-bar { border-color: var(--accent); }
+.pk-place a { color: var(--accent); }
+.pk-comment { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+@media (min-width: 821px) { .pk-head.has-cover { margin: 0 0 18px; border-radius: 30px; padding-top: 190px; } }

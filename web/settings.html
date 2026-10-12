@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Настройки · 1+1</title>
+<meta name="theme-color" content="#035352">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=25">
+<link rel="stylesheet" href="/static/motion.css?v=34">
+<link rel="stylesheet" href="/static/theme.css?v=14">
+<link rel="stylesheet" href="/static/glass.css?v=17">
+<link rel="stylesheet" href="/static/settings.css?v=1">
+</head>
+<body>
+<main class="st">
+  <header class="st-head"><h1>Настройки</h1><p>Сохраняются в аккаунте — одинаково на всех ваших устройствах.</p></header>
+  <div id="stGuest" class="note-box" hidden>Настройки доступны после входа. <a href="/?login=1">Войти</a></div>
+
+  <div id="stApp" hidden>
+    <section class="st-card" id="stPick">
+      <div class="st-card-h"><span class="st-ic"><i data-ic="folder"></i></span><div><h2>Подборки для клиентов</h2>
+        <p>Как выглядит страница, которую вы отправляете клиенту. Клиент видит только ваш контакт — ни адреса сервиса, ни чужих номеров.</p></div></div>
+      <div class="st-pick">
+        <div class="st-form">
+          <div class="st-f"><span>Обложка</span>
+            <div class="st-cover-row">
+              <label class="pill light st-upload"><input type="file" id="stCoverFile" accept="image/*" hidden><i data-ic="plus"></i>Загрузить фото</label>
+              <button type="button" class="chip" id="stCoverDel" hidden>Убрать обложку</button>
+            </div>
+            <small>Например, ваше фото, логотип агентства или красивый вид города. Лучше горизонтальное.</small></div>
+          <div class="st-f"><span>Цвет подборки</span><div class="st-colors" id="stColors" role="radiogroup" aria-label="Цвет подборки"></div></div>
+          <label class="st-f"><span>Подпись над заголовком</span><input id="stBrand" maxlength="60" placeholder="Подборка объектов — или название вашего агентства"></label>
+          <div class="st-two">
+            <label class="st-f"><span>Ваше имя для клиента</span><input id="stPickName" maxlength="80" placeholder="Например, Ирина Петрова"></label>
+            <label class="st-f"><span>Телефон для клиента</span><input id="stPickPhone" inputmode="tel" maxlength="30" placeholder="+7 …"></label>
+          </div>
+          <p class="st-note" id="stPickUrl"></p>
+        </div>
+        <div class="st-preview" id="stPreview" aria-label="Как увидит клиент">
+          <div class="sp-phone">
+            <div class="sp-head" id="spHead"><div class="sp-cover" id="spCover"></div>
+              <p class="sp-brand" id="spBrand">Подборка объектов</p><b class="sp-title">Подборка для вас</b></div>
+            <div class="sp-agent"><span><small>Ваш агент</small><b id="spName">Агент</b></span><i class="sp-btn">Позвонить</i></div>
+            <div class="sp-item"><span class="sp-photo"></span><span class="sp-num">1</span><b>6,3 млн ₽</b><small>ЖК Свобода · 2-комн., 58 м²</small></div>
+            <div class="sp-item"><span class="sp-photo b"></span><span class="sp-num">2</span><b>4,9 млн ₽</b><small>ФМР · 1-комн., 41 м²</small></div>
+          </div>
+          <p class="st-note">Так увидит клиент</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="st-card">
+      <div class="st-card-h"><span class="st-ic"><i data-ic="user"></i></span><div><h2>Профиль</h2><p>Имя видно в кабинете и в подборках по умолчанию.</p></div></div>
+      <div class="st-two">
+        <label class="st-f"><span>Имя</span><input id="stName" maxlength="80" placeholder="Как вас зовут"></label>
+        <label class="st-f"><span>Почта для входа</span><input id="stEmail" disabled></label>
+      </div>
+    </section>
+
+    <section class="st-card">
+      <div class="st-card-h"><span class="st-ic"><i data-ic="grid"></i></span><div><h2>Кабинет</h2>
+        <p>Блоки кабинета можно перетаскивать за заголовок — порядок сохранится в аккаунте.</p></div></div>
+      <div class="st-acts"><a class="pill light" href="/cabinet">Открыть кабинет</a><button type="button" class="chip" id="stResetLayout">Вернуть порядок блоков как было</button></div>
+    </section>
+
+    <section class="st-card">
+      <div class="st-card-h"><span class="st-ic"><i data-ic="shield"></i></span><div><h2>Вход и безопасность</h2><p id="stSessInfo"></p></div></div>
+      <div class="st-acts"><button type="button" class="chip" id="stLogoutAll">Выйти на всех других устройствах</button>
+        <button type="button" class="chip danger" id="stLogout">Выйти</button></div>
+    </section>
+  </div>
+  <p class="st-saved" id="stSaved" aria-live="polite"></p>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
+<script src="/static/icons.js?v=4"></script>
+<script src="/static/pickers.js?v=6"></script>
+<script src="/static/rail.js?v=6"></script>
+<script src="/static/settings.js?v=1"></script>
+<script src="/static/bell.js?v=4"></script>
+</body>
+</html>

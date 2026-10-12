@@ -333,6 +333,24 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   web тоже монтирует ./web (страницы и скрипты одной версии). docker-compose: журналы 3×20 МБ, Caddy без env_file.
   Замер 13.10 на ПК (база ×10 = 8160 объектов, 4 процесса): 1000 пользователей (запрос раз в 1–3 с) — 392 запроса/с,
   0 ошибок, 95 % < 0,04 с; с параллельной записью — без ошибок.
+- 13.10 (день): ВЫПАДАЮЩИЕ СПИСКИ — web/pickers.js подключён на всех страницах и сам заменяет <select>, <select multiple>
+  (галочки, «Готово/Сбросить»), data-pick="chips", input date/time (data-native — не трогать); панель открывается ВНУТРИ
+  открытого <dialog> (иначе браузер делает её «инертной» — значения не нажимались в окне клиента и события); то же для
+  lightbox.js и objview.js. Значение, поменянное кодом (sel.value, новые option, form.reset), кнопка видит сама; повторный
+  Pick.select(sel, opts) дополняет настройки (__pkOpts); opts.remote(q) — поиск на сервере (в событии — любой объект на 1+1).
+  ПЛАНЕР v3: месяц плашками (цвет события planner_events.color, палитра COLORS: gold teal sky violet coral rose lime slate,
+  по умолчанию — по виду), справа «Запланировано» на день (часы, «Сейчас», просроченные), перетаскивание события на день
+  (POST {id, ts} → planner.move), фильтр видов (localStorage plHidden), поиск, счётчики (?from&to → stats).
+  «В РАБОТЕ» — /work (work.*): вкладки статусов, статус одним нажатием, заметка автосохранением, снижение цены (fav_price),
+  /api/favorites отдаёт favorite/touched/fav_price; /?fav=1-ссылки ведут на /work. Счётчики: /api/me → me.counts
+  (plan_today, plan_overdue, work, clients_due…) — кружки в меню слева (rail.js count/hot) и строка «что ждёт внимания» в кабинете.
+  «МОИ ОБЪЕКТЫ» — отдельные страницы /my и /my/edit[?id] (my.*; окно agentDlg больше не открывается, /?agent=1 → /my):
+  подтверждение номера, список, правка по шагам с живой карточкой и чек-листом, фото перетаскиванием.
+  НАСТРОЙКИ — /settings (app/settings.py, users.settings JSON): вид подборок (цвет, обложка /photos/0/<хеш>, подпись, имя и
+  телефон для клиента), профиль, порядок блоков кабинета (cabinet_order; блоки тянут за ⠿), «выйти на других устройствах».
+  ПОДБОРКА для клиента — без «1+1» и ссылок на сервис (иконка house.svg, referrer no-referrer); PICK_DOMAIN в .env —
+  нейтральный адрес: ссылки picks.url, с основного адреса 301, Caddy на нём отдаёт только /c, /api/c, нужные /static и фото.
+  Вход помнится SESSION_DAYS (180) после ПОСЛЕДНЕГО захода (кука продлевается в /api/me). Запросы покупателей — только админу.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
@@ -341,7 +359,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 164 теста
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 169 тестов
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены

@@ -1,0 +1,115 @@
+/* «Мои объекты» (my.js): список, подтверждение номера, правка объявления по шагам */
+.my { max-width: 1240px; margin: 0 auto; padding: 22px 28px 80px; }
+.my-skel i { display: block; height: 120px; margin-bottom: 14px; border-radius: 24px; background: rgba(255, 255, 255, .05); animation: mySk 1.2s ease-in-out infinite alternate; }
+@keyframes mySk { to { opacity: .4; } }
+.my-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px 24px; flex-wrap: wrap; margin-bottom: 18px; }
+.my-head h1 { margin: 0; font: 600 clamp(26px, 3vw, 36px)/1.1 var(--display); letter-spacing: -.02em; }
+.my-head p { margin: 6px 0 0; color: var(--ink-3); font-size: 14.5px; max-width: 640px; }
+.my-add { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; height: 44px; }
+.my-add svg { width: 18px; height: 18px; }
+.my-back { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 8px; color: var(--ink-3); text-decoration: none; font-size: 13.5px; }
+.my-back svg { width: 16px; height: 16px; }
+.my-back:hover { color: var(--gold); }
+.my-card { margin-bottom: 18px; padding: 20px 22px; border-radius: 24px; border: 1px solid var(--glass-line);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .02)); box-shadow: var(--glass-hi); }
+.my-card.my-step { border-color: rgba(227, 203, 143, .4); background: linear-gradient(135deg, rgba(227, 203, 143, .1), rgba(255, 255, 255, .02)); }
+.my-card-h { display: flex; gap: 14px; align-items: flex-start; }
+.my-card-h h2 { margin: 0; font: 600 19px var(--display); }
+.my-card-h p { margin: 4px 0 0; color: var(--ink-3); font-size: 13.5px; line-height: 1.45; }
+.my-ic { display: grid; place-items: center; width: 42px; height: 42px; flex: none; border-radius: 14px; color: var(--gold);
+  background: rgba(227, 203, 143, .12); border: 1px solid rgba(227, 203, 143, .25); }
+.my-ic.ok { color: var(--ok); background: rgba(182, 219, 122, .1); border-color: rgba(182, 219, 122, .3); }
+.my-ic svg { width: 20px; height: 20px; }
+.my-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 0 56px; }
+.my-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: rgba(255, 255, 255, .07); font: 600 14px var(--body); }
+.my-chip svg { width: 15px; height: 15px; color: var(--ok); }
+.my-more { margin: 12px 0 0 56px; }
+.my-more summary { cursor: pointer; color: var(--ink-2); font-size: 13.5px; }
+.my-verify { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.my-verify input { flex: 1; min-width: 220px; max-width: 320px; padding: 12px 16px; border-radius: 14px; border: 1px solid var(--glass-line);
+  background: rgba(0, 0, 0, .16); color: var(--ink); font: 16px var(--body); }
+.my-tabs { margin-bottom: 16px; }
+.my-src { position: absolute; left: 10px; top: 10px; padding: 3px 9px; border-radius: 999px; background: rgba(4, 50, 49, .85); color: var(--ink);
+  font: 600 11px var(--body); font-style: normal; backdrop-filter: blur(6px); }
+.my-meta { display: inline-flex; align-items: center; gap: 5px; margin: 0; font-size: 12px; color: var(--ink-3); }
+.my-meta svg { width: 13px; height: 13px; }
+.my-edit-link, .my-item .pill { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; font-size: 13px; text-decoration: none; }
+.my-item .pill svg { width: 15px; height: 15px; }
+.my-note { font-size: 12px; color: var(--ink-3); }
+.my-rules { display: flex; gap: 10px; align-items: flex-start; margin: 26px 0 0; color: var(--ink-3); font-size: 13px; line-height: 1.5; }
+.my-rules svg { width: 18px; height: 18px; flex: none; margin-top: 1px; }
+
+/* правка */
+.my-edit { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px; align-items: start; }
+.my-form { display: grid; gap: 14px; }
+.my-sec { padding: 20px 22px; border-radius: 24px; border: 1px solid var(--glass-line);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .055), rgba(255, 255, 255, .02)); display: grid; gap: 12px; }
+.my-sec h3 { display: flex; align-items: center; gap: 10px; margin: 0; font: 600 17px var(--display); }
+.my-sec h3 b { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--gold); color: #0f2f2e; font: 700 13px var(--body); }
+.my-seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.my-seg button { padding: 10px 16px; border-radius: 999px; border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .05); color: var(--ink);
+  font: 500 14px var(--body); cursor: pointer; transition: background .2s, border-color .2s, color .2s, transform .25s var(--spring); }
+.my-seg button:hover { background: rgba(255, 255, 255, .1); }
+.my-seg button:active { transform: scale(.95); }
+.my-seg button.on { background: var(--gold); border-color: var(--gold); color: #0f2f2e; font-weight: 600; }
+.my-seg.sm button { padding: 8px 14px; font-size: 13.5px; }
+.my-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.my-grid2 > div[hidden], .my-f[hidden] { display: none; }
+.my-f { display: grid; gap: 6px; }
+.my-f > span { font: 600 11px/1 var(--body); letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); }
+.my-f input, .my-sec textarea { width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--glass-line);
+  background: rgba(0, 0, 0, .16); color: var(--ink); font: 15px var(--body); }
+.my-sec textarea { resize: vertical; line-height: 1.5; }
+.my-f input:focus, .my-sec textarea:focus, .my-price input:focus { outline: none; border-color: rgba(227, 203, 143, .5); box-shadow: 0 0 0 3px rgba(227, 203, 143, .12); }
+.my-f .combo { width: 100%; }
+.my-hint { margin: 0; font-size: 12.5px; color: var(--ink-3); }
+.my-ya { display: inline-flex; align-items: center; gap: 6px; color: var(--gold); font-size: 13px; text-decoration: none; }
+.my-ya svg { width: 15px; height: 15px; }
+.my-price { display: flex; align-items: center; gap: 10px; }
+.my-price input { width: 220px; padding: 14px 16px; border-radius: 16px; border: 1px solid var(--glass-line); background: rgba(0, 0, 0, .16);
+  color: var(--ink); font: 600 24px var(--display); }
+.my-price span { color: var(--ink-2); font-size: 15px; }
+.my-phs { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.my-ph { position: relative; aspect-ratio: 1; border-radius: 14px; overflow: hidden; background: rgba(0, 0, 0, .2); }
+.my-ph img { width: 100%; height: 100%; object-fit: cover; }
+.my-ph em { position: absolute; left: 6px; bottom: 6px; padding: 2px 7px; border-radius: 999px; background: var(--gold); color: #0f2f2e; font: 600 10.5px var(--body); font-style: normal; }
+.my-ph button { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; border: 0;
+  background: rgba(0, 0, 0, .6); color: #fff; cursor: pointer; opacity: 0; transition: opacity .2s; }
+.my-ph button svg { width: 14px; height: 14px; }
+.my-ph:hover button { opacity: 1; }
+@media (hover: none) { .my-ph button { opacity: 1; } }
+.my-ph.add { display: grid; place-content: center; justify-items: center; gap: 4px; cursor: pointer; border: 1.5px dashed var(--glass-line-2); color: var(--ink-3); font-size: 12.5px; }
+.my-ph.add:hover { border-color: var(--gold); color: var(--gold); }
+.my-ph.add svg { width: 24px; height: 24px; }
+.my-drop { display: grid; gap: 8px; padding: 6px; border-radius: 18px; transition: background .2s, box-shadow .2s; }
+.my-drop.over { background: rgba(227, 203, 143, .08); box-shadow: inset 0 0 0 2px var(--gold); }
+
+.my-side { position: sticky; top: 18px; display: grid; gap: 12px; }
+.my-prev { padding: 14px; border-radius: 22px; border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .04); }
+.my-prev-l { margin: 0 0 10px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.my-prev-card { border-radius: 18px; overflow: hidden; background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .07); }
+.my-prev-ph { aspect-ratio: 4 / 3; background: rgba(0, 0, 0, .2); display: grid; place-items: center; }
+.my-prev-ph img { width: 100%; height: 100%; object-fit: cover; }
+.my-prev-ph span { display: grid; justify-items: center; gap: 6px; color: var(--ink-3); font-size: 12px; }
+.my-prev-ph svg { width: 26px; height: 26px; }
+.my-prev-b { display: grid; gap: 3px; padding: 12px 14px 14px; }
+.my-prev-b small { color: var(--gold); font-weight: 600; font-size: 12.5px; }
+.my-prev-b b { font: 600 20px var(--display); }
+.my-prev-b span { font-size: 13px; color: var(--ink-2); }
+.my-prev-b em { font-size: 12px; color: var(--ink-3); font-style: normal; }
+.my-check { list-style: none; margin: 0; padding: 12px 14px; border-radius: 18px; background: rgba(255, 255, 255, .04); display: grid; gap: 7px; }
+.my-check li { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-3); }
+.my-check li svg { width: 16px; height: 16px; color: var(--ink-3); }
+.my-check li.ok { color: var(--ink); }
+.my-check li.ok svg { color: var(--ok); }
+.my-save { width: 100%; height: 50px; font-size: 16px; justify-content: center; }
+.my-status { justify-self: center; }
+@media (max-width: 960px) {
+  .my { padding: 14px 12px 110px; }
+  .my-edit { grid-template-columns: 1fr; }
+  .my-side { position: static; order: -1; }
+  .my-prev { display: none; }
+  .my-save { position: sticky; bottom: 84px; z-index: 5; box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }
+  .my-grid2 { grid-template-columns: 1fr; }
+  .my-chips, .my-more { margin-left: 0; }
+}

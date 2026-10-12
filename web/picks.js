@@ -30,7 +30,7 @@
     clearTimeout(toast.timer);
     toast.timer = setTimeout(() => { try { t.hidePopover(); } catch { t.hidden = true; } }, ms);
   }
-  const link = (p) => `${location.origin}/c/${p.token}`;
+  const link = (p) => p.url || `${location.origin}/c/${p.token}`;   // нейтральный адрес подборок, если задан PICK_DOMAIN
 
   async function load() {
     const r = await call("/api/picks");
@@ -74,7 +74,7 @@
       <div class="pks-share">
         <button type="button" class="pks-btn main" data-copy="${p.id}">🔗 Ссылка</button>
         <button type="button" class="pks-btn" data-share-text="${esc(`${p.title}\n${link(p)}`)}">Поделиться</button>
-        <a class="pks-btn ghosty" href="/c/${esc(p.token)}" target="_blank">👁 Как видит клиент</a>
+        <a class="pks-btn ghosty" href="${esc(link(p))}" target="_blank" rel="noopener">👁 Как видит клиент</a>
       </div>
       ${isOpen ? `<form class="pks-edit" data-edit="${p.id}">
         <label class="agent-field"><span>Название</span><input name="title" maxlength="120" value="${esc(p.title)}"></label>

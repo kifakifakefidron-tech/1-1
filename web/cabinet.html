@@ -13,8 +13,8 @@
 <link rel="stylesheet" href="/static/motion.css?v=34">
 <link rel="stylesheet" href="/static/doc.css?v=2">
 <link rel="stylesheet" href="/static/theme.css?v=14">
-<link rel="stylesheet" href="/static/glass.css?v=13">
-<link rel="stylesheet" href="/static/cabinet.css?v=8">
+<link rel="stylesheet" href="/static/glass.css?v=14">
+<link rel="stylesheet" href="/static/cabinet.css?v=9">
 </head>
 <body class="dash-body">
 <main class="dash">
@@ -32,6 +32,7 @@
         <div>
           <p class="d-date" id="dDate"></p>
           <h1 class="d-hello" id="dHello">Добрый день</h1>
+          <nav class="d-today" id="dToday" aria-label="Что ждёт внимания"></nav>
         </div>
         <div class="d-head-r">
           <span class="d-access" id="dAccess"></span>
@@ -82,7 +83,7 @@
           <div class="d-ava big" id="dAva2"></div>
           <div><h2 id="dName"></h2><p class="note" id="dMail"></p></div>
         </div>
-        <button type="button" class="pill light" id="dLogout">Выйти</button>
+        <div class="d-prof-acts"><a class="pill light" href="/settings">Настройки</a><button type="button" class="pill light" id="dLogout">Выйти</button></div>
         <form class="d-promo" id="dPromo"><input id="dPromoInput" autocomplete="off" placeholder="Промокод" aria-label="Промокод">
           <button type="submit" class="pill light">Применить</button></form>
         <p class="note" id="dPromoMsg" hidden></p>
@@ -108,8 +109,8 @@
 <script src="/static/icons.js?v=4"></script>
 <script src="/static/pickers.js?v=5"></script>
 <script src="/static/max.js?v=1"></script>
-<script src="/static/rail.js?v=3"></script>
-<script src="/static/cabinet.js?v=9"></script>
+<script src="/static/rail.js?v=5"></script>
+<script src="/static/cabinet.js?v=10"></script>
 <script src="/static/objview.js?v=2"></script>
 <script src="/static/bell.js?v=4"></script>
 </body>

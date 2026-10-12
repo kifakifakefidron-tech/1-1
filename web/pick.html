@@ -3,31 +3,32 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Подборка · 1+1</title>
+<title>Подборка</title>
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#035352">
-<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="/static/house.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="/static/style.css?v=25">
 <link rel="stylesheet" href="/static/motion.css?v=34">
-<link rel="stylesheet" href="/static/pick.css?v=1">
+<link rel="stylesheet" href="/static/pick.css?v=2">
 <link rel="stylesheet" href="/static/theme.css?v=14">
-<link rel="stylesheet" href="/static/glass.css?v=13">
+<link rel="stylesheet" href="/static/glass.css?v=14">
 </head>
 <body>
 <main class="pk">
-  <header class="pk-head">
-    <div class="pk-brand"><img src="/static/favicon.svg" alt="" width="34" height="34"><span>Подборка объектов</span></div>
+  <header class="pk-head" id="pkHead">
+    <div class="pk-cover" id="pkCover" hidden></div>
+    <p class="pk-brand" id="pkBrand">Подборка объектов</p>
     <h1 id="pkTitle">Загружаем…</h1>
     <p class="pk-note" id="pkNote" hidden></p>
     <div class="pk-agent" id="pkAgent" hidden></div>
   </header>
   <div class="pk-map" id="pkMap" hidden></div>
   <ol class="pk-list" id="pkList"></ol>
-  <footer class="pk-foot">Подборка сделана в сервисе <a href="/">1+1</a> — поиск объектов Краснодара.</footer>
 </main>
 <div class="pk-agent-bar" id="pkBar" hidden></div>
 <dialog id="pkPhoto" class="pk-photo"><img id="pkPhotoImg" alt=""><button type="button" class="close" id="pkPhotoClose" aria-label="Закрыть">✕</button>
@@ -36,6 +37,6 @@
 <script src="/static/icons.js?v=4"></script>
 <script src="/static/pickers.js?v=5"></script>
 <script src="/static/max.js?v=1"></script>
-<script src="/static/pick.js?v=2"></script>
+<script src="/static/pick.js?v=3"></script>
 </body>
 </html>

@@ -25,6 +25,7 @@
     { href: "/notifications", icon: "bell", tip: "Уведомления", desc: "Новые объекты по поискам, снижение цен", user: true, bell: true },
     { sep: true },
     { href: "/pay", icon: "card", tip: "Подписка", desc: "Доступ к номерам агентов и тарифы" },
+    { href: "/settings", icon: "user", tip: "Настройки", desc: "Профиль, вид подборок для клиентов, вход", user: true },
     { href: "/how", icon: "help", tip: "Как это работает", desc: "Коротко о сервисе и ответы на вопросы" },
     { sep: true, admin: true },
     { href: "/requests", icon: "briefcase", tip: "Запросы покупателей", desc: "Кто что ищет — запросы агентов из чатов (видно только админу)", admin: true },

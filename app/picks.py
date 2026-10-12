@@ -11,7 +11,7 @@ import secrets
 import sqlite3
 import time
 
-from . import parser
+from . import config, parser
 
 MAX_COLLECTIONS = 200
 MAX_ITEMS = 60
@@ -27,10 +27,12 @@ def _phone(v: str) -> str:
 
 
 def _default_contact(conn: sqlite3.Connection, user) -> tuple[str, str]:
-    """Контакт по умолчанию: имя из кабинета и подтверждённый номер агента."""
+    """Контакт по умолчанию: из настроек аккаунта, иначе имя из кабинета и подтверждённый номер агента."""
+    from . import settings
+    st = settings.get(conn, user["id"])
     ph = conn.execute("SELECT phone FROM agent_phones WHERE user_id = ? ORDER BY verified_at DESC LIMIT 1",
                       (user["id"],)).fetchone()
-    return (user["name"] or "").strip(), (ph[0] if ph else "")
+    return (st["pick_name"] or user["name"] or "").strip(), (st["pick_phone"] or (ph[0] if ph else ""))
 
 
 def mine(conn: sqlite3.Connection, user_id: int) -> list[dict]:
@@ -38,6 +40,7 @@ def mine(conn: sqlite3.Connection, user_id: int) -> list[dict]:
     for r in conn.execute("""SELECT c.*, (SELECT COUNT(*) FROM collection_items i WHERE i.collection_id = c.id) AS n
                              FROM collections c WHERE c.user_id = ? ORDER BY c.updated DESC""", (user_id,)):
         d = dict(r)
+        d["url"] = f"{config.PICK_URL}/c/{r['token']}"   # ссылка для клиента (на нейтральном адресе, если он задан)
         d["items"] = [dict(x) for x in conn.execute(
             """SELECT i.listing_id, i.note, i.text, i.pos, l.title, l.price, l.deal, l.is_active, l.photos,
                       l.description AS orig
@@ -150,5 +153,6 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True) -> dic
             "photos": json.loads(r["photos"] or "[]"),
             "description": (r["item_text"] or parser.strip_phones(r["description"] or ""))[:5000],
             "note": r["item_note"] or "", "is_active": r["is_active"]})
+    from . import settings
     return {"title": c["title"], "note": c["note"], "contact_name": c["contact_name"], "contact_phone": c["contact_phone"],
-            "updated": c["updated"], "items": items}
+            "updated": c["updated"], "items": items, "style": settings.public_pick_style(conn, c["user_id"])}

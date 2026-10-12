@@ -92,6 +92,10 @@ ALERT_SILENCE_HOURS = int(os.getenv("ALERT_SILENCE_HOURS", "3"))
 SITE_DOMAIN = os.getenv("SITE_DOMAIN", "localhost:8090").strip()
 SITE_URL = os.getenv("SITE_URL", "").strip() or (
     f"http://{SITE_DOMAIN}" if SITE_DOMAIN.startswith("localhost") else f"https://{SITE_DOMAIN}")
+# Отдельный нейтральный адрес для подборок клиентам (PICK_DOMAIN в .env, например podborka-kvartir.ru): клиент не видит
+# адрес 1+1 и не может перейти на сервис в обход агента. Пусто — подборки открываются на основном адресе.
+PICK_DOMAIN = os.getenv("PICK_DOMAIN", "").strip().lower()
+PICK_URL = f"https://{PICK_DOMAIN}" if PICK_DOMAIN else SITE_URL
 TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "7"))           # бесплатно после подтверждения номера (раз на номер)
 SUB_PRICE = int(os.getenv("SUB_PRICE", "49"))            # ₽ за период
 SUB_DAYS = int(os.getenv("SUB_DAYS", "7"))               # период подписки, дней
