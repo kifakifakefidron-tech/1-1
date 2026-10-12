@@ -306,7 +306,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 160 тестов
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 158 тестов
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены
