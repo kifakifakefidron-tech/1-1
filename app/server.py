@@ -906,6 +906,12 @@ def settings_page(request: Request, body: dict | None = None):
     return _page("settings.html")
 
 
+def service_worker(request: Request, body: dict | None = None):
+    """Помощник приложения на телефоне (web/sw.js) — с корня сайта, всегда свежий."""
+    return FileResponse(WEB / "sw.js", media_type="text/javascript",
+                        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
+
+
 def my_page(request: Request, body: dict | None = None):
     return _page("my.html")   # «Мои объекты» и правка объявления (/my/edit) — одна страница, вид выбирает my.js
 
@@ -1110,6 +1116,18 @@ def api_agent_edit(request: Request, body: dict | None = None):
     if not ok:
         return _err(why, 403 if "управляет" in why or "нет вашего" in why else 400)
     return JSONResponse({"ok": True, "text": why, "items": _agent_items(conn, user)})
+
+
+def api_agent_describe(request: Request, body: dict | None = None):
+    """«Написать красиво»: продающее описание объекта нейросетью (только с доступом; не чаще 30 раз в час)."""
+    user, err = _need_access(request)
+    if err:
+        return err
+    if _too_often(request, "describe", 30, 3600):
+        return _err("Слишком часто — попробуйте через несколько минут.", 429)
+    db.flush(db.get())   # ждём нейросеть — базу не держим
+    text, why = agent.describe(body or {})
+    return JSONResponse({"text": text}) if text else _err(why, 503)
 
 
 def api_agent_photo(request: Request, body: dict | None = None):
@@ -1964,6 +1982,7 @@ routes = [
     Route("/picks", threaded(picks_page)),
     Route("/work", threaded(work_page)),
     Route("/settings", threaded(settings_page)),
+    Route("/sw.js", threaded(service_worker)),
     Route("/my", threaded(my_page)),
     Route("/my/edit", threaded(my_page)),
     Route("/api/settings", threaded(api_settings), methods=["GET", "POST"]),
@@ -1983,6 +2002,7 @@ routes = [
     Route("/api/agent/listings", threaded(api_agent_create), methods=["POST"]),
     Route("/api/agent/listings/{id:int}", threaded(api_agent_edit), methods=["POST"]),
     Route("/api/agent/listings/{id:int}/photos", threaded(api_agent_photo), methods=["POST", "DELETE"]),
+    Route("/api/agent/describe", threaded(api_agent_describe), methods=["POST"]),
     Route("/agent/confirm", threaded(agent_confirm_page)),
     Route("/api/admin/edits", threaded(api_admin_edits), methods=["GET", "POST"]),
     Route("/api/admin/chats", threaded(api_admin_chats), methods=["GET", "POST"]),

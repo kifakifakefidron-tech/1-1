@@ -232,3 +232,22 @@ def test_admin_phone_base(env):
     assert d["phone"] == "+79181112233" and d["listings"][0]["id"] == lid and d["banned"] is False
     r = c.post(f"/api/admin/listings/{lid}/action", json={"action": "price", "price": "6,9"})
     assert r.status_code == 200 and conn.execute("SELECT price FROM listings WHERE id = ?", (lid,)).fetchone()[0] == 6_900_000
+
+
+def test_describe_uses_only_facts_and_strips_phones(monkeypatch):
+    """«Написать красиво»: в запрос к нейросети уходят параметры объекта, телефоны из ответа вырезаются."""
+    from app import config, llm
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "x")
+    seen = {}
+
+    def fake(system, user, **kw):
+        seen["user"] = user
+        return "2-к квартира в ЖК Свобода\n— 58 м², 5/16 этаж\nЗвоните: 8 918 111-22-33"
+
+    monkeypatch.setattr(llm, "ask_text", fake)
+    text, why = agent.describe({"type": "flat", "deal": "sale", "rooms": "2", "area": "58", "floor": "5", "floors": "16",
+                                "complex": "Свобода", "price": "6,5", "description": "Тел 89181112233, хороший ремонт"})
+    assert why == "ok" and "ЖК: Свобода" in seen["user"] and "Площадь: 58 м²" in seen["user"]
+    assert "89181112233" not in seen["user"] and "111-22-33" not in text
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "")
+    assert agent.describe({"type": "flat"})[0] is None

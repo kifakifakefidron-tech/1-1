@@ -65,3 +65,8 @@
   .st-preview { position: static; }
   .st-two { grid-template-columns: 1fr; }
 }
+
+.st-how { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 14px; }
+.st-how div { display: grid; gap: 4px; padding: 12px 14px; border-radius: 16px; background: rgba(255, 255, 255, .05); border: 1px solid var(--glass-line); }
+.st-how b { font-size: 14px; }
+.st-how span { font-size: 13px; color: var(--ink-3); line-height: 1.45; }

@@ -171,7 +171,9 @@
           </section>
           <section class="my-sec"><h3><b>${own ? 5 : 2}</b>Описание</h3>
             <textarea name="description" rows="7" maxlength="3000" placeholder="Что важно: ремонт, мебель, документы, ипотека, обременения… Номер телефона писать не нужно — коллеги увидят ваш подтверждённый номер.">${esc(o.description || "")}</textarea>
-            <p class="my-hint"><span id="myLen">0</span> из 3000</p>
+            <div class="my-ai-row"><p class="my-hint"><span id="myLen">0</span> из 3000</p>
+              <button type="button" class="my-ai" id="myAi">${ic("sparkle")}Написать красиво</button></div>
+            <div class="my-ai-box" id="myAiBox" hidden></div>
           </section>
           <section class="my-sec"><h3><b>${own ? 6 : 3}</b>Фото</h3>${isNew ? `<p class="my-hint">Фото можно будет добавить сразу после публикации — мы откроем этот же объект.</p>` : photosHTML()}</section>
           <p class="err" id="myErr" hidden></p>
@@ -244,6 +246,24 @@
       $("myFiles").addEventListener("change", (e) => { addPhotos([...e.target.files]); e.target.value = ""; });
     }
     updatePreview();
+  }
+  async function writeNice() {   // «Написать красиво»: нейросеть пишет продающий текст по параметрам
+    const btn = $("myAi"), box = $("myAiBox");
+    btn.disabled = true; btn.classList.add("busy");
+    box.hidden = false;
+    box.innerHTML = `<div class="my-ai-wait"><i></i><i></i><i></i><span>Пишем текст по вашим параметрам…</span></div>`;
+    const v = formVals();
+    const r = await call("/api/agent/describe", { ...(own ? v : { type: o.type, deal: o.deal, rooms: o.rooms, area: o.area, land: o.land,
+      floor: o.floor, floors: o.floors, district: o.district, complex: o.complex, street: o.street, house: o.house }),
+      price: v.price, description: $("myForm").description.value, photos: (o.photos || []).length });
+    btn.disabled = false; btn.classList.remove("busy");
+    if (!r.ok) { box.innerHTML = `<p class="err">${esc(r.data.detail || "Не получилось.")}</p>`; return; }
+    box.innerHTML = `<p class="my-ai-l">${ic("sparkle")}Вариант от нейросети — проверьте факты перед публикацией</p>
+      <div class="my-ai-text">${esc(r.data.text)}</div>
+      <div class="my-ai-acts"><button type="button" class="pill" data-ai-use>Вставить в описание</button>
+        <button type="button" class="pill light" data-ai-again>Другой вариант</button>
+        <button type="button" class="chip" data-ai-close>Закрыть</button></div>`;
+    box.dataset.text = r.data.text;
   }
   async function save() {
     const err = $("myErr");
@@ -327,6 +347,16 @@
     }
     const t = e.target.closest("button");
     if (!t) return;
+    if (t.id === "myAi" || t.hasAttribute("data-ai-again")) { writeNice(); return; }
+    if (t.hasAttribute("data-ai-use")) {
+      const ta = $("myForm").description;
+      ta.value = $("myAiBox").dataset.text || ta.value;
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      $("myAiBox").hidden = true;
+      toast("Текст вставлен — не забудьте сохранить");
+      return;
+    }
+    if (t.hasAttribute("data-ai-close")) { $("myAiBox").hidden = true; return; }
     if (t.dataset.tab) { tab = t.dataset.tab; renderList(); return; }
     if (t.dataset.status) { setStatus(Number(t.dataset.id), t.dataset.status); return; }
     if (t.dataset.copy) {

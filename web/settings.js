@@ -119,6 +119,20 @@
   for (const [id, key] of [["stBrand", "pick_brand"], ["stPickName", "pick_name"], ["stPickPhone", "pick_phone"], ["stName", "name"]]) {
     $(id).addEventListener("input", (e) => save({ [key]: e.target.value }));
   }
+  // установка приложения: Android/компьютер — системное окно «Установить»; уже открыто как приложение — так и пишем
+  const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+  $("stInstalled").hidden = !standalone;
+  const showInstall = () => { $("stInstall").hidden = standalone || !window.__installPrompt; };
+  document.addEventListener("oneplus:installable", showInstall);
+  showInstall();
+  $("stInstall").addEventListener("click", async () => {
+    const p = window.__installPrompt;
+    if (!p) return;
+    p.prompt();
+    const r = await p.userChoice;
+    window.__installPrompt = null; showInstall();
+    if (r.outcome === "accepted") toast("Приложение 1+1 появится на экране телефона");
+  });
   document.querySelectorAll("[data-ic]").forEach((el) => { el.outerHTML = ic(el.dataset.ic); });
 
   (async () => {

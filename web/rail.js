@@ -5,6 +5,12 @@
 (() => {
   "use strict";
   const path = location.pathname;
+  // Приложение на экран телефона: помощник (sw.js) + запомнить предложение браузера «установить»
+  if ("serviceWorker" in navigator && !path.startsWith("/c/") && location.protocol === "https:") {
+    navigator.serviceWorker.register("/sw.js").catch(() => { /* без помощника сайт работает как обычно */ });
+  }
+  window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); window.__installPrompt = e;
+    document.dispatchEvent(new Event("oneplus:installable")); });
   if (path === "/pay" || path.startsWith("/c/") || new URLSearchParams(location.search).has("embed")) return;
   const ic = (n) => (window.ic ? window.ic(n) : "");
   const params = new URLSearchParams(location.search);

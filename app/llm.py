@@ -130,3 +130,20 @@ def ask_json(system: str, user: str, max_tokens: int = 3000) -> dict:
     if not isinstance(parsed, dict):
         raise LLMError("ответ не объект")
     return parsed
+
+
+def ask_text(system: str, user: str, max_tokens: int = 1200, temperature: float = 0.7) -> str:
+    """Один запрос с ответом-текстом (например, продающее описание объявления). Бросает LLMError."""
+    body = {"model": config.DEEPSEEK_MODEL, "temperature": temperature, "max_tokens": max_tokens,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user[:8000]}]}
+    req = urllib.request.Request(config.DEEPSEEK_URL, data=json.dumps(body).encode(), method="POST",
+                                 headers={"Authorization": f"Bearer {config.DEEPSEEK_API_KEY}", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read())
+        text = str(data["choices"][0]["message"]["content"] or "").strip()
+    except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError) as e:
+        raise LLMError(str(e)) from e
+    if not text:
+        raise LLMError("пустой ответ")
+    return text

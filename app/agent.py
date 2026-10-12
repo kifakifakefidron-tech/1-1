@@ -439,3 +439,44 @@ def edits_for_admin(conn: sqlite3.Connection, limit: int = 200) -> list[dict]:
                            LEFT JOIN listings l ON l.id = e.listing_id LEFT JOIN users u ON u.id = e.user_id
                            ORDER BY e.id DESC LIMIT ?""", (limit,)).fetchall()
     return [dict(r) for r in rows]
+
+
+# ─── «Написать красиво»: продающее описание объявления нейросетью ───────────
+DESCRIBE_PROMPT = """Ты опытный риелтор в Краснодаре. Напиши продающее описание объекта для риелторских чатов и сайтов.
+Правила:
+- Только факты из данных ниже. Ничего не придумывай: ни ремонта, ни мебели, ни инфраструктуры, ни расстояний, если их нет в данных.
+- Начни с короткого цепляющего заголовка в одну строку (тип, комнаты, ЖК/район, главная выгода).
+- Дальше 3–6 коротких абзацев или списком через «—»: параметры, расположение, что важно покупателю, условия сделки, если они есть.
+- Тон — деловой и тёплый, без восклицательных знаков подряд, без капслока, без хэштегов, смайликов не больше двух.
+- НЕ пиши номера телефонов, ссылки и имена — контакт агента покажется отдельно.
+- Цену пиши так: «6,5 млн ₽» (продажа) или «35 000 ₽ в месяц» (аренда).
+- 600–900 символов. Только текст объявления, без пояснений."""
+TYPE_NAMES = {"flat": "квартира", "room": "комната", "house": "дом", "land": "участок", "commercial": "коммерческое помещение"}
+
+
+def describe(data: dict) -> tuple[str | None, str]:
+    """Текст объявления по параметрам (и прежнему описанию — как источнику фактов)."""
+    from . import llm, parser
+    if not llm.available():
+        return None, "Нейросеть пока не подключена — попросите администратора вписать ключ DeepSeek."
+    def g(k):
+        v = data.get(k)
+        return str(v).strip() if v not in (None, "") else ""
+    facts = [
+        f"Сделка: {'аренда' if data.get('deal') == 'rent' else 'продажа'}",
+        f"Тип: {TYPE_NAMES.get(data.get('type'), g('type') or 'квартира')}",
+        g("rooms") and f"Комнат: {'студия' if g('rooms') == '0' else g('rooms')}",
+        g("area") and f"Площадь: {g('area')} м²", g("land") and f"Участок: {g('land')} сот.",
+        g("floor") and f"Этаж: {g('floor')}" + (f" из {g('floors')}" if g("floors") else ""),
+        g("complex") and f"ЖК: {g('complex')}", g("district") and f"Район: {g('district')}",
+        g("street") and f"Улица: {g('street')}" + (f", дом {g('house')}" if g("house") else ""),
+        g("price") and f"Цена: {g('price')}" + (" ₽ в месяц" if data.get("deal") == "rent" else " (если число маленькое — это млн ₽)"),
+        g("photos") and f"Фото в объявлении: {g('photos')} шт.",
+    ]
+    old = parser.strip_phones(g("description"))[:3000]
+    user = "Данные объекта:\n" + "\n".join(f for f in facts if f) + (f"\n\nПрежний текст агента (источник фактов):\n{old}" if old else "")
+    try:
+        text = llm.ask_text(DESCRIBE_PROMPT, user)
+    except llm.LLMError:
+        return None, "Нейросеть сейчас не ответила — попробуйте через минуту."
+    return parser.strip_phones(text)[:3000], "ok"
