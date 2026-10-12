@@ -230,8 +230,9 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   геокодера. Опечатки улиц: osmaddr.fix_street — 1 ошибка (до 2 в длинных), номер улицы не меняем, «им./имени» и «9-я» =
   «9»; применяется в ingest.save_object ДО learning/dedupe и один раз к старым объектам после каждой загрузки
   (autolearn.fix_streets, state osm_street_fix). На копии базы: 424 дома точно + 69 соседних из 668; сверка с фидом — 10 м.
-  Карта районов для всех: /api/districts/map (districtmap.public_polygons — только source admin/osm, упрощено до ~30 м,
-  ~15 КБ), на карте поиска кнопка «Районы» (localStorage mapDistricts), наведение — название и число, нажатие — район в
+  Карта районов для всех: /api/districts/map (districtmap.public_polygons — есть ≥5 контуров админа: только его чертежи, иначе admin+osm; упрощено до ~10 м,
+  ~15 КБ), на карте поиска кнопка «Районы» (localStorage mapDistricts), контур бирюзовый, названия с zoom ≥ 13 и у выбранных,
+  .leaflet-interactive:focus без outline (был чёрный прямоугольник), без bringToFront на hover (ломал клик); наведение — название и число, нажатие — район в
   фильтр, выбранные подсвечены, пусто — карта летит к району. Заглушка карточки — «Фото у агента», логотип 88 px.
   Свой домен: Caddyfile — блок {$OLD_DOMAINS:http://unused.invalid} → redir на SITE_DOMAIN; шаги в README «Свой домен».
 - `app/geocode.py` — Nominatim

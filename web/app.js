@@ -517,9 +517,16 @@
   // Слой районов: контуры поверх подложки, под метками. Наведение — название и число объектов,
   // нажатие — район в фильтр (ещё раз — убрать). Включается кнопкой «Районы» на карте (запоминается).
   let districtLayer = null, districtShapes = [], districtCounts = new Map();
+  const districtLabels = window.L ? L.layerGroup() : null;
+  // Цвета — hex (Leaflet не понимает CSS-переменные): бирюза 1+1 и шампань
+  const DZ_STYLE = { weight: 2, color: "#035352", opacity: .8, fillColor: "#e3cb8f", fillOpacity: .1, lineJoin: "round" };
+  const DZ_HOVER = { weight: 3, color: "#035352", opacity: 1, fillColor: "#e3cb8f", fillOpacity: .26 };
+  const DZ_ON = { weight: 3.5, color: "#b8892f", opacity: 1, fillColor: "#e3cb8f", fillOpacity: .32 };
+  const DZ_HOVER_ON = { ...DZ_ON, fillOpacity: .42 };
   const dzOn = () => { try { return localStorage.getItem("mapDistricts") !== "0"; } catch { return true; } };
   function initDistrictLayer() {
     map.createPane("districts").style.zIndex = 350;
+    map.on("zoomend", styleDistricts);
     const Ctl = L.Control.extend({
       onAdd() {
         const b = L.DomUtil.create("button", "dz-toggle");
@@ -546,13 +553,12 @@
       try { d = await getJSON("/api/districts/map"); } catch { return; }
       districtLayer = L.layerGroup();
       districtShapes = d.districts.map((z) => {
-        const shape = L.polygon(z.rings, { pane: "districts", weight: 1.2, color: "#c9a85c", opacity: .75,
-          fillColor: "#e3cb8f", fillOpacity: .04, className: "dz-shape" });
+        const shape = L.polygon(z.rings, { pane: "districts", ...DZ_STYLE, className: "dz-shape" });
         shape.bindTooltip(() => {
           const n = districtCounts.get(z.name);
           return `<b>${esc(z.name)}</b><br>${n ? `${num(n)} ${plural(n, "объект", "объекта", "объектов")}` : "пока нет объектов"}`;
         }, { sticky: true, direction: "top", className: "dz-tip", opacity: 1 });
-        shape.on("mouseover", () => shape.setStyle({ fillOpacity: state.districts.includes(z.name) ? .24 : .12, weight: 2 }));
+        shape.on("mouseover", () => shape.setStyle(state.districts.includes(z.name) ? DZ_HOVER_ON : DZ_HOVER));
         shape.on("mouseout", () => styleDistricts());
         shape.on("click", () => {
           const had = state.districts.includes(z.name);
@@ -563,18 +569,26 @@
         });
         shape.zoneName = z.name;
         districtLayer.addLayer(shape);
+        // название района в его середине — видно при приближении (на всём городе — только у выбранных)
+        const label = L.marker(shape.getBounds().getCenter(), { pane: "districts", interactive: false, keyboard: false,
+          icon: L.divIcon({ className: "dz-label-wrap", iconSize: null, html: `<span class="dz-label">${esc(z.name)}</span>` }) });
+        label.zoneName = z.name;
+        districtLabels.addLayer(label);
         return shape;
       });
     }
     districtLayer.addTo(map);
+    districtLabels.addTo(map);
     styleDistricts();
   }
   function styleDistricts() {
-    for (const sh of districtShapes) {
-      const on = state.districts.includes(sh.zoneName);
-      sh.setStyle(on ? { weight: 2.4, color: "#e3cb8f", opacity: 1, fillOpacity: .18 }
-        : { weight: 1.2, color: "#c9a85c", opacity: .75, fillOpacity: .04 });
-    }
+    for (const sh of districtShapes) sh.setStyle(state.districts.includes(sh.zoneName) ? DZ_ON : DZ_STYLE);
+    const zoomed = map && map.getZoom() >= 13;
+    districtLabels.eachLayer((l) => {
+      const el = l.getElement();
+      if (el) el.classList.toggle("show", zoomed || state.districts.includes(l.zoneName));
+      if (el) el.classList.toggle("on", state.districts.includes(l.zoneName));
+    });
   }
 
   function popupHTML(p, extra) {

@@ -481,24 +481,26 @@ def _simplify(ring: list, tol: float) -> list:
 
 
 def public_polygons(conn: sqlite3.Connection) -> list[dict]:
-    """Контуры районов для карты на сайте: только нарисованные админом и из OpenStreetMap (© OSM, ODbL).
-    Чужие карты (источник 'neagent' и т. п.) не публикуем."""
-    key = conn.execute("""SELECT COUNT(*), MAX(ts) FROM district_polygons
-                          WHERE kind = 'district' AND source IN ('admin', 'osm')""").fetchone()
-    key = tuple(key)
+    """Контуры районов для карты на сайте. Если админ обвёл районы сам (5 и больше) — показываем ТОЛЬКО его чертежи;
+    иначе — его и из OpenStreetMap (© OSM, ODbL). Чужие карты (источник 'neagent' и т. п.) не публикуем."""
+    key = tuple(conn.execute("""SELECT COUNT(*), MAX(ts), SUM(source = 'admin') FROM district_polygons
+                                WHERE kind = 'district' AND source IN ('admin', 'osm')""").fetchone())
     if _public["key"] != key:
+        sources = ("admin",) if (key[2] or 0) >= 5 else ("admin", "osm")
         out, seen = [], set()
-        # у района есть и свой контур, и из OSM — показываем свой (он первым); большие — снизу, маленькие — сверху
-        for r in conn.execute("""SELECT name, polys FROM district_polygons WHERE kind = 'district' AND source IN ('admin', 'osm')
-                                 ORDER BY source = 'admin' DESC, area DESC"""):
+        # у района есть и свой контур, и из OSM — показываем свой (он первым)
+        for r in conn.execute(f"""SELECT name, polys FROM district_polygons
+                                  WHERE kind = 'district' AND source IN ({",".join("?" * len(sources))})
+                                  ORDER BY source = 'admin' DESC, area DESC""", sources):
             name = geo.canonical_district(r["name"]) or r["name"]
             if name in seen:
                 continue
             seen.add(name)
-            rings = [[(round(p[0], 5), round(p[1], 5)) for p in _simplify(ring, 0.0003)] for ring in json.loads(r["polys"])]
+            # упрощаем до ~10 м: форма как нарисована, а точек меньше
+            rings = [[(round(p[0], 5), round(p[1], 5)) for p in _simplify(ring, 0.0001)] for ring in json.loads(r["polys"])]
             rings = [x for x in rings if len(x) >= 3]
             if rings:
                 out.append({"name": name, "rings": rings, "area": sum(_area(x) for x in rings)})
-        out.sort(key=lambda x: -x["area"])
+        out.sort(key=lambda x: -x["area"])   # большие — снизу, маленькие — сверху (на них можно навести)
         _public.update(key=key, data=[{"name": x["name"], "rings": x["rings"]} for x in out])
     return _public["data"]
