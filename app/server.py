@@ -327,6 +327,13 @@ def api_map(request: Request, body: dict | None = None):
     return _cached(request, lambda: search.map_points(db.get(), query_from(request), int(time.time())))
 
 
+def api_districts_map(request: Request, body: dict | None = None):
+    """Контуры районов для слоя на карте поиска (для всех; © OpenStreetMap и свои)."""
+    r = JSONResponse({"districts": districtmap.public_polygons(db.get())})
+    r.headers["Cache-Control"] = "public, max-age=600"
+    return r
+
+
 def api_stats(request: Request, body: dict | None = None):
     conn = db.get()
     one = lambda sql, *p: conn.execute(sql, p).fetchone()[0]  # noqa: E731
@@ -1058,7 +1065,7 @@ _GEO_QUEUE = {
     # ещё ищем (геокодер не успел)
     "pending": "l.lat IS NULL AND l.geo_status = 'pending'",
     # точку поставил сервис сам (фид, ЖК на карте, центр района) — проверить выборочно
-    "auto": "l.geo_src IN ('feed-house', 'feed-cx', 'map-cx', 'map-district') AND l.geo_status NOT IN ('manual', 'feed')",
+    "auto": "l.geo_src IN ('feed-house', 'feed-cx', 'map-cx', 'map-district', 'osm-house', 'osm-near', 'osm-street') AND l.geo_status NOT IN ('manual', 'feed')",
 }
 _VISIBLE = "l.is_active = 1 AND (l.district IS NOT NULL OR l.complex IS NOT NULL OR l.street IS NOT NULL OR l.settlement IS NOT NULL)"
 
@@ -1614,6 +1621,7 @@ routes = [
     Route("/api/listings/{id:int}", threaded(api_listing)),
     Route("/api/facets", threaded(api_facets)),
     Route("/api/map", threaded(api_map)),
+    Route("/api/districts/map", threaded(api_districts_map)),
     Route("/api/stats", threaded(api_stats)),
     Route("/api/login", threaded(api_login), methods=["POST"]),
     Route("/api/auth/tg/start", threaded(api_tg_start), methods=["POST"]),

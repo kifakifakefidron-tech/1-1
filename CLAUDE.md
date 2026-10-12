@@ -223,6 +223,17 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   этого ЖК/дома» первыми; на карте — контур района объекта, метка без точки — в центре района, /api/admin/fix?at=lat,lon —
   район под меткой и предупреждение «точка в другом районе»; ручная точка без района → район по контуру.
   Админка «Обзор»: «Сервис сам поставил точек / районов» со ссылкой на проверку.
+- 12.10 ночь — СВОЙ СПРАВОЧНИК АДРЕСОВ (app/osmaddr.py, таблица osm_addr): worker раз в 30 дней (osmaddr.maybe_refresh)
+  качает из Overpass все дома с адресом в BBOX (CSV, ~190 тыс., ~12 МБ, ~20 с; JSON-вариант весил 52 МБ и шёл 4 мин).
+  Поиск у себя: дом (osm-house, «62/1 корпус 3» = «62/1к3») → соседний номер той же чётности ±4 (osm-near) → после ЖК —
+  середина улицы (osm-street, approx); город — addr:city («ст. Елизаветинская» ≠ Краснодар). Проверка plausible как у
+  геокодера. Опечатки улиц: osmaddr.fix_street — 1 ошибка (до 2 в длинных), номер улицы не меняем, «им./имени» и «9-я» =
+  «9»; применяется в ingest.save_object ДО learning/dedupe и один раз к старым объектам после каждой загрузки
+  (autolearn.fix_streets, state osm_street_fix). На копии базы: 424 дома точно + 69 соседних из 668; сверка с фидом — 10 м.
+  Карта районов для всех: /api/districts/map (districtmap.public_polygons — только source admin/osm, упрощено до ~30 м,
+  ~15 КБ), на карте поиска кнопка «Районы» (localStorage mapDistricts), наведение — название и число, нажатие — район в
+  фильтр, выбранные подсвечены, пусто — карта летит к району. Заглушка карточки — «Фото у агента», логотип 88 px.
+  Свой домен: Caddyfile — блок {$OLD_DOMAINS:http://unused.invalid} → redir на SITE_DOMAIN; шаги в README «Свой домен».
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
@@ -231,7 +242,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 135 тестов
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 140 тестов
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены

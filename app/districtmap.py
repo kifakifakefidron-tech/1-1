@@ -449,3 +449,56 @@ def set_districts(conn: sqlite3.Connection, items: list[dict], remember_complex:
             conn.commit()
             learning.rules(conn, fresh=True)
     return {"listings": n}
+
+
+# ─── карта районов для всех (слой на карте поиска) ─────────────────────────
+_public: dict = {"key": None, "data": None}
+
+
+def _simplify(ring: list, tol: float) -> list:
+    """Упростить контур (Дуглас — Пекер): ~30 м точности хватает, а точек в разы меньше."""
+    if len(ring) < 8:
+        return ring
+    keep = [False] * len(ring)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(ring) - 1)]
+    while stack:
+        a, b = stack.pop()
+        (y1, x1), (y2, x2) = ring[a], ring[b]
+        dx, dy = x2 - x1, y2 - y1
+        norm2 = dx * dx + dy * dy or 1e-18
+        best, idx = 0.0, None
+        for i in range(a + 1, b):
+            y, x = ring[i]
+            t = max(0.0, min(1.0, ((x - x1) * dx + (y - y1) * dy) / norm2))
+            d = (x - x1 - t * dx) ** 2 + (y - y1 - t * dy) ** 2
+            if d > best:
+                best, idx = d, i
+        if idx is not None and best > tol * tol:
+            keep[idx] = True
+            stack += [(a, idx), (idx, b)]
+    return [p for p, k in zip(ring, keep) if k]
+
+
+def public_polygons(conn: sqlite3.Connection) -> list[dict]:
+    """Контуры районов для карты на сайте: только нарисованные админом и из OpenStreetMap (© OSM, ODbL).
+    Чужие карты (источник 'neagent' и т. п.) не публикуем."""
+    key = conn.execute("""SELECT COUNT(*), MAX(ts) FROM district_polygons
+                          WHERE kind = 'district' AND source IN ('admin', 'osm')""").fetchone()
+    key = tuple(key)
+    if _public["key"] != key:
+        out, seen = [], set()
+        # у района есть и свой контур, и из OSM — показываем свой (он первым); большие — снизу, маленькие — сверху
+        for r in conn.execute("""SELECT name, polys FROM district_polygons WHERE kind = 'district' AND source IN ('admin', 'osm')
+                                 ORDER BY source = 'admin' DESC, area DESC"""):
+            name = geo.canonical_district(r["name"]) or r["name"]
+            if name in seen:
+                continue
+            seen.add(name)
+            rings = [[(round(p[0], 5), round(p[1], 5)) for p in _simplify(ring, 0.0003)] for ring in json.loads(r["polys"])]
+            rings = [x for x in rings if len(x) >= 3]
+            if rings:
+                out.append({"name": name, "rings": rings, "area": sum(_area(x) for x in rings)})
+        out.sort(key=lambda x: -x["area"])
+        _public.update(key=key, data=[{"name": x["name"], "rings": x["rings"]} for x in out])
+    return _public["data"]

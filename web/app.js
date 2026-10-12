@@ -295,6 +295,7 @@
     try { f = await getJSON(`/api/facets?${apiParams()}`); } catch { return; }
     if (seq !== reqSeq) return;
     const counts = new Map(f.districts.map((d) => [d.name, d.n]));
+    districtCounts = counts;
     const names = [...f.districts.map((d) => d.name), ...state.districts.filter((d) => !counts.has(d))];
     $("districts").innerHTML = names.length
       ? names.map((n) => {
@@ -408,7 +409,7 @@
           <button type="button" class="ph-nav prev" data-ph-step="-1" aria-label="Предыдущее фото">${ic("chevron-left")}</button>
           <button type="button" class="ph-nav next" data-ph-step="1" aria-label="Следующее фото">${ic("chevron")}</button>
           <span class="ph-count">1 / ${n}</span>` : ""}</div>`
-      : `<div class="item-photo none" aria-hidden="true">${LOGO}<span>Фото нет</span></div>`;
+      : `<div class="item-photo none" aria-hidden="true">${LOGO}<span>Фото у агента</span></div>`;
     const fav = me() && me().favorites.includes(o.id);
     const addr = address(o);
     return `<li class="item has-photo${hit ? " hit" : ""}" tabindex="0" data-id="${o.id}">
@@ -506,10 +507,74 @@
       },
     }) : L.layerGroup();
     map.addLayer(cluster);
+    initDistrictLayer();
     $("mapBox").addEventListener("click", (e) => {
       const b = e.target.closest("[data-open]");
       if (b) openDetail(Number(b.dataset.open));
     });
+  }
+
+  // Слой районов: контуры поверх подложки, под метками. Наведение — название и число объектов,
+  // нажатие — район в фильтр (ещё раз — убрать). Включается кнопкой «Районы» на карте (запоминается).
+  let districtLayer = null, districtShapes = [], districtCounts = new Map();
+  const dzOn = () => { try { return localStorage.getItem("mapDistricts") !== "0"; } catch { return true; } };
+  function initDistrictLayer() {
+    map.createPane("districts").style.zIndex = 350;
+    const Ctl = L.Control.extend({
+      onAdd() {
+        const b = L.DomUtil.create("button", "dz-toggle");
+        b.type = "button";
+        b.innerHTML = `${ic("map")}<span>Районы</span>`;
+        b.classList.toggle("on", dzOn());
+        L.DomEvent.disableClickPropagation(b);
+        b.addEventListener("click", () => {
+          const on = !dzOn();
+          try { localStorage.setItem("mapDistricts", on ? "1" : "0"); } catch { /* */ }
+          b.classList.toggle("on", on);
+          showDistricts();
+        });
+        return b;
+      },
+    });
+    new Ctl({ position: "topleft" }).addTo(map);
+    showDistricts();
+  }
+  async function showDistricts() {
+    if (!dzOn()) { if (districtLayer) districtLayer.remove(); return; }
+    if (!districtLayer) {
+      let d;
+      try { d = await getJSON("/api/districts/map"); } catch { return; }
+      districtLayer = L.layerGroup();
+      districtShapes = d.districts.map((z) => {
+        const shape = L.polygon(z.rings, { pane: "districts", weight: 1.2, color: "#c9a85c", opacity: .75,
+          fillColor: "#e3cb8f", fillOpacity: .04, className: "dz-shape" });
+        shape.bindTooltip(() => {
+          const n = districtCounts.get(z.name);
+          return `<b>${esc(z.name)}</b><br>${n ? `${num(n)} ${plural(n, "объект", "объекта", "объектов")}` : "пока нет объектов"}`;
+        }, { sticky: true, direction: "top", className: "dz-tip", opacity: 1 });
+        shape.on("mouseover", () => shape.setStyle({ fillOpacity: state.districts.includes(z.name) ? .24 : .12, weight: 2 }));
+        shape.on("mouseout", () => styleDistricts());
+        shape.on("click", () => {
+          const had = state.districts.includes(z.name);
+          toggle(state.districts, z.name);
+          toast(had ? `Район «${z.name}» убран из фильтра` : `Показываем район «${z.name}»`);
+          syncControls();
+          refresh();
+        });
+        shape.zoneName = z.name;
+        districtLayer.addLayer(shape);
+        return shape;
+      });
+    }
+    districtLayer.addTo(map);
+    styleDistricts();
+  }
+  function styleDistricts() {
+    for (const sh of districtShapes) {
+      const on = state.districts.includes(sh.zoneName);
+      sh.setStyle(on ? { weight: 2.4, color: "#e3cb8f", opacity: 1, fillOpacity: .18 }
+        : { weight: 1.2, color: "#c9a85c", opacity: .75, fillOpacity: .04 });
+    }
   }
 
   function popupHTML(p, extra) {
@@ -562,6 +627,7 @@
       : `На карте все ${num(res.total)} ${plural(res.total, "объект", "объекта", "объектов")}.`;
     $("mapNote").hidden = !res.total;
     cluster.clearLayers();
+    styleDistricts();
     const markers = pts.map((p) => {
       const icon = L.divIcon({
         className: "pin-wrap", iconSize: null,
@@ -573,7 +639,9 @@
       return mk;
     });
     if (cluster.addLayers) cluster.addLayers(markers); else markers.forEach((m) => cluster.addLayer(m));
+    const chosen = districtShapes.filter((sh) => state.districts.includes(sh.zoneName));
     if (markers.length) map.flyToBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lon])).pad(0.1), { maxZoom: 15, duration: 0.6 });
+    else if (chosen.length) map.flyToBounds(chosen.reduce((b, sh) => b.extend(sh.getBounds()), L.latLngBounds([])).pad(0.1), { maxZoom: 15, duration: 0.6 });   // объектов нет — к району
     setTimeout(() => map.invalidateSize(), 0);
   }
 

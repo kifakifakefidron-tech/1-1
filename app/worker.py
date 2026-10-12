@@ -34,7 +34,9 @@ def tick(conn) -> dict:
     llm.failures = 0
     stats["processed"] = ingest.process_pending(conn, limit=300, budget_s=60)
     stats["queue"] = conn.execute("SELECT COUNT(*) FROM messages WHERE status='new'").fetchone()[0]
-    from . import autolearn
+    from . import autolearn, osmaddr
+    if osmaddr.maybe_refresh(conn):   # справочник адресов OSM — раз в месяц (≈20 с)
+        stats["osm_addr"] = osmaddr.loaded(conn)
     learned = autolearn.run(conn)   # точки и районы из уже известного (фид, ЖК, контуры районов, соседние объявления)
     if learned.get("points") or learned.get("districts") or learned.get("recheck"):
         stats["autolearn"] = learned

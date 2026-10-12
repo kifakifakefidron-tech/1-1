@@ -277,6 +277,19 @@ def _streets() -> list[tuple[str, list[str]]]:
     return out
 
 
+@lru_cache(maxsize=1)
+def street_names() -> list[str]:
+    """Названия улиц справочника для показа: «Абаканская», «А.В. Дёмина» (без «улица» и уточнений в скобках)."""
+    out = []
+    for s in _raw()["streets"]:
+        name = re.sub(r"\(.*?\)", " ", s.get("display") or s["name"])
+        name = re.sub(r"(?i)\b(?:улица|ул|проспект|пр-т|переулок|пер|проезд|бульвар|шоссе|площадь)\b\.?", " ", name)
+        name = " ".join(name.split())
+        if len(name) >= 3:
+            out.append(name[:1].upper() + name[1:])
+    return out
+
+
 def district_by_street(street: str | None) -> str | None:
     """Район по улице — только если улица целиком в одном районе."""
     w = words(street)

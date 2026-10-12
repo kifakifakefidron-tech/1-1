@@ -141,9 +141,9 @@ dialog::backdrop { background: rgba(2, 30, 29, .55); -webkit-backdrop-filter: bl
 .item-photo { position: relative; aspect-ratio: 4 / 3; overflow: hidden; }
 .item-photo.none { display: grid; place-items: center; align-content: center; gap: 6px; color: var(--ink-3);
   background: linear-gradient(160deg, rgba(243, 232, 188, .06), rgba(243, 232, 188, .015)); }
-.item-photo.none .logo { width: 46px; height: 46px; opacity: .35; }
+.item-photo.none .logo { width: 88px; height: 88px; opacity: .5; }
 .item-photo.none .logo .walls path { animation: none; stroke-dashoffset: 0; }
-.item-photo.none span { font-size: 12px; letter-spacing: .04em; }
+.item-photo.none span { font-size: 13px; letter-spacing: .03em; opacity: .85; }
 .ph-nav { position: absolute; top: 50%; z-index: 2; width: 34px; height: 34px; margin-top: -17px; border: 0; border-radius: 50%;
   display: grid; place-items: center; background: rgba(3, 40, 39, .55); color: #fff; cursor: pointer; opacity: 0;
   -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); transition: opacity var(--dur-2) var(--ease), background var(--dur-1); }
@@ -308,3 +308,18 @@ dialog .close { width: 38px; height: 38px; border-radius: 50%; border: 1px solid
 dialog .close:hover { background: rgba(243, 232, 188, .12); }
 dialog .close .ic { width: 17px; height: 17px; margin: 0; }
 .fx-pd-acts a, .fx-pd-acts a:visited { color: var(--ink); }
+
+/* Слой районов на карте поиска: кнопка «Районы» и подсказка при наведении */
+.dz-toggle { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--gold) 40%, transparent); cursor: pointer; font: 500 13px/1 inherit;
+  background: color-mix(in srgb, var(--bg, #035352) 82%, transparent); color: var(--ink-2, #f3e8bc);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: var(--sh-1);
+  transition: background var(--dur-2, .25s) var(--ease), color var(--dur-2, .25s) var(--ease); }
+.dz-toggle svg { width: 16px; height: 16px; }
+.dz-toggle.on { background: var(--gold); color: #12302f; border-color: var(--gold); }
+.leaflet-tooltip.dz-tip { background: color-mix(in srgb, var(--bg, #035352) 92%, transparent); color: var(--ink, #f3e8bc);
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent); border-radius: 10px; padding: 6px 10px;
+  font: 13px/1.35 inherit; box-shadow: var(--sh-1); }
+.leaflet-tooltip.dz-tip::before { display: none; }
+.leaflet-tooltip.dz-tip b { color: var(--gold); font-weight: 600; }
+.dz-shape { transition: fill-opacity .2s ease, stroke-width .2s ease; }

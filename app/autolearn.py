@@ -17,7 +17,7 @@ import sqlite3
 import time
 from collections import Counter, defaultdict
 
-from . import districtmap, geocode, learning
+from . import districtmap, geocode, learning, osmaddr
 
 log = logging.getLogger(__name__)
 
@@ -28,6 +28,8 @@ OUT_OF_DISTRICT_KM = 1.0  # точка дальше этого за контур
 GENERIC_CX = {"жилой квартал", "жилой комплекс", "жилой дом", "квартал", "парк", "центр"}   # слово, а не название: точку не ставим
 GEO_SRC = {"feed-house": "тот же дом в фиде СТРЕЛ", "feed-cx": "ЖК по объектам фида СТРЕЛ",
            "map-cx": "центр ЖК на карте районов", "map-district": "центр района на карте (примерно)",
+           "osm-house": "дом в справочнике адресов OSM", "osm-near": "соседний дом той же улицы (OSM)",
+           "osm-street": "середина улицы (OSM, примерно)",
            "learned": "ваши правки точек", "geocoder": "поиск по адресу (проверен)"}
 DISTRICT_SRC = {"map": "по карте районов (точка внутри контура)", "vote-house": "так в других объявлениях этого дома",
                 "vote-cx": "так в других объявлениях этого ЖК"}
@@ -117,9 +119,14 @@ class Known:
         k = learning.addr_key(row["street"], row["house"], row["settlement"])
         if k and k in self.house:
             return *self.house[k], "ok", "feed-house"
+        osm = osmaddr.point(self.conn, row["street"], row["house"], row["settlement"]) if row["street"] else None
+        if osm and osm[2] == "ok" and self.plausible(row, osm[0], osm[1]):   # дом из справочника OSM
+            return osm
         hit = self.cx_point(row)
         if hit:
             return *hit[0], "ok", hit[1]
+        if osm and self.plausible(row, osm[0], osm[1]):   # дома нет — середина улицы (примерно)
+            return osm
         return None
 
     def district_center(self, name: str | None):
@@ -172,6 +179,26 @@ def recheck_geocoder(conn: sqlite3.Connection, known: Known | None = None) -> in
         if not known.plausible(r, r["lat"], r["lon"]):
             conn.execute("UPDATE listings SET lat = NULL, lon = NULL, geo_status = 'pending' WHERE id = ?", (r["id"],))
             n += 1
+    conn.commit()
+    return n
+
+
+def fix_streets(conn: sqlite3.Connection) -> int:
+    """Опечатки в улицах уже собранных объектов («Командоская» → «Командорская»); точку ищем заново."""
+    from .ingest import _reindex, make_search_text
+    n = 0
+    for r in conn.execute("""SELECT * FROM listings WHERE is_active = 1 AND street IS NOT NULL AND admin_fixed = 0
+                             AND source != 'own'""").fetchall():
+        new = osmaddr.fix_street(conn, r["street"])
+        if not new or new == r["street"]:
+            continue
+        d = {**dict(r), "street": new}
+        d["search_text"] = make_search_text(d)
+        conn.execute("""UPDATE listings SET street = ?, search_text = ?,
+                        geo_status = CASE WHEN geo_status IN ('manual', 'learned', 'feed') THEN geo_status ELSE 'pending' END
+                        WHERE id = ?""", (new, d["search_text"], r["id"]))
+        _reindex(conn, r["id"], d["search_text"])
+        n += 1
     conn.commit()
     return n
 
@@ -258,6 +285,12 @@ def run(conn: sqlite3.Connection) -> dict:
     if conn.execute("SELECT value FROM state WHERE key = 'autolearn_v1'").fetchone() is None:
         out["recheck"] = recheck_geocoder(conn, known)   # один раз: старые ответы геокодера — на проверку
         conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('autolearn_v1', '1')")
+        conn.commit()
+    ver = conn.execute("SELECT value FROM state WHERE key = 'osm_addr_ts'").fetchone()
+    done = conn.execute("SELECT value FROM state WHERE key = 'osm_street_fix'").fetchone()
+    if ver and (done is None or done[0] != ver[0]):   # справочник адресов обновился — исправить опечатки в улицах
+        out["streets"] = fix_streets(conn)
+        conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('osm_street_fix', ?)", (ver[0],))
         conn.commit()
     out["points"] = fill_points(conn, known)
     out.update(fill_districts(conn))

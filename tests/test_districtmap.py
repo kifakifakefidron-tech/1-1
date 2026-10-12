@@ -69,3 +69,13 @@ def test_remember_street_rule(conn, add):
     districtmap.set_districts(conn, [{"id": lid, "district": "Гидрострой"}],
                               remember_street={"name": "Тихорецкая", "district": "Гидрострой"})
     assert any(r["kind"] == "street" and "Тихорецкая" in (r["label"] or "") for r in learning.list_rules(conn))
+
+
+def test_public_contours_only_own_and_osm(conn):
+    districtmap._cache.update(t=0.0, polys=[])
+    districtmap._public.update(key=None, data=None)
+    districtmap.import_map(conn, XML.encode())   # «чужая» карта (источник neagent) — на сайт не попадает
+    assert districtmap.public_polygons(conn) == []
+    districtmap.save_polygon(conn, "ФМР", "district", [[(45.04, 38.99), (45.04, 39.02), (45.06, 39.02), (45.06, 38.99)]])
+    pub = districtmap.public_polygons(conn)
+    assert [p["name"] for p in pub] == ["ФМР"] and len(pub[0]["rings"][0]) >= 4

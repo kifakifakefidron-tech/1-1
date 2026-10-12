@@ -9,7 +9,7 @@ import shutil
 import time
 from pathlib import Path
 
-from . import config, dedupe, learning, parser, rules
+from . import config, dedupe, learning, osmaddr, parser, rules
 from .rules import TYPE_LABELS, rooms_mask
 from .textnorm import norm, words
 
@@ -82,6 +82,7 @@ def _price_m2(price, area) -> int | None:
 def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: int | None, ts: int) -> tuple[int, str]:
     """Создаёт новый объект или обновляет найденный дубль. Возвращает (id, как сопоставили)."""
     # Правки админа (ЖК/район) — до поиска дублей: объявление совпадёт с уже исправленной карточкой
+    osmaddr.apply(conn, o)      # опечатка в улице («Командоская») — до правил и дублей: одна улица, а не две
     learning.apply(conn, o)
     fh = dedupe.fragment_hash(o.fragment)
     d = o.to_dict()

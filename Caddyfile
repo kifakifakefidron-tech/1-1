@@ -5,3 +5,9 @@
 	header @static Cache-Control "public, max-age=31536000, immutable"
 	reverse_proxy web:8090
 }
+
+# Прежние адреса (OLD_DOMAINS в .env, через запятую: «31-130-132-118.sslip.io, www.ваш-домен.ru») —
+# навсегда перенаправляются на SITE_DOMAIN: старые ссылки, подборки и подписки календаря продолжают работать.
+{$OLD_DOMAINS:http://unused.invalid} {
+	redir https://{$SITE_DOMAIN}{uri} permanent
+}

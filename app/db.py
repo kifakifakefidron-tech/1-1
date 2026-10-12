@@ -174,6 +174,12 @@ CREATE TABLE IF NOT EXISTS saved_searches (
     sent_at INTEGER, active INTEGER NOT NULL DEFAULT 1
 );
 -- Выученные точки: админ поправил объект на карте → эта точка для того же дома/ЖК во всех объявлениях
+-- Справочник адресов из OpenStreetMap (app/osmaddr.py): дом → точка
+CREATE TABLE IF NOT EXISTS osm_addr (
+    street_key TEXT NOT NULL, street TEXT NOT NULL, house_key TEXT NOT NULL, city TEXT NOT NULL DEFAULT '',
+    lat REAL NOT NULL, lon REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_osm_addr ON osm_addr (street_key, house_key);
 CREATE TABLE IF NOT EXISTS geo_learned (
     key TEXT PRIMARY KEY,            -- addr:<посёлок>|<улица>|<дом>  или  cx:<ЖК>
     lat REAL NOT NULL, lon REAL NOT NULL, n INTEGER NOT NULL DEFAULT 1, ts INTEGER NOT NULL, label TEXT
