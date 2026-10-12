@@ -12,8 +12,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css?v=25">
 <link rel="stylesheet" href="/static/motion.css?v=34">
-<link rel="stylesheet" href="/static/admin.css?v=8">
-<link rel="stylesheet" href="/static/theme.css?v=1">
+<link rel="stylesheet" href="/static/admin.css?v=9">
+<link rel="stylesheet" href="/static/theme.css?v=12">
 </head>
 <body>
 <header class="top">
@@ -35,6 +35,7 @@
       <button class="seg" data-tab="geo">Карта</button>
       <button class="seg" data-tab="place">ЖК и районы</button>
       <button class="seg" data-tab="districts">Справочник</button>
+      <button class="seg" data-tab="phones">Номера</button>
       <button class="seg" data-tab="banned">Удалённые</button>
     </nav>
 
@@ -139,6 +140,14 @@
       </div>
     </section>
 
+    <section data-pane="phones" hidden>
+      <p class="note">База номеров: сколько объектов у номера, удалить всё от номера или отдельные объекты, вернуть.</p>
+      <form class="inline-form adm-search" id="phoneSearch"><input id="phoneQ" placeholder="Поиск по цифрам номера" inputmode="tel">
+        <button class="pill light">Найти</button></form>
+      <div class="ph-wrap"><div class="adm-table-wrap"><table class="adm-table" id="phonesTable"></table></div>
+        <div class="ph-detail" id="phoneDetail"><p class="note">Выберите номер слева.</p></div></div>
+    </section>
+
     <section data-pane="banned" hidden>
       <p class="note">Объекты, удалённые вами навсегда: их повторы и тот же объект в новых сообщениях на сайт не попадают.</p>
       <div class="adm-table-wrap"><table class="adm-table" id="bannedPhones"></table></div>
@@ -152,8 +161,8 @@
   </div>
 </main>
 <div class="chat-toast" id="chatToast" hidden></div>
-<script src="/static/icons.js?v=2"></script>
+<script src="/static/icons.js?v=3"></script>
 <script src="/static/combo.js?v=2"></script>
-<script src="/static/admin.js?v=17"></script>
+<script src="/static/admin.js?v=19"></script>
 </body>
 </html>

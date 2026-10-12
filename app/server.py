@@ -1059,6 +1059,20 @@ _GEO_QUEUE = {
 _VISIBLE = "l.is_active = 1 AND (l.district IS NOT NULL OR l.complex IS NOT NULL OR l.street IS NOT NULL OR l.settlement IS NOT NULL)"
 
 
+def _parse_admin_price(v, deal: str) -> int | None:
+    """«3,2» → 3 200 000 (продажа, млн); «35» → 35 000 (аренда, тыс.); «3 200 000» — как есть."""
+    s = re.sub(r"[^\d,.]", "", str(v or "")).replace(",", ".")
+    try:
+        x = float(s)
+    except ValueError:
+        return None
+    if deal == "rent":
+        x = x * 1000 if x < 1000 else x
+    else:
+        x = x * 1e6 if x < 1000 else x * 1000 if x < 100_000 else x
+    return int(round(x)) if 1000 <= x <= 5_000_000_000 else None
+
+
 def api_admin_place(request: Request, body: dict | None = None):
     """Админ поправил ЖК/район объекта и (по желанию) научил сервис.
     {complex, district, learn: {addr, alias, cx_district}}"""
@@ -1087,6 +1101,13 @@ def api_admin_place(request: Request, body: dict | None = None):
         if x and x != district and x not in extra:
             extra.append(x)
     learned = learning.learn(conn, row, cx, district, body.get("learn") or {}, extra)
+    if body.get("price") not in (None, ""):
+        price = _parse_admin_price(body.get("price"), row["deal"])
+        if price is None:
+            return _err("Цена не распознана. Пишите «3,2» (млн) или «3200000».")
+        if price != row["price"]:
+            ingest.set_price(conn, lid, price, user["id"])
+            learned = learned + [f"цена → {_price_text(price, row['deal'])}"]
     d = {**dict(row), "complex": cx, "district": district}
     d["title"] = make_title(d)
     d["search_text"] = make_search_text(d)
@@ -1101,8 +1122,9 @@ def api_admin_place(request: Request, body: dict | None = None):
                           json.dumps(new, ensure_ascii=False)))
     conn.commit()
     applied = learning.apply_to_existing(conn, skip_id=lid) if learned else 0
+    price = conn.execute("SELECT price FROM listings WHERE id = ?", (lid,)).fetchone()[0]
     return JSONResponse({"ok": True, "complex": cx, "district": district, "extra": extra, "learned": learned,
-                         "applied": applied})
+                         "applied": applied, "price": price})
 
 
 _PLACE_QUEUE = {
@@ -1256,7 +1278,8 @@ def api_admin_reconcile(request: Request, body: dict | None = None):
         if action == "fill_empty":
             return JSONResponse({"listings": districtmap.fill_empty(conn)})
         if action == "set_districts":   # выбранные галочками объекты → район по карте
-            return JSONResponse(districtmap.set_districts(conn, body.get("items") or [], body.get("remember_complex")))
+            return JSONResponse(districtmap.set_districts(conn, body.get("items") or [], body.get("remember_complex"),
+                                                          body.get("remember_street")))
     except (ValueError, OSError) as e:
         return _err(f"Не получилось: {e}")
     if request.query_params.get("polygons"):
@@ -1272,9 +1295,9 @@ def districts_map_page(request: Request, body: dict | None = None):
 
 
 def api_admin_listing_action(request: Request, body: dict | None = None):
-    """Админ: {action: delete | restore | deal, deal: sale|rent}. delete — навсегда (тот же текст/объект не вернётся)."""
+    """Админ: {action: delete | restore | deal | price}. delete — навсегда (тот же текст/объект не вернётся)."""
     from .ingest import _reindex, make_search_text, make_title
-    _, err = _need_admin(request)
+    admin_user, err = _need_admin(request)
     if err:
         return err
     conn = db.get()
@@ -1283,6 +1306,12 @@ def api_admin_listing_action(request: Request, body: dict | None = None):
     act = body.get("action")
     if act == "delete":
         res = ingest.ban_listing(conn, lid)
+    elif act == "price":
+        r = conn.execute("SELECT deal FROM listings WHERE id = ?", (lid,)).fetchone()
+        price = _parse_admin_price(body.get("price"), r["deal"] if r else "sale")
+        if price is None:
+            return _err("Цена не распознана. Пишите «3,2» (млн) или «3200000».")
+        res = ingest.set_price(conn, lid, price, admin_user["id"])
     elif act == "restore":
         ingest.unban_listing(conn, lid)
         res = {"ok": True}
@@ -1299,6 +1328,8 @@ def api_admin_listing_action(request: Request, body: dict | None = None):
                         WHERE id = ?""", (body["deal"], d["title"], d["search_text"], lid))
         _reindex(conn, lid, d["search_text"])
         conn.commit()
+        ingest.learn_listing_fix(conn, lid, "frag_deal", {"deal": body["deal"]},
+                                 f"{d['title']}: {'аренда' if body['deal'] == 'rent' else 'продажа'}")
         res = {"ok": True, "deal": body["deal"], "title": d["title"]}
     else:
         return _err("Неизвестное действие.")
@@ -1324,6 +1355,40 @@ def api_admin_phone_ban(request: Request, body: dict | None = None):
             return _err(res["error"])
     _bump_cache()
     return JSONResponse(res)
+
+
+def api_admin_phones(request: Request, body: dict | None = None):
+    """База номеров: ?phone= — всё по номеру (объекты, запросы, сообщения); иначе список номеров (?q= — поиск по цифрам)."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    conn = db.get()
+    q = request.query_params
+    banned = ingest.banned_phones(conn)
+    if q.get("phone"):
+        from . import rules as _rules
+        phone = _rules.normalize_phone(q["phone"]) or q["phone"]
+        rows = conn.execute("""SELECT l.id, l.title, l.price, l.deal, l.district, l.complex, l.street, l.house, l.is_active,
+                                      l.hidden_reason, l.first_seen, l.last_seen, l.seen_count, l.source, l.photos
+                               FROM listings l, json_each(l.phones) j WHERE j.value = ? ORDER BY l.is_active DESC, l.last_seen DESC""",
+                            (phone,)).fetchall()
+        items = []
+        for r in rows:
+            d = dict(r)
+            ph = json.loads(d.pop("photos") or "[]")
+            d["photo"] = ph[0] if ph else None
+            items.append(d)
+        reqs = conn.execute("""SELECT b.id, b.text, b.last_seen, b.is_active FROM buyer_requests b, json_each(b.phones) j
+                               WHERE j.value = ? ORDER BY b.last_seen DESC LIMIT 50""", (phone,)).fetchall()
+        msgs = conn.execute("SELECT COUNT(*) FROM messages WHERE sender LIKE ?", (f"%{phone[-10:]}%",)).fetchone()[0]
+        return JSONResponse({"phone": phone, "banned": phone in banned, "listings": items,
+                             "requests": [dict(r) for r in reqs], "messages": msgs})
+    digits = re.sub(r"\D", "", q.get("q", ""))[-10:]
+    rows = conn.execute(f"""SELECT j.value AS phone, COUNT(*) AS n, SUM(l.is_active) AS active, MAX(l.last_seen) AS last_seen
+                            FROM listings l, json_each(l.phones) j {"WHERE j.value LIKE ?" if digits else ""}
+                            GROUP BY j.value ORDER BY active DESC, n DESC LIMIT 300""",
+                         ([f"%{digits}%"] if digits else [])).fetchall()
+    return JSONResponse({"items": [{**dict(r), "banned": r["phone"] in banned} for r in rows]})
 
 
 def api_admin_banned(request: Request, body: dict | None = None):
@@ -1355,7 +1420,7 @@ def api_admin_fix(request: Request, body: dict | None = None):
     where = queues[kind]
     left = conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE} AND {where}").fetchone()[0]
     if q.get("id"):
-        item = _fix_item(conn, _num(q.get("id"), int) or 0)
+        item = _fix_item(conn, _num(q.get("id"), int) or 0)   # конкретный объект (из базы номера, из окна объекта)
     else:
         exclude = [int(x) for x in q.get("exclude", "").split(",") if x.strip().isdigit()][:2000]
         ph = ",".join("?" * len(exclude)) or "0"
@@ -1502,6 +1567,7 @@ routes = [
     Route("/api/admin/listings/{id:int}/action", threaded(api_admin_listing_action), methods=["POST"]),
     Route("/api/admin/banned", threaded(api_admin_banned)),
     Route("/api/admin/phones/ban", threaded(api_admin_phone_ban), methods=["POST"]),
+    Route("/api/admin/phones", threaded(api_admin_phones)),
     Route("/api/admin/listings/{id:int}/place", threaded(api_admin_place), methods=["POST"]),
     Route("/api/admin/place-queue", threaded(api_admin_place_queue), methods=["GET", "POST"]),
     Mount("/static", StaticFiles(directory=WEB), name="static"),

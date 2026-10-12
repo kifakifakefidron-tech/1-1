@@ -77,3 +77,24 @@
 .fx-geo-box.geo-mode { border: 0; padding: 0; }
 .fx-geo-box.geo-mode summary { display: none; }
 .fx-geo-box #fxGeoSave { margin: 0 0 12px; }
+
+/* номер → база номера */
+.fx-phone-num { border: 0; background: none; padding: 0; color: var(--gold); font: 600 15px var(--body); cursor: pointer;
+  text-decoration: underline; text-decoration-color: rgba(227, 203, 143, .4); text-underline-offset: 3px; }
+.fx-del-one { align-self: flex-start; margin-top: 4px; }
+.fx-phone-dlg { width: min(640px, 96vw); }
+.fx-pd-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.fx-pd-head h2 { margin: 0; font: 600 24px var(--head); }
+.fx-pd-head .close { position: static; }
+.fx-pd-acts { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+.fx-pd-acts a { text-decoration: none; }
+.fx-pd-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 60vh; overflow-y: auto; }
+.fx-pd-list li { display: grid; grid-template-columns: 52px 1fr auto; gap: 10px; align-items: center; padding: 8px; border-radius: 14px;
+  border: 1px solid var(--line); }
+.fx-pd-list li.off { opacity: .55; }
+.fx-pd-list img, .fx-pd-noph { width: 52px; height: 52px; border-radius: 10px; object-fit: cover; background: rgba(0, 0, 0, .2); display: block; }
+.fx-pd-list a { color: var(--ink); font-weight: 600; text-decoration: none; }
+.fx-pd-list small { display: block; color: var(--ink-3); font-size: 12.5px; }
+.fx-pd-btns { display: flex; gap: 4px; }
+.fx-pd-btns .chip { text-decoration: none; padding: 5px 10px; }
+.bad { color: var(--bad); }

@@ -148,7 +148,7 @@
 
   // ─── проверка объектов по карте: подробно, с галочками ───────────────
   let lastCheck = null, checkAll = false;
-  const objRow = (o, to) => `<label class="dm-obj"><input type="checkbox" data-obj="${o.id}" data-to="${esc(to || o.map)}" checked>
+  const objRow = (o, to) => `<label class="dm-obj" data-pt="${o.lat || ""},${o.lon || ""}" data-title="${esc(o.title)}"><input type="checkbox" data-obj="${o.id}" data-to="${esc(to || o.map)}" checked>
       <span><b>${esc(o.title)}</b><small>${esc([o.addr, `${o.ours || "без района"} → ${to || o.map}`].filter(Boolean).join(" · "))}</small></span>
       <a href="/?open=${o.id}" target="_blank" title="Открыть объект">↗</a></label>`;
 
@@ -196,7 +196,9 @@
           ${x.items.length ? `<label class="dm-all"><input type="checkbox" data-all checked> отметить все</label>${x.items.map((o) => objRow(o)).join("")}`
             : `<p class="note">Объекты уже в правильном районе.</p>`}
           ${x.kind === "complex" ? `<label class="dm-remember"><input type="checkbox" data-remember="${esc(x.name)}" data-to="${esc(x.map)}" checked>
-            Запомнить: ЖК ${esc(x.name)} — район «${esc(x.map)}» (новые объявления сразу туда)</label>` : ""}
+            Запомнить: ЖК ${esc(x.name)} — район «${esc(x.map)}» (новые объявления сразу туда)</label>`
+            : `<label class="dm-remember"><input type="checkbox" data-remember-street="${esc(x.name)}" data-to="${esc(x.map)}">
+            Запомнить: ул. ${esc(x.name)} — район «${esc(x.map)}» (для объявлений этой улицы без своего района)</label>`}
           <div class="dm-grp-acts">
             <button type="button" class="pill" data-apply>Перенести отмеченные</button>
             <button type="button" class="ghost" data-ignore="${esc(x.key)}">Оставить как есть</button>
@@ -208,14 +210,56 @@
       `<p class="note">${only ? `По району «${esc(only)}» вопросов нет 🎉` : "Расхождений нет 🎉"}</p>`;
   }
 
+  // Спорные объекты — метками на карте: раскрыли группу — видно, где они; нажали на объект — карта к нему
+  let ptLayer = null;
+  function clearPts() { if (ptLayer) { ptLayer.remove(); ptLayer = null; } }
+  function showPts(grp) {
+    clearPts();
+    const pts = [...grp.querySelectorAll(".dm-obj[data-pt]")].map((el) => {
+      const [lat, lon] = el.dataset.pt.split(",").map(Number);
+      return lat && lon ? { lat, lon, el } : null;
+    }).filter(Boolean);
+    if (!pts.length) return;
+    ptLayer = L.layerGroup(pts.map((p) => {
+      const m = L.circleMarker([p.lat, p.lon], { radius: 7, color: "#035352", weight: 2, fillColor: "#e3cb8f", fillOpacity: .95 })
+        .bindTooltip(p.el.dataset.title, { direction: "top", className: "dm-tip" });
+      p.el._marker = m;
+      return m;
+    })).addTo(map);
+    map.flyToBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lon])).pad(.4), { duration: .6, maxZoom: 16 });
+  }
+  document.addEventListener("toggle", (e) => {
+    const g = e.target;
+    if (!g.matches || !g.matches("[data-grp]")) return;
+    if (g.open) showPts(g); else if (!document.querySelector("[data-grp][open]")) clearPts();
+  }, true);
+  document.addEventListener("mouseover", (e) => {
+    const row = e.target.closest(".dm-obj");
+    if (row && row._marker) row._marker.setStyle({ radius: 11, fillColor: "#ffffff" }).openTooltip();
+  });
+  document.addEventListener("mouseout", (e) => {
+    const row = e.target.closest(".dm-obj");
+    if (row && row._marker) row._marker.setStyle({ radius: 7, fillColor: "#e3cb8f" }).closeTooltip();
+  });
+  document.addEventListener("click", (e) => {
+    const row = e.target.closest(".dm-obj");
+    if (!row || e.target.closest("input, a") || !row._marker) return;
+    e.preventDefault();
+    map.flyTo(row._marker.getLatLng(), 17, { duration: .6 });
+    row._marker.openTooltip();
+  });
+
   async function applyGroup(grp) {
     const items = [...grp.querySelectorAll("input[data-obj]:checked")].map((i) => ({ id: Number(i.dataset.obj), district: i.dataset.to }));
     const rem = grp.querySelector("input[data-remember]:checked");
-    if (!items.length && !rem) { toast("Ничего не отмечено"); return; }
+    const remSt = grp.querySelector("input[data-remember-street]:checked");
+    if (!items.length && !rem && !remSt) { toast("Ничего не отмечено"); return; }
     const r = await call("/api/admin/reconcile", { action: "set_districts", items,
-      remember_complex: rem ? { name: rem.dataset.remember, district: rem.dataset.to } : null });
+      remember_complex: rem ? { name: rem.dataset.remember, district: rem.dataset.to } : null,
+      remember_street: remSt ? { name: remSt.dataset.rememberStreet, district: remSt.dataset.to } : null });
     if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
-    toast(`✓ Перенесено объектов: ${r.data.listings}${rem ? " · правило для ЖК запомнено" : ""}`);
+    toast(`✓ Перенесено объектов: ${r.data.listings} · сервис запомнил${rem ? " ЖК" : ""}${remSt ? " улицу" : ""} и адреса`);
+    clearPts();
     await check(); await load();
   }
 

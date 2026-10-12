@@ -215,3 +215,16 @@ def test_referral_bonus_after_phone_confirmed(env, monkeypatch):
     assert after - before >= 7 * 86400 - 5
     _verify(c, conn, phone="+7 918 222-33-55", sender="79182223355")   # второй номер — бонуса нет
     assert accounts.get_user(conn, inviter["id"])["paid_until"] == after
+
+
+def test_admin_phone_base(env):
+    c, conn, lid = env
+    u = _login(c, conn)
+    conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (u["id"],))
+    conn.commit()
+    lst = c.get("/api/admin/phones").json()["items"]
+    assert lst and lst[0]["phone"] == "+79181112233"
+    d = c.get("/api/admin/phones?phone=89181112233").json()
+    assert d["phone"] == "+79181112233" and d["listings"][0]["id"] == lid and d["banned"] is False
+    r = c.post(f"/api/admin/listings/{lid}/action", json={"action": "price", "price": "6,9"})
+    assert r.status_code == 200 and conn.execute("SELECT price FROM listings WHERE id = ?", (lid,)).fetchone()[0] == 6_900_000

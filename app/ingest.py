@@ -90,6 +90,7 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         return ban[0] or 0, "banned"
     if d.get("phones") and set(d["phones"]) & banned_phones(conn):   # номер удалён админом целиком
         return 0, "banned"
+    learned_fix(conn, fh, d)   # этот же текст админ уже поправлял (цена, продажа/аренда) — сразу правильно
     if d.get("article"):
         own = conn.execute("SELECT id FROM listings WHERE source = 'feed' AND article = ? AND is_active = 1",
                            (d["article"],)).fetchone()
@@ -132,7 +133,8 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         # Карточкой управляет агент (кабинет): его цену меняет только более свежий пост, описание не трогаем
         owned = bool(cur_d.get("owner_user_id"))
         if ts >= cur_d["last_seen"] and d["price"] and ts > (cur_d.get("owner_edited_at") or 0):
-            merged["price"] = d["price"]
+            if not cur_d.get("price_fixed") or d["price"] not in (cur_d.get("price_wrong"), cur_d["price"]):
+                merged["price"] = d["price"]   # исправленную админом цену меняет только действительно новая цена
         # Описание берём более полное, но не теряем то, где назван ЖК/улица карточки
         # (иначе в карточке «ЖК Мечта», а в описании про ЖК ни слова)
         def mentions(desc: str | None) -> int:
@@ -276,6 +278,46 @@ def process_pending(conn: sqlite3.Connection, limit: int = 200, use_llm: bool | 
     return done
 
 
+def learned_fix(conn: sqlite3.Connection, fh: str, d: dict) -> None:
+    for kind, val in conn.execute("SELECT kind, value FROM learned_rules WHERE kind IN ('frag_price', 'frag_deal') AND key = ?", (fh,)):
+        v = json.loads(val)
+        if kind == "frag_price" and v.get("price"):
+            d["price"] = int(v["price"])
+        elif kind == "frag_deal" and v.get("deal") in ("sale", "rent"):
+            d["deal"] = v["deal"]
+
+
+def learn_listing_fix(conn: sqlite3.Connection, listing_id: int, kind: str, value: dict, label: str) -> int:
+    """Запомнить правку админа для всех текстов этого объекта: повторы и тот же текст в других подборках — сразу верно."""
+    hashes = [r[0] for r in conn.execute(
+        "SELECT DISTINCT fragment_hash FROM listing_events WHERE listing_id = ? AND fragment_hash IS NOT NULL", (listing_id,))]
+    now = int(time.time())
+    for h in hashes:
+        conn.execute("""INSERT INTO learned_rules (kind, key, value, label, n, ts) VALUES (?,?,?,?,1,?)
+                        ON CONFLICT(kind, key) DO UPDATE SET value = excluded.value, label = excluded.label, n = n + 1, ts = excluded.ts""",
+                     (kind, h, json.dumps(value, ensure_ascii=False), label, now))
+    conn.commit()
+    return len(hashes)
+
+
+def set_price(conn: sqlite3.Connection, listing_id: int, price: int, user_id: int | None = None) -> dict:
+    """Админ исправил цену: сохранить, запомнить ошибочную (её больше не принимаем) и выучить для этого текста."""
+    r = conn.execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    if r is None:
+        return {"error": "не найдено"}
+    old = r["price"]
+    conn.execute("""UPDATE listings SET price = ?, price_m2 = ?, price_fixed = 1,
+                    price_wrong = CASE WHEN ? != ? THEN ? ELSE price_wrong END WHERE id = ?""",
+                 (price, _price_m2(price, r["area"]), old or 0, price, old, listing_id))
+    if user_id:
+        conn.execute("INSERT INTO listing_edits (listing_id, user_id, ts, field, old, new) VALUES (?,?,?,?,?,?)",
+                     (listing_id, user_id, int(time.time()), "price", json.dumps(old), json.dumps(price)))
+    conn.commit()
+    n = learn_listing_fix(conn, listing_id, "frag_price", {"price": price, "wrong": old},
+                          f"{r['title']}: цена {old or '—'} → {price}")
+    return {"ok": True, "price": price, "learned": n}
+
+
 def ban_listing(conn: sqlite3.Connection, listing_id: int) -> dict:
     """Админ удалил объект навсегда: скрыть и запомнить его тексты — повторы и тот же объект больше не появятся."""
     r = conn.execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
@@ -306,6 +348,8 @@ def ban_phone(conn: sqlite3.Connection, phone: str) -> dict:
     phone = rules.normalize_phone(phone or "")
     if not phone:
         return {"error": "Номер не распознан."}
+    if phone == rules.normalize_phone(config.FEED_PHONE or ""):
+        return {"error": "Это номер партнёра (объекты СТРЕЛ из фида) — его нельзя удалить целиком."}
     now = int(time.time())
     conn.execute("INSERT OR IGNORE INTO banned (kind, key, title, ts) VALUES ('phone', ?, ?, ?)", (phone, phone, now))
     listings = conn.execute("""UPDATE listings SET is_active = 0, hidden_reason = 'phone'

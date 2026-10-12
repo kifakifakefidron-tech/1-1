@@ -161,3 +161,21 @@ tr.peek td { background: rgba(0, 0, 0, .12); }
 .st-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin: 0 4px 0 10px; vertical-align: -1px; }
 .st-list { margin: 0; padding-left: 20px; font-size: 14px; display: grid; gap: 6px; }
 @media (max-width: 600px) { .st { grid-template-columns: 1fr; } .st-day span { font-size: 9px; } }
+
+/* база номеров */
+.ph-wrap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 16px; align-items: start; }
+.ph-row { cursor: pointer; }
+.ph-row:hover td, .ph-row.on td { background: rgba(243, 232, 188, .05); }
+.ph-row.banned { opacity: .55; }
+.ph-detail { position: sticky; top: 80px; padding: 16px; border-radius: 18px; border: 1px solid var(--line); min-height: 120px; }
+.ph-detail h3 { margin: 0 0 4px; font: 600 22px var(--head); }
+.ph-acts, .ph-btns { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+.ph-acts a, .ph-btns a { color: var(--gold); font-size: 14px; }
+.ph-acts button, .ph-btns button { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line-2); background: none; color: var(--ink); cursor: pointer; }
+.ph-acts .danger, .ph-btns .danger { color: var(--bad); border-color: rgba(226, 165, 150, .4); }
+.ph-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; max-height: 60vh; overflow-y: auto; }
+.ph-list li { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--line); }
+.ph-list li.off { opacity: .55; }
+.ph-list a { color: var(--ink); font-weight: 600; }
+.ph-list .note { display: block; font-size: 12.5px; }
+@media (max-width: 860px) { .ph-wrap { grid-template-columns: 1fr; } .ph-detail { position: static; } }

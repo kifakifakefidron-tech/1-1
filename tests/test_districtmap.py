@@ -61,3 +61,11 @@ def test_map_move_is_learned(conn, add):
     # новое объявление о том же доме другого агента — сразу в ЦМР
     o = add("Двушка 60 м², 3/16 эт., ул. Ставропольская 10. 7,9 млн. 89184445566")["results"][0]["listing_id"]
     assert conn.execute("SELECT district FROM listings WHERE id = ?", (o,)).fetchone()[0] == "ЦМР"
+
+
+def test_remember_street_rule(conn, add):
+    from app import districtmap, learning
+    lid = add("Дом 120 м², участок 4 сот., ул. Тихорецкая 5. 9 млн. 89181112233")["results"][0]["listing_id"]
+    districtmap.set_districts(conn, [{"id": lid, "district": "Гидрострой"}],
+                              remember_street={"name": "Тихорецкая", "district": "Гидрострой"})
+    assert any(r["kind"] == "street" and "Тихорецкая" in (r["label"] or "") for r in learning.list_rules(conn))

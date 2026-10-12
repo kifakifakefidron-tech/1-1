@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
 <link rel="stylesheet" href="/static/style.css?v=25">
 <link rel="stylesheet" href="/static/motion.css?v=34">
-<link rel="stylesheet" href="/static/theme.css?v=1">
+<link rel="stylesheet" href="/static/theme.css?v=12">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -232,12 +232,12 @@
 <dialog id="pickDlg" class="small-dlg" aria-labelledby="pickTitle">
   <span class="grab" aria-hidden="true"></span>
   <div class="dlg-body">
-    <h2 id="pickTitle">В подборку для клиента</h2>
-    <p class="note">Отметьте подборки, в которые добавить объект. Ссылку клиенту — на странице <a href="/picks">«Подборки»</a>.</p>
+    <h2 id="pickTitle">В подборку</h2>
+    <div class="pk-for" id="pickFor"></div>
     <ul class="pick-list" id="pickList"></ul>
-    <form class="inline-form" id="pickNewForm"><input id="pickNewTitle" maxlength="120" placeholder="Новая подборка, например «Для Ирины»">
-      <button type="submit" class="pill light">+ Создать</button></form>
-    <div class="dlg-actions"><a class="ghost" href="/picks">Открыть подборки →</a><button type="button" class="pill" data-close>Готово</button></div>
+    <form class="pk-new" id="pickNewForm"><input id="pickNewTitle" maxlength="120" placeholder="Новая подборка — например «Для Ирины»">
+      <button type="submit" aria-label="Создать подборку">+</button></form>
+    <div class="dlg-actions pk-acts"><a class="ghost" href="/picks">Все подборки →</a><button type="button" class="pill" data-close>Готово</button></div>
   </div>
 </dialog>
 
@@ -325,12 +325,13 @@
 <dialog id="placeDlg" class="small-dlg" aria-labelledby="placeTitle">
   <span class="grab" aria-hidden="true"></span>
   <div class="dlg-body">
-    <h2 id="placeTitle">ЖК и район</h2>
+    <h2 id="placeTitle">ЖК, район и цена</h2>
     <p class="note" id="placeInfo"></p>
     <p class="note"><a id="placeYa" class="ya-link" target="_blank" rel="noopener">🔎 Найти адрес в Яндекс Картах ↗</a></p>
     <form id="placeForm" class="agent-form">
       <label class="agent-field"><span>ЖК (пусто — без ЖК)</span><input name="complex" id="placeComplex" autocomplete="off" placeholder="Название ЖК"></label>
       <label class="agent-field"><span>Район</span><input name="district" id="placeDistrict" placeholder="Найти район…"></label>
+      <label class="agent-field"><span id="placePriceLabel">Цена, млн ₽ (если разобралась неверно)</span><input name="price" id="placePrice" inputmode="decimal" autocomplete="off"></label>
       <div class="place-learn" id="placeLearn"></div>
       <p class="note" id="placeLeft"></p>
       <div class="dlg-actions">
@@ -347,11 +348,11 @@
   <div class="dlg-body" id="agentBody"></div>
 </dialog>
 
-<script src="/static/icons.js?v=2"></script>
+<script src="/static/icons.js?v=3"></script>
 <script src="/static/combo.js?v=2"></script>
-<script src="/static/yasel.js?v=1"></script>
+<script src="/static/yasel.js?v=2"></script>
 <script src="/static/bell.js?v=1"></script>
-<script src="/static/app.js?v=62"></script>
+<script src="/static/app.js?v=67"></script>
 <script src="/static/agent.js?v=4"></script>
 </body>
 </html>

@@ -13,8 +13,8 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="/static/style.css?v=25">
 <link rel="stylesheet" href="/static/motion.css?v=34">
-<link rel="stylesheet" href="/static/fix.css?v=8">
-<link rel="stylesheet" href="/static/theme.css?v=1">
+<link rel="stylesheet" href="/static/fix.css?v=9">
+<link rel="stylesheet" href="/static/theme.css?v=12">
 </head>
 <body>
 <header class="nav"><div class="nav-in">
@@ -74,6 +74,10 @@
           <div class="chips" id="fxComplexes"></div>
           <input id="fxComplex" placeholder="Название ЖК — или пусто, если ЖК нет">
         </div>
+        <div class="fx-block">
+          <div class="fx-label" id="fxPriceLabel">Цена, млн ₽</div>
+          <input id="fxPrice" inputmode="decimal" autocomplete="off" placeholder="Если разобралась неверно — впишите верную">
+        </div>
         <div class="fx-block fx-learn" id="fxLearn"></div>
       </form>
 
@@ -102,10 +106,14 @@
   </section>
 </main>
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
+<dialog id="phoneDlg" class="small-dlg fx-phone-dlg" aria-labelledby="phoneTitle">
+  <div class="dlg-body"><div class="fx-pd-head"><h2 id="phoneTitle"></h2><button type="button" class="close" data-close aria-label="Закрыть">✕</button></div>
+    <div id="phoneBody"></div></div>
+</dialog>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="/static/icons.js?v=2"></script>
+<script src="/static/icons.js?v=3"></script>
 <script src="/static/combo.js?v=2"></script>
-<script src="/static/yasel.js?v=1"></script>
-<script src="/static/fix.js?v=10"></script>
+<script src="/static/yasel.js?v=2"></script>
+<script src="/static/fix.js?v=11"></script>
 </body>
 </html>

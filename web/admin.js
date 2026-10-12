@@ -509,7 +509,48 @@
     try { await call(`/api/admin/listings/${b.dataset.unban}/action`, { action: "restore" }); banned(); } catch (err) { fail(err); }
   });
 
-  const loaders = { overview, users, promos, optouts, complaints, edits, chats, geo, place, districts, banned };
+  // ─── база номеров ───────────────────────────────────────────────────────
+  const phMoney = (p, deal) => (!p ? "—" : deal === "rent" ? `${Math.round(p / 1000).toLocaleString("ru-RU")} тыс./мес`
+    : `${(p / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} млн`);
+  async function phones() {
+    const q = $("phoneQ").value.trim();
+    const d = await call(`/api/admin/phones${q ? `?q=${encodeURIComponent(q)}` : ""}`);
+    $("phonesTable").innerHTML = `<thead><tr><th>Номер</th><th>Объектов</th><th>На сайте</th><th>Последний</th></tr></thead><tbody>${d.items.map((p) =>
+      `<tr class="ph-row${p.banned ? " banned" : ""}" data-phone="${esc(p.phone)}"><td><b>${esc(p.phone)}</b>${p.banned ? ` <span class="note">удалён</span>` : ""}</td>
+        <td>${p.n}</td><td>${p.active || 0}</td><td>${day(p.last_seen)}</td></tr>`).join("")}</tbody>`;
+  }
+  async function phoneDetail(phone) {
+    document.querySelectorAll(".ph-row").forEach((r) => r.classList.toggle("on", r.dataset.phone === phone));
+    const d = await call(`/api/admin/phones?phone=${encodeURIComponent(phone)}`);
+    $("phoneDetail").innerHTML = `<h3>${esc(d.phone)}</h3>
+      <p class="note">Объектов: ${d.listings.length} · запросов: ${d.requests.length} · сообщений: ${d.messages}</p>
+      <div class="ph-acts">${d.banned ? `<button data-ph-unban="${esc(d.phone)}">Вернуть номер</button>`
+        : `<button class="danger" data-ph-ban="${esc(d.phone)}">Удалить всё от номера</button>`}
+        <a href="https://wa.me/${d.phone.replace(/\D/g, "")}" target="_blank" rel="noopener">WhatsApp</a></div>
+      <ul class="ph-list">${d.listings.map((o) => `<li class="${o.is_active ? "" : "off"}">
+        <div><a href="/?open=${o.id}" target="_blank">${esc(o.title)}</a><span class="note">${esc(phMoney(o.price, o.deal))} ·
+          ${esc([o.complex && "ЖК " + o.complex, o.district].filter(Boolean).join(" · ") || "без места")}${o.is_active ? "" : " · скрыт"}</span></div>
+        <div class="ph-btns"><a href="/fix?mode=place&id=${o.id}" target="_blank">Разобрать</a>
+          ${o.is_active ? `<button class="danger" data-ph-del="${o.id}">Удалить</button>` : `<button data-ph-restore="${o.id}">Вернуть</button>`}</div></li>`).join("")}</ul>`;
+    $("phoneDetail").dataset.phone = d.phone;
+  }
+  $("phoneSearch").addEventListener("submit", (e) => { e.preventDefault(); phones(); });
+  document.addEventListener("click", async (e) => {
+    const row = e.target.closest(".ph-row");
+    if (row) { phoneDetail(row.dataset.phone); return; }
+    const b = e.target.closest("[data-ph-ban], [data-ph-unban], [data-ph-del], [data-ph-restore]");
+    if (!b) return;
+    const cur = $("phoneDetail").dataset.phone;
+    try {
+      if (b.dataset.phBan) { if (!confirm(`Удалить всё от номера ${b.dataset.phBan}?`)) return; await call("/api/admin/phones/ban", { phone: b.dataset.phBan }); }
+      else if (b.dataset.phUnban) await call("/api/admin/phones/ban", { phone: b.dataset.phUnban, action: "unban" });
+      else if (b.dataset.phDel) { if (!confirm("Удалить объект навсегда?")) return; await call(`/api/admin/listings/${b.dataset.phDel}/action`, { action: "delete" }); }
+      else if (b.dataset.phRestore) await call(`/api/admin/listings/${b.dataset.phRestore}/action`, { action: "restore" });
+      phoneDetail(cur); phones();
+    } catch (err) { fail(err); }
+  });
+
+  const loaders = { overview, users, promos, optouts, complaints, edits, chats, geo, place, districts, banned, phones };
 
   function show(tab) {
     document.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));

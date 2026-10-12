@@ -4,7 +4,7 @@
    window.ic("calendar") — иконка для шаблонов. */
 (() => {
   "use strict";
-  const SPRITE = "/static/icons.svg?v=1";
+  const SPRITE = "/static/icons.svg?v=2";
   const MAP = {
     "📅": "calendar", "🗓": "calendar", "🔔": "bell", "📁": "folder", "📂": "folder", "📍": "pin", "🗑": "trash",
     "🔥": "flame", "⚖": "scale", "📞": "phone", "☎": "phone", "✅": "check-circle", "❌": "x-circle", "♡": "heart",

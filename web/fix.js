@@ -120,8 +120,14 @@
       it.floor && `этаж ${it.floor}${it.floors ? "/" + it.floors : ""}`, it.deal === "rent" ? "аренда" : "продажа",
       it.source === "feed" ? "фид СТРЕЛ" : it.source === "own" ? "свой объект агента" : ""].filter(Boolean)
       .map((x) => `<span class="chip">${esc(x)}</span>`).join("");
-    $("fxPhones").innerHTML = (it.phones || []).map((p) => `<span class="fx-phone"><a href="tel:${esc(p)}">${esc(p)}</a>
-      <button type="button" class="chip danger" data-ban-phone="${esc(p)}" title="Скрыть все объекты и сообщения от этого номера и не принимать новые">🚫 Всё от номера</button></span>`).join("");
+    $("fxPhones").innerHTML = (it.phones || []).map((p) => `<span class="fx-phone">
+      <button type="button" class="fx-phone-num" data-phone-base="${esc(p)}" title="Все объекты этого номера">${esc(p)}</button>
+      <button type="button" class="chip danger" data-ban-phone="${esc(p)}" title="Скрыть все объекты и сообщения от этого номера и не принимать новые">🚫 Всё от номера</button></span>`).join("")
+      + `<button type="button" class="chip danger fx-del-one" data-del-one="${it.id}">🗑 Удалить только этот объект</button>`;
+    const rent = it.deal === "rent";
+    $("fxPriceLabel").textContent = rent ? "Цена, тыс. ₽/мес" : "Цена, млн ₽";
+    $("fxPrice").value = it.price ? String(+(it.price / (rent ? 1000 : 1e6)).toFixed(rent ? 0 : 3)).replace(".", ",") : "";
+    $("fxPrice").dataset.orig = $("fxPrice").value;
     $("fxPlace").hidden = mode !== "place";
     $("fxHide").hidden = mode !== "geo";
     $("fxGeoBox").classList.toggle("geo-mode", mode === "geo");
@@ -240,8 +246,9 @@
     if (mode === "place") {
       const learn = {};
       document.querySelectorAll("#fxLearn input").forEach((i) => { if (i.checked) learn[i.name] = true; });
-      r = await call(`/api/admin/listings/${item.id}/place`, {
-        complex: $("fxComplex").value, district: chosenDistrict || "", extra: extraDistricts, learn });
+      const body = { complex: $("fxComplex").value, district: chosenDistrict || "", extra: extraDistricts, learn };
+      if ($("fxPrice").value.trim() && $("fxPrice").value !== $("fxPrice").dataset.orig) body.price = $("fxPrice").value;
+      r = await call(`/api/admin/listings/${item.id}/place`, body);
     } else {
       const ll = marker.getLatLng();
       r = await call(`/api/admin/listings/${item.id}/geo`, extra || { lat: ll.lat, lon: ll.lng });
@@ -277,6 +284,53 @@
     next();
   }
 
+  // Удалить только этот объект (навсегда: повторы и тот же объект не вернутся)
+  async function delOne(id) {
+    if (!confirm("Удалить этот объект навсегда?\nПовторы этого объявления больше не появятся. Вернуть — админка → «Удалённые».")) return;
+    const r = await call(`/api/admin/listings/${id}/action`, { action: "delete" });
+    if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
+    toast("Объект удалён");
+    ss.done.push(id); save(); next();
+  }
+  // База номера: все объекты, запросы, сообщения; удалить/вернуть по одному или всё сразу
+  async function phoneBase(phone) {
+    $("phoneTitle").textContent = phone;
+    $("phoneBody").innerHTML = `<p class="note">Загружаем…</p>`;
+    $("phoneDlg").showModal();
+    const r = await call(`/api/admin/phones?phone=${encodeURIComponent(phone)}`);
+    if (!r.ok) { $("phoneBody").innerHTML = `<p class="note">Не получилось загрузить.</p>`; return; }
+    const d = r.data;
+    const active = d.listings.filter((o) => o.is_active).length;
+    $("phoneBody").innerHTML = `<p class="note">Объектов: <b>${d.listings.length}</b> (на сайте ${active}) · запросов: ${d.requests.length}
+        · сообщений: ${d.messages}${d.banned ? " · <b class=\"bad\">номер удалён</b>" : ""}</p>
+      <div class="fx-pd-acts">${d.banned
+        ? `<button type="button" class="chip" data-unban-phone="${esc(d.phone)}">Вернуть номер</button>`
+        : `<button type="button" class="chip danger" data-ban-phone="${esc(d.phone)}">🚫 Удалить всё от номера</button>`}
+        <a class="chip" href="https://wa.me/${d.phone.replace(/\D/g, "")}" target="_blank" rel="noopener">WhatsApp</a></div>
+      <ul class="fx-pd-list">${d.listings.map((o) => `<li class="${o.is_active ? "" : "off"}">
+        ${o.photo ? `<img src="${esc(o.photo)}" alt="" loading="lazy">` : `<span class="fx-pd-noph"></span>`}
+        <div><a href="/?open=${o.id}" target="_blank">${esc(o.title)}</a>
+          <small>${esc(price(o.price, o.deal))} · ${esc([o.complex && "ЖК " + o.complex, o.district].filter(Boolean).join(" · ") || "без места")}
+          ${o.is_active ? "" : ` · <b>скрыт${o.hidden_reason === "admin" ? " (удалён)" : o.hidden_reason === "phone" ? " (номер удалён)" : ""}</b>`}</small></div>
+        <div class="fx-pd-btns"><a class="chip" href="/fix?mode=place&id=${o.id}" title="Разобрать">✎</a>
+          ${o.is_active ? `<button type="button" class="chip danger" data-pb-del="${o.id}" title="Удалить навсегда">🗑</button>`
+            : `<button type="button" class="chip" data-pb-restore="${o.id}" title="Вернуть на сайт">Вернуть</button>`}</div></li>`).join("")
+        || `<li class="note">Объектов с этим номером нет.</li>`}</ul>`;
+  }
+  async function pbAction(id, action, btn) {
+    if (action === "delete" && !confirm("Удалить объект навсегда?")) return;
+    const r = await call(`/api/admin/listings/${id}/action`, { action });
+    if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
+    toast(action === "delete" ? "Удалён" : "Возвращён на сайт");
+    phoneBase($("phoneTitle").textContent);
+  }
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-unban-phone]");
+    if (!b) return;
+    await call("/api/admin/phones/ban", { phone: b.dataset.unbanPhone, action: "unban" });
+    toast("Номер возвращён"); phoneBase(b.dataset.unbanPhone);
+  });
+
   // ─── верхняя панель ───────────────────────────────────────────────────
   function renderTop() {
     document.querySelectorAll("[data-mode]").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
@@ -303,6 +357,11 @@
     else if (b.id === "fxHide") submit({ hide: true });
     else if (b.id === "fxGeoSave") saveGeoOnly();
     else if (b.dataset.banPhone) banPhone(b.dataset.banPhone);
+    else if (b.dataset.phoneBase) phoneBase(b.dataset.phoneBase);
+    else if (b.dataset.delOne) delOne(Number(b.dataset.delOne));
+    else if (b.dataset.pbDel) pbAction(Number(b.dataset.pbDel), "delete", b);
+    else if (b.dataset.pbRestore) pbAction(Number(b.dataset.pbRestore), "restore", b);
+    else if (b.hasAttribute("data-close")) b.closest("dialog").close();
     else if (b.dataset.extraDel) { extraDistricts = extraDistricts.filter((x) => x !== b.dataset.extraDel); renderExtra(); }
   });
   // Район и ЖК — выпадающие списки с поиском; нет такого района — «+ Добавить район»

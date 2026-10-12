@@ -145,7 +145,7 @@ def reconcile(conn: sqlite3.Connection) -> dict:
             continue
         theirs = hit[0]
         if not r["district"]:
-            empty.append({"id": r["id"], "title": r["title"], "map": theirs,
+            empty.append({"id": r["id"], "title": r["title"], "map": theirs, "lat": r["lat"], "lon": r["lon"],
                           "addr": " · ".join(x for x in (r["complex"] and "ЖК " + r["complex"],
                                                           r["street"] and f"ул. {r['street']}{', ' + r['house'] if r['house'] else ''}") if x)})
         if r["complex"]:
@@ -158,7 +158,8 @@ def reconcile(conn: sqlite3.Connection) -> dict:
         g["map"][theirs] = g["map"].get(theirs, 0) + 1
         g["ids"].append(r["id"])
         g["items"].append({"id": r["id"], "title": r["title"], "ours": r["district"], "map": theirs,
-                           "addr": r["street"] and f"ул. {r['street']}{', ' + r['house'] if r['house'] else ''}"})
+                           "addr": r["street"] and f"ул. {r['street']}{', ' + r['house'] if r['house'] else ''}",
+                           "lat": r["lat"], "lon": r["lon"]})
 
     def diffs(groups, kind):
         out = []
@@ -405,7 +406,8 @@ def _learn_move(conn: sqlite3.Connection, r, district: str) -> None:
     conn.execute("UPDATE listings SET admin_fixed = 1 WHERE id = ?", (r["id"],))
 
 
-def set_districts(conn: sqlite3.Connection, items: list[dict], remember_complex: dict | None = None) -> dict:
+def set_districts(conn: sqlite3.Connection, items: list[dict], remember_complex: dict | None = None,
+                  remember_street: dict | None = None) -> dict:
     """Проставить район выбранным объектам: [{id, district}]. remember_complex={name, district} —
     ещё и правило «ЖК → район» для новых объявлений."""
     from . import learning
@@ -432,6 +434,17 @@ def set_districts(conn: sqlite3.Connection, items: list[dict], remember_complex:
                             ON CONFLICT(kind, key) DO UPDATE SET value = excluded.value, label = excluded.label,
                             n = n + 1, ts = excluded.ts""",
                          (k, json.dumps({"district": d}, ensure_ascii=False), f"ЖК {remember_complex['name']} → {d}", int(time.time())))
+            conn.commit()
+            learning.rules(conn, fresh=True)
+    if remember_street and remember_street.get("name") and remember_street.get("district"):
+        k = learning.street_key(remember_street["name"], None)
+        d = geo.canonical_district(remember_street["district"]) or remember_street["district"]
+        if k:
+            conn.execute("""INSERT INTO learned_rules (kind, key, value, label, n, ts) VALUES ('street', ?, ?, ?, 1, ?)
+                            ON CONFLICT(kind, key) DO UPDATE SET value = excluded.value, label = excluded.label,
+                            n = n + 1, ts = excluded.ts""",
+                         (k, json.dumps({"district": d, "extra": []}, ensure_ascii=False), f"ул. {remember_street['name']} → {d}",
+                          int(time.time())))
             conn.commit()
             learning.rules(conn, fresh=True)
     return {"listings": n}

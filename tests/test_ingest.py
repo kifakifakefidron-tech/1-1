@@ -139,3 +139,24 @@ def test_fix_rent_rule_once(conn, add):
     lid = add("Сдам 1-к квартиру, 40 м2, 5/9 эт., ФМР. 25 000 руб/мес + коммуналка. 89184445566")["results"][0]["listing_id"]
     conn.execute("UPDATE listings SET fragment = 'Сдам 1-к, 25 000 руб/мес', description = 'Сдам 1-к' WHERE id = ?", (lid,))
     assert ingest.fix_rent_rule(conn) == {"to_sale": 0, "hidden": 1}
+
+
+def test_admin_price_fix_is_learned(conn, add):
+    from app import ingest
+    text = "2-к квартира 58 м², 7/16 эт., ЖК Мозаика, ФМР. Цена 7 500 000. 89181112233"
+    lid = add(text)["results"][0]["listing_id"]
+    ingest.set_price(conn, lid, 6_900_000)
+    # тот же текст в другом сообщении (портянка) — цена уже исправленная, объявление склеивается
+    add("Подборка:\n" + text + "\n\nЕщё объект: студия 25 м², 3/9, ЖК Свобода. 3,2 млн. 89184445566")
+    assert conn.execute("SELECT price FROM listings WHERE id = ?", (lid,)).fetchone()[0] == 6_900_000
+    # повтор с прежней ошибочной ценой исправленную не перебивает, новая цена — принимается
+    add("Двушка 58 м², 7/16 эт., ЖК Мозаика. 7,5 млн. 89181112233")
+    assert conn.execute("SELECT price FROM listings WHERE id = ?", (lid,)).fetchone()[0] == 6_900_000
+    add("Двушка 58 м², 7/16 эт., ЖК Мозаика. Снизили! 6,7 млн. 89181112233")
+    assert conn.execute("SELECT price FROM listings WHERE id = ?", (lid,)).fetchone()[0] == 6_700_000
+
+
+def test_feed_phone_cannot_be_banned(conn, monkeypatch):
+    from app import config, ingest
+    monkeypatch.setattr(config, "FEED_PHONE", "+79618571772")
+    assert "партнёра" in ingest.ban_phone(conn, "8 961 857 17 72")["error"]
