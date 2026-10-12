@@ -92,6 +92,10 @@ def collect(conn: sqlite3.Connection, now: int | None = None) -> dict:
         "admin_fixed": one("SELECT COUNT(*) FROM listings WHERE admin_fixed = 1"),
         "learned_rules": one("SELECT COUNT(*) FROM learned_rules"),
         "learned_points": one("SELECT COUNT(*) FROM geo_learned"),
+        # поставил сервис сам (app/autolearn.py): по фиду, контурам ЖК и районов, соседним объявлениям
+        "auto_points": one(f"SELECT COUNT(*) FROM listings WHERE {VISIBLE} AND geo_src IN "
+                           "('feed-house', 'feed-cx', 'map-cx', 'map-district') AND geo_status NOT IN ('manual', 'feed')"),
+        "auto_districts": one(f"SELECT COUNT(*) FROM listings WHERE {VISIBLE} AND district_src IS NOT NULL AND admin_fixed = 0"),
     }
 
     # ─── сообщения и чаты ───

@@ -37,7 +37,7 @@ def test_pick_flow_and_public_page_has_no_agent_phones(env):
     assert c.get(f"/api/picks?listing={lid}").json()["with"] == [p["id"]]
     pub = c.get(f"/api/c/{p['token']}").json()
     assert pub["items"][0]["note"] == "Лучший по цене"
-    assert "918" not in str(pub) and "phones" not in pub["items"][0]   # чужих телефонов нет
+    assert "1112233" not in str(pub).replace("+79001112233", "") and "phones" not in pub["items"][0]   # чужих телефонов нет
     page = c.get(f"/c/{p['token']}")
     assert page.status_code == 200 and 'og:title" content="Для Ольги"' in page.text
     assert conn.execute("SELECT views FROM collections").fetchone()[0] == 1

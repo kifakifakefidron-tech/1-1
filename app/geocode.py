@@ -140,12 +140,13 @@ def learn(conn: sqlite3.Connection, row, lat: float, lon: float) -> int:
                          (key, lat, lon, now, label))
     # Остальные объекты с тем же адресом (кроме поправленных вручную) — на выученную точку
     fixed = 0
-    for r in conn.execute("""SELECT * FROM listings WHERE is_active = 1 AND id != ? AND geo_status != 'manual'
+    for r in conn.execute("""SELECT * FROM listings WHERE is_active = 1 AND id != ? AND geo_status NOT IN ('manual', 'feed')
                              AND (complex IS NOT NULL OR (street IS NOT NULL AND house IS NOT NULL))""",
                           (row["id"],)).fetchall():
         pt = learned_point(conn, r)
         if pt and (r["lat"], r["lon"]) != pt:
-            conn.execute("UPDATE listings SET lat = ?, lon = ?, geo_status = 'learned' WHERE id = ?", (*pt, r["id"]))
+            conn.execute("UPDATE listings SET lat = ?, lon = ?, geo_status = 'learned', geo_src = 'learned' WHERE id = ?",
+                         (*pt, r["id"]))
             fixed += 1
     # Ответ геокодера для этого адреса был неверным — заменяем его в кэше, чтобы он не вернулся
     for q, quality in candidates(row):
@@ -165,7 +166,8 @@ def _district_from_map(conn: sqlite3.Connection, r, coords) -> None:
     if hit and hit[1] == "district":
         from .ingest import _reindex, make_search_text
         st = make_search_text({**dict(r), "district": hit[0]})
-        conn.execute("UPDATE listings SET district = ?, search_text = ? WHERE id = ? AND district IS NULL", (hit[0], st, r["id"]))
+        conn.execute("UPDATE listings SET district = ?, district_src = 'map', search_text = ? WHERE id = ? AND district IS NULL",
+                     (hit[0], st, r["id"]))
         _reindex(conn, r["id"], st)
 
 
@@ -186,24 +188,33 @@ def run(conn: sqlite3.Connection, limit: int = 30) -> int:
         "SELECT * FROM listings WHERE geo_status = 'pending' AND is_active = 1 ORDER BY last_seen DESC LIMIT ?",
         (limit,)).fetchall()
     done = 0
+    from .autolearn import Known
+    known = Known(conn) if rows else None
     for r in rows:
-        coords, status = None, "skip"
-        learned = learned_point(conn, r)   # этот дом/ЖК админ уже поправлял — берём его точку
-        if learned:
-            conn.execute("UPDATE listings SET lat=?, lon=?, geo_status='learned' WHERE id=?", (*learned, r["id"]))
+        coords, status, src = None, "skip", None
+        hit = known.point(r)   # ваши правки, тот же дом в фиде, ЖК на карте — без геокодера
+        if hit:
+            conn.execute("UPDATE listings SET lat=?, lon=?, geo_status=?, geo_src=? WHERE id=?", (*hit, r["id"]))
             if not r["district"]:
-                _district_from_map(conn, r, learned)
+                _district_from_map(conn, r, hit[:2])
             conn.commit()
             done += 1
             continue
+        center = known.district_center(r["district"]) if r["district"] and not r["settlement"] else None
         for q, quality in candidates(r):
+            if center and q.endswith(f"{r['district']}, Краснодар"):   # район без дома — центр нашего контура
+                coords, status, src = center, "approx", "map-district"
+                break
             coords = lookup(conn, q)
+            if coords and not known.plausible(r, *coords):   # ответ спорит с ЖК/районом объявления — не верим
+                log.info("Геокодер: %s → %s не сходится с ЖК/районом, пропускаю", q, coords)
+                coords = None
             if coords:
-                status = quality
+                status, src = quality, "geocoder"
                 break
             status = "none"
-        conn.execute("UPDATE listings SET lat=?, lon=?, geo_status=? WHERE id=?",
-                     (coords[0] if coords else None, coords[1] if coords else None, status, r["id"]))
+        conn.execute("UPDATE listings SET lat=?, lon=?, geo_status=?, geo_src=? WHERE id=?",
+                     (coords[0] if coords else None, coords[1] if coords else None, status, src, r["id"]))
         if coords and status == "ok" and not r["district"]:
             _district_from_map(conn, r, coords)
         conn.commit()

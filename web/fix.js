@@ -6,13 +6,15 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const KINDS = {
-    place: [["nodistrict", "Без района"], ["nocomplex", "Квартиры без ЖК"], ["fixed", "Уже поправленные"]],
-    geo: [["none", "Нет на карте"], ["approx", "Примерные"], ["pending", "Ещё ищем"]],
+    place: [["nodistrict", "Без района"], ["nocomplex", "Квартиры без ЖК"], ["auto", "Поставил сервис"], ["fixed", "Уже поправленные"]],
+    geo: [["none", "Нет на карте"], ["approx", "Примерные"], ["pending", "Ещё ищем"], ["auto", "Поставил сервис"]],
   };
   const sp = new URLSearchParams(location.search);
   let mode = sp.get("mode") === "geo" ? "geo" : "place";
   let kind = sp.get("kind") || KINDS[mode][0][0];
   let item = null, left = 0, districts = [];
+  let group = null;            // объекты, которые решаются той же правкой (тот же ЖК / дом / улица)
+  let zoneLayer = null, atTimer = 0;
   let map = null, marker = null;
   let chosenDistrict = null;
   let extraDistricts = [];
@@ -61,6 +63,7 @@
     if (r.status === 403 || r.status === 401) { $("fxDenied").hidden = false; return null; }
     if (!r.ok) { toast(r.data.detail || "Не получилось загрузить"); return null; }
     left = r.data.left;
+    group = r.data.group || null;
     districts = r.data.districts || districts;
     if (r.data.complexes) complexes = r.data.complexes;   // все ЖК по алфавиту: справочник + встречавшиеся
     return r.data.item;
@@ -83,7 +86,7 @@
   }
   function skip() {
     if (!item) return;
-    if (!ss.skipped.includes(item.id)) ss.skipped.push(item.id);
+    for (const id of [item.id, ...(group ? group.ids : [])]) if (!ss.skipped.includes(id)) ss.skipped.push(id);
     ss.history.push(item.id);
     save();
     next();
@@ -95,6 +98,7 @@
     renderTop();
     $("fxCard").hidden = !it;
     $("fxDone").hidden = !!it;
+    $("fxGroup").hidden = true;
     if (!it) {
       $("fxDone").innerHTML = `Очередь разобрана 🎉 <br><span class="note">Разобрано за сессию: ${ss.done.length}</span>`;
       return;
@@ -103,7 +107,8 @@
     $("fxPrice").textContent = price(it.price, it.deal);
     $("fxNow").innerHTML = [
       it.complex ? `ЖК <b>${esc(it.complex)}</b>` : "ЖК —",
-      it.district ? `район <b>${esc([it.district, ...(it.extra_districts || [])].join(", "))}</b>` : "район —",
+      it.district ? `район <b>${esc([it.district, ...(it.extra_districts || [])].join(", "))}</b>${it.district_src
+        ? ` <span class="fx-src" title="Район поставил сервис сам">сервис: ${esc(it.district_src)}</span>` : ""}` : "район —",
       it.street ? `ул. ${esc(it.street)}${it.house ? ", " + esc(it.house) : ""}` : "",
       it.settlement ? esc(it.settlement) : "",
     ].filter(Boolean).join(" · ");
@@ -133,11 +138,28 @@
     $("fxGeoBox").classList.toggle("geo-mode", mode === "geo");
     $("fxGeoBox").open = mode === "geo";
     $("fxGeoSave").hidden = mode === "geo";
-    $("fxGeoState").textContent = it.lat ? ({ manual: "· поставлена вручную", learned: "· из ваших правок", feed: "· из фида",
-      approx: "· примерная" }[it.geo_status] || "· найдена по адресу") : "· точки нет";
+    $("fxGeoState").textContent = it.lat ? (it.geo_src ? `· сервис: ${it.geo_src}` : { manual: "· поставлена вручную",
+      learned: "· из ваших правок", feed: "· из фида", approx: "· примерная" }[it.geo_status] || "· найдена по адресу") : "· точки нет";
+    renderGroup();
     if (mode === "place") showPlace(it); else showGeo(it);
     window.scrollTo({ top: 0 });
   }
+
+  // Группа: одна правка — сразу для всех объектов того же ЖК / дома / улицы
+  function renderGroup() {
+    const box = $("fxGroup");
+    const others = group ? group.ids.filter((id) => id !== item.id) : [];
+    box.hidden = !others.length;
+    if (!others.length) return;
+    box.innerHTML = mode === "geo"
+      ? `${ic("grid")}<div><b>${esc(group.label)}</b> — ещё ${others.length} ${plural(others.length, "объект", "объекта", "объектов")} без точки.
+          <small>Точка, которую вы поставите, встанет и для них.</small></div>`
+      : `${ic("grid")}<div><b>${esc(group.label)}</b> — ещё ${others.length} ${plural(others.length, "объект", "объекта", "объектов")} в очереди.
+          <label class="fx-check"><input type="checkbox" id="fxGroupAll" checked><span>Применить ко всем ${others.length + 1}
+          (${group.same_place ? "район и ЖК" : "только район"})</span></label></div>`;
+  }
+  const plural = (n, a, b, c) => (n % 10 === 1 && n % 100 !== 11 ? a : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? b : c);
+  const ic = (n) => (window.ic ? window.ic(n) : "");
 
   function renderExtra() {
     $("fxExtraChips").innerHTML = extraDistricts.map((d) =>
@@ -202,7 +224,7 @@
 
   // ─── карта ────────────────────────────────────────────────────────────
   function showGeo(it) {
-    const start = it.lat ? [it.lat, it.lon] : [45.035, 38.975];
+    let start = it.lat ? [it.lat, it.lon] : [45.035, 38.975];
     if (!map) {
       map = L.map("fxMap", { attributionControl: false });
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
@@ -211,16 +233,38 @@
       map.on("click", (e) => { marker.setLatLng(e.latlng); geoNow(); });
       marker.on("dragend", geoNow);
     }
+    if (zoneLayer) { zoneLayer.remove(); zoneLayer = null; }
+    if (it.zone) {   // контур района объекта (с вашей карты районов)
+      zoneLayer = L.featureGroup(it.zone.polys.map((ring) => L.polygon(ring, { color: "#035352", weight: 2, dashArray: "6 6",
+        fillColor: "#e3cb8f", fillOpacity: .12, interactive: false }))).addTo(map);
+      if (!it.lat) { const c = zoneLayer.getBounds().getCenter(); start = [c.lat, c.lng]; }   // точки нет — метка в центре района
+    }
     marker.setLatLng(start);
     $("fxCoords").value = "";
     $("fxYa").href = yaHref(it);
-    const fit = () => { map.invalidateSize(); map.setView(start, it.lat ? 16 : 12); };
+    const fit = () => {
+      map.invalidateSize();
+      if (!it.lat && zoneLayer) map.fitBounds(zoneLayer.getBounds().pad(.1));
+      else map.setView(start, it.lat ? 16 : 12);
+    };
     fit(); setTimeout(fit, 150);
     geoNow();
   }
   function geoNow() {
     const ll = marker.getLatLng();
     $("fxGeoNow").textContent = `Точка: ${ll.lat.toFixed(6)}, ${ll.lng.toFixed(6)}`;
+    // Район под меткой — по вашей карте районов; не совпадает с районом объекта — предупреждаем
+    clearTimeout(atTimer);
+    atTimer = setTimeout(async () => {
+      const r = await call(`/api/admin/fix?at=${ll.lat.toFixed(6)},${ll.lng.toFixed(6)}`);
+      if (!r.ok || !item) return;
+      const d = r.data.district, cx = r.data.complex;
+      const where = [d && `район <b>${esc(d)}</b>`, cx && `ЖК <b>${esc(cx)}</b>`].filter(Boolean).join(", ");
+      const clash = d && item.district && d !== item.district && !(item.extra_districts || []).includes(d);
+      $("fxGeoNow").innerHTML = `Точка: ${ll.lat.toFixed(6)}, ${ll.lng.toFixed(6)}${where ? ` · по карте районов: ${where}` : " · вне контуров районов"}`
+        + (clash ? `<br><span class="fx-clash">У объекта район «${esc(item.district)}» — точка в другом районе. Проверьте.</span>` : "")
+        + (d && !item.district ? `<br><span class="note">Района у объекта нет — после сохранения встанет «${esc(d)}».</span>` : "");
+    }, 250);
   }
   function parseCoords(text) {
     let t = String(text || "").trim();
@@ -242,21 +286,28 @@
   async function submit(extra) {
     if (!item || busy) return;
     busy = true;
-    let r;
+    let r, groupSent = false;
     if (mode === "place") {
       const learn = {};
       document.querySelectorAll("#fxLearn input").forEach((i) => { if (i.checked) learn[i.name] = true; });
       const body = { complex: $("fxComplex").value, district: chosenDistrict || "", extra: extraDistricts, learn };
       if ($("fxPrice").value.trim() && $("fxPrice").value !== $("fxPrice").dataset.orig) body.price = $("fxPrice").value;
+      if (group && $("fxGroupAll") && $("fxGroupAll").checked) {
+        groupSent = true;
+        body.group_ids = group.ids.filter((id) => id !== item.id);
+        body.group_same_place = !!group.same_place;
+      }
       r = await call(`/api/admin/listings/${item.id}/place`, body);
     } else {
       const ll = marker.getLatLng();
       r = await call(`/api/admin/listings/${item.id}/geo`, extra || { lat: ll.lat, lon: ll.lng });
+      groupSent = !!group && !extra;   // точка дома/ЖК переносит всю группу (сервис запоминает её)
     }
     busy = false;
     if (!r.ok) { toast(r.data.detail || "Не получилось сохранить"); return; }
-    ss.done.push(item.id);
-    ss.skipped = ss.skipped.filter((x) => x !== item.id);
+    const solved = [item.id, ...(groupSent ? group.ids : [])];
+    for (const id of solved) if (!ss.done.includes(id)) ss.done.push(id);
+    ss.skipped = ss.skipped.filter((x) => !solved.includes(x));
     ss.history.push(item.id);
     save();
     const learned = r.data.learned || [];

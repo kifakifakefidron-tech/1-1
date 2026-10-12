@@ -34,6 +34,10 @@ def tick(conn) -> dict:
     llm.failures = 0
     stats["processed"] = ingest.process_pending(conn, limit=300, budget_s=60)
     stats["queue"] = conn.execute("SELECT COUNT(*) FROM messages WHERE status='new'").fetchone()[0]
+    from . import autolearn
+    learned = autolearn.run(conn)   # точки и районы из уже известного (фид, ЖК, контуры районов, соседние объявления)
+    if learned.get("points") or learned.get("districts") or learned.get("recheck"):
+        stats["autolearn"] = learned
     stats["geocoded"] = geocode.run(conn, limit=40)
     stats["archived"] = ingest.archive_stale(conn)
     own = agent.expire_own(conn, _mail(conn))

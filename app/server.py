@@ -21,7 +21,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import (accounts, agent, buyers, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
+from . import (accounts, agent, autolearn, buyers, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
                market, payments, picks, planner, region, search, stats, tg)
 from .rules import TYPE_LABELS
 
@@ -1035,12 +1035,14 @@ def api_admin_geo(request: Request, body: dict | None = None):
         if lat is None or lon is None or not (40 < lat < 50 and 35 < lon < 45):
             return _err("Точка должна быть в Краснодарском крае.")
         lat, lon, status = round(lat, 6), round(lon, 6), "manual"
-    conn.execute("UPDATE listings SET lat = ?, lon = ?, geo_status = ? WHERE id = ?", (lat, lon, status, lid))
+    conn.execute("UPDATE listings SET lat = ?, lon = ?, geo_status = ?, geo_src = NULL WHERE id = ?", (lat, lon, status, lid))
     # Учимся: эта точка — для того же дома и ЖК во всех объявлениях (сейчас и в будущем)
     applied = 0
     if lat is not None:
         full = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
         applied = geocode.learn(conn, full, lat, lon)
+        if not full["district"] and not full["settlement"]:
+            geocode._district_from_map(conn, full, (lat, lon))   # района нет — по вашим контурам районов
     conn.execute("INSERT INTO listing_edits (listing_id, user_id, ts, field, old, new) VALUES (?,?,?,?,?,?)",
                  (lid, user["id"], int(time.time()), "geo", json.dumps([row["lat"], row["lon"]]), json.dumps([lat, lon])))
     conn.commit()
@@ -1055,6 +1057,8 @@ _GEO_QUEUE = {
     "approx": "l.geo_status = 'approx'",
     # ещё ищем (геокодер не успел)
     "pending": "l.lat IS NULL AND l.geo_status = 'pending'",
+    # точку поставил сервис сам (фид, ЖК на карте, центр района) — проверить выборочно
+    "auto": "l.geo_src IN ('feed-house', 'feed-cx', 'map-cx', 'map-district') AND l.geo_status NOT IN ('manual', 'feed')",
 }
 _VISIBLE = "l.is_active = 1 AND (l.district IS NOT NULL OR l.complex IS NOT NULL OR l.street IS NOT NULL OR l.settlement IS NOT NULL)"
 
@@ -1112,7 +1116,7 @@ def api_admin_place(request: Request, body: dict | None = None):
     d["title"] = make_title(d)
     d["search_text"] = make_search_text(d)
     conn.execute("""UPDATE listings SET complex = ?, district = ?, extra_districts = ?, search_text = ?, admin_fixed = 1,
-                    geo_status = CASE WHEN geo_status IN ('manual', 'learned', 'feed') THEN geo_status ELSE 'pending' END
+                    district_src = NULL, geo_status = CASE WHEN geo_status IN ('manual', 'learned', 'feed') THEN geo_status ELSE 'pending' END
                     WHERE id = ?""", (cx, district, json.dumps(extra, ensure_ascii=False), d["search_text"], lid))
     _reindex(conn, lid, d["search_text"])
     for field, old, new in (("complex", row["complex"], cx), ("district", row["district"], district)):
@@ -1122,6 +1126,24 @@ def api_admin_place(request: Request, body: dict | None = None):
                           json.dumps(new, ensure_ascii=False)))
     conn.commit()
     applied = learning.apply_to_existing(conn, skip_id=lid) if learned else 0
+    # Группа (тот же ЖК / дом / улица) — та же правка сразу для всех её объектов.
+    # ЖК меняем только в группе «тот же ЖК / тот же дом»; в группе «улица» — только район.
+    same_place = body.get("group_same_place") is True
+    for gid in [int(x) for x in (body.get("group_ids") or []) if str(x).isdigit()][:500]:
+        g = conn.execute("SELECT * FROM listings WHERE id = ? AND is_active = 1", (gid,)).fetchone()
+        if g is None or gid == lid:
+            continue
+        gd = {**dict(g), "district": district, "complex": cx if same_place else g["complex"]}
+        gd["title"] = make_title(gd)
+        gd["search_text"] = make_search_text(gd)
+        conn.execute("""UPDATE listings SET complex = ?, district = ?, extra_districts = ?, title = ?, search_text = ?,
+                        admin_fixed = 1, district_src = NULL,
+                        geo_status = CASE WHEN geo_status IN ('manual', 'learned', 'feed') THEN geo_status ELSE 'pending' END
+                        WHERE id = ?""", (gd["complex"], district, json.dumps(extra, ensure_ascii=False), gd["title"],
+                                          gd["search_text"], gid))
+        _reindex(conn, gid, gd["search_text"])
+        applied += 1
+    conn.commit()
     price = conn.execute("SELECT price FROM listings WHERE id = ?", (lid,)).fetchone()[0]
     return JSONResponse({"ok": True, "complex": cx, "district": district, "extra": extra, "learned": learned,
                          "applied": applied, "price": price})
@@ -1131,6 +1153,8 @@ _PLACE_QUEUE = {
     "nodistrict": "l.district IS NULL AND l.settlement IS NULL AND l.admin_fixed = 0",
     "nocomplex": "l.complex IS NULL AND l.type IN ('flat', 'new') AND l.district IS NOT NULL AND l.admin_fixed = 0",
     "fixed": "l.admin_fixed = 1",
+    # район поставил сервис сам (по карте районов или по соседним объявлениям) — проверить выборочно
+    "auto": "l.district_src IS NOT NULL AND l.admin_fixed = 0",
 }
 
 
@@ -1167,9 +1191,74 @@ def _fix_item(conn, lid: int) -> dict | None:
         "text": text, "photo": photos[0] if photos else None, "photos": photos[:12], "land": r["land"],
         "phones": json.loads(r["phones"] or "[]"),
         "extra_districts": json.loads(r["extra_districts"] or "[]"),
-        "suggest": geo.suggestions(text, r["street"], r["complex"]),
+        "suggest": _fix_suggest(conn, r, text),
         "learned": [label for _, label in geocode.learn_keys(r)],
+        "geo_src": autolearn.GEO_SRC.get(r["geo_src"] or "") if r["geo_src"] != "geocoder" else None,
+        "district_src": autolearn.DISTRICT_SRC.get(r["district_src"] or ""),
+        "zone": _zone(conn, r["district"]),
     }
+
+
+def _fix_suggest(conn, r, text: str) -> dict:
+    """Подсказки районов: сначала по вашей карте районов и соседним объявлениям, потом по тексту и справочнику."""
+    sug = geo.suggestions(text, r["street"], r["complex"])
+    seen: dict = {}
+    for h in autolearn.hints(conn, r) + sug["districts"]:
+        if h["name"] in seen:
+            seen[h["name"]]["why"] += " · " + h["why"]
+        else:
+            seen[h["name"]] = dict(h)
+    sug["districts"] = list(seen.values())[:8]
+    return sug
+
+
+def _zone(conn, name: str | None) -> dict | None:
+    """Контур района (для карты на экране разбора)."""
+    if not name:
+        return None
+    for n, kind, polys, _a, _bb in districtmap._polys(conn):
+        if kind == "district" and n == name:
+            return {"name": n, "polys": polys}
+    return None
+
+
+def _group_key(mode: str, kind: str, r) -> tuple[str, str] | None:
+    """Группа объектов, которые решаются одной правкой: (ключ, подпись)."""
+    cx = learning.cx_key(r["complex"])
+    house = learning.addr_key(r["street"], r["house"], r["settlement"])
+    street = learning.street_key(r["street"], r["settlement"])
+    if mode == "geo":   # точка ЖК переносит все его объекты (geocode.learn) — группа по ЖК, без ЖК — по дому
+        if cx:
+            return cx, f"ЖК {r['complex']}"
+        return (house, f"дом ул. {r['street']}, {r['house']}") if house else None
+    if kind == "nocomplex":
+        return (house, f"дом ул. {r['street']}, {r['house']}") if house else None
+    if cx:
+        return cx, f"ЖК {r['complex']}"
+    return (street, f"ул. {r['street']}") if street else None
+
+
+def _fix_groups(conn, mode: str, kind: str, where: str, exclude: set) -> list[dict]:
+    """Очередь группами: самая большая группа — первой (одна правка решает сразу много объектов)."""
+    rows = conn.execute(f"""SELECT l.id, l.complex, l.street, l.house, l.settlement FROM listings l
+                            WHERE {_VISIBLE} AND {where} ORDER BY l.last_seen DESC LIMIT 5000""").fetchall()
+    groups: dict[str, dict] = {}
+    for r in rows:
+        if r["id"] in exclude:
+            continue
+        g = _group_key(mode, kind, r) or (f"id:{r['id']}", "")
+        groups.setdefault(g[0], {"key": g[0], "label": g[1], "ids": []})["ids"].append(r["id"])
+    return sorted(groups.values(), key=lambda g: -len(g["ids"]))
+
+
+def _group_of(conn, mode: str, kind: str, where: str, r, exclude: set) -> dict | None:
+    g = _group_key(mode, kind, r)
+    if not g:
+        return None
+    for grp in _fix_groups(conn, mode, kind, where, exclude - {r["id"]}):
+        if grp["key"] == g[0]:
+            return grp if len(grp["ids"]) > 1 and r["id"] in grp["ids"] else None
+    return None
 
 
 def api_admin_districts(request: Request, body: dict | None = None):
@@ -1418,19 +1507,40 @@ def api_admin_fix(request: Request, body: dict | None = None):
     queues = _GEO_QUEUE if mode == "geo" else _PLACE_QUEUE
     kind = q.get("kind") if q.get("kind") in queues else next(iter(queues))
     where = queues[kind]
+    if q.get("at"):   # район под точкой (метку двигают на карте разбора)
+        try:
+            lat, lon = (float(x) for x in q["at"].split(",")[:2])
+        except ValueError:
+            return _err("Неверная точка.")
+        hit = districtmap.district_at(conn, lat, lon)
+        return JSONResponse({"district": hit[0] if hit and hit[1] == "district" else None,
+                             "complex": districtmap.complex_at(conn, lat, lon)})
     left = conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE} AND {where}").fetchone()[0]
+    exclude = {int(x) for x in q.get("exclude", "").split(",") if x.strip().isdigit()}
+    group = None
     if q.get("id"):
         item = _fix_item(conn, _num(q.get("id"), int) or 0)   # конкретный объект (из базы номера, из окна объекта)
-    else:
-        exclude = [int(x) for x in q.get("exclude", "").split(",") if x.strip().isdigit()][:2000]
-        ph = ",".join("?" * len(exclude)) or "0"
+        if item and kind not in ("auto", "fixed"):
+            row = conn.execute("SELECT * FROM listings WHERE id = ?", (item["id"],)).fetchone()
+            group = _group_of(conn, mode, kind, where, row, exclude)
+    elif kind in ("auto", "fixed"):   # проверка выборочно — по одному, свежие первыми
+        ex = list(exclude)[:2000]
+        ph = ",".join("?" * len(ex)) or "0"
         row = conn.execute(f"""SELECT l.id FROM listings l WHERE {_VISIBLE} AND {where} AND l.id NOT IN ({ph})
-                               ORDER BY l.last_seen DESC LIMIT 1""", exclude).fetchone()
+                               ORDER BY l.last_seen DESC LIMIT 1""", ex).fetchone()
         item = _fix_item(conn, row[0]) if row else None
+    else:
+        groups = _fix_groups(conn, mode, kind, where, exclude)
+        item = _fix_item(conn, groups[0]["ids"][0]) if groups else None
+        if groups and len(groups[0]["ids"]) > 1:
+            group = groups[0]
+    if group:
+        group = {"label": group["label"], "ids": group["ids"][:500], "count": len(group["ids"]),
+                 "same_place": not group["key"].startswith("street:")}
     complexes = sorted({c.name for _, c in geo._complexes()} | {r[0] for r in conn.execute(
         "SELECT DISTINCT complex FROM listings WHERE complex IS NOT NULL AND is_active = 1")},
         key=lambda x: x.lower().replace("ё", "е"))
-    return JSONResponse({"item": item, "left": left, "mode": mode, "kind": kind,
+    return JSONResponse({"item": item, "group": group, "left": left, "mode": mode, "kind": kind,
                          "districts": geo.all_district_names(), "complexes": complexes})
 
 

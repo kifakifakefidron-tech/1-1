@@ -98,3 +98,16 @@
 .fx-pd-btns { display: flex; gap: 4px; }
 .fx-pd-btns .chip { text-decoration: none; padding: 5px 10px; }
 .bad { color: var(--bad); }
+
+/* Группа: одна правка — сразу для всех объектов того же ЖК / дома / улицы */
+.fx-group { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; margin: 0 0 14px;
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent); border-radius: var(--r-md, 14px);
+  background: color-mix(in srgb, var(--gold) 9%, transparent); font-size: 14px; color: var(--ink-2); }
+.fx-group > svg { flex: none; width: 20px; height: 20px; margin-top: 1px; color: var(--gold); }
+.fx-group b { color: var(--ink); }
+.fx-group small { display: block; margin-top: 2px; }
+.fx-group .fx-check { margin-top: 8px; }
+.fx-src { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px;
+  border: 1px solid color-mix(in srgb, var(--info, var(--gold)) 50%, transparent); color: var(--ink-2); }
+.fx-clash { color: var(--bad); }
+.fx-group[hidden] { display: none; }

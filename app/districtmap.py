@@ -421,7 +421,8 @@ def set_districts(conn: sqlite3.Connection, items: list[dict], remember_complex:
             continue
         row = {**dict(r), "district": d}
         row["search_text"] = make_search_text(row)
-        conn.execute("UPDATE listings SET district = ?, search_text = ? WHERE id = ?", (d, row["search_text"], r["id"]))
+        conn.execute("UPDATE listings SET district = ?, district_src = NULL, search_text = ? WHERE id = ?",
+                     (d, row["search_text"], r["id"]))
         _reindex(conn, r["id"], row["search_text"])
         _learn_move(conn, r, d)   # запомнить: новые объявления с этим домом/ЖК сразу в этот район
         n += 1
