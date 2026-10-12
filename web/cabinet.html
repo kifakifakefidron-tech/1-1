@@ -13,27 +13,12 @@
 <link rel="stylesheet" href="/static/motion.css?v=34">
 <link rel="stylesheet" href="/static/doc.css?v=2">
 <link rel="stylesheet" href="/static/theme.css?v=14">
-<link rel="stylesheet" href="/static/glass.css?v=6">
-<link rel="stylesheet" href="/static/cabinet.css?v=7">
+<link rel="stylesheet" href="/static/glass.css?v=7">
+<link rel="stylesheet" href="/static/cabinet.css?v=8">
 </head>
 <body class="dash-body">
 <main class="dash">
   <!-- узкое меню-«рельс» слева (на телефоне — нижняя панель) -->
-  <nav class="rail" aria-label="Разделы">
-    <a class="rail-logo" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="38" height="38"></a>
-    <a class="rail-a on" href="/cabinet" data-tip="Кабинет"><span data-ic="grid"></span></a>
-    <a class="rail-a" href="/clients" data-tip="Клиенты"><span data-ic="users"></span></a>
-    <a class="rail-a" href="/" data-tip="Поиск объектов"><span data-ic="search"></span></a>
-    <a class="rail-a" href="/?fav=1" data-tip="Избранное и статусы"><span data-ic="heart"></span></a>
-    <a class="rail-a" href="/planner" data-tip="Планер"><span data-ic="calendar"></span></a>
-    <a class="rail-a" href="/picks" data-tip="Подборки клиентам"><span data-ic="folder"></span></a>
-    <a class="rail-a" href="/requests" data-tip="Запросы покупателей"><span data-ic="briefcase"></span></a>
-    <a class="rail-a" href="/market" data-tip="Аналитика рынка"><span data-ic="chart"></span></a>
-    <a class="rail-a" href="/learn" data-tip="Обучение и разбор" id="railLearn" hidden><span data-ic="layers"></span></a>
-    <a class="rail-a" href="/admin" data-tip="Админка" id="railAdmin" hidden><span data-ic="sliders"></span></a>
-    <span class="rail-gap"></span>
-    <button type="button" class="rail-a" id="dLogout" data-tip="Выйти"><span data-ic="logout"></span></button>
-  </nav>
 
   <div class="dash-main">
     <div class="d-guest" id="dGuest" hidden>
@@ -97,6 +82,7 @@
           <div class="d-ava big" id="dAva2"></div>
           <div><h2 id="dName"></h2><p class="note" id="dMail"></p></div>
         </div>
+        <button type="button" class="pill light" id="dLogout">Выйти</button>
         <form class="d-promo" id="dPromo"><input id="dPromoInput" autocomplete="off" placeholder="Промокод" aria-label="Промокод">
           <button type="submit" class="pill light">Применить</button></form>
         <p class="note" id="dPromoMsg" hidden></p>
@@ -121,7 +107,8 @@
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
 <script src="/static/icons.js?v=4"></script>
 <script src="/static/max.js?v=1"></script>
-<script src="/static/cabinet.js?v=7"></script>
-<script src="/static/bell.js?v=1"></script>
+<script src="/static/rail.js?v=1"></script>
+<script src="/static/cabinet.js?v=8"></script>
+<script src="/static/bell.js?v=2"></script>
 </body>
 </html>

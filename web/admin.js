@@ -669,6 +669,30 @@
     catch (err) { fail(err); }
   });
 
+  function adminLogin() {
+    let step = "email";
+    const err = (t) => { $("admLoginErr").textContent = t; $("admLoginErr").hidden = !t; };
+    $("admLoginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      err("");
+      const email = $("admEmail").value.trim();
+      $("admLoginBtn").disabled = true;
+      try {
+        if (step === "email") {
+          await call("/api/auth/email/start", { email });
+          step = "code";
+          $("admCode").hidden = false; $("admCode").focus();
+          $("admLoginNote").textContent = `Код отправлен на ${email}. Нет письма — проверьте «Спам».`;
+          $("admLoginBtn").textContent = "Войти";
+        } else {
+          const r = await call("/api/auth/email/verify", { email, code: $("admCode").value.trim() });
+          if (!r.me || !r.me.is_admin) { err("Вход выполнен, но у этой почты нет прав администратора."); return; }
+          location.reload();
+        }
+      } catch (ex) { err(ex.message); } finally { $("admLoginBtn").disabled = false; }
+    });
+  }
+
   (async () => {
     try {
       await call("/api/admin/overview");
@@ -676,7 +700,8 @@
       const tab = new URLSearchParams(location.search).get("tab");   // /admin?tab=districts — сразу нужная вкладка
       show(tab && loaders[tab] ? tab : "overview");
     } catch {
-      $("denied").hidden = false;
+      $("denied").hidden = false;   // отдельный вход администратора — прямо здесь (почта → код)
+      adminLogin();
     }
   })();
 })();

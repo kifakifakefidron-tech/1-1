@@ -169,3 +169,24 @@ def test_payments_disabled_by_default(env):
     _tg_login(c, conn)
     assert c.post("/api/pay").status_code == 503
     assert c.post("/api/payments/yookassa", json={"object": {"id": "x"}}).status_code == 404
+
+
+def test_login_email_has_headers_foreign_mail_needs(monkeypatch):
+    """Gmail и другие зарубежные почты режут письма без Date и Message-ID."""
+    from app import config, mailer
+    sent = []
+
+    class FakeSMTP:
+        def __init__(self, *a, **kw): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def login(self, *a): pass
+        def send_message(self, msg): sent.append(msg)
+
+    monkeypatch.setattr(config, "SMTP_USER", "robot@yandex.ru")
+    monkeypatch.setattr(config, "SMTP_PASSWORD", "x")
+    monkeypatch.setattr(config, "SMTP_FROM", "robot@yandex.ru")
+    monkeypatch.setattr(mailer.smtplib, "SMTP_SSL", FakeSMTP)
+    assert mailer.send_code("someone@gmail.com", "123456")
+    m = sent[0]
+    assert m["Date"] and m["Message-ID"].endswith("@yandex.ru>") and m["To"] == "someone@gmail.com"

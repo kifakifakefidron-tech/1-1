@@ -180,3 +180,13 @@ tr.peek td { background: rgba(0, 0, 0, .12); }
 .ph-list .note { display: block; font-size: 12.5px; }
 @media (max-width: 860px) { .ph-wrap { grid-template-columns: 1fr; } .ph-detail { position: static; } }
 .rc-acts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+
+/* отдельный вход администратора */
+.adm-login { max-width: 420px; margin: 10vh auto; padding: 32px 28px; text-align: center; border-radius: 28px; border: 1px solid var(--glass-line);
+  background: rgba(255, 255, 255, .06); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); box-shadow: var(--glass-sh); }
+.adm-login img { border-radius: 14px; }
+.adm-login h1 { margin: 14px 0 6px; font: 600 26px var(--display); }
+.adm-login form { display: grid; gap: 10px; margin-top: 18px; }
+.adm-login input { padding: 13px 16px; border-radius: 14px; border: 1px solid var(--glass-line); background: rgba(0, 0, 0, .18); color: var(--ink); font-size: 16px; }
+.adm-login input:focus { outline: none; border-color: var(--gold); }
+.adm-err { color: var(--bad); margin: 12px 0 0; }

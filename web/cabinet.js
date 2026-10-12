@@ -56,7 +56,6 @@
     if (me.is_admin) { acc.className = "d-access gold"; acc.textContent = "Администратор"; }
     else if (me.access) { acc.className = "d-access ok"; acc.textContent = `Доступ · ещё ${left} ${plural(left, "день", "дня", "дней")}`; }
     else { acc.className = "d-access off"; acc.textContent = "Без доступа к номерам"; }
-    $("railLearn").hidden = $("railAdmin").hidden = !me.is_admin;
   }
 
   // ─── погода ────────────────────────────────────────────────────────

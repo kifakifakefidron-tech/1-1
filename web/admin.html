@@ -12,9 +12,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css?v=25">
 <link rel="stylesheet" href="/static/motion.css?v=34">
-<link rel="stylesheet" href="/static/admin.css?v=10">
+<link rel="stylesheet" href="/static/admin.css?v=11">
 <link rel="stylesheet" href="/static/theme.css?v=14">
-<link rel="stylesheet" href="/static/glass.css?v=6">
+<link rel="stylesheet" href="/static/glass.css?v=7">
 </head>
 <body>
 <header class="top">
@@ -23,7 +23,17 @@
   <a class="access-btn" href="/">← на сайт</a>
 </header>
 <main class="wrap">
-  <p class="adm-msg" id="denied" hidden>Эта страница только для администратора. <a href="/">Войдите на сайте</a> через Telegram (@ArtemAndreevic1).</p>
+  <section class="adm-login" id="denied" hidden>
+    <img src="/static/favicon.svg" alt="" width="56" height="56">
+    <h1>Вход для администратора</h1>
+    <p class="note" id="admLoginNote">Введите почту администратора — пришлём код.</p>
+    <form id="admLoginForm" autocomplete="on">
+      <input id="admEmail" type="email" placeholder="Почта" autocomplete="email" required>
+      <input id="admCode" inputmode="numeric" placeholder="Код из письма" autocomplete="one-time-code" maxlength="6" hidden>
+      <button type="submit" class="pill wide" id="admLoginBtn">Получить код</button>
+    </form>
+    <p class="adm-err" id="admLoginErr" hidden></p>
+  </section>
   <div id="app" hidden>
     <nav class="adm-tabs" role="tablist">
       <button class="seg on" data-tab="overview">Обзор</button>
@@ -163,7 +173,8 @@
 <div class="chat-toast" id="chatToast" hidden></div>
 <script src="/static/icons.js?v=4"></script>
 <script src="/static/max.js?v=1"></script>
+<script src="/static/rail.js?v=1"></script>
 <script src="/static/combo.js?v=2"></script>
-<script src="/static/admin.js?v=24"></script>
+<script src="/static/admin.js?v=25"></script>
 </body>
 </html>

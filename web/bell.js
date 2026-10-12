@@ -25,6 +25,8 @@
   }
 
   function setCount(n) {
+    window.__bellN = n;
+    if (window.railBell) window.railBell(n);
     const b = ensureBell();
     if (!b) return;
     b.hidden = false;
