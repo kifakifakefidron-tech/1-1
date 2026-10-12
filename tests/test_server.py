@@ -173,3 +173,18 @@ def test_admin_point_teaches_other_and_future_listings(tmp_path, monkeypatch):
     assert asked == []
     conn.close()
     db._local.conn = None
+
+
+def test_email_code_limit_is_per_address_not_shared(client, monkeypatch):
+    """За Docker все посетители видны с одного адреса — лимит кодов должен быть на почту, а не общий на всех."""
+    from app import mailer
+    monkeypatch.setattr(mailer, "available", lambda: True)
+    monkeypatch.setattr(mailer, "send_code", lambda to, code: True)
+    for i in range(8):   # восемь разных людей подряд — всем приходит код
+        assert client.post("/api/auth/email/start", json={"email": f"user{i}@example.ru"}).status_code == 200
+    import time as _t
+    from app import db
+    db.get().execute("UPDATE email_codes SET created = created - 120")
+    db.get().commit()
+    codes = [client.post("/api/auth/email/start", json={"email": "user0@example.ru"}).status_code for _ in range(6)]
+    assert 429 in codes   # один адрес — не больше 5 кодов в час

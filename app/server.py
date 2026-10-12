@@ -78,9 +78,17 @@ def _session_response(request: Request, payload: dict, token: str) -> JSONRespon
 _hits: dict[str, deque] = defaultdict(deque)
 
 
-def _too_often(request: Request, key: str, limit: int, per_s: int) -> bool:
-    ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "?").split(",")[0].strip()
-    q = _hits[f"{key}:{ip}"]
+def _who(request: Request) -> str:
+    """Кого считаем: вошедшего — по аккаунту (сессии). За Docker все посетители видны с одного внутреннего адреса,
+    поэтому счёт по IP оставляем только для гостей и с мягкими лимитами — иначе один лимит на всех людей сразу."""
+    tok = request.cookies.get(SESSION)
+    if tok:
+        return "s:" + hashlib.sha256(tok.encode()).hexdigest()[:16]
+    return "ip:" + request.headers.get("x-forwarded-for", request.client.host if request.client else "?").split(",")[0].strip()
+
+
+def _too_often(request: Request, key: str, limit: int, per_s: int, who: str | None = None) -> bool:
+    q = _hits[f"{key}:{who or _who(request)}"]
     now = time.time()
     while q and q[0] < now - per_s:
         q.popleft()
@@ -349,7 +357,7 @@ def api_stats(request: Request, body: dict | None = None):
 
 # ─── промокод для коллег (временный) ───────────────────────────────────────
 def api_login(request: Request, body: dict | None = None):
-    if _too_often(request, "promo", 10, 600):
+    if _too_often(request, "promo", 60, 600):
         return _err("Слишком много попыток — подождите 10 минут.", 429)
     body = body or {}
     code = str(body.get("code", "")).strip().encode()  # bytes: код может быть по-русски
@@ -397,10 +405,11 @@ def api_tg_status(request: Request, body: dict | None = None):
 def api_email_start(request: Request, body: dict | None = None):
     if not mailer.available():
         return _err("Вход по почте пока не настроен.", 503)
-    if _too_often(request, "email", 5, 3600):
-        return _err("Слишком много запросов кода — попробуйте позже.", 429)
     body = body or {}
     email = str(body.get("email", ""))[:200]
+    # лимит — на адрес почты (5 кодов в час), общий по сайту — только от явного перебора
+    if _too_often(request, "email", 5, 3600, who=email.strip().lower()) or _too_often(request, "email_all", 300, 3600):
+        return _err("Слишком много запросов кода — попробуйте через час.", 429)
     code, err = accounts.new_email_code(db.get(), email)
     if err:
         return _err(err)
@@ -411,11 +420,11 @@ def api_email_start(request: Request, body: dict | None = None):
 
 
 def api_email_verify(request: Request, body: dict | None = None):
-    if _too_often(request, "email_verify", 20, 600):
-        return _err("Слишком много попыток — подождите 10 минут.", 429)
     body = body or {}
     conn = db.get()
     email = str(body.get("email", ""))[:200]
+    if _too_often(request, "email_verify", 20, 600, who=email.strip().lower()):
+        return _err("Слишком много попыток — подождите 10 минут.", 429)
     ok, err = accounts.check_email_code(conn, email, str(body.get("code", ""))[:12])
     if not ok:
         return _err(err)
