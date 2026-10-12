@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="/static/style.css?v=25">
 <link rel="stylesheet" href="/static/motion.css?v=34">
 <link rel="stylesheet" href="/static/doc.css?v=2">
-<link rel="stylesheet" href="/static/planner.css?v=6">
+<link rel="stylesheet" href="/static/planner.css?v=7">
 <link rel="stylesheet" href="/static/theme.css?v=14">
 <link rel="stylesheet" href="/static/glass.css?v=14">
 </head>
@@ -113,6 +113,11 @@
       <select name="listing_id" id="evListing"></select>
       <div id="evObj"></div>
     </section>
+    <section class="ev-sec">
+      <p class="ev-lbl">Клиент <small>— кому показ или встреча; имя и телефон подставятся сами</small></p>
+      <select id="evClient" aria-label="Клиент"></select>
+      <a class="ev-newcl" href="/clients?new=1">+ Новый клиент</a>
+    </section>
     <section class="ev-sec ev-grid">
       <label class="ev-f"><span>Контакт</span><input name="contact_name" maxlength="100" placeholder="Имя агента или клиента"></label>
       <label class="ev-f"><span>Телефон</span><input name="contact_phone" maxlength="30" inputmode="tel" placeholder="+7…"></label>
@@ -134,6 +139,11 @@
   </form>
 </dialog>
 
+<dialog id="evView" class="small-dlg pl-dlg ev-view" aria-labelledby="evvTitle">
+  <span class="grab" aria-hidden="true"></span>
+  <div class="dlg-body" id="evvBody"></div>
+</dialog>
+
 <dialog id="phoneDlg" class="small-dlg" aria-labelledby="phoneTitle">
   <span class="grab" aria-hidden="true"></span>
   <div class="dlg-body">
@@ -153,8 +163,8 @@
 <script src="/static/icons.js?v=4"></script>
 <script src="/static/max.js?v=1"></script>
 <script src="/static/rail.js?v=6"></script>
-<script src="/static/pickers.js?v=5"></script>
-<script src="/static/planner.js?v=8"></script>
+<script src="/static/pickers.js?v=6"></script>
+<script src="/static/planner.js?v=9"></script>
 <script src="/static/objview.js?v=2"></script>
 <script src="/static/bell.js?v=4"></script>
 </body>

@@ -365,6 +365,23 @@
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
 
+  // ─── любое окно (<dialog>) закрывается нажатием мимо него — на всех страницах; не закрывать: data-sticky ───
+  let downOnBackdrop = null;
+  const outside = (d, e) => {
+    const r = d.getBoundingClientRect();
+    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  };
+  document.addEventListener("pointerdown", (e) => {
+    const d = e.target;
+    if (location.pathname === "/") return;   // на главной окна закрываются сами, с анимацией (app.js)
+    downOnBackdrop = d instanceof HTMLDialogElement && d.open && !d.hasAttribute("data-sticky") && outside(d, e) ? d : null;
+  }, true);
+  document.addEventListener("click", (e) => {   // и нажали, и отпустили мимо окна (не выделение текста, начатое внутри)
+    const d = downOnBackdrop;
+    downOnBackdrop = null;
+    if (d && e.target === d && outside(d, e)) { close(); d.close(); }
+  }, true);
+
   // программно поменяли значение исходного поля — обновить кнопку: Pick.refresh(form)
   const refresh = (root) => root.querySelectorAll("[data-pk]").forEach((el) => el.dispatchEvent(new Event("pk-refresh")));
   window.Pick = { date, time, select, multi, chips, refresh, close, auto };

@@ -347,3 +347,35 @@ body.pv-dragging .pv-cell:not(.drop) { opacity: .85; }
   .pv-wd span { text-align: center; font-size: 10.5px; }
   .pv-stats { order: 3; flex-basis: 100%; }
 }
+
+/* просмотр события (нажали на событие) — «Изменить» отдельной кнопкой */
+.ev-view .dlg-body { padding: 0; }
+.evv { position: relative; display: grid; gap: 12px; padding: 26px 22px 20px; }
+.evv-bar { position: absolute; left: 22px; right: 22px; top: 12px; height: 5px; border-radius: 4px; background: var(--c);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--c) 60%, transparent); }
+.evv-head { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+.evv-kind { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px; font: 600 12.5px var(--body);
+  background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--ink); }
+.evv-kind svg { width: 15px; height: 15px; color: var(--c); }
+.evv h2 { margin: 0; font: 600 22px/1.25 var(--display); }
+.evv.done h2 { text-decoration: line-through; color: var(--ink-3); }
+.evv-when, .evv-done { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin: 0; color: var(--ink-2); font-size: 14px; }
+.evv-when svg, .evv-done svg { width: 16px; height: 16px; color: var(--c); }
+.evv-done { color: var(--ok); } .evv-done svg { color: var(--ok); }
+.evv-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 16px; background: rgba(255, 255, 255, .05);
+  border: 1px solid var(--glass-line); color: var(--ink); text-decoration: none; transition: background .2s; }
+a.evv-row:hover { background: rgba(255, 255, 255, .1); }
+.evv-row > span:nth-child(2) { display: grid; flex: 1; min-width: 0; }
+.evv-row small { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.evv-row b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evv-row em { font-style: normal; font-size: 12.5px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evv-row > svg { width: 16px; height: 16px; flex: none; color: var(--ink-3); }
+.evv-row img, .evv-ava { width: 42px; height: 42px; flex: none; border-radius: 12px; object-fit: cover; }
+.evv-ava { display: grid; place-items: center; background: color-mix(in srgb, var(--c) 22%, transparent); color: var(--ink); font: 700 16px var(--body); }
+.evv-ava svg { width: 19px; height: 19px; }
+.evv-note { padding: 12px 14px; border-radius: 14px; background: rgba(0, 0, 0, .16); white-space: pre-line; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+.evv-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.evv-acts .pill { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.evv-acts svg { width: 16px; height: 16px; }
+.evv-acts .chip { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.ev-newcl { justify-self: start; font-size: 13px; color: var(--gold); text-decoration: none; }

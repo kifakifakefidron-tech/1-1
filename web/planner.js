@@ -274,6 +274,21 @@
       `<option value="${l.id}"${l.id === selected ? " selected" : ""}>${esc(l.complex ? `ЖК ${l.complex}` : l.title)}${l.price ? " · " + esc(money(l.price, l.deal)) : ""}${l.status ? " · " + STATUSES[l.status] : ""}</option>`).join("");
     showObj();
   }
+  function fillClients(selected) {
+    const list = data.clients || [];
+    $("evClient").innerHTML = `<option value="">Без клиента</option>` + list.map((c) =>
+      `<option value="${c.id}"${c.id === selected ? " selected" : ""}>${esc(c.name)}${c.phone ? " · " + esc(c.phone) : ""}</option>`).join("");
+  }
+  let autoContact = { name: "", phone: "" };   // что подставили из клиента — меняем, только если человек сам не правил
+  function pickClient(id) {
+    const c = (data.clients || []).find((x) => x.id === id);
+    const f = $("evForm");
+    if (!c) return;
+    if (!f.contact_name.value || f.contact_name.value === autoContact.name) f.contact_name.value = c.name || "";
+    if (!f.contact_phone.value || f.contact_phone.value === autoContact.phone) f.contact_phone.value = c.phone || "";
+    autoContact = { name: c.name || "", phone: c.phone || "" };
+    if (!f.title.value) f.title.value = `${KINDS[kind]}: ${c.name}`;
+  }
   function showObj() {
     const l = objects.get(Number($("evListing").value));
     $("evObj").innerHTML = l ? `<a class="pv-obj" href="/?open=${l.id}">${l.photo ? `<img src="${esc(l.photo)}" alt="">` : `<span class="pv-obj-ph">${ic("home")}</span>`}
@@ -302,6 +317,7 @@
     Pick.date(f.date); Pick.time(f.time, { from: 7, to: 22 });
     Pick.chips(f.dur_min); Pick.chips(f.remind_min);
     Pick.select($("evListing"), { remote: findObjects, remoteTitle: "Объекты на 1+1", searchPlaceholder: "Избранное или любой: ЖК, улица, «2к фмр»" });
+    Pick.select($("evClient"), { searchPlaceholder: "Найти клиента по имени или телефону" });
   }
   const CLIENT_ID = Number(new URLSearchParams(location.search).get("client")) || null;
 
@@ -334,10 +350,50 @@
       if (r.ok) objects.set(lid, { ...r.data, photo: (r.data.photos || [])[0] }); else lid = null;
     }
     fillListings(lid);
+    autoContact = { name: "", phone: "" };
+    const cid = ev ? ev.client_id : preset.client || CLIENT_ID || null;
+    fillClients(cid);
+    if (!ev && cid) pickClient(cid);
     if (!ev && lid) await prefillFromListing(lid);
     upgradeForm();
     if (window.Pick) Pick.refresh(f);
     const dlg = $("evDlg");
+    if (!dlg.open) dlg.showModal();
+  }
+  function viewEvent(e) {
+    if (!e) return;
+    const l = e.listing, cl = e.client;
+    const end = e.ts + (e.dur_min || 60) * 60;
+    const d = new Date(e.ts * 1000);
+    const phone = e.contact_phone || (cl && cl.phone) || "";
+    const when = `${d.toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" })}, ${hm(e.ts)} – ${hm(end)}`;
+    const remind = e.remind_min ? (e.remind_min >= 1440 ? "за день" : e.remind_min >= 60 ? `за ${e.remind_min / 60} ч` : `за ${e.remind_min} мин`) : "";
+    $("evvBody").innerHTML = `
+      <div class="evv c-${colorOf(e)}${e.done ? " done" : ""}">
+        <span class="evv-bar"></span>
+        <div class="evv-head"><span class="evv-kind">${ic(KIC[e.kind])}${KINDS[e.kind]}</span>
+          <button type="button" class="close" data-close aria-label="Закрыть">${ic("x")}</button></div>
+        <h2 id="evvTitle">${esc(e.title)}</h2>
+        <p class="evv-when">${ic("clock")}${esc(when[0].toUpperCase() + when.slice(1))} · ${dur(e.dur_min || 60)}${remind && !e.done ? ` · ${ic("bell")}напомним ${remind}` : ""}</p>
+        ${e.done ? `<p class="evv-done">${ic("check-circle")}Сделано</p>` : ""}
+        ${cl ? `<a class="evv-row" href="/clients?id=${cl.id}"><span class="evv-ava">${esc((cl.name || "?")[0].toUpperCase())}</span>
+          <span><small>Клиент</small><b>${esc(cl.name)}</b></span>${ic("chevron")}</a>` : ""}
+        ${l ? `<a class="evv-row" href="/?open=${l.id}">${l.photo ? `<img src="${esc(l.photo)}" alt="">` : `<span class="evv-ava">${ic("home")}</span>`}
+          <span><small>Объект</small><b>${esc(l.complex ? `ЖК ${l.complex}` : l.title)}</b><em>${esc(money(l.price, l.deal))}${place(l) ? " · " + esc(place(l)) : ""}</em></span>${ic("chevron")}</a>` : ""}
+        ${e.contact_name || phone ? `<div class="evv-row static"><span class="evv-ava">${ic("user")}</span>
+          <span><small>Контакт</small><b>${esc(e.contact_name || phone)}</b>${e.contact_name && phone ? `<em>${esc(phone)}</em>` : ""}</span>
+          ${phone ? `<a class="pv-mini" href="tel:${esc(phone)}" aria-label="Позвонить">${ic("phone")}</a><button type="button" class="pv-mini" data-max="${esc(phone)}">MAX</button>` : ""}</div>` : ""}
+        ${e.place ? `<a class="evv-row" href="https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(e.place)}" target="_blank" rel="noopener">
+          <span class="evv-ava">${ic("pin")}</span><span><small>Где</small><b>${esc(e.place)}</b></span>${ic("external")}</a>` : ""}
+        ${e.note ? `<div class="evv-note">${esc(e.note)}</div>` : ""}
+        <div class="evv-acts">
+          <button type="button" class="pill" data-edit="${e.id}">${ic("edit")}Изменить</button>
+          <button type="button" class="pill light" data-view-done="${e.id}">${ic("check")}${e.done ? "Вернуть в планы" : "Сделано"}</button>
+          <a class="pill light" href="/api/planner/${e.id}.ics">${ic("calendar")}В календарь телефона</a>
+          <button type="button" class="chip danger" data-view-del="${e.id}">${ic("trash")}Удалить</button>
+        </div>
+      </div>`;
+    const dlg = $("evView");
     if (!dlg.open) dlg.showModal();
   }
   async function prefillFromListing(id) {
@@ -358,7 +414,7 @@
     const body = { kind, title: f.title.value, ts, dur_min: Number(f.dur_min.value), listing_id: Number(f.listing_id.value) || null,
       contact_name: f.contact_name.value, contact_phone: f.contact_phone.value, place: f.place.value, note: f.note.value,
       remind_min: Number(f.remind_min.value), done: editing ? editing.done : 0, color: colorTouched ? color : "",
-      client_id: editing ? editing.client_id : CLIENT_ID };
+      client_id: Number($("evClient").value) || null };
     if (editing) body.id = editing.id;
     const r = await call("/api/planner", body);
     if (!r.ok) { $("evErr").textContent = r.data.detail || "Не получилось сохранить."; $("evErr").hidden = false; return; }
@@ -413,8 +469,20 @@
       toast(done ? "Сделано — отлично!" : "Снова в планах", 1600);
       await reload(selDay); return;
     }
-    if (t.dataset.ev && t.classList.contains("pv-pill")) { openEvent(findEv(Number(t.dataset.ev))); return; }
-    if (t.dataset.evOpen && !e.target.closest("a, button")) { openEvent(findEv(Number(t.dataset.evOpen))); return; }
+    if (t.dataset.ev && t.classList.contains("pv-pill")) { viewEvent(findEv(Number(t.dataset.ev))); return; }
+    if (t.dataset.evOpen && !e.target.closest("a, button")) { viewEvent(findEv(Number(t.dataset.evOpen))); return; }
+    if (t.dataset.edit) { $("evView").close(); openEvent(findEv(Number(t.dataset.edit))); return; }
+    if (t.dataset.viewDone) {
+      const ev = findEv(Number(t.dataset.viewDone));
+      await call("/api/planner", { id: ev.id, done: !ev.done });
+      toast(ev.done ? "Снова в планах" : "Сделано — отлично!", 1600);
+      $("evView").close(); await reload(selDay); return;
+    }
+    if (t.dataset.viewDel) {
+      if (!confirm("Удалить событие?")) return;
+      await call("/api/planner", { id: Number(t.dataset.viewDel) }, "DELETE");
+      $("evView").close(); toast("Удалено"); await reload(selDay); return;
+    }
     if (t.dataset.month) { goMonth(new Date(month.getFullYear(), month.getMonth() + Number(t.dataset.month), 1)); return; }
     if (t.dataset.dayStep) { const d = fromKey(selDay); d.setDate(d.getDate() + Number(t.dataset.dayStep)); pickDay(dayKey(d)); return; }
     if (t.id === "pvToday") { pickDay(dayKey(new Date())); return; }
@@ -469,6 +537,7 @@
   let qTimer = 0;
   $("pvQ").addEventListener("input", (e) => { clearTimeout(qTimer); qTimer = setTimeout(() => { q = e.target.value.trim(); renderGrid(); renderDay(); }, 200); });
   $("evListing").addEventListener("change", () => { showObj(); prefillFromListing(Number($("evListing").value)); });
+  $("evClient").addEventListener("change", () => pickClient(Number($("evClient").value)));
   $("evForm").addEventListener("submit", saveEvent);
   let noteTimer = 0;
   document.addEventListener("input", (e) => {
@@ -513,6 +582,7 @@
         await pickDay(dayKey(new Date(ev.ts * 1000)));
         const c = document.querySelector(`.pv-ev[data-ev="${id}"]`);
         if (c) { c.classList.add("hl"); c.scrollIntoView({ block: "center", behavior: "smooth" }); }
+        viewEvent(ev);
       }
     }
     if (sp.get("tab") === "notes") document.querySelector('[data-tab="notes"]').click();

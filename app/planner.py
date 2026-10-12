@@ -34,7 +34,8 @@ def _clean_phone(v: str) -> str:
 
 
 def _event_row(r: sqlite3.Row) -> dict:
-    d = {k: r[k] for k in r.keys() if not k.startswith("l_")}
+    d = {k: r[k] for k in r.keys() if not k.startswith(("l_", "cl_"))}
+    d["client"] = {"id": r["client_id"], "name": r["cl_name"], "phone": r["cl_phone"], "stage": r["cl_stage"]}         if r["client_id"] and r["cl_name"] else None
     if r["listing_id"]:
         photos = json.loads(r["l_photos"] or "[]") if r["l_photos"] else []
         d["listing"] = {"id": r["listing_id"], "title": r["l_title"], "price": r["l_price"], "deal": r["l_deal"],
@@ -45,8 +46,9 @@ def _event_row(r: sqlite3.Row) -> dict:
 
 _SELECT = """SELECT e.*, l.title AS l_title, l.price AS l_price, l.deal AS l_deal, l.complex AS l_complex,
                     l.district AS l_district, l.street AS l_street, l.house AS l_house, l.photos AS l_photos,
-                    l.is_active AS l_active
-             FROM planner_events e LEFT JOIN listings l ON l.id = e.listing_id"""
+                    l.is_active AS l_active, c.name AS cl_name, c.phone AS cl_phone, c.stage AS cl_stage
+             FROM planner_events e LEFT JOIN listings l ON l.id = e.listing_id
+             LEFT JOIN clients c ON c.id = e.client_id AND c.user_id = e.user_id"""
 
 
 def events(conn: sqlite3.Connection, user_id: int, frm: int, to: int) -> list[dict]:
@@ -71,7 +73,10 @@ def overview(conn: sqlite3.Connection, user_id: int, now: int | None = None) -> 
     return {"overdue": overdue, "upcoming": upcoming, "days": days, "notes": notes(conn, user_id),
             "favorites": favorites(conn, user_id),
             "object_notes": object_notes(conn, user_id), "now": now, "today": t0,
-            "feed": feed_url(user_id), "kinds": KINDS, "colors": COLORS}
+            "feed": feed_url(user_id), "kinds": KINDS, "colors": COLORS,
+            "clients": [dict(r) for r in conn.execute(   # для выбора «кому показ / встреча» в событии
+                """SELECT id, name, phone, stage, kind FROM clients WHERE user_id = ? AND archived = 0
+                   ORDER BY CASE WHEN stage IN ('deal', 'lost') THEN 1 ELSE 0 END, updated DESC LIMIT 500""", (user_id,))]}
 
 
 def favorites(conn: sqlite3.Connection, user_id: int) -> list[dict]:
