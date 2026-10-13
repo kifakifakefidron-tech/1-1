@@ -332,26 +332,34 @@
     renderKinds(); renderColors();
     $("evTitle").textContent = ev ? "Событие" : "Новое событие";
     $("evDel").hidden = !ev;
-    const base = ev ? new Date(ev.ts * 1000) : (() => {
+    const src = ev || preset.clone || null;   // правим событие или делаем его копию
+    const base = ev ? new Date(ev.ts * 1000) : preset.clone ? (() => {
+      const d = new Date(preset.clone.ts * 1000); d.setDate(d.getDate() + 1); return d;
+    })() : (() => {
       const d = preset.day ? new Date(`${preset.day}T10:00`) : new Date(Date.now() + 3600 * 1000);
       if (!preset.day) d.setMinutes(0, 0, 0);
       return d;
     })();
     f.date.value = dayKey(base);
     f.time.value = `${pad(base.getHours())}:${pad(base.getMinutes())}`;
-    if (ev) {
-      for (const k of ["title", "contact_name", "contact_phone", "place", "note"]) f[k].value = ev[k] || "";
-      f.dur_min.value = String(ev.dur_min || 60);
-      f.remind_min.value = String(ev.remind_min ?? 60);
+    if (preset.clone) {
+      kind = preset.clone.kind; color = preset.clone.color || ""; colorTouched = !!preset.clone.color;
+      renderKinds(); renderColors();
+      $("evTitle").textContent = "Копия события";
     }
-    let lid = ev ? ev.listing_id : preset.listing || null;
+    if (src) {
+      for (const k of ["title", "contact_name", "contact_phone", "place", "note"]) f[k].value = src[k] || "";
+      f.dur_min.value = String(src.dur_min || 60);
+      f.remind_min.value = String(src.remind_min ?? 60);
+    }
+    let lid = src ? src.listing_id : preset.listing || null;
     if (lid && !objects.has(lid)) {
       const r = await call(`/api/listings/${lid}`);
       if (r.ok) objects.set(lid, { ...r.data, photo: (r.data.photos || [])[0] }); else lid = null;
     }
     fillListings(lid);
     autoContact = { name: "", phone: "" };
-    const cid = ev ? ev.client_id : preset.client || CLIENT_ID || null;
+    const cid = src ? src.client_id : preset.client || CLIENT_ID || null;
     fillClients(cid);
     if (!ev && cid) pickClient(cid);
     if (!ev && lid) await prefillFromListing(lid);
@@ -388,6 +396,7 @@
         ${e.note ? `<div class="evv-note">${esc(e.note)}</div>` : ""}
         <div class="evv-acts">
           <button type="button" class="pill" data-edit="${e.id}">${ic("edit")}Изменить</button>
+          <button type="button" class="pill light" data-clone="${e.id}">${ic("plus-circle")}Копировать</button>
           <button type="button" class="pill light" data-view-done="${e.id}">${ic("check")}${e.done ? "Вернуть в планы" : "Сделано"}</button>
           <a class="pill light" href="/api/planner/${e.id}.ics">${ic("calendar")}В календарь телефона</a>
           <button type="button" class="chip danger" data-view-del="${e.id}">${ic("trash")}Удалить</button>
@@ -472,6 +481,7 @@
     if (t.dataset.ev && t.classList.contains("pv-pill")) { viewEvent(findEv(Number(t.dataset.ev))); return; }
     if (t.dataset.evOpen && !e.target.closest("a, button")) { viewEvent(findEv(Number(t.dataset.evOpen))); return; }
     if (t.dataset.edit) { $("evView").close(); openEvent(findEv(Number(t.dataset.edit))); return; }
+    if (t.dataset.clone) { $("evView").close(); openEvent(null, { clone: findEv(Number(t.dataset.clone)) }); return; }
     if (t.dataset.viewDone) {
       const ev = findEv(Number(t.dataset.viewDone));
       await call("/api/planner", { id: ev.id, done: !ev.done });

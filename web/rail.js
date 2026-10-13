@@ -9,6 +9,16 @@
   if ("serviceWorker" in navigator && !path.startsWith("/c/") && location.protocol === "https:") {
     navigator.serviceWorker.register("/sw.js").catch(() => { /* без помощника сайт работает как обычно */ });
   }
+  // «я на сайте» — раз в минуту, пока страница открыта и видна (для админки: кто сейчас на сайте)
+  if (!path.startsWith("/c/") && !new URLSearchParams(location.search).has("embed")) {
+    let g = "";
+    try { g = localStorage.getItem("pg") || ""; if (!g) { g = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem("pg", g); } } catch { /* */ }
+    const ping = () => { if (!document.hidden) fetch("/api/ping", { method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, g }), keepalive: true }).catch(() => {}); };
+    setTimeout(ping, 1500);
+    setInterval(ping, 60000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) ping(); });
+  }
   window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); window.__installPrompt = e;
     document.dispatchEvent(new Event("oneplus:installable")); });
   if (path === "/pay" || path.startsWith("/c/") || new URLSearchParams(location.search).has("embed")) return;

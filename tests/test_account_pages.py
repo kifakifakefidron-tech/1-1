@@ -96,3 +96,16 @@ def test_hide_listing_for_me_only(client):
         assert other.get("/api/listings").json()["total"] == 1
     client.post("/api/hidden", json={"id": lid, "hide": False})
     assert client.get("/api/listings").json()["total"] == 1
+
+
+def test_online_presence(client):
+    client.post("/api/ping", json={"path": "/planner"})
+    with TestClient(server.app) as guest:
+        guest.post("/api/ping", json={"path": "/", "g": "guest-browser-1"})
+    from app import accounts as acc
+    conn = db.get()
+    conn.execute("UPDATE users SET is_admin = 1")
+    conn.commit()
+    o = client.get("/api/admin/online").json()
+    assert o["now"] == 2 and o["users"] == 1 and o["guests"] == 1
+    assert o["people"][0]["path"] == "/planner"

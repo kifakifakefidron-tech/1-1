@@ -668,6 +668,62 @@ def _need_admin(request: Request):
     return user, None
 
 
+ONLINE_S = 150   # «на сайте сейчас» — был сигнал за последние 2,5 минуты
+
+
+def api_ping(request: Request, body: dict | None = None):
+    """Сигнал «я на сайте» раз в минуту с открытой страницы (для админки: кто сейчас на сайте). Ничего лишнего не храним:
+    ключ — хеш сессии или случайный номер браузера, страница и телефон/компьютер; старше суток — удаляется."""
+    body = body or {}
+    tok = request.cookies.get(SESSION)
+    user = current_user(request) if tok else None
+    raw = ("s:" + tok) if tok else ("g:" + str(body.get("g") or "")[:40])
+    if len(raw) < 6:
+        return JSONResponse({"ok": True})
+    key = hashlib.sha256(raw.encode()).hexdigest()[:24]
+    path = str(body.get("path") or "/")[:60].split("?")[0]
+    mobile = 1 if re.search(r"Mobi|Android|iPhone", request.headers.get("user-agent", "")) else 0
+    now = int(time.time())
+    conn = db.get()
+    try:
+        conn.execute("INSERT OR REPLACE INTO presence (key, user_id, ts, path, mobile) VALUES (?,?,?,?,?)",
+                     (key, user["id"] if user else None, now, path, mobile))
+        if now % 50 == 0:
+            conn.execute("DELETE FROM presence WHERE ts < ?", (now - 86400,))
+        conn.commit()
+    except sqlite3.OperationalError:   # база занята — не беда, отметимся через минуту
+        conn.rollback()
+    return JSONResponse({"ok": True})
+
+
+def _online(conn: sqlite3.Connection) -> dict:
+    now = int(time.time())
+    rows = conn.execute("""SELECT p.user_id, p.ts, p.path, p.mobile, u.email, u.name, u.is_admin FROM presence p
+                           LEFT JOIN users u ON u.id = p.user_id WHERE p.ts >= ? ORDER BY p.ts DESC""", (now - ONLINE_S,)).fetchall()
+    users = [r for r in rows if r["user_id"]]
+    seen, people = set(), []
+    for r in users:
+        if r["user_id"] in seen:
+            continue
+        seen.add(r["user_id"])
+        people.append({"name": r["name"] or (r["email"] or "").split("@")[0] or f"#{r['user_id']}", "email": r["email"],
+                       "path": r["path"], "mobile": bool(r["mobile"]), "ago": now - r["ts"], "admin": bool(r["is_admin"])})
+    day = conn.execute("SELECT COUNT(DISTINCT COALESCE(user_id, key)) FROM presence WHERE ts >= ?", (now - 86400,)).fetchone()[0]
+    hour = conn.execute("SELECT COUNT(DISTINCT COALESCE(user_id, key)) FROM presence WHERE ts >= ?", (now - 3600,)).fetchone()[0]
+    return {"now": len(seen) + sum(1 for r in rows if not r["user_id"]), "users": len(seen),
+            "guests": sum(1 for r in rows if not r["user_id"]), "mobile": sum(1 for r in rows if r["mobile"]),
+            "hour": hour, "day": day, "people": people[:50],
+            "pages": [dict(r) for r in conn.execute("""SELECT path, COUNT(*) AS n FROM presence WHERE ts >= ?
+                                                       GROUP BY path ORDER BY n DESC LIMIT 8""", (now - ONLINE_S,))]}
+
+
+def api_admin_online(request: Request, body: dict | None = None):
+    _, err = _need_admin(request)
+    if err:
+        return err
+    return JSONResponse(_online(db.get()))
+
+
 def api_admin_overview(request: Request, body: dict | None = None):
     _, err = _need_admin(request)
     if err:
@@ -2015,6 +2071,8 @@ routes = [
     Route("/pay", threaded(pay_page)),
     Route("/api/payments/yookassa", threaded(api_yookassa), methods=["POST"]),
     Route("/api/admin/overview", threaded(api_admin_overview)),
+    Route("/api/admin/online", threaded(api_admin_online)),
+    Route("/api/ping", threaded(api_ping), methods=["POST"]),
     Route("/api/admin/stats", threaded(api_admin_stats)),
     Route("/api/admin/users", threaded(api_admin_users)),
     Route("/api/admin/users/{id:int}", threaded(api_admin_user_action), methods=["POST"]),

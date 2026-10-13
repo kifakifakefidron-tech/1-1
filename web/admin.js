@@ -40,7 +40,32 @@
       card(o.payments ? "включена" : "выключена", `оплата (${o.price} ₽ / ${o.period_days} дн.)`),
       card(day(o.feed_synced), "фид СТРЕЛ обновлён"),
     ].join("");
+    online();
     stats();
+  }
+
+  // ─── кто сейчас на сайте (обновляется сам раз в 30 с, пока открыт «Обзор») ───
+  const PAGE_NAMES = { "/": "поиск", "/cabinet": "кабинет", "/planner": "планер", "/clients": "клиенты", "/work": "в работе",
+    "/my": "мои объекты", "/my/edit": "правка объекта", "/picks": "подборки", "/market": "аналитика", "/notifications": "уведомления",
+    "/settings": "настройки", "/pay": "оплата", "/admin": "админка", "/learn": "обучение", "/fix": "разбор", "/how": "как это работает" };
+  async function online() {
+    const o = await call("/api/admin/online");
+    if (!o || o.now == null) return;
+    let box = $("onlineBox");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "onlineBox";
+      box.className = "adm-online";
+      $("overview").before(box);
+    }
+    const ago = (s) => (s < 60 ? "только что" : `${Math.round(s / 60)} мин назад`);
+    box.innerHTML = `<div class="ao-head"><span class="ao-dot"></span><b>${o.now}</b><span>${o.now === 1 ? "человек" : "человек"} на сайте сейчас</span>
+        <small>вошли: ${o.users} · гости: ${o.guests} · с телефона: ${o.mobile} · за час: ${o.hour} · за сутки: ${o.day}</small></div>
+      ${o.people.length ? `<ul class="ao-list">${o.people.map((p) => `<li><b>${esc(p.name)}</b>${p.admin ? ' <span class="note">(админ)</span>' : ""}
+        <span>${esc(PAGE_NAMES[p.path] || p.path)}</span><small>${p.mobile ? "телефон" : "компьютер"} · ${ago(p.ago)}</small></li>`).join("")}</ul>` : ""}
+      ${o.pages.length ? `<p class="note">Где сейчас: ${o.pages.map((x) => `${esc(PAGE_NAMES[x.path] || x.path)} — ${x.n}`).join(", ")}</p>` : ""}`;
+    clearTimeout(online.t);
+    online.t = setTimeout(() => { if (!document.hidden && $("onlineBox")) online(); }, 30000);
   }
 
   // ─── подробная статистика ───────────────────────────────────────────────
