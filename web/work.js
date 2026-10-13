@@ -14,8 +14,9 @@
     think: { t: "Думает", c: "violet", help: "Клиент думает — не забудьте перезвонить." },
     refuse: { t: "Отказ", c: "coral", help: "Не подошло — останется для истории, можно вернуть." },
   };
-  let items = [], tab = new URLSearchParams(location.search).get("status") || "all", q = "", sort = "touched";
-  if (tab !== "all" && !ST[tab]) tab = "all";
+  let items = [], hiddenItems = [], tab = new URLSearchParams(location.search).get("status") || "all", q = "", sort = "touched";
+  if (tab !== "all" && tab !== "hidden" && !ST[tab]) tab = "all";
+  const REASONS = { sold: "Продан или снят", no_coop: "Не сотрудничаю", not_fit: "Не подходит", other: "Скрыт" };
 
   async function call(url, body, method) {
     const opts = { credentials: "same-origin", method: method || (body !== undefined ? "POST" : "GET") };
@@ -58,13 +59,14 @@
   }
 
   function renderTabs() {
-    const n = (k) => items.filter((o) => k === "all" || st(o) === k).length;
-    const keys = ["all", "none", "call", "show", "think", "refuse"];
+    const n = (k) => (k === "hidden" ? hiddenItems.length : items.filter((o) => k === "all" || st(o) === k).length);
+    const keys = ["all", "none", "call", "show", "think", "refuse", "hidden"];
     const nav = $("wkTabs");
-    nav.innerHTML = `<i class="wk-ind" aria-hidden="true"></i>` + keys.map((k) => `<button type="button" class="wk-tab${k === tab ? " on" : ""} ${k === "all" ? "" : "c-" + ST[k].c}"
-      data-tab="${k}" aria-pressed="${k === tab}">${k === "all" ? "" : "<i></i>"}${k === "all" ? "Все" : ST[k].t}<b>${n(k)}</b></button>`).join("");
+    nav.innerHTML = `<i class="wk-ind" aria-hidden="true"></i>` + keys.map((k) => `<button type="button" class="wk-tab${k === tab ? " on" : ""} ${k === "all" || k === "hidden" ? "" : "c-" + ST[k].c}"
+      data-tab="${k}" aria-pressed="${k === tab}">${k === "all" || k === "hidden" ? "" : "<i></i>"}${k === "all" ? "Все" : k === "hidden" ? "Скрытые" : ST[k].t}<b>${n(k)}</b></button>`).join("");
     requestAnimationFrame(slide);
-    $("wkHelp").textContent = tab === "all" ? "Статус меняется одним нажатием прямо на карточке. Заметка сохраняется сама." : ST[tab].help;
+    $("wkHelp").textContent = tab === "all" ? "Статус меняется одним нажатием прямо на карточке. Заметка сохраняется сама."
+      : tab === "hidden" ? "Объекты, которые вы скрыли для себя: в поиске и на карте их не видно. «Вернуть» — снова показывать." : ST[tab].help;
     const work = items.filter((o) => ["call", "show", "think"].includes(o.status)).length;
     $("wkSub").textContent = items.length ? `${items.length} в списке · ${work} в работе` : "Избранное и объекты, с которыми вы работаете";
   }
@@ -99,8 +101,28 @@
         </div>
       </div></article>`;
   }
+  function hiddenCard(o) {
+    const photo = (o.photos || [])[0];
+    return `<article class="wk-card c-slate gone" data-hid="${o.id}">
+      <a class="wk-photo" href="/?open=${o.id}">${photo ? `<img src="${esc(photo)}" alt="" loading="lazy">` : `<span>${ic("home")}<small>Фото у агента</small></span>`}
+        <em class="wk-gone">${esc(REASONS[o.reason] || "Скрыт")}</em></a>
+      <div class="wk-body">
+        <a class="wk-title" href="/?open=${o.id}">${esc(head(o))}</a>
+        <b class="wk-price">${esc(money(o.price, o.deal))}</b>
+        <p class="wk-what">${esc(o.title)}${place(o) ? ` · ${esc(place(o))}` : ""}</p>
+        <div class="wk-foot"><span class="wk-when">${ic("eye")}скрыт ${ago(o.hidden_at)}</span>
+          <button type="button" class="pill" data-unhide="${o.id}">Вернуть</button></div>
+      </div></article>`;
+  }
   function render() {
     renderTabs();
+    if (tab === "hidden") {
+      const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+      const list = hiddenItems.filter((o) => words.every((w) => [o.title, o.complex, o.district, o.street].filter(Boolean).join(" ").toLowerCase().includes(w)));
+      $("wkList").innerHTML = list.map(hiddenCard).join("") || `<div class="wk-empty">${ic("eye")}<b>Скрытых нет</b>
+        В окне объекта есть кнопка «Скрыть» — если объект продан или вы не сотрудничаете, он пропадёт только у вас.</div>`;
+      return;
+    }
     const list = visible();
     $("wkList").innerHTML = list.map(card).join("") || `<div class="wk-empty">${ic(items.length ? "search" : "heart")}
       <b>${items.length ? "Здесь пока пусто" : "Список пуст"}</b>
@@ -112,12 +134,23 @@
     const r = await call("/api/favorites");
     if (r.status === 401) { $("wkGuest").hidden = false; $("wkTabs").hidden = true; return; }
     items = r.data.items || [];
+    const h = await call("/api/hidden");
+    hiddenItems = (h.ok && h.data.items) || [];
     render();
   }
 
   document.addEventListener("click", async (e) => {
     const t = e.target.closest("button");
     if (!t) return;
+    if (t.dataset.unhide) {
+      const id = Number(t.dataset.unhide);
+      await call("/api/hidden", { id, hide: false });
+      hiddenItems = hiddenItems.filter((o) => o.id !== id);
+      const el = document.querySelector(`.wk-card[data-hid="${id}"]`);
+      if (el) { el.classList.add("bye"); setTimeout(render, 260); } else render();
+      toast("Объект снова виден в поиске");
+      return;
+    }
     if (t.dataset.tab) {
       tab = t.dataset.tab;
       history.replaceState(null, "", tab === "all" ? "/work" : `/work?status=${tab}`);

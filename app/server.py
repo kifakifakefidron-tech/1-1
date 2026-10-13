@@ -304,17 +304,57 @@ def _bump_cache() -> None:
         pass
 
 
+def _hider(request: Request) -> int | None:
+    """Кто смотрит, если он что-то скрыл для себя (тогда ответ свой, без общего кэша)."""
+    tok = request.cookies.get(SESSION)
+    if not tok:
+        return None
+    user = current_user(request)
+    if user and db.get().execute("SELECT 1 FROM hidden_listings WHERE user_id = ? LIMIT 1", (user["id"],)).fetchone():
+        return user["id"]
+    return None
+
+
 def api_listings(request: Request, body: dict | None = None):
     # В списке телефонов нет никогда — только в карточке, по одному объекту
+    hider = _hider(request)
+
     def compute():
         now = int(time.time())
-        res = search.search(db.get(), query_from(request), now, False)
+        qr = query_from(request)
+        qr.hide_user = hider
+        res = search.search(db.get(), qr, now, False)
         hooks.annotate(db.get(), res["items"])   # «ниже рынка на N %»
         res["now"] = now  # от этого момента страница считает «новые объекты»
         return res
-    if request.query_params.get("since"):
+    if request.query_params.get("since") or hider:
         return JSONResponse(compute())
     return _cached(request, compute)
+
+
+def api_hidden(request: Request, body: dict | None = None):
+    """Скрыть объект только для себя: POST /api/hidden {id, hide, reason}; GET — список скрытых (чтобы вернуть)."""
+    user, err = _need_user(request)
+    if err:
+        return err
+    conn = db.get()
+    body = body or {}
+    if request.method == "POST":
+        lid = _num(body.get("id"), int) or 0
+        if body.get("hide", True):
+            if not conn.execute("SELECT 1 FROM listings WHERE id = ?", (lid,)).fetchone():
+                return _err("не найдено", 404)
+            reason = body.get("reason") if body.get("reason") in ("sold", "no_coop", "not_fit", "other") else "other"
+            conn.execute("INSERT OR REPLACE INTO hidden_listings (user_id, listing_id, reason, ts) VALUES (?,?,?,?)",
+                         (user["id"], lid, reason, int(time.time())))
+        else:
+            conn.execute("DELETE FROM hidden_listings WHERE user_id = ? AND listing_id = ?", (user["id"], lid))
+        conn.commit()
+        return JSONResponse({"ok": True})
+    rows = conn.execute(f"""SELECT l.*, h.reason AS h_reason, h.ts AS h_ts, {search.VERIFIED} AS verified
+                            FROM hidden_listings h JOIN listings l ON l.id = h.listing_id
+                            WHERE h.user_id = ? ORDER BY h.ts DESC LIMIT 500""", (user["id"],)).fetchall()
+    return JSONResponse({"items": [{**search.row_to_item(r, False), "reason": r["h_reason"], "hidden_at": r["h_ts"]} for r in rows]})
 
 
 def api_listing(request: Request, body: dict | None = None):
@@ -358,6 +398,11 @@ def api_facets(request: Request, body: dict | None = None):
 
 
 def api_map(request: Request, body: dict | None = None):
+    hider = _hider(request)
+    if hider:
+        qr = query_from(request)
+        qr.hide_user = hider
+        return JSONResponse(search.map_points(db.get(), qr, int(time.time())))
     return _cached(request, lambda: search.map_points(db.get(), query_from(request), int(time.time())), ttl=45)
 
 
@@ -1955,6 +2000,7 @@ routes = [
     Route("/api/auth/logout", threaded(api_logout), methods=["POST"]),
     Route("/api/me", threaded(api_me)),
     Route("/api/favorites", threaded(api_favorites)),
+    Route("/api/hidden", threaded(api_hidden), methods=["GET", "POST"]),
     Route("/api/favorites/{id:int}", threaded(api_favorite_toggle), methods=["POST"]),
     Route("/api/promo", threaded(api_promo), methods=["POST"]),
     Route("/api/complaints", threaded(api_complaint), methods=["POST"]),

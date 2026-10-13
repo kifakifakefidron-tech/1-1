@@ -85,3 +85,14 @@ def test_new_pages_open(client):
         assert client.get(path).status_code == 200, path
     fav = client.get("/api/favorites").json()["items"]
     assert fav and fav[0]["status"] == "show" if fav else True
+
+
+def test_hide_listing_for_me_only(client):
+    lid = client.get("/api/listings").json()["items"][0]["id"]
+    assert client.post("/api/hidden", json={"id": lid, "hide": True, "reason": "sold"}).status_code == 200
+    assert client.get("/api/listings").json()["total"] == 0                     # у меня — пропал
+    assert client.get("/api/hidden").json()["items"][0]["reason"] == "sold"
+    with TestClient(server.app) as other:                                        # у другого — виден
+        assert other.get("/api/listings").json()["total"] == 1
+    client.post("/api/hidden", json={"id": lid, "hide": False})
+    assert client.get("/api/listings").json()["total"] == 1

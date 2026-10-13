@@ -399,7 +399,7 @@
     const st = myStatus(o.id);
     if (st) b.push(`<span class="mark crm crm-${st}">${STATUSES[st]}</span>`);
     if (o.source === "feed") b.push(`<span class="mark partner" title="Объект партнёра «СТРЕЛЫ»">${STRELY}СТРЕЛЫ</span>`);
-    if (o.verified && o.source !== "feed") b.push(`<span class="mark verified" title="Агент подтвердил свой номер в 1+1">✓ Проверенный агент</span>`);
+    if (o.verified && o.source !== "feed") b.push(`<span class="mark verified" title="Агент подтвердил свой номер в 1+1">✓ ${innerWidth < 640 ? "Проверен" : "Проверенный агент"}</span>`);
     if (o.first_seen > now - 86400) b.push(`<span class="mark new">Новое</span>`);
     if (o.prev_price && o.price && o.prev_price > o.price && o.price_changed_at > now - 14 * 86400) {
       b.push(`<span class="mark down">Цена ↓ ${esc(fmtShortPrice(o.prev_price - o.price, o.deal))}</span>`);
@@ -740,7 +740,7 @@
       ["Комнат", rooms], ["Площадь", o.area ? `${num(o.area, 1)} м²` : null], ["Участок", o.land ? `${num(o.land, 1)} сот.` : null],
       ["Этаж", floor], ["Тип", (meta.types || {})[o.type] || null], ["Район", o.district], ["ЖК", o.complex],
       ["Посёлок", o.settlement && o.settlement !== o.district ? o.settlement : null], ["Адрес", o.street ? `ул. ${o.street}${o.house ? ", " + o.house : ""}` : null],
-    ].filter(([, v]) => v != null && v !== "").map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("");
+    ].filter(([, v]) => v != null && v !== "").map(([k, v]) => `<div${String(v).length > 13 ? ' class="wide"' : ""}><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("");
     const photos = o.photos || [];
     const gallery = photos.length
       ? `<div class="dv-gal-wrap"><div class="dv-gal${photos.length === 1 ? " one" : ""}" data-lb="obj">${photos.map((u, i) => `<a href="${esc(u)}" aria-label="Открыть фото ${i + 1}"><img src="${esc(u)}" alt="" ${i ? 'loading="lazy"' : ""}></a>`).join("")}</div>
@@ -760,6 +760,7 @@
       u ? `<button type="button" class="dv-act" data-pick-open="${o.id}"><i>📁</i><span>В подборку</span></button>` : "",
       u ? `<button type="button" class="dv-act" data-client-open="${o.id}"><i>${ic("users")}</i><span>Клиенту</span></button>` : "",
       `<button type="button" class="dv-act" data-share="${o.id}"><i>${ic("share")}</i><span>Поделиться</span></button>`,
+      u ? `<button type="button" class="dv-act" data-hide-open="${o.id}"><i>${ic("eye")}</i><span>Скрыть</span></button>` : "",
     ].join("");
 
     // раскрывающиеся строки
@@ -819,6 +820,8 @@
         <div class="dv-acts">${actions}</div>
         ${contactHTML(o)}
         ${facts ? `<dl class="dv-facts">${facts}</dl>` : ""}
+        ${o.lat && o.lon && !o.loading ? `<div class="dv-map-wrap"><div class="dv-map" id="dvMap" aria-label="Объект на карте"></div>
+          ${o.geo_approx ? `<p class="note dv-map-note">Место примерное — в объявлении нет точного адреса</p>` : ""}</div>` : ""}
         ${o.description ? `<div class="dv-desc clamp"><p>${esc(o.description)}</p><button type="button" class="dv-desc-more" data-desc-more>Читать полностью</button></div>` : ""}
         <div class="dv-accs">
           ${acc("📈", "Цена и рынок", priceHint, priceBody)}
@@ -837,6 +840,54 @@
   }
 
 
+
+  // Мини-карта в окне объекта: где он (примерное место — кругом)
+  let detailMap = null;
+  function drawDetailMap(o) {
+    if (detailMap) { detailMap.remove(); detailMap = null; }
+    const el = document.getElementById("dvMap");
+    if (!el || !window.L || !o.lat || !o.lon) return;
+    detailMap = L.map(el, { zoomControl: false, scrollWheelZoom: false, dragging: !L.Browser.mobile, attributionControl: true })
+      .setView([o.lat, o.lon], o.geo_approx ? 14 : 16);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(detailMap);
+    if (o.geo_approx) {
+      L.circle([o.lat, o.lon], { radius: 350, color: "#e3cb8f", weight: 2, dashArray: "6 6", fillColor: "#e3cb8f", fillOpacity: .12 }).addTo(detailMap);
+    } else {
+      L.marker([o.lat, o.lon], { icon: L.divIcon({ className: "dv-pin-wrap", html: '<span class="dv-pin"></span>', iconSize: [28, 28], iconAnchor: [14, 28] }) }).addTo(detailMap);
+    }
+    L.control.zoom({ position: "bottomright" }).addTo(detailMap);
+    setTimeout(() => detailMap && detailMap.invalidateSize(), 250);   // окно раскрывается с анимацией
+  }
+
+  // «Скрыть для себя»: объект пропадает только у этого агента (продан, не сотрудничает…), вернуть — «В работе» → «Скрытые»
+  function openHide(id) {
+    let d = document.getElementById("hideDlg");
+    if (!d) {
+      d = document.createElement("dialog");
+      d.id = "hideDlg";
+      d.className = "small-dlg hide-dlg";
+      document.body.appendChild(d);
+    }
+    d.innerHTML = `<div class="dlg-body"><h2>Скрыть объект для себя?</h2>
+      <p class="note">Он пропадёт только у вас — в поиске и на карте. Остальные агенты его видят. Вернуть можно в «В работе» → «Скрытые».</p>
+      <div class="hide-opts">
+        <button type="button" class="hide-opt" data-hide-reason="sold" data-id="${id}">${ic("check-circle")}<span><b>Продан или снят</b><small>позвонил — объекта уже нет</small></span></button>
+        <button type="button" class="hide-opt" data-hide-reason="no_coop" data-id="${id}">${ic("ban")}<span><b>Не сотрудничаю</b><small>с этим агентом или объектом не работаю</small></span></button>
+        <button type="button" class="hide-opt" data-hide-reason="not_fit" data-id="${id}">${ic("x-circle")}<span><b>Не подходит</b><small>не мой формат — не показывать</small></span></button>
+      </div>
+      <div class="dlg-actions"><button type="button" class="pill light" data-close>Отмена</button></div></div>`;
+    d.showModal();
+  }
+  async function hideListing(id, reason) {
+    const r = await call("/api/hidden", { id, hide: true, reason });
+    if (!r.ok) { toast("Не получилось — войдите и попробуйте ещё раз"); return; }
+    const d = document.getElementById("hideDlg");
+    if (d && d.open) d.close();
+    if ($("detail").open) closeDlg($("detail"));
+    document.querySelectorAll(`.item[data-id="${id}"]`).forEach((el) => { el.style.transition = "opacity .3s, transform .3s"; el.style.opacity = "0"; el.style.transform = "scale(.96)"; setTimeout(() => el.remove(), 300); });
+    if (map) loadMap();
+    toast("Скрыто для вас. Вернуть — «В работе» → «Скрытые»", 3500);
+  }
 
   // График цены: ступеньки по датам смены цены, до сегодня
   function priceChartHTML(o) {   // внутренность строки «Цена и рынок»
@@ -1342,6 +1393,7 @@
       const top = dlg.scrollTop;
       known.set(id, { ...(known.get(id) || {}), ...r.data });
       $("detailBody").innerHTML = detailHTML(r.data);
+      drawDetailMap(r.data);
       dlg.scrollTop = top;
       const fb = $("detailFav");
       if (!fb.innerHTML) fb.innerHTML = HEART;
@@ -1670,6 +1722,8 @@
       if (t.id === "cmpClear") { const ids = cmp; cmp = []; cmpSave(); ids.forEach((id) => document.querySelectorAll(`[data-cmp="${id}"]`).forEach((b) => b.classList.remove("on"))); renderCmpBar(); return; }
       if (t.dataset.crmFilter !== undefined) { favStatus = t.dataset.crmFilter; loadList(false, true); return; }
       if (t.hasAttribute("data-login")) { openLogin(); return; }
+      if (t.dataset.hideOpen) { openHide(Number(t.dataset.hideOpen)); return; }
+      if (t.dataset.hideReason) { hideListing(Number(t.dataset.id), t.dataset.hideReason); return; }
       if (t.dataset.share) {
         const o = known.get(Number(t.dataset.share));
         share(`${location.origin}/?open=${t.dataset.share}`, o ? `${o.title} — ${fmtPrice(o.price, o.deal)}` : "Объект на 1+1");

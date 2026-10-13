@@ -281,6 +281,10 @@ CREATE TABLE IF NOT EXISTS banned (
     kind TEXT NOT NULL, key TEXT NOT NULL, listing_id INTEGER, title TEXT, ts INTEGER NOT NULL, PRIMARY KEY (kind, key)
 );
 CREATE INDEX IF NOT EXISTS ix_banned_listing ON banned(listing_id);
+CREATE TABLE IF NOT EXISTS hidden_listings (   -- агент скрыл объект только для себя (продан, не сотрудничает…)
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
+    reason TEXT, ts INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)
+);
 CREATE TABLE IF NOT EXISTS notes (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
     text TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)

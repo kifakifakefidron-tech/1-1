@@ -46,6 +46,7 @@ class Query:
     hl: int | None = None      # из уведомления: появившиеся позже этого — первыми в списке
     hot: bool = False          # «🔥 Горячее»: цена снизилась за неделю, ниже рынка, «срочно»
     sort: str = "new"
+    hide_user: int | None = None   # не показывать объекты, которые этот человек скрыл для себя
     page: int = 1
     size: int = 30
 
@@ -194,6 +195,8 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
         p.append(now - 7 * 86400)
     if fts:
         w.append("l.id IN (SELECT rowid FROM listings_fts WHERE listings_fts MATCH ?)"); p.append(fts)
+    if qr.hide_user:
+        w.append("NOT EXISTS (SELECT 1 FROM hidden_listings h WHERE h.user_id = ? AND h.listing_id = l.id)"); p.append(qr.hide_user)
     return " AND ".join(w), p
 
 
@@ -305,6 +308,7 @@ def listing_detail(conn: sqlite3.Connection, listing_id: int, with_contacts: boo
     d["price_history"] = [{"ts": h[0], "price": h[1]} for h in conn.execute(
         "SELECT ts, price FROM price_history WHERE listing_id = ? ORDER BY ts, rowid LIMIT 100", (listing_id,))]
     d["seen_count"] = r["seen_count"] if is_admin else None
+    d["geo_approx"] = r["geo_status"] == "approx"   # примерное место — на мини-карте кругом, а не меткой
     if is_admin:
         d["geo_status"] = r["geo_status"]
         d["admin_fixed"] = r["admin_fixed"]

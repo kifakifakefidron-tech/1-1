@@ -452,3 +452,29 @@ html.embed dialog::backdrop { background: transparent !important; backdrop-filte
 .pk-meta { margin-left: auto; padding-left: 10px; font: 500 12px var(--body); color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .f-pick .pk-btn { max-width: 520px; }
 .f-pick .chips { margin-top: 2px; }
+
+/* окно объекта: мини-карта с меткой */
+.dv-map-wrap { margin: 14px 0 4px; }
+.dv-map { height: 210px; border-radius: 18px; overflow: hidden; border: 1px solid var(--glass-line); background: rgba(0, 0, 0, .2); }
+.dv-map-note { margin: 6px 2px 0; }
+.dv-pin { display: block; width: 28px; height: 28px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: linear-gradient(135deg, #f3e8bc, #c9a85c);
+  border: 2px solid #035352; box-shadow: 0 6px 14px rgba(0, 0, 0, .35); }
+.dv-pin::after { content: ""; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; margin: -4px; border-radius: 50%; background: #035352; }
+/* «Скрыть для себя» */
+.hide-opts { display: grid; gap: 8px; margin: 14px 0 4px; }
+.hide-opt { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; border: 1px solid var(--glass-line);
+  background: rgba(255, 255, 255, .05); color: var(--ink); text-align: left; cursor: pointer; transition: background .2s, border-color .2s, transform .25s var(--spring); }
+.hide-opt:hover { background: rgba(255, 255, 255, .1); border-color: rgba(227, 203, 143, .4); }
+.hide-opt:active { transform: scale(.98); }
+.hide-opt svg { width: 22px; height: 22px; flex: none; color: var(--gold); }
+.hide-opt span { display: grid; gap: 2px; }
+.hide-opt b { font-size: 15px; }
+.hide-opt small { font-size: 12.5px; color: var(--ink-3); }
+
+/* параметры объекта: длинные названия (район, ЖК, адрес) — на две колонки, без переноса по слогам */
+.dv-facts div.wide { grid-column: span 2; }
+.dv-facts dd { overflow-wrap: break-word; hyphens: none; }
+/* отметки на карточках не вылезают за край: на узких карточках — короче и с многоточием */
+.item .marks { min-width: 0; max-width: 100%; }
+.item .mark { max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) { .item .mark { padding: 2px 7px; font-size: 10.5px; } }
