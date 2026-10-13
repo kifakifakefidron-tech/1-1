@@ -54,6 +54,11 @@
       ${data.cx_points.length ? data.cx_points.map((x) => `<label class="ln-a-row"><input type="checkbox" data-cxpt="${esc(x.key)}" checked>
           «${esc(x.label)}» — ${x.new ? `перенести в центр (${esc(x.how)})` : esc(x.how)}; объектов на точке: ${x.listings}</label>`).join("")
         : `<p class="note">Не найдено.</p>`}
+      <h3 class="ln-a-h">Районы-дубли (одно место под двумя именами)</h3>
+      ${data.dupes.length ? data.dupes.map((x) => `<label class="ln-a-row"><input type="checkbox" data-dupe="${esc(x.name)}" checked>
+          «${esc(x.name)}» (объектов ${x.listings}) → «${esc(x.to)}»</label>`).join("") : `<p class="note">Не найдено.</p>`}
+      ${data.empty_contours.length ? `<p class="note">Нарисованы, но объектов в них нет: ${esc(data.empty_contours.join(", "))} —
+          проверьте на <a href="/admin/map">карте районов</a>, нужны ли они.</p>` : ""}
       <div class="ln-a-acts"><button type="button" class="pill" id="laApply">Применить отмеченное</button>
         <span class="note">Отключённое правило: его объекты получат район по контуру под точкой дома, иначе — из текста объявления.</span></div>`;
   }
@@ -72,17 +77,17 @@
     const junk = [...box.querySelectorAll("[data-junk]:checked")].map((x) => x.dataset.junk);
     const labels = !!($("laLabels") && $("laLabels").checked);
     const pick = (attr) => [...box.querySelectorAll(`[data-${attr}]:checked`)].map((x) => x.dataset[attr]);
-    const broken = pick("broken").map(Number), points = pick("point"), cx_points = pick("cxpt");
-    if (!rules.length && !junk.length && !labels && !broken.length && !points.length && !cx_points.length) return;
+    const broken = pick("broken").map(Number), points = pick("point"), cx_points = pick("cxpt"), dupes = pick("dupe");
+    if (!rules.length && !junk.length && !labels && !broken.length && !points.length && !cx_points.length && !dupes.length) return;
     if (!confirm(`Применить?\nОтключить правил: ${rules.length}; убрать ЖК-мусор: ${junk.length}; улицы-подписи: ${labels ? "да" : "нет"};\n`
-      + `починить правил: ${broken.length}; забыть точек домов: ${points.length}; пересчитать точек ЖК: ${cx_points.length}.\n`
+      + `починить правил: ${broken.length}; забыть точек домов: ${points.length}; пересчитать точек ЖК: ${cx_points.length}; слить районов: ${dupes.length}.\n`
       + "Все изменения объектов попадут в журнал правок — их можно откатить.")) return;
     e.target.disabled = true;
-    const r = await call("/api/admin/geo-audit", { rules, junk, labels, broken, points, cx_points });
+    const r = await call("/api/admin/geo-audit", { rules, junk, labels, broken, points, cx_points, dupes });
     e.target.disabled = false;
     const d = r.data;
     alert(r.ok ? `Готово: правил отключено ${d.rules || 0}, починено ${d.broken || 0}; ЖК убрано ${d.junk || 0}; улиц-подписей ${d.labels || 0}; `
-      + `точек домов забыто ${d.points || 0} (в «Спорные» ${d.to_queue || 0}), точек ЖК пересчитано ${d.cx_points || 0}; объектов изменено ${d.listings || 0}.`
+      + `точек домов забыто ${d.points || 0} (в «Спорные» ${d.to_queue || 0}), точек ЖК пересчитано ${d.cx_points || 0}; районов слито ${d.dupes || 0}; объектов изменено ${d.listings || 0}.`
       : "Не получилось применить");
     load();
   });

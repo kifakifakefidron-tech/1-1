@@ -108,3 +108,12 @@
 .ln-a-acts { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
 .ln-a-acts .note { font-size: 12.5px; }
 .ln-audit { overflow-x: auto; }
+
+/* Точность источников (выборочная проверка) */
+.ln-acc { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; }
+.ln-acc li { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: baseline; padding: 8px 12px;
+  border-radius: var(--r-s, 10px); background: var(--glass-2); }
+.ln-acc li b { color: var(--ok); }
+.ln-acc li.warn b { color: var(--gold); }
+.ln-acc li.bad b { color: var(--bad); }
+.ln-acc small { color: var(--ink-3); }

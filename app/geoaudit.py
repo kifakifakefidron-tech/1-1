@@ -181,6 +181,27 @@ def cx_points_report(conn: sqlite3.Connection) -> list[dict]:
     return out
 
 
+def district_dupes(conn: sqlite3.Connection) -> list[dict]:
+    """Район записан не тем именем, под которым он в справочнике («Молодёжный» при «Молодежный/Витаминкомбинат»)."""
+    learning.sync_districts(conn)
+    out = []
+    for d, n in conn.execute("""SELECT district, COUNT(*) FROM listings WHERE district IS NOT NULL
+                                GROUP BY district ORDER BY 2 DESC""").fetchall():
+        canon = geo.canonical_district(d)
+        if canon and canon != d:
+            out.append({"name": d, "to": canon, "listings": n})
+    return out
+
+
+def empty_contours(conn: sqlite3.Connection) -> list[str]:
+    """Нарисованные районы, в которых нет ни одного объекта (по району или по точке)."""
+    from . import districtmap
+    used = {d for (d,) in conn.execute("SELECT DISTINCT district FROM listings WHERE is_active = 1 AND district IS NOT NULL")}
+    for (ex,) in conn.execute("SELECT extra_districts FROM listings WHERE is_active = 1 AND extra_districts LIKE '[\"%'"):
+        used.update(json.loads(ex))
+    return sorted({n for n, kind, *_ in districtmap._polys(conn) if kind == "district"} - used)
+
+
 def report(conn: sqlite3.Connection) -> dict:
     rr = rules_report(conn)
     pts = points_report(conn)
@@ -190,7 +211,8 @@ def report(conn: sqlite3.Connection) -> dict:
             "points_total": conn.execute("SELECT COUNT(*) FROM geo_learned WHERE key LIKE 'addr:|%'").fetchone()[0],
             "points_ok": sum(1 for p in pts if p["status"] == "ok"),
             "points_unknown": sum(1 for p in pts if p["status"] == "nohouse"),
-            "cx_points": cx_points_report(conn), "osm_loaded": bool(osmaddr.loaded(conn))}
+            "cx_points": cx_points_report(conn), "osm_loaded": bool(osmaddr.loaded(conn)),
+            "dupes": district_dupes(conn), "empty_contours": empty_contours(conn)}
 
 
 def _log(conn, lid: int, field: str, old, new, now: int) -> None:
@@ -207,7 +229,7 @@ def _redecide(conn, r) -> str | None:
 
 
 def apply(conn: sqlite3.Connection, rule_ids: list[int], junk: list[str], labels: bool, broken: list[int] | None = None,
-          points: list[str] | None = None, cx_points: list[str] | None = None) -> dict:
+          points: list[str] | None = None, cx_points: list[str] | None = None, dupes: list[str] | None = None) -> dict:
     from .ingest import _reindex, make_search_text, make_title
     now = int(time.time())
     rep = Counter()
@@ -236,6 +258,35 @@ def apply(conn: sqlite3.Connection, rule_ids: list[int], junk: list[str], labels
                 if ex2 != ex:
                     _log(conn, r["id"], "extra_districts", ex, ex2, now)
                 rep["listings"] += 1
+    # районы-дубли: объекты, правила, контуры — на имя из справочника (каждый объект — в журнал)
+    dd = {x["name"]: x["to"] for x in district_dupes(conn)} if dupes else {}
+    for name in dupes or []:
+        to = dd.get(name)
+        if not to:
+            continue
+        # rename_district тут не подходит: справочник уже считает старое имя тем же районом
+        for r in conn.execute("SELECT * FROM listings WHERE district = ?", (name,)).fetchall():
+            d = {**dict(r), "district": to}
+            d["title"] = make_title(d)
+            d["search_text"] = make_search_text(d)
+            conn.execute("UPDATE listings SET district = ?, title = ?, search_text = ? WHERE id = ?",
+                         (to, d["title"], d["search_text"], r["id"]))
+            _reindex(conn, r["id"], d["search_text"])
+            _log(conn, r["id"], "district", name, to, now)
+            rep["listings"] += 1
+        for r in conn.execute("SELECT id, extra_districts FROM listings WHERE extra_districts LIKE ?", (f'%"{name}"%',)).fetchall():
+            ex = json.loads(r["extra_districts"])
+            conn.execute("UPDATE listings SET extra_districts = ? WHERE id = ?",
+                         (json.dumps(list(dict.fromkeys(to if x == name else x for x in ex)), ensure_ascii=False), r["id"]))
+        conn.execute("UPDATE district_polygons SET name = ? WHERE name = ? AND kind = 'district'", (to, name))
+        for r in conn.execute("SELECT id, kind, value, label FROM learned_rules WHERE value LIKE ?", (f"%{name}%",)).fetchall():
+            v = json.loads(r["value"])
+            if v.get("district") == name or name in (v.get("extra") or []):
+                v["district"], v["extra"] = learning.clean_districts(to if v.get("district") == name else v.get("district"),
+                                                                     [to if x == name else x for x in v.get("extra") or []])
+                conn.execute("UPDATE learned_rules SET value = ?, label = ? WHERE id = ?",
+                             (json.dumps(v, ensure_ascii=False), learning.rule_label(r["kind"], r["label"], v), r["id"]))
+        rep["dupes"] += 1
     # выученные точки домов, которых в Краснодаре нет или они далеко от дома, — забыть, объекты — в «Спорные»
     pt_rows = {p["key"]: p for p in points_report(conn)} if points else {}
     for key in points or []:

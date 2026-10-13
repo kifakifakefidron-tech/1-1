@@ -1426,6 +1426,12 @@ def api_admin_geo(request: Request, body: dict | None = None):
     row = conn.execute("SELECT lat, lon, geo_status FROM listings WHERE id = ?", (lid,)).fetchone()
     if row is None:
         return _err("не найдено", 404)
+    from . import brain
+    src = brain.auto_source(conn, lid)
+    if src and src.startswith("point:"):   # выборочная проверка: точку сдвинули дальше 50 м — сервис ошибся
+        lat0, lon0 = _num(body.get("lat")), _num(body.get("lon"))
+        brain.record_review(conn, lid, src, lat0 is not None and lon0 is not None and row["lat"] is not None
+                            and geocode._km((row["lat"], row["lon"]), (lat0, lon0)) <= 0.05)
     if body.get("auto"):
         lat, lon, status = None, None, "pending"
     elif body.get("hide"):
@@ -1507,6 +1513,12 @@ def api_admin_place(request: Request, body: dict | None = None):
     # ТЗ «админка-гео» P0.1: подтверждение без изменений правил не создаёт; правила района — только безопасные
     want = dict(body.get("learn") or {})
     unchanged = cx == row["complex"] and district == row["district"] and extra == json.loads(row["extra_districts"] or "[]")
+    from . import brain
+    src = brain.auto_source(conn, lid)
+    if src and src.startswith("district:"):   # выборочная проверка: без правок района = «сервис решил верно»
+        brain.record_review(conn, lid, src, district == row["district"])
+    elif src:   # решение о точке: «верно», если следом экран разбора не сдвинет метку (тогда /geo запишет «поправил»)
+        brain.record_review(conn, lid, src, True)
     skipped = []
     if unchanged:
         want = {}
@@ -2169,7 +2181,8 @@ def api_admin_geo_audit(request: Request, body: dict | None = None):
                              [str(x) for x in body.get("junk") or []], bool(body.get("labels")),
                              broken=[int(x) for x in body.get("broken") or [] if str(x).isdigit()],
                              points=[str(x) for x in body.get("points") or []],
-                             cx_points=[str(x) for x in body.get("cx_points") or []])
+                             cx_points=[str(x) for x in body.get("cx_points") or []],
+                             dupes=[str(x) for x in body.get("dupes") or []])
         _bump_cache()
         return JSONResponse({"ok": True, **res})
     return JSONResponse(geoaudit.report(conn))

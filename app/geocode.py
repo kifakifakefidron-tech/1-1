@@ -197,7 +197,21 @@ def run(conn: sqlite3.Connection, limit: int = 30) -> int:
     known = Known(conn) if rows else None
     for r in rows:
         coords, status, src = None, "skip", None
-        hit = known.point(r)   # ваши правки, тот же дом в фиде, ЖК на карте — без геокодера
+        house = bool(r["street"] and r["house"])
+        hit = known.point(r, cx=not house)   # ваши правки, тот же дом в фиде, ЖК на карте — без геокодера
+        if not hit and house:
+            # ТЗ «админка-гео» P2.2: дом указан — сначала ищем ДОМ по адресу, центр ЖК — только если дом не нашёлся
+            q, quality = next(iter(candidates(r)), (None, None))
+            coords = lookup(conn, q) if q and quality == "ok" else None
+            if coords and known.plausible(r, *coords):
+                conn.execute("UPDATE listings SET lat=?, lon=?, geo_status='ok', geo_src='geocoder' WHERE id=?", (*coords, r["id"]))
+                if not r["district"]:
+                    _district_from_map(conn, r, coords)
+                conn.commit()
+                done += 1
+                continue
+            coords = None
+            hit = known.point(r)
         if hit:
             conn.execute("UPDATE listings SET lat=?, lon=?, geo_status=?, geo_src=? WHERE id=?", (*hit, r["id"]))
             if not r["district"]:
@@ -215,7 +229,11 @@ def run(conn: sqlite3.Connection, limit: int = 30) -> int:
                 log.info("Геокодер: %s → %s не сходится с ЖК/районом, пропускаю", q, coords)
                 coords = None
             if coords:
-                status, src = quality, "geocoder"
+                place = r["settlement"] or "Краснодар"
+                src = ("geocoder-cx" if q.startswith("ЖК ") else "geocoder" if quality == "ok"
+                       else "geocoder-street" if r["street"] and q == f"{place}, {r['street']}"
+                       else "geocoder-place" if r["settlement"] and q.startswith(f"{r['settlement']},") else "geocoder-district")
+                status = quality if src == "geocoder" else "approx"
                 break
             status = "none"
         conn.execute("UPDATE listings SET lat=?, lon=?, geo_status=?, geo_src=? WHERE id=?",

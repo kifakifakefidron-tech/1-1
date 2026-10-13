@@ -89,8 +89,9 @@ def test_map_reports_points_and_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(geocode, "lookup", fake)
     geocode.run(conn)
     res = search.map_points(conn, search.Query(), 0)
-    assert res["total"] == 2 and len(res["points"]) == 2   # без адреса/района объект не показывается вовсе
-    assert sorted(p["approx"] for p in res["points"]) == [0, 1]   # ФМР — примерная точка по району
+    assert res["total"] == 2   # без адреса/района объект не показывается вовсе
+    # ТЗ «админка-гео» P2.1: центр района — не метка на карте («адрес уточняется», объект — в списке)
+    assert len(res["points"]) == 1 and res["points"][0]["level"] == "house" and res["approx_hidden"] == 1
 
 
 def test_geocoder_rejects_points_outside_krasnodar(monkeypatch):

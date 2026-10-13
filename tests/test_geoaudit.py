@@ -138,3 +138,48 @@ def test_complex_point_from_one_house_recomputed_and_reverted(env):
     conn.execute("DELETE FROM geo_learned")
     geocode.learn(conn, conn.execute("SELECT * FROM listings WHERE id = ?", (h2,)).fetchone(), 45.052, 38.982)
     assert [k for (k,) in conn.execute("SELECT key FROM geo_learned")] == ["addr:|корнилова|12"]
+
+
+def test_complex_key_normalizes_audit_variants():
+    """ТЗ P1.1: варианты написания из аудита дают один ключ; разрядка и адрес в скобках убираются из названия."""
+    from app import geo
+    for group in (["Самолет 3", "Самолёт 3", "Самолёт -3", "Самолет-3", "Самолёт-3", "Самолёт 3 очередь", "ЖК «Самолет 3»"],
+                  ["Лучший 2", "Лучший-2", "Лучший -2"], ["Акварели-2", "Акварели 2", "Акварели - 2"],
+                  ["Клубный дом", "Клубный Дом"], ["О Т Р А Ж Е Н И Е", "Отражение"]):
+        assert len({geo.complex_key(n) for n in group}) == 1, group
+    assert geo.pretty_name("О Т Р А Ж Е Н И Е") == "Отражение"
+    assert geo.pretty_name("Инсити (Российская улица, 267/3к1)") == "Инсити"
+    assert geo.complex_key("Гарантия на Обрывной") != geo.complex_key("Гарантия на Дежнева")
+
+
+def test_district_dupe_merged_with_journal(env):
+    """«Молодёжный» при районе справочника «Молодежный/Витаминкомбинат» — слить (объекты в журнал, откат по объекту)."""
+    from app import learning
+    c, conn = env
+    learning.rename_district(conn, "Молодёжный", "Молодежный/Витаминкомбинат")   # так на сервере назвал район админ
+    lid = add(conn, "2-к квартира 50 м², 3/9 эт., ул. Тестовая 1. 6 млн. 89180000301", 45.0, 38.9)
+    conn.execute("UPDATE listings SET district = 'Молодёжный' WHERE id = ?", (lid,))
+    conn.commit()
+    d = next(x for x in c.get("/api/admin/geo-audit").json()["dupes"] if x["name"] == "Молодёжный")
+    assert d["to"] == "Молодежный/Витаминкомбинат" and d["listings"] == 1
+    assert c.post("/api/admin/geo-audit", json={"dupes": ["Молодёжный"]}).json()["dupes"] == 1
+    assert conn.execute("SELECT district FROM listings WHERE id = ?", (lid,)).fetchone()[0] == "Молодежный/Витаминкомбинат"
+    assert c.get(f"/api/admin/edits?listing={lid}").json()["items"][0]["old"] == "Молодёжный"
+
+
+def test_map_groups_complex_level_and_hides_vague(env):
+    """ТЗ P2.1: центр ЖК — одна метка ЖК с числом объектов; середина улицы/центр района — не метка; дом — метка."""
+    from app import search
+    c, conn = env
+    a = add(conn, "2-к квартира 50 м², 3/9 эт., ЖК Губернский. 6 млн. 89180000401", 45.06, 39.02)
+    b = add(conn, "1-к квартира 40 м², 5/9 эт., ЖК Губернский. 4 млн. 89180000402", 45.06, 39.02)
+    v = add(conn, "Студия 25 м², 2/9 эт., ул. Тестовая. 3 млн. 89180000403", 45.07, 39.03)
+    h = add(conn, "2-к квартира 55 м², 4/9 эт., ул. Тестовая 5. 6,5 млн. 89180000404", 45.08, 39.04)
+    conn.execute("UPDATE listings SET geo_src = 'map-cx', geo_status = 'ok' WHERE id IN (?, ?)", (a, b))
+    conn.execute("UPDATE listings SET geo_src = 'osm-street', geo_status = 'approx' WHERE id = ?", (v,))
+    conn.commit()
+    res = search.map_points(conn, search.Query(), 0)
+    assert [p["id"] for p in res["points"]] == [h] and res["approx_hidden"] == 1
+    assert len(res["complexes"]) == 1 and res["complexes"][0]["n"] == 2 and res["complexes"][0]["price_min"] == 4_000_000
+    assert c.get(f"/api/listings/{v}").json()["geo_level"] == "street"
+    assert c.get(f"/api/listings/{a}").json()["geo_approx"] is True

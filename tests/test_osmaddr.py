@@ -78,3 +78,15 @@ def test_complex_base_name_and_feed_far_conflict(conn, add):
     conn.commit()
     assert autolearn.recheck_all(conn)["feed_far"] == 1
     assert conn.execute("SELECT place_conflict FROM listings WHERE source = 'feed'").fetchone()[0].startswith("feed:")
+
+
+def test_one_spelling_and_abbreviations(conn):
+    """ТЗ P1.2: регистр/ё — как в справочнике; «П. Метал-ва» → «Петра Метальникова»; разные настоящие улицы не путаем."""
+    osmaddr.load(conn, TSV + "\n" + "\n".join([
+        "45.10\t38.90\tулица Петра Метальникова\t5\t", "45.11\t38.91\tулица Западный Обход\t1\t",
+        "45.12\t38.92\tМинская улица\t1\t", "45.13\t38.93\tДинская улица\t1\t"]))
+    assert osmaddr.fix_street(conn, "Западный обход") == "Западный Обход"
+    assert osmaddr.fix_street(conn, "Западный Обход") is None
+    assert osmaddr.fix_street(conn, "П. Метал-ва") == "Петра Метальникова"
+    assert osmaddr.fix_street(conn, "П. Металь-а") == "Петра Метальникова"
+    assert osmaddr.fix_street(conn, "Минская") is None and osmaddr.fix_street(conn, "Динская") is None

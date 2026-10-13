@@ -174,9 +174,10 @@ HOUSE_POINT_SRC = (None, "geocoder", "osm-house", "osm-near", "feed-house", "lea
 def _house_district(conn: sqlite3.Connection, r) -> str | None:
     """Район по контуру под ТОЧНОЙ точкой дома (центр ЖК, середина улицы и примерные точки не в счёт)."""
     from . import districtmap
+    from .search import geo_level
     if r["lat"] is None or r["geo_status"] not in ("ok", "manual", "learned", "feed"):
         return None
-    if r["geo_status"] == "ok" and r["geo_src"] not in HOUSE_POINT_SRC:
+    if geo_level(r["lat"], r["geo_status"], r["geo_src"]) != "house":   # ТЗ P2.3: район решает только точка дома
         return None
     hit = districtmap.district_at(conn, r["lat"], r["lon"])
     return hit[0] if hit and hit[1] == "district" else None

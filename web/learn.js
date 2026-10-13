@@ -44,6 +44,12 @@
     const pipe = (title, steps) => `<div class="ln-pipe"><h3>${title}</h3><ol>${steps.map((s) => `
       <li class="${s.bad ? "bad" : s.warn ? "warn" : ""}"><span>${esc(s.label)}</span><b>${n0(s.n)}${s.unit ? ` <small>${s.unit}</small>` : ""}</b></li>`).join("")}</ol></div>`;
     $("lnPipes").innerHTML = pipe("Район", d.pipeline.district) + pipe("Точка на карте", d.pipeline.point);
+    const acc = d.accuracy || [];   // точность источников по вашим ответам в «Проверить решения сервиса»
+    $("lnAcc").hidden = !acc.length;
+    $("lnAcc").innerHTML = `<h3>Насколько сервис прав — по вашим проверкам (90 дней)</h3>
+      <ol class="ln-acc">${acc.map((a) => `<li class="${a.share < .8 ? "bad" : a.share < .95 ? "warn" : ""}"><span>${esc(a.label)}</span>
+        <b>${Math.round(a.share * 100)}%</b><small>верно ${n0(a.ok)} из ${n0(a.checked)}</small></li>`).join("")}</ol>
+      <p class="note">Меньше 80 % — источнику не стоит верить: напишите об этом, сервис перестанет им пользоваться.</p>`;
     renderRecheck(d.recheck);
     const unc = d.uncontoured || [];
     $("lnUnc").hidden = !unc.length;

@@ -18,8 +18,25 @@ import sqlite3
 from . import autolearn, districtmap, learning
 
 # точный дом (справочник, фид, ваши правки) — надёжно, не проверяем; сомнительно — соседний дом, улица, центр ЖК/района
-_AUTO_GEO = "('feed-cx', 'map-cx', 'map-district', 'osm-near', 'osm-street')"
+_AUTO_GEO = "('feed-cx', 'map-cx', 'geocoder-cx', 'map-district', 'osm-near', 'osm-street')"
+_CX_GEO = "('feed-cx', 'map-cx', 'geocoder-cx')"
 _SURE_GEO = "('osm-house', 'feed-house', 'learned')"
+SAMPLE_PER_SOURCE = 40   # ТЗ P4.0.1: в день по каждому источнику — 30–50 случайных решений, а не все подряд
+# Откуда решение сервиса (для выборки и оценки точности): район «по соседям», район по примерной точке, источник точки
+AUTO_SRC = (f"(CASE WHEN l.district_src IN ('vote-house', 'vote-cx') THEN 'district:' || l.district_src "
+            f"WHEN l.district_src = 'map' AND COALESCE(l.geo_src, '') NOT IN {_SURE_GEO} "
+            f"AND l.geo_status NOT IN ('manual', 'learned', 'feed') THEN 'district:map-approx' "
+            f"ELSE 'point:' || l.geo_src END)")
+_AUTO_ALL = (f"((l.admin_fixed = 0 AND (l.district_src IN ('vote-house', 'vote-cx') OR (l.district_src = 'map' "
+             f"AND COALESCE(l.geo_src, '') NOT IN {_SURE_GEO} AND l.geo_status NOT IN ('manual', 'learned', 'feed')))) "
+             f"OR (l.geo_src IN {_AUTO_GEO} AND l.geo_status NOT IN ('manual', 'feed') "
+             # центр ЖК при известном доме — не в проверку: такой дом сервис ищет сам (geocode.run: дом раньше ЖК)
+             f"AND NOT (l.geo_src IN {_CX_GEO} AND l.street IS NOT NULL AND l.house IS NOT NULL)))")
+SRC_LABEL = {"district:vote-house": "Район «как у соседей по дому»", "district:vote-cx": "Район «как у соседей по ЖК»",
+             "district:map-approx": "Район по примерной точке", "point:feed-cx": "Точка — центр ЖК по фиду",
+             "point:map-cx": "Точка — центр контура ЖК", "point:geocoder-cx": "Точка — ЖК по поиску",
+             "point:map-district": "Точка — центр района", "point:osm-near": "Точка — соседний дом",
+             "point:osm-street": "Точка — середина улицы"}
 VISIBLE = ("l.is_active = 1 AND (l.district IS NOT NULL OR l.complex IS NOT NULL OR l.street IS NOT NULL "
            "OR l.settlement IS NOT NULL)")
 
@@ -38,10 +55,12 @@ QUEUES: list[dict] = [
      "hint": "Стоит по улице или району — уточните дом",
      "where": "l.geo_status = 'approx'"},
     {"key": "auto", "mode": "place", "label": "Проверить решения сервиса",
-     "hint": "Сомнительные решения сервиса: соседний дом, середина улицы, центр ЖК, район «по соседям» — выборочно",
-     "where": f"((l.admin_fixed = 0 AND (l.district_src IN ('vote-house', 'vote-cx') OR (l.district_src = 'map' "
-              f"AND COALESCE(l.geo_src, '') NOT IN {_SURE_GEO} AND l.geo_status NOT IN ('manual', 'learned', 'feed')))) "
-              f"OR (l.geo_src IN {_AUTO_GEO} AND l.geo_status NOT IN ('manual', 'feed')))"},
+     "hint": f"Выборка на сегодня: до {SAMPLE_PER_SOURCE} случайных решений по каждому источнику (соседний дом, улица, "
+             "центр ЖК, район «по соседям»). «Сохранить» без правок = «верно» — так считается точность источника",
+     "where": f"""l.id IN (SELECT id FROM (SELECT l.id, ROW_NUMBER() OVER (PARTITION BY {AUTO_SRC}
+                  ORDER BY (l.id * 7919 + CAST(strftime('%Y%j', 'now') AS INTEGER) * 104729) % 1000003) AS rn
+                  FROM listings l WHERE {VISIBLE} AND {_AUTO_ALL}
+                  AND NOT EXISTS (SELECT 1 FROM auto_reviews a WHERE a.listing_id = l.id)) WHERE rn <= {SAMPLE_PER_SOURCE})"""},
     {"key": "fixed", "mode": "place", "label": "Поправлено вами", "hint": "Ваши правки — можно пересмотреть",
      "where": "l.admin_fixed = 1"},
 ]
@@ -50,6 +69,29 @@ QUEUE = {q["key"]: q for q in QUEUES}
 ALIASES = {("geo", "none"): "nogeo", ("geo", "pending"): "nogeo", ("geo", "approx"): "approx", ("geo", "auto"): "auto",
            ("place", "nodistrict"): "nodistrict", ("place", "nocomplex"): "nodistrict", ("place", "auto"): "auto",
            ("place", "fixed"): "fixed"}
+
+
+def auto_source(conn: sqlite3.Connection, lid: int) -> str | None:
+    """Источник решения сервиса для объекта (None — решение не сервиса или надёжное)."""
+    r = conn.execute(f"SELECT {AUTO_SRC} FROM listings l WHERE l.id = ? AND {_AUTO_ALL}", (lid,)).fetchone()
+    return r[0] if r else None
+
+
+def record_review(conn: sqlite3.Connection, lid: int, src: str | None, ok: bool) -> None:
+    """Админ посмотрел решение сервиса из выборки: верно (сохранил без правок) или поправил."""
+    if src:
+        import time
+        conn.execute("INSERT OR REPLACE INTO auto_reviews (listing_id, src, ok, ts) VALUES (?,?,?,?)",
+                     (lid, src, int(ok), int(time.time())))
+
+
+def accuracy(conn: sqlite3.Connection) -> list[dict]:
+    """Точность источников по вашим ответам (за 90 дней)."""
+    import time
+    rows = conn.execute("""SELECT src, COUNT(*), SUM(ok) FROM auto_reviews WHERE ts > ? GROUP BY src ORDER BY 2 DESC""",
+                        (int(time.time()) - 90 * 86400,)).fetchall()
+    return [{"src": s, "label": SRC_LABEL.get(s, s), "checked": n, "ok": k or 0, "share": round((k or 0) / n, 2)}
+            for s, n, k in rows]
 
 
 def queue_key(mode: str | None, kind: str | None) -> str:
@@ -92,24 +134,28 @@ def overview(conn: sqlite3.Connection) -> dict:
             GROUP BY l.district ORDER BY 2 DESC""").fetchall() if d not in drawn]
     return {
         "uncontoured": uncontoured,
+        "accuracy": accuracy(conn),
         "total": total, "ready": ready, "queues": [{k: q[k] for k in ("key", "label", "hint", "mode")} | {"n": c[q["key"]]}
                                                    for q in QUEUES],
         "pipeline": {
             "district": [
                 {"key": "yours", "label": "Ваши правки объекта", "n": dist.get("yours", 0)},
-                {"key": "rules", "label": "Ваши правила: дом, ЖК, улица → район",
-                 "n": sum(rules.get(k, 0) for k in ("addr", "cx_district", "street", "cx_alias")), "unit": "правил"},
-                {"key": "map", "label": "Ваши нарисованные районы (по точке дома)", "n": dist.get("map", 0)},
+                {"key": "rules", "label": "Ваше правило «дом → район»", "n": rules.get("addr", 0), "unit": "правил"},
+                {"key": "map", "label": "Ваши нарисованные районы (только по точке дома)", "n": dist.get("map", 0)},
+                {"key": "cxrules", "label": "Ваши правила «ЖК → район» (когда точки дома нет)",
+                 "n": rules.get("cx_district", 0) + rules.get("cx_alias", 0), "unit": "правил"},
                 {"key": "votes", "label": "Соседние объявления того же дома / ЖК", "n": dist.get("votes", 0)},
                 {"key": "text", "label": "Текст объявления и справочник", "n": dist.get("text", 0)},
+                {"key": "strules", "label": "Ваши правила «улица → район» (нет ни района в тексте, ни точки дома)",
+                 "n": rules.get("street", 0), "unit": "правил"},
                 {"key": "none", "label": "Не определён — в очереди", "n": dist.get("none", 0), "bad": True},
             ],
             "point": [
                 {"key": "yours", "label": "Ваши точки", "n": geo.get("yours", 0)},
                 {"key": "feed", "label": "Фид СТРЕЛ (тот же дом / ЖК)", "n": geo.get("feed", 0)},
                 {"key": "osm", "label": "Справочник адресов OSM (дом)", "n": geo.get("osm", 0)},
-                {"key": "cx", "label": "Контур ЖК", "n": geo.get("cx", 0)},
                 {"key": "geocoder", "label": "Поиск по адресу (проверен по ЖК и району)", "n": geo.get("geocoder", 0)},
+                {"key": "cx", "label": "Центр ЖК (дома нет)", "n": geo.get("cx", 0)},
                 {"key": "approx", "label": "Примерно: улица или район", "n": geo.get("approx", 0), "warn": True},
                 {"key": "none", "label": "Нет точки — в очереди", "n": geo.get("none", 0), "bad": True},
             ],

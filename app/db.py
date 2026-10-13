@@ -312,6 +312,11 @@ CREATE TABLE IF NOT EXISTS work_notes (
 CREATE INDEX IF NOT EXISTS ix_work_notes_listing ON work_notes (user_id, listing_id);
 CREATE INDEX IF NOT EXISTS ix_work_notes_client ON work_notes (client_id);
 CREATE INDEX IF NOT EXISTS ix_work_notes_pick ON work_notes (collection_id);
+-- Выборочная проверка решений сервиса (ТЗ «админка-гео» P4.0.1): ответ админа по объекту из выборки — верно / поправил
+CREATE TABLE IF NOT EXISTS auto_reviews (
+    listing_id INTEGER NOT NULL, src TEXT NOT NULL, ok INTEGER NOT NULL, ts INTEGER NOT NULL,
+    PRIMARY KEY (listing_id, src)
+);
 CREATE TABLE IF NOT EXISTS notes (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
     text TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)

@@ -254,9 +254,19 @@ _NOT_COMPLEX_WORDS = {"ул", "улица", "д", "дом", "этаж", "эт", 
                       "1к", "2к", "3к", "евро", "продам", "продаю", "продается"}
 
 
+_SPACED = re.compile(r"(?<!\w)((?:[^\W\d_] ){2,}[^\W\d_])(?!\w)")
+_ADDR_PAREN = re.compile(r"\s*\([^()]*\d[^()]*\)")   # «Инсити (Российская улица, 267/3к1)» — адрес в скобках
+
+
+def unspace(s: str) -> str:
+    """Разрядка: «О Т Р А Ж Е Н И Е» → «ОТРАЖЕНИЕ» (3 и больше одиночных букв через пробел)."""
+    return _SPACED.sub(lambda m: m.group(1).replace(" ", ""), s)
+
+
 def pretty_name(name: str) -> str:
-    """«ЗОЛОТАЯ ЛИНИЯ» / «золотая линия» → «Золотая Линия»; «URAL» оставляем."""
-    name = " ".join(name.strip().strip("«»\"'").split())
+    """«ЗОЛОТАЯ ЛИНИЯ» / «золотая линия» → «Золотая Линия»; «URAL» оставляем; «О Т Р А Ж Е Н И Е» → «Отражение»;
+    адрес в скобках («Инсити (Российская улица, 267/3к1)») — убираем."""
+    name = " ".join(_ADDR_PAREN.sub(" ", unspace(name.strip())).strip().strip("«»\"'").split())
     if name.isupper() and re.search(r"[А-ЯЁ]", name) or name.islower():
         name = name.title()
     return name
@@ -325,7 +335,10 @@ def complex_key(name: str | None) -> str | None:
     """Ключ ЖК для фильтра: «ЖК Самолёт-2», «самолет 2» и «Самолет 2» — один и тот же ЖК."""
     if not name:
         return None
-    w = re.sub(rf"^{_JK_MARKER}\s+", "", words(name))
+    w = re.sub(rf"^{_JK_MARKER}\s+", "", words(_ADDR_PAREN.sub(" ", unspace(name))))
+    # «Самолёт 3 очередь», «3-я очередь», «очередь 3», «3 оч» → «самолет 3»
+    w = re.sub(r"\b(\d+)\s*(?:я|й)?\s+(?:очередь|оч)\b", r"\1", w)
+    w = " ".join(re.sub(r"\b(?:очередь|оч)\s+(\d+)\b", r"\1", w).split())
     rec = resolve_complex(w)
     return words(rec.name) if rec else w
 
