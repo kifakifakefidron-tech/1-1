@@ -2166,7 +2166,10 @@ def api_admin_geo_audit(request: Request, body: dict | None = None):
     if request.method == "POST":
         body = body or {}
         res = geoaudit.apply(conn, [int(x) for x in body.get("rules") or [] if str(x).isdigit()],
-                             [str(x) for x in body.get("junk") or []], bool(body.get("labels")))
+                             [str(x) for x in body.get("junk") or []], bool(body.get("labels")),
+                             broken=[int(x) for x in body.get("broken") or [] if str(x).isdigit()],
+                             points=[str(x) for x in body.get("points") or []],
+                             cx_points=[str(x) for x in body.get("cx_points") or []])
         _bump_cache()
         return JSONResponse({"ok": True, **res})
     return JSONResponse(geoaudit.report(conn))

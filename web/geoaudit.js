@@ -26,7 +26,9 @@
     box.innerHTML = `
       <p class="ln-a-sum">Правил «улица/ЖК → район»: <b>${data.rules.length}</b>, против вашей карты районов (в своём районе меньше 70 %
         объектов с точкой дома): <b class="${data.bad ? "bad" : ""}">${data.bad}</b>. ЖК-мусор: <b>${data.junk.length}</b>.
-        «Улицы»-подписи («Площадь», «Этаж»…): <b>${data.labels.length}</b>. Выученных точек домов без населённого пункта: ${data.points_no_settlement}.</p>
+        «Улицы»-подписи («Площадь», «Этаж»…): <b>${data.labels.length}</b>. Испорченных правил: <b>${data.broken.length}</b>.
+        Выученных точек домов без посёлка: ${data.points_total} (верных по справочнику адресов ${data.points_ok}, сомнительных
+        <b class="${data.points.length ? "bad" : ""}">${data.points.length}</b>). Точек ЖК из одного дома: <b>${data.cx_points.length}</b>.</p>
       <h3 class="ln-a-h">Правила <label class="ln-a-all"><input type="checkbox" id="laShowAll"${showAll ? " checked" : ""}> показать все, не только спорные</label></h3>
       ${rules.length ? `<table class="ln-a-t"><thead><tr><th></th><th>Правило</th><th>Объектов</th><th>По контурам (точки домов)</th><th>В своём районе</th></tr></thead><tbody>
         ${rules.map((r) => `<tr class="st-${ST[r.status][1]}"><td><input type="checkbox" data-rule="${r.id}"${r.status === "bad" ? " checked" : ""}></td>
@@ -39,6 +41,18 @@
       <h3 class="ln-a-h">«Улицы», которые на самом деле подписи полей</h3>
       ${data.labels.length ? `<label class="ln-a-row"><input type="checkbox" id="laLabels" checked>
           Убрать улицу у ${data.labels.length} объектов (${esc([...new Set(data.labels.map((x) => x.street))].join(", "))}) — точку поищем заново</label>`
+        : `<p class="note">Не найдено.</p>`}
+      <h3 class="ln-a-h">Испорченные правила (район склеен из нескольких или повторяется)</h3>
+      ${data.broken.length ? data.broken.map((b) => `<label class="ln-a-row"><input type="checkbox" data-broken="${b.id}" checked>
+          «${esc(b.label)}» → «${esc(b.new_label)}»</label>`).join("") : `<p class="note">Не найдено.</p>`}
+      <h3 class="ln-a-h">Выученные точки домов без посёлка, которые не сходятся со справочником адресов</h3>
+      ${!data.osm_loaded ? `<p class="note">Справочник адресов ещё не загружен — проверим после загрузки.</p>`
+        : data.points.length ? data.points.map((x) => `<label class="ln-a-row"><input type="checkbox" data-point="${esc(x.key)}" checked>
+          «${esc(x.label)}» — ${x.status === "far" ? `дом по справочнику в ${x.m} м от точки` : "в Краснодаре такой улицы нет (посёлок?)"};
+          объектов на точке: ${x.listings}. Забыть точку, объекты — в «Спорные»</label>`).join("") : `<p class="note">Не найдено.</p>`}
+      <h3 class="ln-a-h">Точки ЖК, которые на самом деле точка одного дома</h3>
+      ${data.cx_points.length ? data.cx_points.map((x) => `<label class="ln-a-row"><input type="checkbox" data-cxpt="${esc(x.key)}" checked>
+          «${esc(x.label)}» — ${x.new ? `перенести в центр (${esc(x.how)})` : esc(x.how)}; объектов на точке: ${x.listings}</label>`).join("")
         : `<p class="note">Не найдено.</p>`}
       <div class="ln-a-acts"><button type="button" class="pill" id="laApply">Применить отмеченное</button>
         <span class="note">Отключённое правило: его объекты получат район по контуру под точкой дома, иначе — из текста объявления.</span></div>`;
@@ -57,12 +71,18 @@
     const rules = [...box.querySelectorAll("[data-rule]:checked")].map((x) => Number(x.dataset.rule));
     const junk = [...box.querySelectorAll("[data-junk]:checked")].map((x) => x.dataset.junk);
     const labels = !!($("laLabels") && $("laLabels").checked);
-    if (!rules.length && !junk.length && !labels) return;
-    if (!confirm(`Применить?\nОтключить правил: ${rules.length}; убрать ЖК-мусор: ${junk.length}; улицы-подписи: ${labels ? "да" : "нет"}.\nВсе изменения объектов попадут в журнал правок — их можно откатить.`)) return;
+    const pick = (attr) => [...box.querySelectorAll(`[data-${attr}]:checked`)].map((x) => x.dataset[attr]);
+    const broken = pick("broken").map(Number), points = pick("point"), cx_points = pick("cxpt");
+    if (!rules.length && !junk.length && !labels && !broken.length && !points.length && !cx_points.length) return;
+    if (!confirm(`Применить?\nОтключить правил: ${rules.length}; убрать ЖК-мусор: ${junk.length}; улицы-подписи: ${labels ? "да" : "нет"};\n`
+      + `починить правил: ${broken.length}; забыть точек домов: ${points.length}; пересчитать точек ЖК: ${cx_points.length}.\n`
+      + "Все изменения объектов попадут в журнал правок — их можно откатить.")) return;
     e.target.disabled = true;
-    const r = await call("/api/admin/geo-audit", { rules, junk, labels });
+    const r = await call("/api/admin/geo-audit", { rules, junk, labels, broken, points, cx_points });
     e.target.disabled = false;
-    alert(r.ok ? `Готово: правил отключено ${r.data.rules || 0}, ЖК убрано ${r.data.junk || 0}, улиц-подписей ${r.data.labels || 0}, объектов изменено ${r.data.listings || 0}.`
+    const d = r.data;
+    alert(r.ok ? `Готово: правил отключено ${d.rules || 0}, починено ${d.broken || 0}; ЖК убрано ${d.junk || 0}; улиц-подписей ${d.labels || 0}; `
+      + `точек домов забыто ${d.points || 0} (в «Спорные» ${d.to_queue || 0}), точек ЖК пересчитано ${d.cx_points || 0}; объектов изменено ${d.listings || 0}.`
       : "Не получилось применить");
     load();
   });

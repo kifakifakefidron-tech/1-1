@@ -163,7 +163,7 @@ class Known:
 
     def point(self, row) -> tuple[float, float, str, str] | None:
         """(lat, lon, geo_status, geo_src) из уже известного — без геокодера."""
-        pt = geocode.learned_point(self.conn, row)
+        pt = geocode.learned_point(self.conn, row, ("addr",))   # сначала ДОМ (ваша точка, фид, OSM), потом ЖК
         if pt:
             return pt[0], pt[1], "learned", "learned"
         k = learning.addr_key(row["street"], row["house"], row["settlement"])
@@ -172,6 +172,9 @@ class Known:
         osm = osmaddr.point(self.conn, row["street"], row["house"], row["settlement"]) if row["street"] else None
         if osm and osm[2] == "ok" and self.plausible(row, osm[0], osm[1]):   # дом из справочника OSM
             return osm
+        pt = geocode.learned_point(self.conn, row, ("cx",))
+        if pt:
+            return pt[0], pt[1], "learned", "learned"
         hit = self.cx_point(row)
         if hit:
             return *hit[0], "ok", hit[1]

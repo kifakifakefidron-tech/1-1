@@ -66,6 +66,35 @@ def add_district(conn: sqlite3.Connection, name: str, aliases: list[str] | None 
     return name
 
 
+def clean_districts(district: str | None, extra: list | None = None) -> tuple[str | None, list[str]]:
+    """Район и доп. районы — каноническими именами, без повторов и без основного среди дополнительных.
+    «Губернский/Губернский/Любимово» (склеенная строка) → «Губернский» + [«Любимово»]."""
+    names: list[str] = []
+    for raw in [district, *(extra or [])]:
+        raw = " ".join(str(raw or "").split())
+        if not raw:
+            continue
+        canon = geo.canonical_district(raw)
+        split = [geo.canonical_district(x) for x in re.split(r"\s*/\s*", raw)] if not canon and "/" in raw else []
+        # делим по «/», только если КАЖДАЯ часть — известный район (свой район с «/» в названии не ломаем)
+        parts = [canon] if canon else (split if split and all(split) else [raw])
+        for x in parts:
+            if x and x not in names:
+                names.append(x)
+    return (names[0] if names else None), names[1:]
+
+
+def rule_label(kind: str, label: str | None, v: dict) -> str:
+    """Подпись правила заново из его значения (а не заменой текста — так появлялось «Губернский/Губернский/Любимово»)."""
+    head = (label or "").split(" → ")[0]
+    if kind == "addr":
+        cx = v.get("complex")
+        return f"{head} → {('ЖК ' + cx) if cx else 'без ЖК'}{', ' + v['district'] if v.get('district') else ''}"
+    if kind in ("street", "cx_district"):
+        return f"{head} → {', '.join([x for x in [v.get('district'), *(v.get('extra') or [])] if x])}"
+    return label or head
+
+
 def street_key(street: str | None, settlement: str | None = None) -> str | None:
     s = _street_key(street)
     return f"street:{words(settlement or '')}|{s}" if s else None
@@ -207,6 +236,7 @@ def learn(conn: sqlite3.Connection, row: sqlite3.Row, new_complex: str | None, n
     Возвращает подписи выученных правил (для сообщения админу)."""
     now = int(time.time())
     made: list[str] = []
+    new_district, extra = clean_districts(new_district, extra)
 
     def save(kind, key, value, label):
         conn.execute("""INSERT INTO learned_rules (kind, key, value, label, n, ts) VALUES (?,?,?,?,1,?)
@@ -303,8 +333,12 @@ def rename_district(conn: sqlite3.Connection, old: str, new: str) -> dict:
             v["from"] = target
         if "extra" in v:
             v["extra"] = [target if x == old else x for x in v["extra"]]
+        if v.get("district"):
+            # только убрать повторы (новое имя справочник узнает лишь после sync_districts — не приводим его к старому)
+            v["extra"] = [x for x in dict.fromkeys(v.get("extra") or []) if x != v["district"]]
+        kind = conn.execute("SELECT kind FROM learned_rules WHERE id = ?", (r["id"],)).fetchone()[0]
         conn.execute("UPDATE learned_rules SET value = ?, label = ? WHERE id = ?",
-                     (json.dumps(v, ensure_ascii=False), (r["label"] or "").replace(old, target), r["id"]))
+                     (json.dumps(v, ensure_ascii=False), rule_label(kind, r["label"], v), r["id"]))
     import urllib.parse
     for r in conn.execute("SELECT id, params, page_query FROM saved_searches WHERE params LIKE '%district%'").fetchall():
         def fix(q):
@@ -329,7 +363,9 @@ def move(conn: sqlite3.Connection, kind: str, name: str, frm: str | None, to: st
     """Перенести улицу или ЖК в другой район: правило на будущее + сразу все такие объекты."""
     from .ingest import _reindex, make_search_text
     now = int(time.time())
-    to = geo.canonical_district(to) or to
+    to, extra = clean_districts(to, extra)
+    if not to:
+        return {"listings": 0}
     if kind == "complex":
         k = cx_key(name)
         if not k:

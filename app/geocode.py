@@ -115,9 +115,11 @@ def learn_keys(row) -> list[tuple[str, str]]:
     return keys
 
 
-def learned_point(conn: sqlite3.Connection, row) -> tuple[float, float] | None:
-    """Выученная точка: сначала точный дом, потом ЖК."""
+def learned_point(conn: sqlite3.Connection, row, kinds: tuple = ("addr", "cx")) -> tuple[float, float] | None:
+    """Выученная точка: сначала точный дом, потом ЖК (kinds — какие из них смотреть)."""
     for key, _ in learn_keys(row):
+        if key.split(":", 1)[0] not in kinds:
+            continue
         hit = conn.execute("SELECT lat, lon FROM geo_learned WHERE key = ?", (key,)).fetchone()
         if hit:
             return hit["lat"], hit["lon"]
@@ -128,7 +130,10 @@ def learn(conn: sqlite3.Connection, row, lat: float, lon: float) -> int:
     """Админ поставил точку вручную → запоминаем её для этого дома (точно) и ЖК (среднее по правкам),
     и сразу переносим на неё остальные объекты с тем же адресом. Возвращает, сколько объектов поправили."""
     now = int(time.time())
+    has_house = any(k.startswith("addr:") for k, _ in learn_keys(row))
     for key, label in learn_keys(row):
+        if key.startswith("cx:") and has_house:
+            continue   # точка дома — не центр ЖК (иначе «центр ЖК» = первый поправленный дом)
         if key.startswith("addr:"):
             conn.execute("""INSERT INTO geo_learned (key, lat, lon, n, ts, label) VALUES (?,?,?,1,?,?)
                             ON CONFLICT(key) DO UPDATE SET lat = excluded.lat, lon = excluded.lon, n = n + 1,

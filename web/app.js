@@ -1898,8 +1898,11 @@
 
     // админ: история правок объекта и откат одной правки
     const ED_F = { district: "район", extra_districts: "второй район", complex: "ЖК", street: "улица", house: "дом", price: "цена",
-      description: "описание", deal: "сделка", rooms: "комнаты", area: "площадь", floor: "этаж" };
-    const edVal = (v) => (v == null || v === "" ? "—" : Array.isArray(v) ? (v.join(", ") || "—") : String(v).slice(0, 80));
+      description: "описание", deal: "сделка", rooms: "комнаты", area: "площадь", floor: "этаж", point: "точка на карте" };
+    const PT_SRC = { approx: "примерно", learned: "выучена", ok: "точно", pending: "ищется", manual: "ваша", feed: "из фида" };
+    const edVal = (v) => (v == null || v === "" ? "—"
+      : Array.isArray(v) && v.length === 4 && typeof v[0] !== "string" ? (v[0] == null ? "без точки" : `${(+v[0]).toFixed(5)}, ${(+v[1]).toFixed(5)} (${PT_SRC[v[2]] || v[2]})`)
+      : Array.isArray(v) ? (v.join(", ") || "—") : String(v).slice(0, 80));
     async function loadEdits(id) {
       const box = document.getElementById(`dvEd${id}`);
       if (!box) return;
