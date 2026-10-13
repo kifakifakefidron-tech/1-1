@@ -312,6 +312,13 @@ CREATE TABLE IF NOT EXISTS work_notes (
 CREATE INDEX IF NOT EXISTS ix_work_notes_listing ON work_notes (user_id, listing_id);
 CREATE INDEX IF NOT EXISTS ix_work_notes_client ON work_notes (client_id);
 CREATE INDEX IF NOT EXISTS ix_work_notes_pick ON work_notes (collection_id);
+-- Выборочная проверка решений сервиса (ТЗ «админка-гео» P4.0.1): ответ админа по объекту из выборки — верно / поправил
+-- Качество гео-данных по дням (app/geoquality.py): динамика на /learn
+CREATE TABLE IF NOT EXISTS geo_quality_daily (day TEXT PRIMARY KEY, data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS auto_reviews (
+    listing_id INTEGER NOT NULL, src TEXT NOT NULL, ok INTEGER NOT NULL, ts INTEGER NOT NULL,
+    PRIMARY KEY (listing_id, src)
+);
 CREATE TABLE IF NOT EXISTS notes (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
     text TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)
@@ -384,6 +391,7 @@ MIGRATIONS = [
     ("clients", "wishes", "TEXT"),                 # JSON: типы, площадь, этаж, ЖК, состояние, обременение, оплата, срок, допуск
     ("clients", "stage_manual", "INTEGER NOT NULL DEFAULT 0"),   # этап двигали руками — сервис сам не двигает   # уникальные открытия клиентом (устройство в день)
     ("listings", "phone_roles", "TEXT"),       # {"+7…": "text" | "sender"} — номер в тексте / прислал в чат
+    ("listings", "multi_units", "INTEGER"),    # «этажи 2 и 6» — в посте несколько квартир (ТЗ «админка-гео» P4.0.2)
     ("listings", "description_ts", "INTEGER"), # когда последний раз обновлялся текст объявления          # цвет подборки в списке (палитра settings.COLORS)
     ("collections", "client_title", "TEXT"),   # заголовок, который видит клиент (название подборки — только агенту)   # подборка сделана для клиента CRM («Всё в подборку»)   # настройки аккаунта (app/settings.py): вид подборок, порядок блоков кабинета   # цвет события в планере (gold, sky, …; пусто — по виду события)   # событие по клиенту (CRM)  # источники спорят: «rule:…» (правило ≠ карта), «votes:…» (карта ≠ соседи)   # откуда район, если его поставил сервис сам: map | vote-house | vote-cx                     # какую ошибочную цену разбор давал (её и не принимаем)   # админ сам поставил продажу/аренду — автоматика не трогает                     # свой текст объявления для клиента (вместо исходного)                              # статус агента по объекту: call | show | think | refuse | deal                   # % к медиане м² по ЖК/району (hooks.update_market_diff)
 ]

@@ -455,6 +455,28 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   (/learn, «Проверка правил»): правила против карты (< 70 % — bad), ЖК-мусор (JUNK_CX, ingest не принимает),
   «улицы»-подписи (parser.is_field_label). /fix: Enter не сохраняет (Ctrl+Enter), «Применить ко всем» выключено со списком,
   удаление — «⋯», похожий район при создании нового.
+  Дальше (13.10, тот же ТЗ): learning.clean_districts / rule_label — район правила без склеек «А/А/Б», подпись из значения
+  (была замена текста при переименовании); geoaudit ещё: испорченные правила, выученные точки домов без посёлка vs
+  справочник OSM (далеко/нет улицы → забыть, объекты в «Спорные» place_conflict 'point:'), точки ЖК из одного дома →
+  центр контура/середина домов (журнал field 'point' = [lat, lon, status, src], откат agent.revert_edit), районы-дубли
+  (слияние без rename_district — справочник уже считает имена одним районом), контуры без объектов. geocode.learn: точку
+  ЖК из объявления с домом не учим; learned_point(kinds) — дом раньше ЖК. Ключ ЖК (geo.complex_key): разрядка
+  (geo.unspace), «3 очередь» = «3», адрес в скобках (_ADDR_PAREN); pretty_name их убирает; cxnorm state cx_norm_v2 + _rekey.
+  Улицы: osmaddr.fix_street — одно написание как в справочнике (регистр/ё), сокращения «П. Метал-ва»; STREET_FIX_V=4
+  (смена только написания точку не сбрасывает). УРОВЕНЬ ТОЧКИ: search.GEO_LEVEL / geo_level (по geo_src: house /
+  complex — map-cx, feed-cx, learned-cx, geocoder-cx / street — osm-street, geocoder-street|place, approx / district —
+  map-district, geocoder-district); map_points отдаёт points (дом), complexes (одна метка «ЖК · N», кластер суммирует n,
+  «Показать списком» → ЖК в фильтр), approx_hidden; окно объекта: улица/район — «Адрес уточняется», без мини-карты;
+  подборка — только house. geocode.run: дом указан → сначала дом (known.point(cx=False) → Nominatim дом) → потом ЖК;
+  autolearn.mark_levels (state geo_level_v1: learned→learned-cx, geocoder→geocoder-cx по geocache; ЖК-центр с домом →
+  pending), mark_multi (state multi_v1). «Проверить решения сервиса» — brain: выборка ROW_NUMBER по AUTO_SRC ≤
+  SAMPLE_PER_SOURCE (40) в день, без центра ЖК при известном доме; ответы — auto_reviews (place: район не меняли = верно;
+  точка: /geo сдвиг > 50 м = ошибка), brain.accuracy → /learn «Насколько сервис прав». app/geoquality.py: metrics,
+  snapshot (geo_quality_daily), weekly (state geo_week_ts: уведомление админам + notify.send), outside_points
+  (/api/admin/geo-quality?outside=1 → карта районов «точки вне районов»); /learn «Качество данных». tools/geo_audit.py —
+  те же цифры в консоли. «этажи 2 и 6» — rules.multi_units → listings.multi_units, заголовок «2 кв. в посте» (этаж не
+  трогаем — склейка P3 без изменений). /fix: «Вставить из буфера» и автоматически при возврате из Яндекс Карт
+  (clipboard). Старые вкладки админки «Карта»/«ЖК и районы» удалены (/admin?tab=geo|place → /learn).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
@@ -463,7 +485,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 233 теста
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 243 теста
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены

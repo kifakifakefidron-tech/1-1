@@ -227,6 +227,35 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
 
 
 # Агент подтвердил свой номер в 1+1 (код со своего номера) — объявление с этим номером «от проверенного агента»
+# ТЗ «админка-гео» P2.1: насколько точна точка. house — дом; complex — центр ЖК; street — середина улицы / посёлок;
+# district — центр района; none — точки нет. На карте: дом — меткой, ЖК — одной меткой ЖК с числом объектов,
+# улица/район — не показываем (в списке «адрес уточняется»). Район по точке решает только house.
+HOUSE_SRCS = ("osm-house", "osm-near", "feed-house", "learned", "geocoder")
+COMPLEX_SRCS = ("map-cx", "feed-cx", "learned-cx", "geocoder-cx")
+DISTRICT_SRCS = ("map-district", "geocoder-district")
+GEO_LEVEL = f"""(CASE WHEN l.lat IS NULL THEN 'none'
+    WHEN l.geo_status IN ('manual', 'feed') THEN 'house'
+    WHEN l.geo_src IN {COMPLEX_SRCS} THEN 'complex'
+    WHEN l.geo_src IN {DISTRICT_SRCS} THEN 'district'
+    WHEN l.geo_status = 'approx' OR l.geo_src IN ('osm-street', 'geocoder-street', 'geocoder-place') THEN 'street'
+    ELSE 'house' END)"""
+
+
+def geo_level(lat, status: str | None, src: str | None) -> str:
+    """То же, что GEO_LEVEL, — в Python."""
+    if lat is None:
+        return "none"
+    if status in ("manual", "feed"):
+        return "house"
+    if src in COMPLEX_SRCS:
+        return "complex"
+    if src in DISTRICT_SRCS:
+        return "district"
+    if status == "approx" or src in ("osm-street", "geocoder-street", "geocoder-place"):
+        return "street"
+    return "house"
+
+
 VERIFIED = """(l.source = 'own' OR EXISTS (SELECT 1 FROM json_each(l.phones) j JOIN agent_phones a ON a.phone = j.value))"""
 
 PUBLIC_FIELDS = ("id", "type", "deal", "rooms", "area", "land", "floor", "floors", "price", "price_m2",
@@ -246,6 +275,8 @@ def row_to_item(r: sqlite3.Row, with_contacts: bool) -> dict:
     d = {k: r[k] for k in PUBLIC_FIELDS}
     from .parser import guard_phones
     d["description"] = guard_phones(d["description"])   # номеров в описании не отдаём никому — они в контакте
+    keys = r.keys()
+    d["geo_level"] = geo_level(r["lat"], r["geo_status"], r["geo_src"]) if "geo_src" in keys and "lat" in keys else None
     d["verified"] = bool(r["verified"]) if "verified" in r.keys() else None
     d["photos"] = json.loads(r["photos"] or "[]")
     d["extra_districts"] = json.loads(r["extra_districts"] or "[]")
@@ -286,13 +317,29 @@ def map_points(conn: sqlite3.Connection, qr: Query, now: int) -> dict:
     where, params = _where(qr, now)
     rows = conn.execute(
         f"""SELECT l.id, l.lat, l.lon, l.price, l.title, l.source, l.complex, l.district, l.street,
-                   l.geo_status = 'approx' AS approx, json_extract(l.photos, '$[0]') AS photo
+                   l.geo_status = 'approx' AS approx, json_extract(l.photos, '$[0]') AS photo, {GEO_LEVEL} AS level
             FROM listings l WHERE {where} AND l.lat IS NOT NULL LIMIT 20000""",
         params,
     ).fetchall()
     total, pending = conn.execute(
         f"SELECT COUNT(*), SUM(l.lat IS NULL AND l.geo_status = 'pending') FROM listings l WHERE {where}", params).fetchone()
-    return {"points": [dict(r) for r in rows], "total": total, "pending": pending or 0}
+    points, hidden = [], 0
+    groups: dict[str, dict] = {}
+    for r in rows:
+        if r["level"] in ("street", "district"):
+            hidden += 1          # середина улицы / центр района — не метка: «адрес уточняется», объект в списке
+        elif r["level"] == "complex" and r["complex"]:
+            k = geo.complex_key(r["complex"]) or r["complex"]
+            g = groups.setdefault(k, {"complex": r["complex"], "lat": r["lat"], "lon": r["lon"], "n": 0,
+                                      "price_min": None, "photo": None})
+            g["n"] += 1
+            if r["price"] and (g["price_min"] is None or r["price"] < g["price_min"]):
+                g["price_min"] = r["price"]
+            g["photo"] = g["photo"] or r["photo"]
+        else:
+            points.append(dict(r))
+    return {"points": points, "complexes": sorted(groups.values(), key=lambda g: -g["n"]), "total": total,
+            "pending": pending or 0, "approx_hidden": hidden}
 
 
 def facets(conn: sqlite3.Connection, qr: Query, now: int) -> dict:
@@ -338,7 +385,7 @@ def listing_detail(conn: sqlite3.Connection, listing_id: int, with_contacts: boo
     d["price_history"] = [{"ts": h[0], "price": h[1]} for h in conn.execute(
         "SELECT ts, price FROM price_history WHERE listing_id = ? ORDER BY ts, rowid LIMIT 100", (listing_id,))]
     d["seen_count"] = r["seen_count"] if is_admin else None
-    d["geo_approx"] = r["geo_status"] == "approx"   # примерное место — на мини-карте кругом, а не меткой
+    d["geo_approx"] = d["geo_level"] != "house"   # примерное место — на мини-карте кругом, а не меткой
     if is_admin:
         d["geo_status"] = r["geo_status"]
         d["admin_fixed"] = r["admin_fixed"]

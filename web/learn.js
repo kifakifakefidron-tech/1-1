@@ -44,6 +44,13 @@
     const pipe = (title, steps) => `<div class="ln-pipe"><h3>${title}</h3><ol>${steps.map((s) => `
       <li class="${s.bad ? "bad" : s.warn ? "warn" : ""}"><span>${esc(s.label)}</span><b>${n0(s.n)}${s.unit ? ` <small>${s.unit}</small>` : ""}</b></li>`).join("")}</ol></div>`;
     $("lnPipes").innerHTML = pipe("Район", d.pipeline.district) + pipe("Точка на карте", d.pipeline.point);
+    loadQuality();
+    const acc = d.accuracy || [];   // точность источников по вашим ответам в «Проверить решения сервиса»
+    $("lnAcc").hidden = !acc.length;
+    $("lnAcc").innerHTML = `<h3>Насколько сервис прав — по вашим проверкам (90 дней)</h3>
+      <ol class="ln-acc">${acc.map((a) => `<li class="${a.share < .8 ? "bad" : a.share < .95 ? "warn" : ""}"><span>${esc(a.label)}</span>
+        <b>${Math.round(a.share * 100)}%</b><small>верно ${n0(a.ok)} из ${n0(a.checked)}</small></li>`).join("")}</ol>
+      <p class="note">Меньше 80 % — источнику не стоит верить: напишите об этом, сервис перестанет им пользоваться.</p>`;
     renderRecheck(d.recheck);
     const unc = d.uncontoured || [];
     $("lnUnc").hidden = !unc.length;
@@ -122,4 +129,25 @@
   });
 
   load().then(() => { if (!$("lnApp").hidden) loadKnow(); });
+
+  // Качество данных: те же цифры, что в аудите; рядом — изменение за неделю (меньше — лучше, кроме «Объектов»)
+  async function loadQuality() {
+    const box = $("lnQuality");
+    let q;
+    try { q = await (await fetch("/api/admin/geo-quality", { credentials: "same-origin" })).json(); } catch { return; }
+    if (!q || !q.now) { box.hidden = true; return; }
+    const pct = (k) => (q.now.total ? ` <small>${(q.now[k] / q.now.total * 100).toFixed(1).replace(".", ",")} %</small>` : "");
+    const delta = (k) => {
+      if (!q.week_ago || q.week_ago[k] == null) return "";
+      const dv = q.now[k] - q.week_ago[k];
+      if (!dv) return `<em>без изменений</em>`;
+      const good = k === "total" ? dv > 0 : dv < 0;
+      return `<em class="${good ? "ok" : "bad"}">${dv > 0 ? "+" : "−"}${n0(Math.abs(dv))} за неделю</em>`;
+    };
+    box.innerHTML = `<h3>Качество данных</h3>
+      <div class="ln-ql">${Object.keys(q.labels).map((k) => `<div class="ln-qm${k === "same_groups" ? " muted" : ""}">
+        <b>${n0(q.now[k])}${k === "total" || k === "same_groups" ? "" : pct(k)}</b><span>${esc(q.labels[k])}</span>${delta(k)}</div>`).join("")}</div>
+      <p class="note">Цель: без района меньше 2 %, «район ≠ контур» меньше 30, примерные точки не выдаются за точные.
+        Снимок — раз в сутки, отчёт за неделю приходит уведомлением.</p>`;
+  }
 })();

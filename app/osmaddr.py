@@ -190,10 +190,25 @@ def fix_street(conn: sqlite3.Connection, street: str | None) -> str | None:
         return None
     idx = index(conn)
     k = street_key(street)
-    if not k or k in idx["streets"]:
+    if not k:
         return None
+    if k in idx["streets"]:
+        # улица есть — только одно написание: «Западный Обход» / «Летчика Позднякова» → как в справочнике
+        name = idx["streets"][k]["name"]
+        return name if name != street and street_key(name) == k else None
     if k in idx["fixed"]:
         return idx["fixed"][k]
+    # сокращение через дефис: «П. Метал-ва», «П. Металь-а» → «Петра Метальникова» (начало и конец фамилии + инициалы)
+    m = re.search(r"([а-яё]{3,})\s*-\s*([а-яё]{1,3})\b", norm(street))
+    if m:
+        pre, suf = m.group(1).replace("ё", "е"), m.group(2).replace("ё", "е")
+        inits = [w for w in street_key(norm(street)[:m.start()]).split() if len(w) == 1 and not w.isdigit()]
+        found = {c for c in idx["streets"] for last in [c.split()[-1]]
+                 if last.startswith(pre) and last.endswith(suf) and len(last) > len(pre) + len(suf)
+                 and all(any(w.startswith(i) for w in c.split()[:-1]) for i in inits)}
+        if len(found) == 1:
+            idx["fixed"][k] = idx["streets"][found.pop()]["name"]
+            return idx["fixed"][k]
     # только фамилия или с инициалом: «Жигуленко», «Л. Позднякова», «Героя Яцкова И» → полное название из справочника
     core = " ".join(w for w in k.split() if len(w) > 1 or w.isdigit())   # инициалы убираем, номер улицы — нет
     if core in idx["streets"] and core != k:

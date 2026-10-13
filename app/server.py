@@ -1426,6 +1426,12 @@ def api_admin_geo(request: Request, body: dict | None = None):
     row = conn.execute("SELECT lat, lon, geo_status FROM listings WHERE id = ?", (lid,)).fetchone()
     if row is None:
         return _err("не найдено", 404)
+    from . import brain
+    src = brain.auto_source(conn, lid)
+    if src and src.startswith("point:"):   # выборочная проверка: точку сдвинули дальше 50 м — сервис ошибся
+        lat0, lon0 = _num(body.get("lat")), _num(body.get("lon"))
+        brain.record_review(conn, lid, src, lat0 is not None and lon0 is not None and row["lat"] is not None
+                            and geocode._km((row["lat"], row["lon"]), (lat0, lon0)) <= 0.05)
     if body.get("auto"):
         lat, lon, status = None, None, "pending"
     elif body.get("hide"):
@@ -1507,6 +1513,12 @@ def api_admin_place(request: Request, body: dict | None = None):
     # ТЗ «админка-гео» P0.1: подтверждение без изменений правил не создаёт; правила района — только безопасные
     want = dict(body.get("learn") or {})
     unchanged = cx == row["complex"] and district == row["district"] and extra == json.loads(row["extra_districts"] or "[]")
+    from . import brain
+    src = brain.auto_source(conn, lid)
+    if src and src.startswith("district:"):   # выборочная проверка: без правок района = «сервис решил верно»
+        brain.record_review(conn, lid, src, district == row["district"])
+    elif src:   # решение о точке: «верно», если следом экран разбора не сдвинет метку (тогда /geo запишет «поправил»)
+        brain.record_review(conn, lid, src, True)
     skipped = []
     if unchanged:
         want = {}
@@ -2166,10 +2178,25 @@ def api_admin_geo_audit(request: Request, body: dict | None = None):
     if request.method == "POST":
         body = body or {}
         res = geoaudit.apply(conn, [int(x) for x in body.get("rules") or [] if str(x).isdigit()],
-                             [str(x) for x in body.get("junk") or []], bool(body.get("labels")))
+                             [str(x) for x in body.get("junk") or []], bool(body.get("labels")),
+                             broken=[int(x) for x in body.get("broken") or [] if str(x).isdigit()],
+                             points=[str(x) for x in body.get("points") or []],
+                             cx_points=[str(x) for x in body.get("cx_points") or []],
+                             dupes=[str(x) for x in body.get("dupes") or []])
         _bump_cache()
         return JSONResponse({"ok": True, **res})
     return JSONResponse(geoaudit.report(conn))
+
+
+def api_admin_geo_quality(request: Request, body: dict | None = None):
+    """Панель качества на /learn: сейчас, неделю назад, по дням."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    from . import geoquality
+    if request.query_params.get("outside"):   # карта районов: точки домов вне всех контуров
+        return JSONResponse({"items": geoquality.outside_points(db.get())})
+    return JSONResponse(geoquality.dashboard(db.get()))
 
 
 def api_admin_edits(request: Request, body: dict | None = None):
@@ -2307,6 +2334,7 @@ routes = [
     Route("/api/admin/edits", threaded(api_admin_edits), methods=["GET", "POST"]),
     Route("/api/admin/chats", threaded(api_admin_chats), methods=["GET", "POST"]),
     Route("/api/admin/listings/{id:int}/geo", threaded(api_admin_geo), methods=["POST"]),
+    Route("/api/admin/geo-quality", threaded(api_admin_geo_quality)),
     Route("/api/admin/geo-queue", threaded(api_admin_geo_queue)),
     Route("/api/admin/fix", threaded(api_admin_fix), methods=["GET", "POST"]),
     Route("/api/admin/geo-audit", threaded(api_admin_geo_audit), methods=["GET", "POST"]),

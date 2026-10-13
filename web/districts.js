@@ -307,6 +307,18 @@
     }
   });
   $("dmShowCx").addEventListener("change", (e) => { if (e.target.checked) cxGroup.addTo(map); else map.removeLayer(cxGroup); });
+  // ТЗ «админка-гео» P4.6: дома вне всех нарисованных районов — красные точки (где дыры между районами)
+  let outGroup = null;
+  $("dmShowOut").addEventListener("change", async (e) => {
+    if (!e.target.checked) { if (outGroup) map.removeLayer(outGroup); return; }
+    const r = await fetch("/api/admin/geo-quality?outside=1", { credentials: "same-origin" });
+    const items = r.ok ? (await r.json()).items : [];
+    $("dmOutN").textContent = items.length ? `· ${items.length}` : "· нет";
+    if (outGroup) map.removeLayer(outGroup);
+    outGroup = L.layerGroup(items.map((o) => L.circleMarker([o.lat, o.lon], { radius: 5, color: "#b3261e", weight: 2,
+      fillColor: "#f2b8b5", fillOpacity: .9 }).bindTooltip(`${esc(o.title)}${o.street ? " · ул. " + esc(o.street) + (o.house ? ", " + esc(o.house) : "") : ""}
+        ${o.district ? "<br>в объявлении: " + esc(o.district) : ""}`))).addTo(map);
+  });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") cancelEdit(); });
 
   initMap();

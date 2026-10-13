@@ -532,6 +532,23 @@
   $("fxComplex").addEventListener("input", renderLearn);
   $("fxPlace").addEventListener("submit", (e) => { e.preventDefault(); submit(); });
   $("fxGeoBox").addEventListener("toggle", () => { if ($("fxGeoBox").open && item && !$("fxGeoBox").classList.contains("geo-mode")) showGeo(item); });
+  // ТЗ «админка-гео» P4.5: точка из Яндекс Карт одним действием — открыли Яндекс, скопировали ссылку, вернулись на вкладку
+  let yaWait = false, lastClip = "";
+  async function fromClipboard(quiet) {
+    let t = "";
+    try { t = await navigator.clipboard.readText(); } catch { if (!quiet) toast("Браузер не дал прочитать буфер — вставьте ссылку в поле"); return; }
+    const ll = parseCoords(t);
+    if (!ll || (quiet && t === lastClip)) { if (!quiet) toast("В буфере нет ссылки на точку — скопируйте ссылку в Яндекс Картах"); return; }
+    lastClip = t;
+    $("fxCoords").value = t.slice(0, 300);
+    if (!$("fxGeoBox").open) { $("fxGeoBox").open = true; await new Promise((r) => setTimeout(r, 250)); }   // карта откроется сама
+    if (!marker) return;
+    marker.setLatLng(ll); map.setView(ll, 17); geoDirty = true; geoNow();
+    toast("Точка из Яндекс Карт — проверьте и сохраните");
+  }
+  ["fxYa", "fxYaAll"].forEach((id) => $(id) && $(id).addEventListener("click", () => { yaWait = true; }));
+  window.addEventListener("focus", () => { if (yaWait && item) { yaWait = false; setTimeout(() => fromClipboard(true), 150); } });
+  $("fxPasteYa").addEventListener("click", () => fromClipboard(false));
   $("fxCoordsForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const ll = parseCoords($("fxCoords").value);

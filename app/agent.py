@@ -366,9 +366,16 @@ def revert_edit(conn: sqlite3.Connection, edit_id: int) -> bool:
     """Админ откатывает правку агента."""
     from .ingest import _reindex, make_search_text, make_title
     e = conn.execute("SELECT * FROM listing_edits WHERE id = ? AND reverted = 0", (edit_id,)).fetchone()
-    if e is None or e["field"] not in OWN_FIELDS + ("extra_districts",):
+    if e is None or e["field"] not in OWN_FIELDS + ("extra_districts", "point"):
         return False
     old = json.loads(e["old"])
+    if e["field"] == "point":
+        lat, lon, status, src = (list(old or []) + [None] * 4)[:4]
+        conn.execute("UPDATE listings SET lat = ?, lon = ?, geo_status = ?, geo_src = ? WHERE id = ?",
+                     (lat, lon, status or "pending", src, e["listing_id"]))
+        conn.execute("UPDATE listing_edits SET reverted = 1 WHERE id = ?", (edit_id,))
+        conn.commit()
+        return True
     if e["field"] == "extra_districts":   # второй район хранится строкой JSON
         old = json.dumps(old or [], ensure_ascii=False)
     conn.execute(f"UPDATE listings SET {e['field']} = ? WHERE id = ?", (old, e["listing_id"]))

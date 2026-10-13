@@ -84,3 +84,20 @@ def test_polygon_name_matches_settlement_district(env):
     _, conn = env
     districtmap.save_polygon(conn, "Российский", "district", KAT)
     assert districtmap.district_at(conn, 45.01, 38.91)[0] == "п. Российский"
+
+
+def test_auto_queue_is_a_daily_sample_with_accuracy(conn):
+    """ТЗ P4.0.1: «Проверить решения сервиса» — не больше SAMPLE_PER_SOURCE на источник; ответ админа — точность."""
+    from app import brain
+    for i in range(brain.SAMPLE_PER_SOURCE + 5):
+        lid = add(conn, f"Студия 2{i % 10} м², {i % 9 + 1}/9 эт., ул. Ленина. 3 млн. 8918001{i:04d}")
+        conn.execute("UPDATE listings SET lat = 45.03, lon = 38.97, geo_status = 'approx', geo_src = 'osm-street' WHERE id = ?", (lid,))
+    hl = add(conn, "Студия 30 м², 3/9 эт., ЖК Мозаика, ул. Ленина 5. 3 млн. 89180019999")
+    conn.execute("UPDATE listings SET lat = 45.03, lon = 38.97, geo_status = 'ok', geo_src = 'map-cx' WHERE id = ?", (hl,))
+    conn.commit()
+    assert brain.counts(conn)["auto"] == brain.SAMPLE_PER_SOURCE   # центр ЖК при известном доме — не в выборке
+    src = brain.auto_source(conn, lid)
+    assert src == "point:osm-street" and brain.auto_source(conn, hl) is None
+    brain.record_review(conn, lid, src, True)
+    conn.commit()
+    assert brain.accuracy(conn) == [{"src": src, "label": "Точка — середина улицы", "checked": 1, "ok": 1, "share": 1.0}]

@@ -593,7 +593,7 @@
     cluster = L.markerClusterGroup ? L.markerClusterGroup({
       showCoverageOnHover: false, maxClusterRadius: 55, spiderfyOnMaxZoom: true,
       iconCreateFunction: (c) => {
-        const n = c.getChildCount();
+        const n = c.getAllChildMarkers().reduce((t, m) => t + (m.options.n || 1), 0);   // метка ЖК = её число объектов
         const size = n < 10 ? 40 : n < 50 ? 48 : 58;
         return L.divIcon({ className: "cl-wrap", iconSize: [size, size], html: `<div class="cl"><span>${n}</span></div>` });
       },
@@ -603,6 +603,14 @@
     $("mapBox").addEventListener("click", (e) => {
       const b = e.target.closest("[data-open]");
       if (b) openDetail(Number(b.dataset.open));
+      const cx = e.target.closest("[data-cx-list]");
+      if (cx) {   // метка ЖК → этот ЖК в фильтр и список
+        if (!state.complexes.includes(cx.dataset.cxList)) state.complexes.push(cx.dataset.cxList);
+        state.view = "list";
+        map.closePopup();
+        syncControls();
+        refresh();
+      }
     });
   }
 
@@ -691,7 +699,7 @@
         ${head ? `<div class="mc-head">${esc(head)}</div>` : ""}
         <div class="mc-price">${esc(fmtPrice(p.price, state.deal))}</div>
         <div class="mc-title">${esc(p.title)}</div>
-        ${p.approx ? `<div class="mc-approx">Место примерное — в объявлении нет точного адреса</div>` : ""}
+        ${p.level && p.level !== "house" ? `<div class="mc-approx">Место примерное — в объявлении нет точного адреса</div>` : ""}
         <div class="mc-extra">${extra ?? `<div class="skel"><i></i><i></i></div>`}</div>
         <span class="mc-more" data-open="${p.id}">Подробнее →</span>
         ${me() && me().is_admin ? `<button type="button" class="mc-geo" data-geo-edit="${p.id}">📍 поправить</button>` : ""}
@@ -726,10 +734,13 @@
     try { res = await getJSON(`/api/map?${apiParams()}`); } catch { return; }
     if (seq !== reqSeq) return;
     const pts = res.points;
+    const cxs = res.complexes || [];
     // Сколько найденных объектов на карте — чтобы было видно, что ничего не потерялось
-    const off = res.total - pts.length;
+    const onMap = pts.length + cxs.reduce((s, c) => s + c.n, 0);
+    const off = res.total - onMap;
+    const vague = res.approx_hidden ? ` ${num(res.approx_hidden)} — адрес уточняется (известна только улица или район).` : "";
     $("mapNote").textContent = off > 0
-      ? `На карте ${num(pts.length)} из ${num(res.total)}. ${res.pending ? `Ещё ${num(res.pending)} — ищем адрес на карте` : `${num(off)} — без адреса в объявлении`}, они есть в списке.`
+      ? `На карте ${num(onMap)} из ${num(res.total)}.${vague} ${res.pending ? `Ещё ${num(res.pending)} — ищем адрес на карте.` : ""} Все они есть в списке.`
       : `На карте все ${num(res.total)} ${plural(res.total, "объект", "объекта", "объектов")}.`;
     $("mapNote").hidden = !res.total;
     cluster.clearLayers();
@@ -737,16 +748,29 @@
     const markers = pts.map((p) => {
       const icon = L.divIcon({
         className: "pin-wrap", iconSize: null,
-        html: `<div class="pin${p.approx ? " approx" : ""}">${esc(fmtShortPrice(p.price, state.deal))}</div>`,
+        html: `<div class="pin${p.level && p.level !== "house" ? " approx" : ""}">${esc(fmtShortPrice(p.price, state.deal))}</div>`,
       });
       const mk = L.marker([p.lat, p.lon], { icon, riseOnHover: true })
         .bindPopup(popupHTML(p), { closeButton: false, className: "map-pop", offset: [0, -30], maxWidth: 280, minWidth: 250 });
       mk.on("popupopen", (e) => fillPopup(e.popup, p));
       return mk;
     });
+    // ЖК без точного дома — одна метка ЖК с числом объектов (а не гора меток в одной точке); нажатие — ЖК в фильтр, списком
+    cxs.forEach((c) => {
+      const icon = L.divIcon({ className: "pin-wrap", iconSize: null,
+        html: `<div class="pin cx">${esc(c.complex.length > 22 ? c.complex.slice(0, 21) + "…" : c.complex)} · ${num(c.n)}</div>` });
+      const mk = L.marker([c.lat, c.lon], { icon, riseOnHover: true, n: c.n }).bindPopup(`<div class="map-card"><div class="mc-body">
+          <div class="mc-head">ЖК ${esc(c.complex)}</div>
+          <div class="mc-title">${num(c.n)} ${plural(c.n, "объект", "объекта", "объектов")}${c.price_min ? ` · от ${esc(fmtPrice(c.price_min, state.deal))}` : ""}</div>
+          <div class="mc-approx">Точка — центр ЖК: дом в объявлениях не указан</div>
+          <span class="mc-more" data-cx-list="${esc(c.complex)}">Показать списком →</span></div></div>`,
+        { closeButton: false, className: "map-pop", offset: [0, -30], maxWidth: 280, minWidth: 220 });
+      markers.push(mk);
+    });
     if (cluster.addLayers) cluster.addLayers(markers); else markers.forEach((m) => cluster.addLayer(m));
     const chosen = districtShapes.filter((sh) => state.districts.includes(sh.zoneName));
-    if (markers.length) map.flyToBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lon])).pad(0.1), { maxZoom: 15, duration: 0.6 });
+    const all = pts.map((p) => [p.lat, p.lon]).concat(cxs.map((c) => [c.lat, c.lon]));
+    if (all.length) map.flyToBounds(L.latLngBounds(all).pad(0.1), { maxZoom: 15, duration: 0.6 });
     else if (chosen.length) map.flyToBounds(chosen.reduce((b, sh) => b.extend(sh.getBounds()), L.latLngBounds([])).pad(0.1), { maxZoom: 15, duration: 0.6 });   // объектов нет — к району
     setTimeout(() => map.invalidateSize(), 0);
   }
@@ -910,7 +934,9 @@
         <div class="dv-acts">${actions}</div>
         ${contactHTML(o)}
         ${facts ? `<dl class="dv-facts">${facts}</dl>` : ""}
-        ${o.lat && o.lon && !o.loading ? `<div class="dv-map-wrap"><div class="dv-map" id="dvMap" aria-label="Объект на карте"></div>
+        ${o.lat && o.lon && !o.loading && ["street", "district"].includes(o.geo_level)
+          ? `<p class="dv-vague">Адрес уточняется — в объявлении ${o.geo_level === "street" ? "указана только улица" : "указан только район"}, поэтому на карте объекта нет.</p>` : ""}
+        ${o.lat && o.lon && !o.loading && !["street", "district"].includes(o.geo_level) ? `<div class="dv-map-wrap"><div class="dv-map" id="dvMap" aria-label="Объект на карте"></div>
           ${o.geo_approx ? `<p class="note dv-map-note">Место примерное — в объявлении нет точного адреса</p>` : ""}</div>` : ""}
         ${o.description ? `<div class="dv-desc clamp"><p>${esc(o.description)}</p><button type="button" class="dv-desc-more" data-desc-more>Читать полностью</button></div>` : ""}
         <div class="dv-accs">
@@ -936,7 +962,7 @@
   function drawDetailMap(o) {
     if (detailMap) { detailMap.remove(); detailMap = null; }
     const el = document.getElementById("dvMap");
-    if (!el || !window.L || !o.lat || !o.lon) return;
+    if (!el || !window.L || !o.lat || !o.lon || ["street", "district"].includes(o.geo_level)) return;
     detailMap = L.map(el, { zoomControl: false, scrollWheelZoom: false, dragging: !L.Browser.mobile, attributionControl: false })
       .setView([o.lat, o.lon], o.geo_approx ? 14 : 16);
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(detailMap);
@@ -1898,8 +1924,11 @@
 
     // админ: история правок объекта и откат одной правки
     const ED_F = { district: "район", extra_districts: "второй район", complex: "ЖК", street: "улица", house: "дом", price: "цена",
-      description: "описание", deal: "сделка", rooms: "комнаты", area: "площадь", floor: "этаж" };
-    const edVal = (v) => (v == null || v === "" ? "—" : Array.isArray(v) ? (v.join(", ") || "—") : String(v).slice(0, 80));
+      description: "описание", deal: "сделка", rooms: "комнаты", area: "площадь", floor: "этаж", point: "точка на карте" };
+    const PT_SRC = { approx: "примерно", learned: "выучена", ok: "точно", pending: "ищется", manual: "ваша", feed: "из фида" };
+    const edVal = (v) => (v == null || v === "" ? "—"
+      : Array.isArray(v) && v.length === 4 && typeof v[0] !== "string" ? (v[0] == null ? "без точки" : `${(+v[0]).toFixed(5)}, ${(+v[1]).toFixed(5)} (${PT_SRC[v[2]] || v[2]})`)
+      : Array.isArray(v) ? (v.join(", ") || "—") : String(v).slice(0, 80));
     async function loadEdits(id) {
       const box = document.getElementById(`dvEd${id}`);
       if (!box) return;

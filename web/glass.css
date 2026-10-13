@@ -610,3 +610,8 @@ html.embed dialog::backdrop { background: transparent !important; backdrop-filte
 .dv-ed .chip, .dv-ed em { grid-row: 1 / span 2; grid-column: 2; }
 .dv-ed em { font-style: normal; color: var(--ink-3); font-size: 12px; }
 .dv-ed.off { opacity: .6; }
+
+/* Метка ЖК без точного дома: одна на ЖК, с числом объектов (ТЗ «админка-гео» P2.1) */
+.pin.cx { background: var(--teal-800); color: var(--gold-100); border-style: dashed; border-color: var(--gold-300); }
+.pin.cx::after { border-color: var(--gold-300); }
+.dv-vague { margin: 6px 0 0; font-size: 13px; color: var(--ink-3); }

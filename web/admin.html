@@ -20,7 +20,7 @@
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/admin.css?v=16">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=34">
+<link rel="stylesheet" href="/static/glass.css?v=35">
 </head>
 <body>
 <header class="top">
@@ -107,35 +107,6 @@
       <div class="adm-table-wrap"><table class="adm-table" id="chats"></table></div>
     </section>
 
-    <section data-pane="geo" hidden>
-      <p class="note">Объекты, которые не попали на карту или стоят примерно. Нажмите «Поставить точку» — откроется карта;
-        после сохранения сразу откроется следующий объект из списка. Каждая правка <b>учит сервис</b>: точка запоминается
-        для этого дома и ЖК, и все объявления с тем же адресом — сейчас и в будущем — встают туда же.</p>
-      <p><a class="pill-link" href="/fix?mode=geo">▶ Разбирать по очереди</a></p>
-      <div class="chips chat-filter" id="geoKinds">
-        <button type="button" class="chip on" data-geo-kind="none">Нет на карте</button>
-        <button type="button" class="chip" data-geo-kind="approx">Примерные</button>
-        <button type="button" class="chip" data-geo-kind="pending">Ещё ищем</button>
-        <button type="button" class="chip" data-geo-kind="learned">Выученные адреса</button>
-      </div>
-      <div class="adm-table-wrap"><table class="adm-table" id="geoTable"></table></div>
-    </section>
-
-    <section data-pane="place" hidden>
-      <p class="note">Объекты, которые теряются в фильтрах: без района или квартиры без ЖК. «Поправить» — откроется объект
-        и окно «ЖК и район»; после сохранения — следующий. Отметьте галочки «научить сервис», и правка подействует
-        на все такие объявления — уже собранные и новые. Новые объявления о том же объекте получают исправленные ЖК
-        и район ещё до проверки на дубли, поэтому склеиваются с исправленной карточкой, а не создают новую.</p>
-      <p><a class="pill-link" href="/fix?mode=place">▶ Разбирать по очереди</a></p>
-      <div class="chips chat-filter" id="placeKinds">
-        <button type="button" class="chip on" data-place-kind="nodistrict">Без района</button>
-        <button type="button" class="chip" data-place-kind="nocomplex">Квартиры без ЖК</button>
-        <button type="button" class="chip" data-place-kind="fixed">Поправлено вручную</button>
-        <button type="button" class="chip" data-place-kind="rules">Выученные правила</button>
-      </div>
-      <div class="adm-table-wrap"><table class="adm-table" id="placeTable"></table></div>
-    </section>
-
     <section data-pane="districts" hidden>
       <div class="sp-top">
         <div class="seg-group" id="spKinds">
@@ -182,6 +153,6 @@
 <script src="/static/max.js?v=2"></script>
 <script src="/static/rail.js?v=12"></script>
 <script src="/static/combo.js?v=3"></script>
-<script src="/static/admin.js?v=31"></script>
+<script src="/static/admin.js?v=32"></script>
 </body>
 </html>

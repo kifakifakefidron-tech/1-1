@@ -161,9 +161,10 @@ class Known:
         b = cx_base_key(row["complex"])
         return self.cx_base.get(b) if b else None
 
-    def point(self, row) -> tuple[float, float, str, str] | None:
-        """(lat, lon, geo_status, geo_src) из уже известного — без геокодера."""
-        pt = geocode.learned_point(self.conn, row)
+    def point(self, row, cx: bool = True) -> tuple[float, float, str, str] | None:
+        """(lat, lon, geo_status, geo_src) из уже известного — без геокодера. cx=False — только дом (без центра ЖК
+        и середины улицы): так geocode.run сначала ищет дом по адресу, а центр ЖК ставит, только если дом не нашёлся."""
+        pt = geocode.learned_point(self.conn, row, ("addr",))   # сначала ДОМ (ваша точка, фид, OSM), потом ЖК
         if pt:
             return pt[0], pt[1], "learned", "learned"
         k = learning.addr_key(row["street"], row["house"], row["settlement"])
@@ -172,9 +173,14 @@ class Known:
         osm = osmaddr.point(self.conn, row["street"], row["house"], row["settlement"]) if row["street"] else None
         if osm and osm[2] == "ok" and self.plausible(row, osm[0], osm[1]):   # дом из справочника OSM
             return osm
+        if not cx:
+            return None
+        pt = geocode.learned_point(self.conn, row, ("cx",))
+        if pt:
+            return pt[0], pt[1], "learned", "learned-cx"
         hit = self.cx_point(row)
         if hit:
-            return *hit[0], "ok", hit[1]
+            return *hit[0], "ok", hit[1]   # центр ЖК — не дом (уровень complex по geo_src): одна метка ЖК, район не решает
         if osm and self.plausible(row, osm[0], osm[1]):   # дома нет — середина улицы (примерно)
             return osm
         return None
@@ -233,13 +239,14 @@ def recheck_geocoder(conn: sqlite3.Connection, known: Known | None = None) -> in
     return n
 
 
-STREET_FIX_V = 3   # 2 — улица по одной фамилии; 3 — заново достать адрес («Ленинский переулок 14», «1 Мая 428»)
+STREET_FIX_V = 4   # 2 — улица по одной фамилии; 3 — заново достать адрес («Ленинский переулок 14», «1 Мая 428»);
+#                    4 — одно написание улицы (регистр, ё), сокращения «П. Метал-ва»
 _BROKEN_STREET = re.compile(r"^\d+\s*[а-яА-Я]?$|\x01")   # «14 к», «14А», «\x01-я Дорожная» — улица разобрана с ошибкой
 
 
 def fix_streets(conn: sqlite3.Connection) -> int:
     """Опечатки в улицах уже собранных объектов («Командоская» → «Командорская»); точку ищем заново."""
-    from .ingest import _reindex, make_search_text
+    from .ingest import _reindex, make_search_text, make_title
     from .parser import address_from_text
     n = 0
     for r in conn.execute("""SELECT * FROM listings WHERE is_active = 1 AND admin_fixed = 0
@@ -256,10 +263,12 @@ def fix_streets(conn: sqlite3.Connection) -> int:
         if street == r["street"] and house == r["house"]:
             continue
         d = {**dict(r), "street": street, "house": house}
+        d["title"] = make_title(d)
         d["search_text"] = make_search_text(d)
-        conn.execute("""UPDATE listings SET street = ?, house = ?, search_text = ?,
-                        geo_status = CASE WHEN geo_status IN ('manual', 'learned', 'feed') THEN geo_status ELSE 'pending' END
-                        WHERE id = ?""", (street, house, d["search_text"], r["id"]))
+        same_place = house == r["house"] and osmaddr.street_key(street) == osmaddr.street_key(r["street"])
+        conn.execute("""UPDATE listings SET street = ?, house = ?, title = ?, search_text = ?,
+                        geo_status = CASE WHEN ? OR geo_status IN ('manual', 'learned', 'feed') THEN geo_status ELSE 'pending' END
+                        WHERE id = ?""", (street, house, d["title"], d["search_text"], same_place, r["id"]))
         _reindex(conn, r["id"], d["search_text"])
         n += 1
     conn.commit()
@@ -374,6 +383,59 @@ def _log(conn, lid: int, field: str, old, new, now: int) -> None:
                  (lid, SERVICE_UID, now, field, json.dumps(old, ensure_ascii=False), json.dumps(new, ensure_ascii=False), "перепроверка"))
 
 
+def mark_levels(conn: sqlite3.Connection) -> int:
+    """Один раз (state geo_level_v1): у старых точек центр ЖК был записан как точка дома — подписываем источник честно.
+    learned → learned-cx (выученная точка ЖК, а не дома), geocoder → geocoder-cx (геокодер нашёл «ЖК …», а не дом)."""
+    if conn.execute("SELECT 1 FROM state WHERE key = 'geo_level_v1'").fetchone():
+        return 0
+    n = 0
+    cx_pts = {(r[0], r[1]) for r in conn.execute("SELECT lat, lon FROM geo_learned WHERE key LIKE 'cx:%'")}
+    for r in conn.execute("""SELECT id, street, house, settlement, lat, lon FROM listings
+                             WHERE geo_src = 'learned' AND lat IS NOT NULL""").fetchall():
+        if (r["lat"], r["lon"]) not in cx_pts:
+            continue
+        k = learning.addr_key(r["street"], r["house"], r["settlement"])
+        own = conn.execute("SELECT lat, lon FROM geo_learned WHERE key = ?", (k,)).fetchone() if k else None
+        if own and (own[0], own[1]) == (r["lat"], r["lon"]):
+            continue   # это и правда точка его дома
+        n += conn.execute("UPDATE listings SET geo_src = 'learned-cx' WHERE id = ?", (r["id"],)).rowcount
+    for r in conn.execute("""SELECT id, complex, lat, lon FROM listings WHERE geo_src = 'geocoder' AND complex IS NOT NULL
+                             AND lat IS NOT NULL""").fetchall():
+        hit = conn.execute("SELECT lat, lon FROM geocache WHERE query = ?", (f"ЖК {r['complex']}, Краснодар",)).fetchone()
+        if hit and (hit[0], hit[1]) == (r["lat"], r["lon"]):
+            n += conn.execute("UPDATE listings SET geo_src = 'geocoder-cx' WHERE id = ?", (r["id"],)).rowcount
+    # центр ЖК у объявлений с домом — ищем дом заново (геокодер теперь сначала ищет дом, центр ЖК — если не нашёлся)
+    n += conn.execute(f"""UPDATE listings SET geo_status = 'pending' WHERE is_active = 1 AND street IS NOT NULL
+                          AND house IS NOT NULL AND geo_src IN ('map-cx', 'feed-cx', 'geocoder-cx', 'learned-cx')
+                          AND geo_status NOT IN ('manual', 'learned', 'feed')""").rowcount
+    conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('geo_level_v1', ?)", (str(n),))
+    conn.commit()
+    return n
+
+
+def mark_multi(conn: sqlite3.Connection) -> int:
+    """Один раз (state multi_v1): «этажи 2 и 6» у уже собранных — пометка «2 кв. в посте» в заголовке."""
+    if conn.execute("SELECT 1 FROM state WHERE key = 'multi_v1'").fetchone():
+        return 0
+    from .ingest import _reindex, make_search_text, make_title
+    from .rules import multi_units
+    n = 0
+    for r in conn.execute("SELECT * FROM listings WHERE fragment LIKE '%этаж%'").fetchall():
+        k = multi_units(r["fragment"])
+        if not k:
+            continue
+        d = {**dict(r), "multi_units": k}
+        d["title"] = make_title(d)
+        d["search_text"] = make_search_text(d)
+        conn.execute("UPDATE listings SET multi_units = ?, title = ?, search_text = ? WHERE id = ?",
+                     (k, d["title"], d["search_text"], r["id"]))
+        _reindex(conn, r["id"], d["search_text"])
+        n += 1
+    conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('multi_v1', ?)", (str(n),))
+    conn.commit()
+    return n
+
+
 def recheck_all(conn: sqlite3.Connection) -> dict:
     """Все объекты заново:
       1) точка — дом из справочника адресов / фида / ваших правок лучше прежней точки геокодера или примерной;
@@ -386,13 +448,15 @@ def recheck_all(conn: sqlite3.Connection) -> dict:
 
     from . import geo
     from .ingest import _reindex, make_search_text, make_title
+    mark_levels(conn)
+    mark_multi(conn)
     known = Known(conn)
     rep: Counter = Counter()
     now = int(time.time())
     # 1) точки
     for r in conn.execute("""SELECT * FROM listings WHERE is_active = 1 AND geo_status NOT IN ('manual', 'learned', 'feed')
                              AND COALESCE(geo_src, '') NOT IN ('osm-house', 'osm-near', 'feed-house', 'learned')""").fetchall():
-        hit = known.point(r)
+        hit = known.point(r, cx=not (r["street"] and r["house"]))   # дом указан — центр ЖК ставит только geocode.run
         if not hit or hit[3] not in HOUSE_SRC + ("map-cx", "feed-cx"):
             continue
         if hit[3] in ("map-cx", "feed-cx") and r["geo_status"] == "ok":

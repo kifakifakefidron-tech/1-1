@@ -2,7 +2,7 @@
 
 «Самолет 2» = «Самолёт 2» = «ЖК САМОЛЕТ-2» (ключ geo.complex_key: ё/е, регистр, «ЖК», кавычки, тире); «Самолет 1» =
 «Самолет» (первая очередь — основное название), если основное есть в базе. Какое написание оставить: из справочника ЖК,
-иначе то, что поправил админ, иначе самое частое (при равенстве — с «ё»). Разовый прогон (worker, state cx_norm_v1) пишет
+иначе то, что поправил админ, иначе самое частое (при равенстве — с «ё»). Разовый прогон (worker, state cx_norm_v2: + разрядка «О Т Р А Ж Е Н И Е», «3 очередь» = «3», адрес в скобках; ключи правил и точек ЖК — заново) пишет
 отчёт в state cx_norm_report (админка «Обзор»); новые объявления получают принятое написание в ingest.save_object.
 """
 from __future__ import annotations
@@ -48,9 +48,9 @@ def run(conn: sqlite3.Connection, apply: bool = False) -> dict:
             groups[k][r["complex"]] = (r["n"], r["fx"] or 0)
     merged, changed = [], 0
     for k, variants in groups.items():
-        if len(variants) < 2:
+        canon = geo.pretty_name(_pick(variants))   # разрядка и адрес в скобках — убираем
+        if len(variants) < 2 and canon in variants:
             continue
-        canon = _pick(variants)
         others = {n: v[0] for n, v in variants.items() if n != canon}
         merged.append({"name": canon, "variants": others})
         if apply:
@@ -78,12 +78,30 @@ def canonical(conn: sqlite3.Connection, name: str | None) -> str | None:
     return best or name
 
 
+def _rekey(conn: sqlite3.Connection) -> int:
+    """Ключи ЖК в правилах и выученных точках — по новому ключу (разрядка, «3 очередь» = «3»)."""
+    n = 0
+    for table, cols in (("learned_rules", "kind = 'cx_alias' OR kind = 'cx_district'"), ("geo_learned", "key LIKE 'cx:%'")):
+        idcol = "id" if table == "learned_rules" else "rowid"
+        for r in conn.execute(f"SELECT {idcol} AS i, key FROM {table} WHERE {cols}").fetchall():
+            new = geo.complex_key(r["key"].removeprefix("cx:"))
+            if not new or f"cx:{new}" == r["key"]:
+                continue
+            try:
+                conn.execute(f"UPDATE {table} SET key = ? WHERE {idcol} = ?", (f"cx:{new}", r["i"]))
+                n += 1
+            except sqlite3.IntegrityError:   # такой ключ уже есть — старый дубль убираем
+                conn.execute(f"DELETE FROM {table} WHERE {idcol} = ?", (r["i"],))
+    return n
+
+
 def maybe_run(conn: sqlite3.Connection) -> dict | None:
-    if conn.execute("SELECT 1 FROM state WHERE key = 'cx_norm_v1'").fetchone():
+    if conn.execute("SELECT 1 FROM state WHERE key = 'cx_norm_v2'").fetchone():
         return None
     res = run(conn, apply=True)
+    res["rekeyed"] = _rekey(conn)
     conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('cx_norm_report', ?)",
                  (json.dumps({**res, "ts": int(time.time())}, ensure_ascii=False),))
-    conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('cx_norm_v1', '1')")
+    conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('cx_norm_v2', '1')")
     conn.commit()
     return res

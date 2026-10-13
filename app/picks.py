@@ -11,7 +11,7 @@ import secrets
 import sqlite3
 import time
 
-from . import config, parser, rules, settings, worklog
+from . import config, parser, rules, search, settings, worklog
 
 MAX_COLLECTIONS = 200
 PROMO_NAME = "Коллега (по коду)"   # служебное имя аккаунта по промокоду — клиенту его не показываем никогда
@@ -374,8 +374,9 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
             "price_m2": r["price_m2"], "rooms": r["rooms"], "room_kind": r["room_kind"], "area": r["area"], "land": r["land"],
             "floor": r["floor"], "floors": r["floors"], "district": r["district"], "complex": r["complex"],
             "settlement": r["settlement"], "street": r["street"], "house": None if hide else r["house"],
-            "lat": _coarse(r["lat"], hide) if r["geo_status"] != "approx" else None,
-            "lon": _coarse(r["lon"], hide) if r["geo_status"] != "approx" else None, "approx": hide,
+            "lat": _coarse(r["lat"], hide) if search.geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house" else None,
+            "lon": _coarse(r["lon"], hide) if search.geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house" else None,
+            "approx": hide,
             "photos": json.loads(r["photos"] or "[]"),
             "description": "" if not r["is_active"] else
                            parser.guard_phones(r["item_text"] or parser.client_text(r["description"]))[:5000],

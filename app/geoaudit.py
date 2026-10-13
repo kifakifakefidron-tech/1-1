@@ -4,7 +4,11 @@
   * правила «улица → район» и «ЖК → район» против карты районов: как распределены объекты по контурам под ТОЧНОЙ
     точкой дома; правило, у которого в своём районе < 70 % таких объектов, — кандидат на отключение;
   * ЖК-мусор: общие слова и города, принятые за ЖК («Краснодар», «Москва», «Жилой квартал», «Победа», «Южный»…);
-  * «улицы»-подписи полей («Площадь», «Этаж»…) — их ставила нейросеть.
+  * «улицы»-подписи полей («Площадь», «Этаж»…) — их ставила нейросеть;
+  * испорченные правила: район в правиле — склеенная строка («Губернский/Губернский/Любимово») или повтор в доп. районах;
+  * выученные точки домов без населённого пункта (ключ addr:|улица|дом = Краснодар): есть ли такой дом в Краснодаре
+    по справочнику адресов и не стоит ли точка далеко от него;
+  * выученные точки ЖК, которые на самом деле точка одного дома, — пересчёт: центр контура ЖК или середина известных домов.
 Применение — только выбранное админом; каждое изменение объекта — в журнал listing_edits (src = «чистка правил»),
 откат — по объекту (окно объекта → «История») или из админки.
 """
@@ -15,7 +19,7 @@ import sqlite3
 import time
 from collections import Counter
 
-from . import geo, learning, parser
+from . import geo, geocode, learning, osmaddr, parser
 
 SHARE_OK = 0.7       # правило верно, если в его районе по карте ≥ 70 % объектов с точкой дома
 MIN_POINTS = 3       # меньше точек — судить не по чему («мало данных»)
@@ -79,11 +83,136 @@ def label_streets(conn: sqlite3.Connection) -> list[dict]:
         if parser.is_field_label(r["street"])]
 
 
+def broken_rules(conn: sqlite3.Connection) -> list[dict]:
+    """Правила, у которых район — не один известный район (склейка через «/», повтор в доп. районах, подпись не совпадает)."""
+    out = []
+    for r in conn.execute("SELECT id, kind, value, label FROM learned_rules WHERE kind IN ('addr', 'street', 'cx_district')"):
+        v = json.loads(r["value"])
+        if not v.get("district") and not v.get("extra"):
+            continue
+        d, extra = learning.clean_districts(v.get("district"), v.get("extra"))
+        fixed = {**v, "district": d, "extra": extra}
+        label = learning.rule_label(r["kind"], r["label"], fixed)
+        if (d, extra) != (v.get("district"), v.get("extra") or []) or label != r["label"]:
+            out.append({"id": r["id"], "label": r["label"], "new_label": label, "district": v.get("district"),
+                        "new_district": d, "extra": extra})
+    return out
+
+
+NEAR_M = 300   # выученная точка дома ближе этого к дому из справочника адресов — верна
+
+
+def _addr_parts(key: str) -> tuple[str, str, str]:
+    place, street, house = key.removeprefix("addr:").split("|", 2)
+    return place, street, house
+
+
+def points_report(conn: sqlite3.Connection) -> list[dict]:
+    """Выученные точки домов без населённого пункта (= Краснодар): проверка по справочнику адресов OSM."""
+    if not osmaddr.loaded(conn):
+        return []
+    out = []
+    for r in conn.execute("SELECT key, lat, lon, label, n FROM geo_learned WHERE key LIKE 'addr:|%'").fetchall():
+        _place, street, house = _addr_parts(r["key"])
+        hit = osmaddr.point(conn, street, house, None)
+        if hit and hit[3] == "osm-house":
+            m = geocode._km((r["lat"], r["lon"]), hit[:2]) * 1000
+            status = "ok" if m <= NEAR_M else "far"
+        elif hit:
+            m, status = None, "nohouse"     # улица в Краснодаре есть, такого дома в справочнике нет — не судим
+        else:
+            m, status = None, "nostreet"    # в Краснодаре такой улицы нет — это, скорее всего, посёлок
+        n = conn.execute("SELECT COUNT(*) FROM listings WHERE is_active = 1 AND geo_src = 'learned' AND lat = ? AND lon = ?",
+                         (r["lat"], r["lon"])).fetchone()[0]
+        out.append({"key": r["key"], "label": r["label"], "status": status, "m": round(m) if m is not None else None,
+                    "listings": n})
+    order = {"far": 0, "nostreet": 1, "nohouse": 2, "ok": 3}
+    out.sort(key=lambda x: order[x["status"]])
+    return out
+
+
+HOUSE_SRC = ("osm-house", "feed-house", "learned", "manual")
+
+
+def _cx_center(conn, known, cx_key: str, names: list[str]) -> tuple[tuple[float, float] | None, str]:
+    """Центр ЖК: контур ЖК на карте, иначе середина разных известных домов этого ЖК (≥ 2 дома), иначе нет."""
+    hit = known.cx.get(cx_key)
+    if hit and hit[1] == "map-cx":
+        return hit[0], "контур ЖК"
+    houses: dict[str, tuple[float, float]] = {}
+    if names:
+        q = ",".join("?" * len(names))
+        for r in conn.execute(f"""SELECT street, house, settlement, lat, lon FROM listings WHERE is_active = 1
+                                  AND lat IS NOT NULL AND street IS NOT NULL AND house IS NOT NULL AND complex IN ({q})
+                                  AND (geo_status IN ('feed', 'manual') OR geo_src IN ('osm-house', 'feed-house'))""",
+                              names).fetchall():
+            k = learning.addr_key(r["street"], r["house"], r["settlement"])
+            if k and k not in houses:
+                houses[k] = (r["lat"], r["lon"])
+    if len(houses) >= 2:
+        pts = list(houses.values())
+        return ((round(sum(p[0] for p in pts) / len(pts), 6), round(sum(p[1] for p in pts) / len(pts), 6)),
+                f"середина {len(pts)} домов")
+    return None, "нет контура ЖК и известных домов — точку ЖК забыть"
+
+
+def cx_points_report(conn: sqlite3.Connection) -> list[dict]:
+    """Выученные точки ЖК, совпадающие с точкой одного дома (первый поправленный дом стал «центром ЖК»)."""
+    from .autolearn import Known
+    known = Known(conn)
+    houses = [(r["lat"], r["lon"]) for r in conn.execute("SELECT lat, lon FROM geo_learned WHERE key LIKE 'addr:%'")]
+    names_by_key: dict[str, list[str]] = {}
+    for (cx,) in conn.execute("SELECT DISTINCT complex FROM listings WHERE complex IS NOT NULL"):
+        k = learning.cx_key(cx)
+        if k:
+            names_by_key.setdefault(k, []).append(cx)
+    out = []
+    for r in conn.execute("SELECT key, lat, lon, label, n FROM geo_learned WHERE key LIKE 'cx:%'").fetchall():
+        one_house = any(geocode._km((r["lat"], r["lon"]), h) < 0.03 for h in houses)
+        if not one_house and r["n"] > 1:
+            continue
+        new, how = _cx_center(conn, known, r["key"], names_by_key.get(r["key"], []))
+        if new and geocode._km(new, (r["lat"], r["lon"])) < 0.03:
+            continue   # и так в центре
+        out.append({"key": r["key"], "label": r["label"], "n": r["n"], "one_house": one_house, "old": [r["lat"], r["lon"]],
+                    "new": list(new) if new else None, "how": how,
+                    "listings": conn.execute("""SELECT COUNT(*) FROM listings WHERE is_active = 1 AND geo_src = 'learned'
+                                                AND lat = ? AND lon = ?""", (r["lat"], r["lon"])).fetchone()[0]})
+    return out
+
+
+def district_dupes(conn: sqlite3.Connection) -> list[dict]:
+    """Район записан не тем именем, под которым он в справочнике («Молодёжный» при «Молодежный/Витаминкомбинат»)."""
+    learning.sync_districts(conn)
+    out = []
+    for d, n in conn.execute("""SELECT district, COUNT(*) FROM listings WHERE district IS NOT NULL
+                                GROUP BY district ORDER BY 2 DESC""").fetchall():
+        canon = geo.canonical_district(d)
+        if canon and canon != d:
+            out.append({"name": d, "to": canon, "listings": n})
+    return out
+
+
+def empty_contours(conn: sqlite3.Connection) -> list[str]:
+    """Нарисованные районы, в которых нет ни одного объекта (по району или по точке)."""
+    from . import districtmap
+    used = {d for (d,) in conn.execute("SELECT DISTINCT district FROM listings WHERE is_active = 1 AND district IS NOT NULL")}
+    for (ex,) in conn.execute("SELECT extra_districts FROM listings WHERE is_active = 1 AND extra_districts LIKE '[\"%'"):
+        used.update(json.loads(ex))
+    return sorted({n for n, kind, *_ in districtmap._polys(conn) if kind == "district"} - used)
+
+
 def report(conn: sqlite3.Connection) -> dict:
     rr = rules_report(conn)
-    no_place = conn.execute("SELECT COUNT(*) FROM geo_learned WHERE key LIKE 'addr:|%'").fetchone()[0]
+    pts = points_report(conn)
     return {"rules": rr, "bad": sum(1 for r in rr if r["status"] == "bad"), "junk": junk_report(conn),
-            "labels": label_streets(conn), "points_no_settlement": no_place}
+            "labels": label_streets(conn), "broken": broken_rules(conn),
+            "points": [p for p in pts if p["status"] in ("far", "nostreet")],
+            "points_total": conn.execute("SELECT COUNT(*) FROM geo_learned WHERE key LIKE 'addr:|%'").fetchone()[0],
+            "points_ok": sum(1 for p in pts if p["status"] == "ok"),
+            "points_unknown": sum(1 for p in pts if p["status"] == "nohouse"),
+            "cx_points": cx_points_report(conn), "osm_loaded": bool(osmaddr.loaded(conn)),
+            "dupes": district_dupes(conn), "empty_contours": empty_contours(conn)}
 
 
 def _log(conn, lid: int, field: str, old, new, now: int) -> None:
@@ -99,10 +228,103 @@ def _redecide(conn, r) -> str | None:
     return geo.find_district_in_text(r["fragment"] or r["description"] or "") or r["district"]
 
 
-def apply(conn: sqlite3.Connection, rule_ids: list[int], junk: list[str], labels: bool) -> dict:
+def apply(conn: sqlite3.Connection, rule_ids: list[int], junk: list[str], labels: bool, broken: list[int] | None = None,
+          points: list[str] | None = None, cx_points: list[str] | None = None, dupes: list[str] | None = None) -> dict:
     from .ingest import _reindex, make_search_text, make_title
     now = int(time.time())
     rep = Counter()
+    # испорченные правила: район и подпись — из значения; объекты с испорченным районом — на чистый
+    fixes = {b["id"]: b for b in broken_rules(conn)}
+    for rid in broken or []:
+        b = fixes.get(int(rid))
+        if not b:
+            continue
+        row = conn.execute("SELECT kind, value FROM learned_rules WHERE id = ?", (b["id"],)).fetchone()
+        v = {**json.loads(row["value"]), "district": b["new_district"], "extra": b["extra"]}
+        conn.execute("UPDATE learned_rules SET value = ?, label = ? WHERE id = ?",
+                     (json.dumps(v, ensure_ascii=False), b["new_label"], b["id"]))
+        rep["broken"] += 1
+        if b["district"] and b["district"] != b["new_district"]:
+            for r in conn.execute("SELECT * FROM listings WHERE district = ?", (b["district"],)).fetchall():
+                d = {**dict(r), "district": b["new_district"]}
+                ex = json.loads(r["extra_districts"] or "[]")
+                ex2 = [x for x in dict.fromkeys(ex + b["extra"]) if x != b["new_district"]]
+                d["title"] = make_title(d)
+                d["search_text"] = make_search_text(d)
+                conn.execute("UPDATE listings SET district = ?, extra_districts = ?, title = ?, search_text = ? WHERE id = ?",
+                             (b["new_district"], json.dumps(ex2, ensure_ascii=False), d["title"], d["search_text"], r["id"]))
+                _reindex(conn, r["id"], d["search_text"])
+                _log(conn, r["id"], "district", r["district"], b["new_district"], now)
+                if ex2 != ex:
+                    _log(conn, r["id"], "extra_districts", ex, ex2, now)
+                rep["listings"] += 1
+    # районы-дубли: объекты, правила, контуры — на имя из справочника (каждый объект — в журнал)
+    dd = {x["name"]: x["to"] for x in district_dupes(conn)} if dupes else {}
+    for name in dupes or []:
+        to = dd.get(name)
+        if not to:
+            continue
+        # rename_district тут не подходит: справочник уже считает старое имя тем же районом
+        for r in conn.execute("SELECT * FROM listings WHERE district = ?", (name,)).fetchall():
+            d = {**dict(r), "district": to}
+            d["title"] = make_title(d)
+            d["search_text"] = make_search_text(d)
+            conn.execute("UPDATE listings SET district = ?, title = ?, search_text = ? WHERE id = ?",
+                         (to, d["title"], d["search_text"], r["id"]))
+            _reindex(conn, r["id"], d["search_text"])
+            _log(conn, r["id"], "district", name, to, now)
+            rep["listings"] += 1
+        for r in conn.execute("SELECT id, extra_districts FROM listings WHERE extra_districts LIKE ?", (f'%"{name}"%',)).fetchall():
+            ex = json.loads(r["extra_districts"])
+            conn.execute("UPDATE listings SET extra_districts = ? WHERE id = ?",
+                         (json.dumps(list(dict.fromkeys(to if x == name else x for x in ex)), ensure_ascii=False), r["id"]))
+        conn.execute("UPDATE district_polygons SET name = ? WHERE name = ? AND kind = 'district'", (to, name))
+        for r in conn.execute("SELECT id, kind, value, label FROM learned_rules WHERE value LIKE ?", (f"%{name}%",)).fetchall():
+            v = json.loads(r["value"])
+            if v.get("district") == name or name in (v.get("extra") or []):
+                v["district"], v["extra"] = learning.clean_districts(to if v.get("district") == name else v.get("district"),
+                                                                     [to if x == name else x for x in v.get("extra") or []])
+                conn.execute("UPDATE learned_rules SET value = ?, label = ? WHERE id = ?",
+                             (json.dumps(v, ensure_ascii=False), learning.rule_label(r["kind"], r["label"], v), r["id"]))
+        rep["dupes"] += 1
+    # выученные точки домов, которых в Краснодаре нет или они далеко от дома, — забыть, объекты — в «Спорные»
+    pt_rows = {p["key"]: p for p in points_report(conn)} if points else {}
+    for key in points or []:
+        p = pt_rows.get(key)
+        row = conn.execute("SELECT lat, lon FROM geo_learned WHERE key = ?", (key,)).fetchone()
+        if not p or not row or p["status"] == "ok":
+            continue
+        conn.execute("DELETE FROM geo_learned WHERE key = ?", (key,))
+        why = ("такой улицы в Краснодаре по справочнику адресов нет" if p["status"] == "nostreet"
+               else f"дом по справочнику адресов в {p['m']} м от неё" if p["status"] == "far" else "дома нет в справочнике")
+        n = conn.execute("""UPDATE listings SET place_conflict = ? WHERE is_active = 1 AND admin_fixed = 0
+                            AND geo_src = 'learned' AND lat = ? AND lon = ?""",
+                         (f"point:выученная точка «{p['label']}» без населённого пункта — {why}; проверьте точку и посёлок",
+                          row["lat"], row["lon"])).rowcount
+        rep["points"] += 1
+        rep["to_queue"] += n
+    # точки ЖК, которые на самом деле точка одного дома, — центр контура ЖК / середина домов (нет — забываем)
+    cx_rows = {c["key"]: c for c in cx_points_report(conn)} if cx_points else {}
+    for key in cx_points or []:
+        c = cx_rows.get(key)
+        if not c:
+            continue
+        if c["new"]:
+            conn.execute("UPDATE geo_learned SET lat = ?, lon = ?, ts = ? WHERE key = ?", (*c["new"], now, key))
+        else:
+            conn.execute("DELETE FROM geo_learned WHERE key = ?", (key,))
+        for r in conn.execute("""SELECT id, street, house, settlement, lat, lon, geo_status, geo_src FROM listings
+                                 WHERE is_active = 1 AND admin_fixed = 0 AND geo_src = 'learned' AND lat = ? AND lon = ?""",
+                              tuple(c["old"])).fetchall():
+            k = learning.addr_key(r["street"], r["house"], r["settlement"])
+            if k and conn.execute("SELECT 1 FROM geo_learned WHERE key = ?", (k,)).fetchone():
+                continue   # это и правда точка дома этого объекта
+            old = [r["lat"], r["lon"], r["geo_status"], r["geo_src"]]
+            new = [*c["new"], "approx", "learned-cx"] if c["new"] else [None, None, "pending", None]
+            conn.execute("UPDATE listings SET lat = ?, lon = ?, geo_status = ?, geo_src = ? WHERE id = ?", (*new, r["id"]))
+            _log(conn, r["id"], "point", old, new, now)
+            rep["listings"] += 1
+        rep["cx_points"] += 1
     rules_by_id = {r["id"]: r for r in conn.execute("SELECT * FROM learned_rules WHERE kind IN ('street', 'cx_district')")}
     for rid in rule_ids:
         rule = rules_by_id.get(int(rid))

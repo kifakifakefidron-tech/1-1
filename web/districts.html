@@ -22,7 +22,7 @@
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/districts.css?v=3">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=34">
+<link rel="stylesheet" href="/static/glass.css?v=35">
 </head>
 <body class="dm-body">
 <header class="nav"><div class="nav-in">
@@ -38,6 +38,8 @@
       <div class="dm-tools">
         <button type="button" class="pill light" id="dmOsm" title="Контуры районов и ЖК из открытой карты OpenStreetMap">⬇ Загрузить из OpenStreetMap</button>
         <label class="check"><input type="checkbox" id="dmShowCx"> показывать ЖК</label>
+        <label class="check" title="Дома, которые не попали ни в один нарисованный район: дыры между районами и ненарисованные места">
+          <input type="checkbox" id="dmShowOut"> точки вне районов <b id="dmOutN"></b></label>
       </div>
       <p class="note dm-stat" id="dmStat"></p>
       <input id="dmQ" class="dm-search" placeholder="Найти район…">
@@ -73,6 +75,6 @@
 <script src="/static/pickers.js?v=10"></script>
 <script src="/static/max.js?v=2"></script>
 <script src="/static/rail.js?v=12"></script>
-<script src="/static/districts.js?v=8"></script>
+<script src="/static/districts.js?v=9"></script>
 </body>
 </html>
