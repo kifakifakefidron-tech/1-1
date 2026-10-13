@@ -206,13 +206,13 @@
   let rbcAll = false;
   function rbc(n) {
     if (!n || !n.data.items.length) { put("wRbc", `${head("news", "Новости недвижимости")}<p class="g-empty">Загрузятся через несколько минут.</p>`, 8); return; }
-    const d = n.data, list = rbcAll ? d.items : d.items.slice(0, 4);
+    const d = n.data, list = rbcAll ? d.items : d.items.slice(0, 3);
     put("wRbc", `${head("news", "Новости недвижимости", `<a class="g-link" href="${esc(d.source_url)}" target="_blank" rel="noopener">${esc(d.source)} ${ic("external")}</a>`)}
       ${list.map((x) => `<a class="wr-it" href="${esc(x.url)}" target="_blank" rel="noopener">
         <span class="wr-meta">${x.tag ? `<i>${esc(x.tag)}</i>` : ""}<small>${ago(x.ts)}</small></span>
         <b>${esc(x.title)}</b>${x.lead ? `<p>${esc(x.lead)}</p>` : ""}</a>`).join("")}
       <div class="wr-foot"><small>Источник: ${esc(d.source)}. Читать полностью — на сайте РБК.</small>
-        ${d.items.length > 4 ? `<button type="button" class="chip" id="wrMore">${rbcAll ? "Свернуть" : `Ещё ${d.items.length - 4}`}</button>` : ""}</div>`, 8);
+        ${d.items.length > 3 ? `<button type="button" class="chip" id="wrMore">${rbcAll ? "Свернуть" : `Ещё ${d.items.length - 3}`}</button>` : ""}</div>`, 8);
     const more = $("wrMore");
     if (more) more.onclick = () => { rbcAll = !rbcAll; rbc(n); };
   }
@@ -471,7 +471,7 @@
         el.className = `g ub c-${b.color}`;
         box.insertBefore(el, $("wAdd"));
       }
-      el.className = `g ub ub-${b.type} c-${b.color}`;
+      el.className = `g ub ubt-${b.type} c-${b.color}`;
       el.innerHTML = blockHTML(b);
       if (!el.querySelector(":scope > .g-grip")) addGrip(el);
     }
