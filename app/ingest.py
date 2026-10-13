@@ -421,12 +421,16 @@ def archive_stale(conn: sqlite3.Connection, now: int | None = None) -> int:
 
 
 def cleanup_old(conn: sqlite3.Connection, now: int | None = None) -> dict:
-    """Раз в сутки: удалить сообщения старше KEEP_DAYS и объекты, скрытые дольше KEEP_DAYS."""
+    """Раз в сутки: объекты, пролежавшие в архиве ARCHIVE_DAYS (сняли/устарели и не появились снова), — удалить;
+    сообщения старше KEEP_DAYS — тоже."""
     now = int(now or time.time())
     edge = now - config.KEEP_DAYS * 86400
-    # удалённые админом не стираем: по ним узнаём тот же объект в новых сообщениях
-    ids = [r[0] for r in conn.execute("""SELECT id FROM listings WHERE is_active = 0 AND last_seen < ?
-                                         AND COALESCE(hidden_reason, '') != 'admin'""", (edge,))]
+    arch = now - config.ARCHIVE_DAYS * 86400
+    # удалённые админом и «всё от номера» не стираем: по ним узнаём тот же объект в новых сообщениях
+    ids = [r[0] for r in conn.execute("""SELECT id FROM listings WHERE is_active = 0
+                                         AND COALESCE(removed_at, last_seen + ?) < ?
+                                         AND COALESCE(hidden_reason, '') NOT IN ('admin', 'phone')""",
+                                      (config.STALE_DAYS * 86400, arch))]
     for i in ids:
         conn.execute("DELETE FROM listings_fts WHERE rowid = ?", (i,))
         conn.execute("DELETE FROM listing_events WHERE listing_id = ?", (i,))

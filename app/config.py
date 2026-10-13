@@ -59,7 +59,10 @@ WAPPI_ENABLED = _bool("WAPPI_ENABLED", True)
 # Объект пропадает из поиска, если его не присылали столько дней
 STALE_DAYS = int(os.getenv("STALE_DAYS", "20"))
 # Через столько дней удаляем старые сообщения и давно скрытые объекты
-KEEP_DAYS = int(os.getenv("KEEP_DAYS", "90"))
+# Жизнь объекта (решение Артёма 13.10): STALE_DAYS на сайте без повтора в чатах → ARCHIVE_DAYS в архиве
+# (повтор в чатах — сразу снова на сайте) → удаляем. Сообщения храним столько же (по ним узнаём повторы).
+ARCHIVE_DAYS = int(os.getenv("ARCHIVE_DAYS", "20"))
+KEEP_DAYS = int(os.getenv("KEEP_DAYS", "40"))
 
 # Код коллег (временно, для теста): вход по коду даёт доступ к телефонам агентов
 ACCESS_CODE = os.getenv("ACCESS_CODE", "")
