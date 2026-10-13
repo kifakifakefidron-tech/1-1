@@ -384,6 +384,27 @@ def unban_phone(conn: sqlite3.Connection, phone: str) -> None:
     conn.commit()
 
 
+def remove_photo(conn: sqlite3.Connection, listing_id: int, url: str) -> dict:
+    """Админ убрал фото у объекта (чужое, с номером…). Запоминаем адрес в banned (kind='photo', без listing_id —
+    чтобы объект не попал в «Удалённые»): фид СТРЕЛ и фото из чатов это фото больше не вернут."""
+    row = conn.execute("SELECT photos, title FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    if row is None:
+        return {"error": "Объект не найден."}
+    photos = json.loads(row["photos"] or "[]")
+    if url not in photos:
+        return {"error": "У объекта нет такого фото."}
+    photos.remove(url)
+    conn.execute("UPDATE listings SET photos = ? WHERE id = ?", (json.dumps(photos, ensure_ascii=False), listing_id))
+    conn.execute("INSERT OR REPLACE INTO banned (kind, key, listing_id, title, ts) VALUES ('photo', ?, NULL, ?, ?)",
+                 (url, f"фото объекта #{listing_id}", int(time.time())))
+    conn.commit()
+    return {"ok": True, "photos": photos}
+
+
+def banned_photos(conn: sqlite3.Connection) -> set[str]:
+    return {r[0] for r in conn.execute("SELECT key FROM banned WHERE kind = 'photo'")}
+
+
 def unban_listing(conn: sqlite3.Connection, listing_id: int) -> None:
     conn.execute("DELETE FROM banned WHERE listing_id = ?", (listing_id,))
     conn.execute("UPDATE listings SET is_active = 1, hidden_reason = NULL, last_seen = MAX(last_seen, ?) WHERE id = ?",

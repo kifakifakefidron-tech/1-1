@@ -741,13 +741,16 @@
     const opts = [`<option value="">Без привязки</option>`]
       .concat(ctx.clients.map((c) => `<option value="c:${c.id}">Клиент · ${esc(c.name)}${c.has ? " ✓" : ""}</option>`))
       .concat(ctx.picks.map((p) => `<option value="p:${p.id}">Подборка · ${esc(p.title)}${p.has ? " ✓" : ""}</option>`)).join("");
-    return `<form class="wk-add" data-wk-add="${o.id}" autocomplete="off">
+    return `<button type="button" class="wk-open" data-wk-open="${o.id}">${ic("plus")}Новая запись <small>звонок, показ, заметка — для клиента или подборки</small></button>
+      <form class="wk-add" data-wk-add="${o.id}" autocomplete="off" hidden>
         <div class="wk-kinds" role="radiogroup" aria-label="Что было">${Object.entries(WK).map(([k, [icon, t]], i) =>
           `<button type="button" role="radio" aria-checked="${i ? "false" : "true"}" class="${i ? "" : "on"}" data-wk-kind="${k}">${ic(icon)}${t}</button>`).join("")}</div>
         <textarea name="text" rows="2" maxlength="2000" placeholder="Что было: созвонились, показали, торг, ответ клиента…"></textarea>
-        <div class="wk-row"><select name="to" aria-label="Для кого">${opts}</select><button type="submit" class="pill">Записать</button></div>
+        <div class="wk-row"><select name="to" aria-label="Для кого">${opts}</select></div>
+        <div class="wk-acts"><button type="button" class="chip" data-wk-cancel>Отмена</button><button type="submit" class="pill">Записать</button></div>
         ${ctx.clients.length || ctx.picks.length ? "" : `<p class="note">Создайте клиента в «Клиентах» или подборку — заметки можно будет привязать к ним.</p>`}
       </form>
+      ${work.length ? "" : `<p class="wk-empty">Записей пока нет.</p>`}
       <ul class="wk-list">${work.map((w) => `<li class="k-${esc(w.kind)}"><span class="wk-ic">${ic((WK[w.kind] || WK.note)[0])}</span>
         <div><p class="wk-h"><b>${(WK[w.kind] || WK.note)[1]}</b><time>${esc(when(w.ts))}</time>
           ${w.client_name ? `<a class="wk-tag" href="/clients?id=${w.client_id}" target="_top">${ic("user")}${esc(w.client_name)}</a>` : ""}
@@ -794,13 +797,12 @@
           <small>средняя цена м² — ${esc(num(m.median))} ₽ · ${esc(m.base)}, ${m.n} ${plural(m.n, "объект", "объекта", "объектов")}</small></p>` : "")
       + chart;
     const priceHint = [days != null ? `${days < 1 ? "новое" : days + " дн."}` : "", chart ? "график" : ""].filter(Boolean).join(" · ");
-    const notesBody = u && !o.loading ? `<p class="dv-sub-h">Статус</p><div class="chips dv-crm">${Object.entries(STATUSES).map(([k, v]) =>
-        `<button type="button" class="chip${st === k ? " on" : ""}" data-crm="${k}" data-id="${o.id}">${v}</button>`).join("")}</div>
-      <p class="dv-sub-h">Моя заметка</p>
-      <textarea class="d-note-text" data-note="${o.id}" rows="2" maxlength="2000" placeholder="Видите только вы. Например: торг 100 т.р., собственник один">${esc(o.note || "")}</textarea>
-      <span class="note d-note-saved" hidden>Сохранено</span>
-      <p class="dv-sub-h">Журнал: что, кому и когда</p>
-      <div class="wk" data-wk="${o.id}">${journalHTML(o)}</div>` : "";
+    const notesBody = u && !o.loading ? `<div class="wk-sec"><p class="wk-sh">Статус</p><div class="chips dv-crm">${Object.entries(STATUSES).map(([k, v]) =>
+        `<button type="button" class="chip${st === k ? " on" : ""}" data-crm="${k}" data-id="${o.id}">${v}</button>`).join("")}</div></div>
+      <div class="wk-sec"><p class="wk-sh">Журнал — что, кому и когда</p><div class="wk" data-wk="${o.id}">${journalHTML(o)}</div></div>
+      <div class="wk-sec"><p class="wk-sh">Личная заметка <small>видите только вы</small></p>
+      <textarea class="d-note-text wk-note" data-note="${o.id}" rows="2" maxlength="2000" placeholder="Например: торг 100 т.р., собственник один">${esc(o.note || "")}</textarea>
+      <span class="note d-note-saved" hidden>Сохранено</span></div>` : "";
     const when = (ts) => new Date(ts * 1000).toLocaleString("ru-RU", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
     const plans = (o.plans || []);
     const plansBody = plans.length ? `<ul class="dv-list">${plans.map((p) => `<li><a href="/planner?event=${p.id}">${PLAN_KINDS[p.kind] || ""} · ${esc(when(p.ts))}</a>${p.done ? " ✓" : ""}
@@ -824,7 +826,10 @@
       + (meta.access && o.fragment ? `<p class="dv-sub-h">Исходное сообщение</p><pre class="d-source">${esc(o.fragment)}</pre>` : "");
     const geoNote = o.geo_status === "manual" ? "точка поставлена вручную" : o.geo_status === "learned" ? "точка из ваших прошлых правок"
       : o.geo_status === "feed" ? "точка из фида СТРЕЛ" : o.lat ? "точка найдена по адресу" : "точки нет";
-    const adminBody = admin ? `<div class="dv-admin">
+    const adminPhotos = admin && photos.length ? `<p class="dv-sub-h">Фото — убрать лишнее (не вернётся из фида и чатов)</p>
+      <div class="adm-ph">${photos.map((u) => `<span><img src="${esc(u)}" alt="" loading="lazy">
+        <button type="button" data-photo-del="${esc(u)}" data-id="${o.id}" aria-label="Удалить фото" title="Удалить фото">${ic("trash")}</button></span>`).join("")}</div>` : "";
+    const adminBody = admin ? `${adminPhotos}<div class="dv-admin">
         <button type="button" class="chip" data-place-edit="${o.id}">✎ ЖК, район и цена${o.admin_fixed ? " ✓" : ""}</button>
         <button type="button" class="chip" data-geo-edit="${o.id}">📍 Точка на карте</button>
         <button type="button" class="chip" data-admin-act="deal" data-deal="${o.deal === "rent" ? "sale" : "rent"}" data-id="${o.id}">⇄ ${o.deal === "rent" ? "В продажу" : "В аренду"}</button>
@@ -873,9 +878,10 @@
     if (detailMap) { detailMap.remove(); detailMap = null; }
     const el = document.getElementById("dvMap");
     if (!el || !window.L || !o.lat || !o.lon) return;
-    detailMap = L.map(el, { zoomControl: false, scrollWheelZoom: false, dragging: !L.Browser.mobile, attributionControl: true })
+    detailMap = L.map(el, { zoomControl: false, scrollWheelZoom: false, dragging: !L.Browser.mobile, attributionControl: false })
       .setView([o.lat, o.lon], o.geo_approx ? 14 : 16);
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(detailMap);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(detailMap);
+    L.control.attribution({ prefix: false }).addAttribution("© OpenStreetMap").addTo(detailMap);   // без флажка и «Leaflet»; подпись OSM обязательна по их правилам
     if (o.geo_approx) {
       L.circle([o.lat, o.lon], { radius: 350, color: "#e3cb8f", weight: 2, dashArray: "6 6", fillColor: "#e3cb8f", fillOpacity: .12 }).addTo(detailMap);
     } else {
@@ -1271,8 +1277,11 @@
           <option value="sold">Объект продан или неактуален</option>
           <option value="wrong">Неверные данные (цена, этаж, адрес)</option>
           <option value="my_phone">Это мой номер — уберите его</option>
+          ${(o.photos || []).length ? `<option value="photo">Фото не от этого объекта (чужие, с номером, реклама)</option>` : ""}
           <option value="other">Другое</option>
         </select>
+        ${(o.photos || []).length ? `<div class="rp-photos" data-photo-pick hidden><p class="note">Отметьте фото, которые не подходят:</p>
+          <div class="rp-ph">${o.photos.map((u) => `<label><input type="checkbox" name="ph" value="${esc(u)}"><img src="${esc(u)}" alt="" loading="lazy"><i>${ic("check")}</i></label>`).join("")}</div></div>` : ""}
         <textarea name="text" rows="2" placeholder="Что не так? (необязательно)"></textarea>
         <p class="note" data-optout-hint hidden>Отправьте заявку — мы проверим и уберём номер. Если хотите сами управлять своими
           объявлениями (цена, фото, «продано»), подтвердите номер в разделе <a href="/my" target="_top">«Мои объекты»</a> — код через MAX.</p>
@@ -1828,8 +1837,36 @@
       refresh();
     });
 
+    // админ: удалить фото у объекта
+    document.addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-photo-del]");
+      if (!b) return;
+      if (!confirm("Удалить это фото у объекта? Из фида и чатов оно больше не вернётся.")) return;
+      const id = Number(b.dataset.id);
+      const r = await call(`/api/admin/listings/${id}/action`, { action: "photo", url: b.dataset.photoDel });
+      if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
+      b.parentElement.remove();
+      const o = known.get(id);
+      if (o) o.photos = r.data.photos;
+      toast("Фото удалено");
+    });
+
     // журнал работы: вид записи, записать, удалить
     document.addEventListener("click", async (e) => {
+      const op = e.target.closest("[data-wk-open]");
+      if (op) {
+        const f = op.parentElement.querySelector("[data-wk-add]");
+        f.hidden = false; op.hidden = true;
+        if (window.Pick) { const sel = f.querySelector("select[name=to]"); if (sel) Pick.select(sel, { searchPlaceholder: "Клиент или подборка" }); }
+        f.text.focus();
+        return;
+      }
+      const cn = e.target.closest("[data-wk-cancel]");
+      if (cn) {
+        const f = cn.closest("[data-wk-add]");
+        f.hidden = true; f.reset(); f.parentElement.querySelector("[data-wk-open]").hidden = false;
+        return;
+      }
       const k = e.target.closest("[data-wk-kind]");
       if (k) {
         k.parentElement.querySelectorAll("[data-wk-kind]").forEach((b) => { b.classList.toggle("on", b === k); b.setAttribute("aria-checked", String(b === k)); });
@@ -2090,7 +2127,9 @@
         if (r.ok) { meta.me = r.data.me; meta.access = r.data.me.access; renderAccount(); setTimeout(renderCabinet, 1200); }
       } else if (f.dataset.report) {
         e.preventDefault();
-        const r = await call("/api/complaints", { listing_id: Number(f.dataset.report), reason: f.reason.value, text: f.text.value });
+        const photos = [...f.querySelectorAll("input[name=ph]:checked")].map((x) => x.value);
+        if (f.reason.value === "photo" && !photos.length) { toast("Отметьте фото, которые не подходят"); return; }
+        const r = await call("/api/complaints", { listing_id: Number(f.dataset.report), reason: f.reason.value, text: f.text.value, photos });
         f.innerHTML = `<p class="note">${r.ok ? "Спасибо! Проверим и поправим." : esc(r.data.detail || "Не отправилось.")}</p>`;
       }
     });
@@ -2098,6 +2137,8 @@
       if (e.target.name === "reason") {
         const hint = e.target.form.querySelector("[data-optout-hint]");
         if (hint) hint.hidden = e.target.value !== "my_phone";
+        const pp = e.target.form.querySelector("[data-photo-pick]");
+        if (pp) pp.hidden = e.target.value !== "photo";
       }
     });
   }

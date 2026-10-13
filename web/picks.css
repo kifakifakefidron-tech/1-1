@@ -285,3 +285,22 @@
   .pk2-new-cl { flex: 1 1 auto; }
   .pk2-client { width: 100%; border-radius: 16px; }
 }
+
+/* шапка подборки: квадратная обложка 1:1, строка клиента — одной аккуратной строкой */
+.pk2-hero { grid-template-columns: 180px minmax(0, 1fr); align-items: start; }
+.pk2-col { height: auto; aspect-ratio: 1 / 1; width: 100%; }
+.pk2-col.n2 { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+.pk2-client { flex-wrap: nowrap; gap: 6px; padding: 4px 4px 4px 12px; border-radius: 999px; width: max-content; max-width: 100%; }
+.pk2-client > span { flex: none; }
+.pk2-client .pk-btn, .pk2-client select { width: auto !important; min-width: 170px; max-width: 240px; height: 34px !important; min-height: 34px !important;
+  padding: 0 12px !important; border-radius: 999px !important; font-size: 14px !important; }
+.pk2-client a { flex: none; white-space: nowrap; }
+@media (max-width: 1180px) { .pk2-hero { grid-template-columns: 150px minmax(0, 1fr); } }
+@media (max-width: 900px) {
+  .pk2-hero { grid-template-columns: 110px minmax(0, 1fr); gap: 14px; }
+  .pk2-col { height: auto; }
+  .pk2-client { width: 100%; }
+  .pk2-client .pk-btn, .pk2-client select { flex: 1; max-width: none; min-width: 0; }
+}
+.pk2-ph { aspect-ratio: 1 / 1; }
+@media (max-width: 600px) { .pk2-ph { aspect-ratio: 1 / 1; min-height: 0; align-self: start; margin: 8px 0 8px 8px; border-radius: 14px; overflow: hidden; } }

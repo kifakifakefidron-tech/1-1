@@ -201,11 +201,16 @@
   // ─── жалобы ─────────────────────────────────────────────────────────────
   async function complaints() {
     const { items } = await call("/api/admin/complaints");
-    const reason = { sold: "продан/неактуален", wrong: "неверные данные", my_phone: "это мой номер", other: "другое" };
+    const reason = { sold: "продан/неактуален", wrong: "неверные данные", my_phone: "это мой номер", photo: "чужие фото", other: "другое" };
     $("complaints").innerHTML = `<tr><th>Когда</th><th>Объект</th><th>Причина</th><th>Текст</th><th>Статус</th><th></th></tr>` +
       items.map((c) => `<tr><td>${day(c.ts)}</td>
         <td>${c.listing_id ? `<a href="/?open=${c.listing_id}" target="_blank">${esc(c.title || "#" + c.listing_id)}</a>` : "—"}</td>
-        <td>${esc(reason[c.reason] || c.reason)}</td><td>${esc(c.text || "")}</td>
+        <td>${esc(reason[c.reason] || c.reason)}</td><td>${esc((c.text || "").replace(/^Фото: .*$/gm, "").trim())}
+          ${(() => { const own = (() => { try { return JSON.parse(c.photos || "[]"); } catch { return []; } })();
+            const ph = [...(c.text || "").matchAll(/^Фото: (\S+)$/gm)].map((m) => m[1]);
+            return ph.length ? `<div class="cmp-ph">${ph.map((u) => own.includes(u)
+              ? `<span><img src="${esc(u)}" alt=""><button data-cph="${esc(u)}" data-lid="${c.listing_id}">Удалить фото</button></span>`
+              : `<span class="gone"><img src="${esc(u)}" alt=""><small>уже удалено</small></span>`).join("")}</div>` : ""; })()}</td>
         <td>${c.status === "new" ? "<b>новая</b>" : esc(c.status)}</td>
         <td class="acts">${c.status === "new" ? `<button data-c="${c.id}">Готово</button>
           <button data-c="${c.id}" data-hide="1">Скрыть объект</button>` : ""}</td></tr>`).join("");
@@ -650,6 +655,10 @@
         if (!confirm("Вернуть прежнее значение?")) return;
         await call("/api/admin/edits", { id: Number(b.dataset.revert) });
         edits();
+      } else if (b.dataset.cph) {   // удалить фото из жалобы
+        if (!confirm("Удалить это фото у объекта?")) return;
+        await call(`/api/admin/listings/${b.dataset.lid}/action`, { action: "photo", url: b.dataset.cph });
+        complaints();
       } else if (b.dataset.c) {
         await call("/api/admin/complaints", { id: Number(b.dataset.c), status: "done", hide_listing: !!b.dataset.hide });
         complaints();

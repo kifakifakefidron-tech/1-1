@@ -159,3 +159,25 @@ def test_stock_block_and_wanted_tickers(client):
     st = client.post("/api/settings", json={"blocks": blocks}).json()["settings"]["blocks"]
     assert [b["data"]["ticker"] for b in st] == ["SBERSCRIPT"[:12], ""]
     assert widgets.wanted_tickers(db.get()) == ["SBERSCRIPT"]
+
+
+def test_photo_complaint_and_admin_removes_photo(client):
+    import json
+    from app import db, ingest
+    conn = db.get()
+    lid = client.get("/api/listings").json()["items"][0]["id"]
+    conn.execute("UPDATE listings SET photos = ? WHERE id = ?", (json.dumps(["/photos/1/a.jpg", "/photos/1/b.jpg"]), lid))
+    conn.commit()
+    # жалоба: «чужие фото» — в тексте только фото самого объекта
+    client.post("/api/complaints", json={"listing_id": lid, "reason": "photo", "photos": ["/photos/1/b.jpg", "https://evil/x.jpg"]})
+    txt = conn.execute("SELECT text FROM complaints WHERE listing_id = ?", (lid,)).fetchone()[0]
+    assert txt == "Фото: /photos/1/b.jpg"
+    # не админ — нельзя
+    assert client.post(f"/api/admin/listings/{lid}/action", json={"action": "photo", "url": "/photos/1/b.jpg"}).status_code == 403
+    conn.execute("UPDATE users SET is_admin = 1")
+    conn.commit()
+    r = client.post(f"/api/admin/listings/{lid}/action", json={"action": "photo", "url": "/photos/1/b.jpg"}).json()
+    assert r["photos"] == ["/photos/1/a.jpg"]
+    assert ingest.banned_photos(conn) == {"/photos/1/b.jpg"}
+    # удалённое фото не делает объект «удалённым»
+    assert client.get("/api/admin/banned").json()["items"] == []

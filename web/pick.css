@@ -17,7 +17,7 @@
 .pk-item.gone { opacity: .6; }
 .pk-gal { display: flex; gap: 4px; overflow-x: auto; scroll-snap-type: x mandatory; }
 .pk-gal button { flex: 0 0 auto; border: 0; padding: 0; background: none; cursor: zoom-in; scroll-snap-align: start; }
-.pk-gal img { height: 230px; width: auto; max-width: 86vw; object-fit: cover; display: block; }
+.pk-gal img { height: 230px; width: 230px; object-fit: cover; display: block; border-radius: 12px; }
 .pk-body { position: relative; padding: 14px 18px 16px; }
 .pk-num { position: absolute; right: 16px; top: 14px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
   background: var(--gold); color: #035352; font-weight: 700; font-size: 14px; }
@@ -44,7 +44,7 @@
 .pk-nav { position: fixed; top: 50%; transform: translateY(-50%); width: 48px; height: 64px; border: 0; border-radius: 12px;
   background: rgba(255,255,255,.12); color: #fff; font-size: 34px; cursor: pointer; }
 .pk-nav.prev { left: 10px; } .pk-nav.next { right: 10px; }
-@media (max-width: 600px) { .pk-gal img { height: 200px; } .pk-agent-bar b { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; } }
+@media (max-width: 600px) { .pk-gal img { height: 200px; width: 200px; } .pk-agent-bar b { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; } }
 
 /* 13.10: без упоминаний сервиса; обложка и цвет — из настроек агента (--accent) */
 :root { --accent: #e3cb8f; }

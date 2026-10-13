@@ -55,7 +55,7 @@
         <p class="pk-place">${esc(place(o))} · <a href="${esc(yandex(o))}" target="_blank" rel="noopener">на карте ↗</a></p>
         ${o.is_active ? "" : `<p class="pk-gone">Объект уже снят с продажи — уточните у агента.</p>`}
         ${o.note ? `<p class="pk-comment"><b>Комментарий агента:</b> ${esc(o.note)}</p>` : ""}
-        ${o.description ? `<details class="pk-desc"><summary>Описание</summary><p>${esc(o.description)}</p></details>` : ""}
+        ${o.description ? `<details class="pk-desc" open><summary>Описание</summary><p>${esc(o.description)}</p></details>` : ""}
       </div></li>`).join("") || `<li class="pk-empty">В подборке пока нет объектов.</li>`;
     window.__pick = d;
     drawMap(d.items);
@@ -79,8 +79,9 @@
     const pts = items.filter((o) => o.lat && o.lon);
     if (!pts.length || !window.L) return;
     $("pkMap").hidden = false;
-    const map = L.map("pkMap", { scrollWheelZoom: false, attributionControl: true });
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
+    const map = L.map("pkMap", { scrollWheelZoom: false, attributionControl: false });
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+    L.control.attribution({ prefix: false }).addAttribution("© OpenStreetMap").addTo(map);
     const b = [];
     pts.forEach((o) => {
       const i = items.indexOf(o) + 1;

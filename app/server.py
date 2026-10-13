@@ -638,9 +638,17 @@ def api_complaint(request: Request, body: dict | None = None):
     body = body or {}
     user = current_user(request)
     conn = db.get()
+    lid = _num(body.get("listing_id"), int)
+    text = str(body.get("text", ""))[:1000]
+    if body.get("photos") and lid:   # «фото не от этого объекта» — только фото самого объекта
+        row = conn.execute("SELECT photos FROM listings WHERE id = ?", (lid,)).fetchone()
+        own = set(json.loads(row["photos"] or "[]")) if row else set()
+        picked = [str(u) for u in body["photos"] if str(u) in own][:12]
+        if picked:
+            text = (text + "\n" if text else "") + "\n".join(f"Фото: {u}" for u in picked)
     conn.execute("INSERT INTO complaints (listing_id, user_id, reason, text, ts) VALUES (?,?,?,?,?)",
-                 (_num(body.get("listing_id"), int), user["id"] if user is not None else None,
-                  str(body.get("reason", ""))[:40], str(body.get("text", ""))[:1000], int(time.time())))
+                 (lid, user["id"] if user is not None else None,
+                  str(body.get("reason", ""))[:40], text[:3000], int(time.time())))
     conn.commit()
     return JSONResponse({"ok": True})
 
@@ -867,7 +875,7 @@ def api_admin_complaints(request: Request, body: dict | None = None):
                          (cid,))
         conn.commit()
         return JSONResponse({"ok": True})
-    rows = conn.execute("""SELECT c.*, l.title FROM complaints c LEFT JOIN listings l ON l.id = c.listing_id
+    rows = conn.execute("""SELECT c.*, l.title, l.photos FROM complaints c LEFT JOIN listings l ON l.id = c.listing_id
                            ORDER BY c.status = 'new' DESC, c.ts DESC LIMIT 300""").fetchall()
     return JSONResponse({"items": [dict(r) for r in rows]})
 
@@ -1736,6 +1744,8 @@ def api_admin_listing_action(request: Request, body: dict | None = None):
     elif act == "restore":
         ingest.unban_listing(conn, lid)
         res = {"ok": True}
+    elif act == "photo":   # убрать одно фото у объекта (и не возвращать его из фида/чатов)
+        res = ingest.remove_photo(conn, lid, str(body.get("url") or ""))
     elif act == "deal" and body.get("deal") in ("sale", "rent"):
         r = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
         if r is None:

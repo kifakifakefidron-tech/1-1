@@ -105,7 +105,8 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
     offers = root.findall("./shop/offers/offer")
     seen: set[str] = set()
     added = updated = 0
-    skip = placeholder_pictures(offers)
+    from .ingest import banned_photos
+    skip = set(placeholder_pictures(offers)) | banned_photos(conn)   # заглушки и фото, которые админ удалил
     for o in offers:
         d = parse_offer(o, skip)
         if not d:

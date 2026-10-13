@@ -132,6 +132,8 @@ def attach(conn: sqlite3.Connection, limit: int = 15) -> dict:
         url = f"/photos/{lid}/{name}"
         row = conn.execute("SELECT photos FROM listings WHERE id = ?", (lid,)).fetchone()
         photos = json.loads(row["photos"] or "[]")
+        if conn.execute("SELECT 1 FROM banned WHERE kind = 'photo' AND key = ?", (url,)).fetchone():
+            continue   # это фото админ уже удалял у объекта
         if url not in photos and len(photos) < CHAT_PHOTOS:
             photos.append(url)
             conn.execute("UPDATE listings SET photos = ? WHERE id = ?", (json.dumps(photos), lid))

@@ -508,3 +508,42 @@ html.embed dialog::backdrop { background: transparent !important; backdrop-filte
 .wk-del { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 9px; background: none; color: var(--ink-3); cursor: pointer; }
 .wk-del:hover { background: rgba(255, 255, 255, .08); color: var(--bad); }
 .wk-del svg { width: 14px; height: 14px; }
+
+/* подпись карты OSM — крошечная и неяркая (без флажка и «Leaflet»; сама подпись обязательна по правилам OSM) */
+.leaflet-container .leaflet-control-attribution { font-size: 9px !important; line-height: 1.4; padding: 0 5px !important; margin: 0 !important;
+  background: rgba(0, 0, 0, .18) !important; color: rgba(255, 255, 255, .5) !important; border-radius: 6px 0 0 0; box-shadow: none !important; }
+.leaflet-container .leaflet-control-attribution a { color: rgba(255, 255, 255, .55) !important; text-decoration: none; }
+
+/* «Работа с объектом» v2: статус → журнал (кнопка «Новая запись») → личная заметка */
+.wk-sec + .wk-sec { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--glass-line); }
+.wk-sh { margin: 0 0 8px; font: 600 12px var(--body); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.wk-sh small { margin-left: 6px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+.wk-open { display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 14px; border-radius: 14px; border: 1px dashed var(--glass-line-2);
+  background: none; color: var(--ink); font: 600 14px var(--body); text-align: left; cursor: pointer; transition: background .2s, border-color .2s; }
+.wk-open:hover { background: rgba(255, 255, 255, .05); border-color: rgba(227, 203, 143, .5); }
+.wk-open svg { width: 18px; height: 18px; color: var(--gold); flex: none; }
+.wk-open small { margin-left: auto; color: var(--ink-3); font-weight: 400; font-size: 12px; text-align: right; }
+.wk-add[hidden] { display: none; }
+.wk-kinds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; padding: 3px; border-radius: 12px; background: rgba(0, 0, 0, .18); }
+.wk-kinds button { justify-content: center; border: 0; border-radius: 9px; padding: 8px 4px; font-size: 13px; }
+.wk-kinds button.on { background: linear-gradient(160deg, var(--gold-200), var(--gold-300)); color: #0f2f2e; }
+.wk-acts { display: flex; justify-content: flex-end; gap: 8px; }
+.wk-empty { margin: 8px 2px 0; color: var(--ink-3); font-size: 13px; }
+.wk-note { width: 100%; box-sizing: border-box; min-height: 44px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--glass-line);
+  background: rgba(0, 0, 0, .12); color: var(--ink); font: 14px/1.45 var(--body); resize: vertical; }
+@media (max-width: 600px) { .wk-open small { display: none; } .wk-kinds button { font-size: 12px; } .wk-kinds button svg { display: none; } }
+
+/* жалоба «чужие фото» и удаление фото админом */
+.rp-ph, .adm-ph { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; margin: 6px 0 8px; }
+.rp-ph label, .adm-ph span { position: relative; display: block; aspect-ratio: 1 / 1; border-radius: 10px; overflow: hidden; cursor: pointer; }
+.rp-ph img, .adm-ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.rp-ph input { position: absolute; opacity: 0; }
+.rp-ph i { position: absolute; right: 4px; top: 4px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  background: rgba(0, 0, 0, .45); color: transparent; border: 1.5px solid rgba(255, 255, 255, .7); }
+.rp-ph i svg { width: 13px; height: 13px; }
+.rp-ph input:checked ~ i { background: var(--bad); border-color: var(--bad); color: #fff; }
+.rp-ph input:checked ~ img { opacity: .55; }
+.adm-ph button { position: absolute; right: 4px; top: 4px; display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 50%;
+  background: rgba(0, 0, 0, .55); color: #fff; cursor: pointer; }
+.adm-ph button:hover { background: var(--bad); }
+.adm-ph button svg { width: 15px; height: 15px; }
