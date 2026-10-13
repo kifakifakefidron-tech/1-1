@@ -100,12 +100,14 @@ SITE_URL = os.getenv("SITE_URL", "").strip() or (
 PICK_DOMAIN = os.getenv("PICK_DOMAIN", "").strip().lower()
 PICK_URL = f"https://{PICK_DOMAIN}" if PICK_DOMAIN else SITE_URL
 TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "7"))           # бесплатно после подтверждения номера (раз на номер)
-SUB_PRICE = int(os.getenv("SUB_PRICE", "99"))            # ₽ за период
-SUB_DAYS = int(os.getenv("SUB_DAYS", "7"))               # период подписки, дней
 # Цены (решение Артёма 13.10): неделя бесплатно (TRIAL_DAYS) → первая платная неделя 49 ₽ (SUB_FIRST, один раз) →
-# дальше 99 ₽ за неделю или 399 ₽ за 30 дней (SUB_PLANS «дней:цена,дней:цена»)
-SUB_PLANS = [(int(d), int(p)) for d, p in (x.split(":") for x in
-             (os.getenv("SUB_PLANS", "").strip() or "7:99,30:399").split(",") if ":" in x)]
+# дальше 99 ₽ за неделю или 399 ₽ за 30 дней (SUB_PLANS «дней:цена,дней:цена»).
+# Старые цены из прежнего README («7:49,30:179,90:449») и SUB_PRICE больше не действуют — даже если остались в .env.
+_LEGACY_PLANS = {"7:49,30:179", "7:49,30:179,90:449", "7:49", "7:49,30:179,90:449,"}
+_plans_env = os.getenv("SUB_PLANS", "").replace(" ", "").strip()
+SUB_PLANS = sorted((int(d), int(p)) for d, p in (x.split(":") for x in
+                   ((_plans_env if _plans_env not in _LEGACY_PLANS else "") or "7:99,30:399").split(",") if ":" in x))
+SUB_DAYS, SUB_PRICE = SUB_PLANS[0]                       # самый короткий тариф (для коротких надписей)
 _first = os.getenv("SUB_FIRST", "7:49").strip()
 SUB_FIRST = tuple(int(x) for x in _first.split(":")) if ":" in _first else None   # (дней, цена) — только первая оплата
 PHONE_VIEWS_PER_DAY = int(os.getenv("PHONE_VIEWS_PER_DAY", "0"))  # 0 = без лимита (пока выключен)  # защита от выкачивания номеров

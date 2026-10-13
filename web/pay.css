@@ -65,7 +65,7 @@
 /* ─── панель ───────────────────────────────────────────────────────── */
 .pay-panel { padding: 30px 30px 26px; border-radius: 30px; border: 1px solid var(--glass-line);
   background: linear-gradient(180deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .03));
-  box-shadow: var(--glass-sh), var(--glass-hi); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); }
+  box-shadow: var(--glass-sh), var(--glass-hi); }
 .pay-view { animation: viewIn .5s var(--ease) both; }
 @keyframes viewIn { from { opacity: 0; transform: translateY(10px); } }
 .pay-panel h1 { margin: 0; font: 600 clamp(24px, 2.6vw, 32px)/1.12 var(--display); letter-spacing: -.02em; }

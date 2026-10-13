@@ -63,7 +63,7 @@
 /* справа */
 .nt2-side { position: sticky; top: 16px; display: grid; gap: 14px; }
 .nt2-card { padding: 18px; border-radius: 24px; border: 1px solid var(--glass-line); background: var(--glass);
-  -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--glass-sh), var(--glass-hi); }
+  box-shadow: var(--glass-sh), var(--glass-hi); }
 .nt2-card h2 { margin: 0 0 6px; font: 600 12px var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
 .nt2-hint { margin: 0 0 12px; color: var(--ink-3); font-size: 13px; line-height: 1.5; }
 .nt2-saved { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }

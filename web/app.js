@@ -1230,7 +1230,7 @@
       text = `Подтвердите номер в Telegram — и <b>${meta.trial_days || 7} дней бесплатно</b>.`;
       btn = `<button type="button" class="pill" data-tglink>Подтвердить номер</button>`;
     } else {
-      text = `Доступ к номерам закончился. Подписка — <b>${meta.price} ₽ за ${meta.period_days} дней</b>.`;
+      text = `Доступ к номерам закончился. Подписка: <b>${meta.prices || `${meta.price} ₽ за ${meta.period_days} дней`}</b>.`;
       btn = `<button type="button" class="pill" data-pay>Оформить подписку</button>`;
     }
     return `<div class="d-locked">
@@ -1554,7 +1554,7 @@
       </div>
       ${u.is_admin ? `<div class="cab-admin" id="cabAdmin"><div class="cab-stats">${"<div class=\"skel\"><i></i></div>".repeat(8)}</div></div>` : ""}
       ${confirm}
-      ${u.is_admin ? "" : `<div class="cab-pay"><div><b>Подписка</b><span>${meta.price} ₽ за ${meta.period_days} дней — номера агентов и все инструменты</span></div>
+      ${u.is_admin ? "" : `<div class="cab-pay"><div><b>Подписка</b><span>${meta.prices || `${meta.price} ₽ за ${meta.period_days} дней`} — номера агентов и все инструменты</span></div>
         ${meta.payments ? `<button type="button" class="pill" data-pay>Оплатить</button>` : `<span class="note">скоро</span>`}</div>`}
       <div class="cab-accs">
         <details class="dv-acc"><summary><span class="dv-acc-ic">🔔</span><span class="dv-acc-t">Слежу за поисками</span><span class="dv-acc-h" id="cabSavedN"></span></summary>

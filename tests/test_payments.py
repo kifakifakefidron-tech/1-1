@@ -42,3 +42,21 @@ def test_first_week_49_then_99(conn, monkeypatch):
     assert [(x["days"], x["price"], x["first"]) for x in p] == [(7, 49, True), (30, 399, False)]
     conn.execute("INSERT INTO payments (user_id, amount, days, provider_id, status, created) VALUES (?, 49, 7, 'x', 'succeeded', 1)", (u["id"],))
     assert [(x["days"], x["price"]) for x in payments.plans(conn, u["id"])] == [(7, 99), (30, 399)]
+
+
+def test_legacy_prices_in_env_ignored(monkeypatch):
+    """Старые строки из прежнего README (SUB_PLANS=7:49,30:179,90:449, SUB_PRICE=49) не должны возвращать старые цены."""
+    import importlib
+    from app import config
+    monkeypatch.setenv("SUB_PLANS", "7:49,30:179,90:449")
+    monkeypatch.setenv("SUB_PRICE", "49")
+    try:
+        importlib.reload(config)
+        assert config.SUB_PLANS == [(7, 99), (30, 399)] and config.SUB_PRICE == 99 and config.SUB_FIRST == (7, 49)
+        monkeypatch.setenv("SUB_PLANS", "7:150,30:500")      # свои цены — работают
+        importlib.reload(config)
+        assert config.SUB_PLANS == [(7, 150), (30, 500)]
+    finally:
+        monkeypatch.delenv("SUB_PLANS")
+        monkeypatch.delenv("SUB_PRICE")
+        importlib.reload(config)

@@ -66,7 +66,7 @@
 
 /* подборка */
 .pk2-detail { min-width: 0; padding: 18px; border-radius: 28px; border: 1px solid var(--glass-line); background: var(--glass);
-  -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--glass-sh), var(--glass-hi); animation: riseIn .45s var(--ease) both; }
+  box-shadow: var(--glass-sh), var(--glass-hi); animation: riseIn .45s var(--ease) both; }
 .pk2-back { display: none; }
 .pk2-hero { position: relative; display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 20px; align-items: center; }
 .pk2-col { display: grid; height: 160px; gap: 3px; border-radius: 20px; overflow: hidden; background: rgba(0, 0, 0, .22); }

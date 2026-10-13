@@ -64,7 +64,7 @@ dialog::backdrop { background: rgba(0, 18, 18, .5); backdrop-filter: blur(6px); 
 .hero { position: relative; margin: 26px 0 22px; padding: 38px 40px 34px; border-radius: 30px; overflow: hidden;
   border: 1px solid var(--glass-line); box-shadow: var(--glass-sh), var(--glass-hi);
   background: linear-gradient(135deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .02) 55%, rgba(227, 203, 143, .06));
-  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); isolation: isolate; }
+  isolation: isolate; }
 .hero::after { content: ""; position: absolute; inset: auto -10% -60% 40%; height: 120%; z-index: -1; pointer-events: none;
   background: radial-gradient(closest-side, rgba(227, 203, 143, .2), transparent 70%); filter: blur(10px);
   animation: heroGlow 14s ease-in-out infinite alternate; }

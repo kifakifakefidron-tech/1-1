@@ -278,7 +278,8 @@
       <div class="wp-meter"><i style="--w:${Math.min(100, left / (meta.period_days || 7) * 100)}%"></i></div>
       <p class="g-sub">Доступ до ${dayLong(me.access_until)}: номера агентов и все инструменты</p>
       <a class="pill light" href="/pay">${ic("card")}Продлить</a>`;
-    else body = `<div class="wp-price">${esc(meta.price)} ₽</div><p class="g-sub">за ${esc(meta.period_days)} ${plural(Number(meta.period_days) || 0, "день", "дня", "дней")} — номера агентов, планер, подборки, уведомления</p>
+    else body = `<div class="wp-price"><small style="font-size:.45em;color:var(--ink-3)">от </small>${esc(meta.price_first || meta.price)} ₽</div>
+      <p class="g-sub">${esc(meta.prices || "")} — номера агентов, планер, подборки, уведомления</p>
       <a class="pill" href="/pay">${ic("card")}Оформить доступ</a>`;
     put("wPlan", `${head("shield", "Доступ")}${body}`, 9);
   }

@@ -276,6 +276,7 @@ def api_meta(request: Request, body: dict | None = None):
         "email_login": mailer.available(),
         "payments": payments.available(),
         "price": config.SUB_PRICE, "period_days": config.SUB_DAYS, "trial_days": config.TRIAL_DAYS,
+        "prices": _prices_text(), "price_first": config.SUB_FIRST[1] if config.SUB_FIRST else None,
         "bot": bot_username(),
         "me": accounts.me(db.get(), user),
     })
