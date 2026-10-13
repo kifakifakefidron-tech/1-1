@@ -397,7 +397,7 @@
       if (fresh.has(row.querySelector('[data-k="bank"]').value.trim().toLowerCase())) row.classList.add("fresh");
     });
     parsedAvg = r.data.avg || null;
-    const a = parsedAvg ? ` Средневзвешенная по рынку: вторичка ${parsedAvg.secondary ?? "—"}%, новостройки ${parsedAvg.new ?? "—"}%.` : "";
+    const a = parsedAvg && parsedAvg.secondary != null ? ` Средневзвешенная по рынку (вторичка): ${parsedAvg.secondary}%.` : "";
     out.textContent = `Нашли банков: ${r.data.items.length}${String(r.data.how).includes("ai") ? " (помогла нейросеть)" : ""} — они подсвечены.${a} Проверьте и нажмите «Сохранить».`;
   }
 

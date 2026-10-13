@@ -239,7 +239,7 @@ def _page(name: str) -> Response:
         "OPERATOR_NAME": config.OPERATOR_NAME, "OPERATOR_INN": config.OPERATOR_INN,
         "CONTACT_EMAIL": config.CONTACT_EMAIL or "почту из раздела «Контакты»", "POLICY_DATE": config.POLICY_DATE,
         "SITE_URL": config.SITE_URL, "TRIAL_DAYS": config.TRIAL_DAYS, "SUB_PRICE": config.SUB_PRICE, "PRICES": _prices_text(),
-        "SUB_DAYS": config.SUB_DAYS, "STALE_DAYS": config.STALE_DAYS, "ARCHIVE_DAYS": config.ARCHIVE_DAYS,
+        "SUB_DAYS": config.SUB_DAYS, "STALE_DAYS": config.STALE_DAYS, "ARCHIVE_DAYS": config.ARCHIVE_DAYS, "KEEP_DAYS": config.KEEP_DAYS,
         "PRICE_CARDS": _price_cards(),
     }.items():
         html = html.replace("{{" + key + "}}", str(val))

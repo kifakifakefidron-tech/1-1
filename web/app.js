@@ -1274,8 +1274,8 @@
           <option value="other">Другое</option>
         </select>
         <textarea name="text" rows="2" placeholder="Что не так? (необязательно)"></textarea>
-        <p class="note" data-optout-hint hidden>Быстрее всего — подтвердить номер в нашем Telegram-боте: он исчезнет с сайта сразу.
-          ${meta.bot ? `<a href="https://t.me/${esc(meta.bot)}?start=optout" target="_blank" rel="noopener">Открыть бота</a>` : ""}</p>
+        <p class="note" data-optout-hint hidden>Отправьте заявку — мы проверим и уберём номер. Если хотите сами управлять своими
+          объявлениями (цена, фото, «продано»), подтвердите номер в разделе <a href="/my" target="_top">«Мои объекты»</a> — код через MAX.</p>
         <button type="submit" class="pill light">Отправить</button>
       </form></details>`;
   }
