@@ -101,13 +101,23 @@ def test_street_learns_district_and_custom_district(env):
     # своего района нет в справочнике — добавляем
     r = c.post("/api/admin/districts", json={"name": "Новые Сады", "aliases": "новосады"}).json()
     assert "Новые Сады" in r["districts"] and r["districts"] == sorted(r["districts"], key=lambda x: x.lower())
-    c.post(f"/api/admin/listings/{a}/place", json={"district": "Новые Сады", "learn": {"street": True}})
+    # одного объекта мало: правило «улица → район» не создаётся (улицы идут через несколько районов)
+    r1 = c.post(f"/api/admin/listings/{a}/place", json={"district": "Новые Сады", "learn": {"street": True}}).json()
+    assert r1["learned"] == [] and "мало размеченных" in r1["skipped"][0]
+    # размечено 5+ объектов улицы, все в одном районе — правило учится
+    for i in range(5):
+        x = add(conn, f"Студия {20 + i} м², {i + 1}/9 эт., ул. Новаторов {30 + i}. 3 млн. 8918000005{i}")["listing_id"]
+        conn.execute("UPDATE listings SET district = 'Новые Сады' WHERE id = ?", (x,))
+    conn.commit()
+    c.post(f"/api/admin/listings/{a}/place", json={"district": "", "learn": {}})
+    r2 = c.post(f"/api/admin/listings/{a}/place", json={"district": "Новые Сады", "learn": {"street": True}}).json()
+    assert any("Новаторов" in x for x in r2["learned"])
     # другая квартира на той же улице (другой дом) — сразу в этом районе
     b = add(conn, "1-к квартира 38 м², 5/9 эт., ул. Новаторов 15. 4 млн. 89180000022")["listing_id"]
     assert row(conn, b)["district"] == "Новые Сады"
     # новый район узнаётся в тексте и в фильтре
     assert geo.canonical_district("новосады") == "Новые Сады"
-    assert search.search(conn, search.Query(districts=["Новые Сады"]), NOW, False)["total"] == 2
+    assert search.search(conn, search.Query(districts=["Новые Сады"]), NOW, False)["total"] == 7
     item = c.get(f"/api/admin/fix?mode=place&kind=nodistrict&id={b}").json()
     assert "Новые Сады" in item["districts"] and item["complexes"]
 

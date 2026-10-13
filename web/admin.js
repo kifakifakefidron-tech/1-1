@@ -407,11 +407,13 @@
   }
   function spRenderList() {
     const q = ($("spQ").value || "").trim().toLowerCase().replace(/ё/g, "е");
-    const list = spItems.filter((x) => !q || x.title.toLowerCase().replace(/ё/g, "е").includes(q)).slice(0, 600);
+    const all = spItems.filter((x) => !q || x.title.toLowerCase().replace(/ё/g, "е").includes(q));
+    const list = all.slice(0, 600);
     $("spList").innerHTML = list.map((x) => `<li><button type="button" class="sp-item${x.name === spOpen ? " on" : ""}${x.special ? " special" : ""}"
         data-sp-open="${esc(x.name)}"><span class="sp-name">${esc(x.title)}${x.custom ? ' <small>свой</small>' : ""}
         ${x.districts && x.districts.length ? `<small>${esc(x.districts.join(", "))}</small>` : ""}</span><b>${x.count}</b></button></li>`).join("")
       || `<li class="note sp-none">Ничего не нашлось</li>`;
+    if (all.length > list.length) $("spList").insertAdjacentHTML("beforeend", `<li class="note sp-none">Показаны ${list.length} из ${all.length} — уточните поиск</li>`);
   }
 
   // Карточка
@@ -508,8 +510,11 @@
     const name = spOpen;
     const others = spDistricts.filter((d) => d !== name);
     if (act === "rename_district") {
-      spAsk(`Новое название района «${esc(name)}». Старое продолжит узнаваться в объявлениях.`, [], (to) =>
-        spDo({ action: "rename_district", name, to }, (r) => `«${name}» → «${r.name || to}» · объектов: ${r.listings}`), (v) => `Назвать «${v}»`);
+      spAsk(`Новое название района «${esc(name)}». Старое продолжит узнаваться в объявлениях.`, [], (to) => {
+        if (!confirm(`Переименовать район «${name}» → «${to}»?
+Название поменяется у всех его объектов, в фильтрах и подписках.`)) return;
+        spDo({ action: "rename_district", name, to }, (r) => `«${name}» → «${r.name || to}» · объектов: ${r.listings}`);
+      }, (v) => `Назвать «${v}»`);
     } else if (act === "merge_district" || act === "delete_district") {
       const del = act === "delete_district";
       spAsk(del ? `Удалить район «${esc(name)}». Куда перенести его объекты? (старое название будет узнаваться как выбранный район)`

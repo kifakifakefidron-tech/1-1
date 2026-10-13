@@ -133,3 +133,16 @@
 .fx-offer .pill svg, .fx-offer-ok svg { width: 16px; height: 16px; }
 .fx-offer-ok { display: inline-flex; align-items: center; gap: 8px; color: var(--ok); font-size: 14px; }
 .fx-offer-ok b { color: var(--ink); }
+
+/* ТЗ «админка-гео»: недоступные правила, список группы, меню удаления */
+.fx-check.off { display: grid; gap: 2px; opacity: .75; }
+.fx-check.off small { color: var(--ink-3); font-size: 12px; }
+.fx-glist { margin-top: 6px; font-size: 13px; }
+.fx-glist summary { cursor: pointer; color: var(--gold); }
+.fx-glist ul { margin: 6px 0 0; padding-left: 18px; max-height: 180px; overflow: auto; display: grid; gap: 2px; }
+.fx-glist small { color: var(--ink-3); }
+.fx-more { position: relative; display: inline-block; }
+.fx-more summary { list-style: none; cursor: pointer; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--glass-line); color: var(--ink-3); }
+.fx-more summary::-webkit-details-marker { display: none; }
+.fx-more-m { position: absolute; z-index: 5; right: 0; top: calc(100% + 6px); display: grid; gap: 6px; padding: 10px; border-radius: 14px;
+  background: rgba(4, 56, 55, .98); border: 1px solid var(--glass-line); box-shadow: 0 16px 40px rgba(0, 12, 12, .45); min-width: 240px; }

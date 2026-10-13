@@ -1,5 +1,7 @@
 /* 1+1 · экран разбора: ЖК/район и точки на карте — по одному объекту, с подсказками и обучением.
-   Пропущенные уходят в конец очереди; «Назад» — к предыдущему; Enter — сохранить и дальше. */
+   Пропущенные уходят в конец очереди; «Назад» — к предыдущему; Enter вне полей (или Ctrl+Enter) — сохранить и дальше.
+   ТЗ «админка-гео» P0.1–P0.2: учить по умолчанию только «дом → ЖК/район»; «улица → район» и «ЖК → район» — только когда
+   безопасно (цифры с сервера: learn_stats); «Применить ко всем» выключено и со списком объектов. */
 (() => {
   "use strict";
   const $ = (id) => document.getElementById(id);
@@ -58,8 +60,8 @@
   async function fetchItem(id) {
     const q = new URLSearchParams({ mode, kind });
     if (id) q.set("id", id);
-    else q.set("exclude", [...ss.done, ...ss.skipped, ...(item ? [item.id] : [])].join(","));
-    const r = await call(`/api/admin/fix?${q}`);
+    const r = id ? await call(`/api/admin/fix?${q}`)
+      : await call(`/api/admin/fix?${q}`, { exclude: [...ss.done, ...ss.skipped, ...(item ? [item.id] : [])] });
     if (r.status === 403 || r.status === 401) { $("fxDenied").hidden = false; return null; }
     if (!r.ok) { toast(r.data.detail || "Не получилось загрузить"); return null; }
     left = r.data.left;
@@ -134,9 +136,10 @@
       it.source === "feed" ? "фид СТРЕЛ" : it.source === "own" ? "свой объект агента" : ""].filter(Boolean)
       .map((x) => `<span class="chip">${esc(x)}</span>`).join("");
     $("fxPhones").innerHTML = (it.phones || []).map((p) => `<span class="fx-phone">
-      <button type="button" class="fx-phone-num" data-phone-base="${esc(p)}" title="Все объекты этого номера">${esc(p)}</button>
-      <button type="button" class="chip danger" data-ban-phone="${esc(p)}" title="Скрыть все объекты и сообщения от этого номера и не принимать новые">🚫 Всё от номера</button></span>`).join("")
-      + `<button type="button" class="chip danger fx-del-one" data-del-one="${it.id}">🗑 Удалить только этот объект</button>`;
+      <button type="button" class="fx-phone-num" data-phone-base="${esc(p)}" title="Все объекты этого номера">${esc(p)}</button></span>`).join("")
+      + `<details class="fx-more"><summary title="Удалить объект или всё от номера">⋯</summary><div class="fx-more-m">
+        <button type="button" class="chip danger fx-del-one" data-del-one="${it.id}">🗑 Удалить только этот объект</button>
+        ${(it.phones || []).map((p) => `<button type="button" class="chip danger" data-ban-phone="${esc(p)}">🚫 Всё от номера ${esc(p)}</button>`).join("")}</div></details>`;
     const rent = it.deal === "rent";
     $("fxPriceLabel").textContent = rent ? "Цена, тыс. ₽/мес" : "Цена, млн ₽";
     $("fxPrice").value = it.price ? String(+(it.price / (rent ? 1000 : 1e6)).toFixed(rent ? 0 : 3)).replace(".", ",") : "";
@@ -166,8 +169,11 @@
       ? `${ic("grid")}<div><b>${esc(group.label)}</b> — ещё ${others.length} ${plural(others.length, "объект", "объекта", "объектов")} без точки.
           <small>Точка, которую вы поставите, встанет и для них.</small></div>`
       : `${ic("grid")}<div><b>${esc(group.label)}</b> — ещё ${others.length} ${plural(others.length, "объект", "объекта", "объектов")} в очереди.
-          <label class="fx-check"><input type="checkbox" id="fxGroupAll" checked><span>Применить ко всем ${others.length + 1}
-          (${group.same_place ? "район и ЖК" : "только район"})</span></label></div>`;
+          <label class="fx-check"><input type="checkbox" id="fxGroupAll"><span>Применить ко всем ${others.length + 1}
+          (${group.same_place ? "район и ЖК" : "только район"})</span></label>
+          <details class="fx-glist"><summary>Какие это объекты</summary><ul>${(group.items || []).filter((g) => g.id !== item.id).map((g) =>
+            `<li><a href="/?open=${g.id}" target="_blank">${esc(g.addr || g.title)}</a> <small>${esc([g.complex && "ЖК " + g.complex, g.district].filter(Boolean).join(" · "))}</small></li>`).join("")}
+            ${group.count > (group.items || []).length ? `<li><small>…и ещё ${group.count - (group.items || []).length}</small></li>` : ""}</ul></details></div>`;
   }
   const plural = (n, a, b, c) => (n % 10 === 1 && n % 100 !== 11 ? a : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? b : c);
   const ic = (n) => (window.ic ? window.ic(n) : "");
@@ -200,18 +206,40 @@
     if (!item) return;
     const cx = $("fxComplex").value.trim();
     const d = [chosenDistrict, ...extraDistricts].filter(Boolean).join(", ") || null;
-    const rows = [];
-    if (item.street && d) rows.push(["street", `Улица <b>${esc(item.street)}</b> → район <b>${esc(d)}</b> (для её объявлений без своего района)`]);
-    if (item.street && item.house) rows.push(["addr", `Дом <b>ул. ${esc(item.street)}, ${esc(item.house)}</b> → ${cx ? "ЖК " + esc(cx) : "без ЖК"}${d ? ", " + esc(d) : ""}`]);
+    const rows = [];   // [ключ, текст, можно ли, почему нельзя]
+    const ok = safeRules(chosenDistrict);
+    if (item.street && item.house) rows.push(["addr", `Дом <b>ул. ${esc(item.street)}, ${esc(item.house)}</b> → ${cx ? "ЖК " + esc(cx) : "без ЖК"}${d ? ", " + esc(d) : ""}`, true]);
     if (item.complex && item.complex !== cx) rows.push(["alias", cx
-      ? `«${esc(item.complex)}» → это ЖК <b>${esc(cx)}</b> (везде)` : `«${esc(item.complex)}» — это не ЖК (везде)`]);
-    if (cx && d) rows.push(["cx_district", `ЖК <b>${esc(cx)}</b> → район <b>${esc(d)}</b> (всегда)`]);
+      ? `«${esc(item.complex)}» → это ЖК <b>${esc(cx)}</b> (везде)` : `«${esc(item.complex)}» — это не ЖК (везде)`, true]);
+    if (item.street && d) rows.push(["street", `Улица <b>${esc(item.street)}</b> → район <b>${esc(d)}</b>`, ok.street[0], ok.street[1]]);
+    if (cx && d) rows.push(["cx_district", `ЖК <b>${esc(cx)}</b> → район <b>${esc(d)}</b>`, ok.cx[0], ok.cx[1]]);
+    // по умолчанию учим только «дом → ЖК/район»; выбор держится только для этого же объекта
     const prev = {};
-    document.querySelectorAll("#fxLearn input").forEach((i) => { prev[i.name] = i.checked; });
+    if (learnFor === item.id) document.querySelectorAll("#fxLearn input").forEach((i) => { prev[i.name] = i.checked; });
+    learnFor = item.id;
     $("fxLearn").innerHTML = rows.length
-      ? `<div class="fx-label">Научить сервис — для всех таких объявлений, старых и новых</div>` + rows.map(([k, t]) =>
-        `<label class="fx-check"><input type="checkbox" name="${k}"${prev[k] === false ? "" : " checked"}><span>${t}</span></label>`).join("")
+      ? `<div class="fx-label">Научить сервис — для всех таких объявлений, старых и новых</div>` + rows.map(([k, t, can, why]) => can
+        ? `<label class="fx-check"><input type="checkbox" name="${k}"${(k in prev ? prev[k] : k === "addr") ? " checked" : ""}><span>${t}</span></label>`
+        : `<div class="fx-check off"><span>${t}</span><small>Правило не создаём: ${esc(why)}</small></div>`).join("")
       : `<div class="note">Поправим только этот объект.</div>`;
+  }
+
+  let learnFor = 0;
+  // безопасность правил — по цифрам с сервера (так же проверяет и сервер при сохранении)
+  function safeRules(district) {
+    const st = (item.learn_stats && item.learn_stats.street) || {}, cxs = (item.learn_stats && item.learn_stats.complex) || {};
+    const n = Object.values(st).reduce((a, b) => a + b, 0);
+    const top = Object.entries(st).sort((a, b) => b[1] - a[1])[0] || [null, 0];
+    const fmt = (o) => Object.entries(o).slice(0, 4).map(([k, v]) => `${k} ${v}`).join(", ");
+    let street;
+    if (!district) street = [false, "район не выбран"];
+    else if (n < 5) street = [false, `мало размеченных объектов улицы (${n} из 5)`];
+    else if (top[0] !== district || top[1] / n < 0.9) street = [false, `улица в нескольких районах: ${fmt(st)}`];
+    else street = [true, ""];
+    const other = Object.fromEntries(Object.entries(cxs).filter(([k]) => k !== district));
+    const cx = !district ? [false, "район не выбран"] : Object.keys(other).length
+      ? [false, `объекты ЖК есть в контуре другого района: ${fmt(other)}`] : [true, ""];
+    return { street, cx };
   }
 
   function pickDistrict(name) {
@@ -336,7 +364,7 @@
     // 1) район / ЖК / цена — в очередях района всегда (это подтверждение), в очередях карты — если меняли
     if (!extra && (mode === "place" || placeChanged)) {
       const learn = {};
-      document.querySelectorAll("#fxLearn input").forEach((i) => { if (i.checked) learn[i.name] = true; });
+      if (placeChanged) document.querySelectorAll("#fxLearn input").forEach((i) => { if (i.checked) learn[i.name] = true; });
       const body = { complex: $("fxComplex").value, district: chosenDistrict || "", extra: extraDistricts, learn };
       if (priceChanged) body.price = $("fxPrice").value;
       if (mode === "place" && group && $("fxGroupAll") && $("fxGroupAll").checked) {
@@ -347,6 +375,7 @@
       r = await call(`/api/admin/listings/${item.id}/place`, body);
       if (!r.ok) { busy = false; toast(r.data.detail || "Не получилось сохранить"); return; }
       learnedAll.push(...(r.data.learned || [])); applied += r.data.applied || 0;
+      if ((r.data.skipped || []).length) toast(r.data.skipped.join("; "), 4500);
     }
     // 2) точка — в очередях карты всегда, в остальных — если двигали метку
     if (mode === "geo" || geoDirty || extra) {
@@ -474,7 +503,14 @@
     onPick: (v) => pickDistrict(v),
     newLabel: (v) => `+ Добавить новый район «${v}»`,
     onNew: async (name) => {
-      if (!confirm(`Добавить новый район «${name}»? Он появится в фильтрах и будет узнаваться в объявлениях.`)) return;
+      const norm = (x) => x.toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я0-9]/g, "");
+      const n0 = norm(name);
+      const lev = (a, b) => { const d = Array.from({ length: a.length + 1 }, (_, i) => [i]); for (let j = 1; j <= b.length; j++) d[0][j] = j;
+        for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        return d[a.length][b.length]; };
+      const similar = districts.filter((d) => { const n1 = norm(d); return n1.includes(n0) || n0.includes(n1) || lev(n0, n1) <= 2; });
+      if (similar.length) { toast(`Похожий район уже есть: ${similar.slice(0, 3).map((x) => `«${x}»`).join(", ")} — выберите его`, 5000); return; }
+      if (!confirm(`Добавить НОВЫЙ район «${name}»?\nОн появится в фильтрах у всех и будет узнаваться в объявлениях. Похожих не нашли.`)) return;
       const r = await call("/api/admin/districts", { name });
       if (!r.ok) { toast(r.data.detail || "Не получилось добавить"); return; }
       districts = r.data.districts;
@@ -508,8 +544,13 @@
     if (e.key === "Enter") {
       const id = document.activeElement.id;
       if (id === "fxCoords") return;                       // Enter в поле координат — «Найти»
+      if (e.ctrlKey || e.metaKey) { e.preventDefault(); submit(); return; }   // Ctrl/Cmd+Enter — сохранить из любого поля
+      if (typing) {   // в поле со списком Enter выбирает пункт и НЕ сохраняет объект
+        e.preventDefault();
+        if (id === "fxComplex") { document.activeElement.blur(); renderLearn(); }
+        return;
+      }
       e.preventDefault();
-      if (id === "fxComplex") { document.activeElement.blur(); renderLearn(); return; }   // выбрали ЖК — ещё не сохраняем
       submit();
       return;
     }

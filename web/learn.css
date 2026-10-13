@@ -93,3 +93,18 @@
 .ln-unc h3 { margin: 0 0 6px; font: 600 16px var(--head); color: var(--gold); }
 .ln-unc .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .ln-unc .chip b { margin-left: 4px; font-weight: 600; opacity: .75; }
+
+/* проверка правил и справочников */
+.ln-a-sum { margin: 0 0 10px; font-size: 14px; line-height: 1.5; }
+.ln-a-sum b.bad { color: var(--bad); }
+.ln-a-h { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 16px 0 8px; font: 600 15px var(--body); }
+.ln-a-all { font-weight: 400; font-size: 13px; color: var(--ink-3); display: inline-flex; gap: 6px; align-items: center; }
+.ln-a-t { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ln-a-t th { text-align: left; font-weight: 500; color: var(--ink-3); padding: 4px 6px; }
+.ln-a-t td { padding: 6px; border-top: 1px solid var(--line); vertical-align: top; }
+.ln-a-t td small { display: block; color: var(--ink-3); font-size: 11.5px; }
+.ln-a-t tr.st-bad td:nth-child(5) { color: var(--bad); font-weight: 600; }
+.ln-a-row { display: flex; gap: 8px; align-items: center; padding: 4px 0; font-size: 13.5px; }
+.ln-a-acts { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+.ln-a-acts .note { font-size: 12.5px; }
+.ln-audit { overflow-x: auto; }

@@ -136,6 +136,71 @@ def apply(conn: sqlite3.Connection, o) -> bool:
     return (get("complex"), get("district")) != before
 
 
+# ─── безопасное обучение (ТЗ «админка-гео», P0.1) ────────────────────────────────────────────────────────────
+STREET_MIN_N = 5        # правило «улица → район» — только если размечено хотя бы столько объектов улицы
+STREET_MIN_SHARE = .9   # и не меньше этой доли из них в одном районе (улицы Краснодара идут через несколько районов)
+HOUSE_POINT_SRC = (None, "geocoder", "osm-house", "osm-near", "feed-house", "learned")   # точка дома, не центр ЖК/улицы
+
+
+def _house_district(conn: sqlite3.Connection, r) -> str | None:
+    """Район по контуру под ТОЧНОЙ точкой дома (центр ЖК, середина улицы и примерные точки не в счёт)."""
+    from . import districtmap
+    if r["lat"] is None or r["geo_status"] not in ("ok", "manual", "learned", "feed"):
+        return None
+    if r["geo_status"] == "ok" and r["geo_src"] not in HOUSE_POINT_SRC:
+        return None
+    hit = districtmap.district_at(conn, r["lat"], r["lon"])
+    return hit[0] if hit and hit[1] == "district" else None
+
+
+def safety(conn: sqlite3.Connection, row) -> dict:
+    """Как распределены объекты этой улицы и этого ЖК по районам: по контуру под точкой дома, иначе по району объекта.
+    {"street": {район: n}, "complex": {район: n по контурам}} — по этим цифрам решаем, можно ли учить правило."""
+    from collections import Counter
+    st, cx = Counter(), Counter()
+    sk = street_key(row["street"], row["settlement"])
+    ck = cx_key(row["complex"])
+    if not sk and not ck:
+        return {"street": {}, "complex": {}}
+    for r in conn.execute("""SELECT street, settlement, complex, district, lat, lon, geo_status, geo_src FROM listings
+                             WHERE is_active = 1 AND (street IS NOT NULL OR complex IS NOT NULL)"""):
+        mine_st = sk and r["street"] and street_key(r["street"], r["settlement"]) == sk
+        mine_cx = ck and r["complex"] and cx_key(r["complex"]) == ck
+        if not (mine_st or mine_cx):
+            continue
+        d_map = _house_district(conn, r)
+        if mine_st and (d_map or r["district"]):
+            st[d_map or r["district"]] += 1
+        if mine_cx and d_map:
+            cx[d_map] += 1
+    return {"street": dict(st.most_common()), "complex": dict(cx.most_common())}
+
+
+def allowed(stats: dict, district: str | None) -> dict:
+    """Какие правила о районе безопасно учить: {"street": (bool, почему), "cx_district": (bool, почему)}."""
+    out = {}
+    st = stats.get("street") or {}
+    n = sum(st.values())
+    top = max(st.items(), key=lambda kv: kv[1]) if st else (None, 0)
+    if not district:
+        out["street"] = (False, "район не выбран")
+    elif n < STREET_MIN_N:
+        out["street"] = (False, f"мало размеченных объектов улицы ({n} из нужных {STREET_MIN_N})")
+    elif top[0] != district or top[1] / n < STREET_MIN_SHARE:
+        out["street"] = (False, "улица в нескольких районах: " + ", ".join(f"{d} {k}" for d, k in list(st.items())[:4]))
+    else:
+        out["street"] = (True, f"{top[1]} из {n} объектов улицы — в «{district}»")
+    cx = stats.get("complex") or {}
+    other = {d: k for d, k in cx.items() if d != district}
+    if not district:
+        out["cx_district"] = (False, "район не выбран")
+    elif other:
+        out["cx_district"] = (False, "объекты ЖК есть в контуре другого района: " + ", ".join(f"{d} {k}" for d, k in other.items()))
+    else:
+        out["cx_district"] = (True, "все объекты ЖК с точкой дома — в этом районе" if cx else "точек домов ЖК пока нет")
+    return out
+
+
 def learn(conn: sqlite3.Connection, row: sqlite3.Row, new_complex: str | None, new_district: str | None,
           want: dict, extra: list[str] | None = None) -> list[str]:
     """Запомнить правки админа. want: {"addr": bool, "alias": bool, "cx_district": bool}.

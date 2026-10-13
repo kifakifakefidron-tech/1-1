@@ -445,6 +445,16 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   «Снят — похожие» (GET /api/picks/{id}/similar, POST items {replace, listing_id} — на то же место); отчёт по клиенту
   (сводка + «Скопировать отчёт»); нижняя панель телефона — подписи под иконками (.rail-lbl); выпадающие районы/ЖК в
   форме клиента — только вниз (data-pk-down в pickers.place); шапка главной на 641–820 px без прокрутки вбок.
+- 13.10 ТЗ «админка-гео» (docs/geo-chain.md — цепочка решений). Решения: массовые изменения — только отчёт → галочки
+  админа → «Применить отмеченное»; каждое автоизменение — listing_edits.src («перепроверка» / «чистка правил»), откат по
+  объекту (окно объекта → история, GET/POST /api/admin/edits?listing=); P3 (склейка) НЕ трогаем. Приоритет района:
+  правка админа (admin_fixed) > правило дома (addr) > контур под ТОЧНОЙ точкой дома (learning._house_district,
+  HOUSE_POINT_SRC) > правило ЖК > текст > правило улицы. learning.safety/allowed: «улица → район» — ≥5 объектов и ≥90 %,
+  «ЖК → район» — нет объектов в чужом контуре (проверяет и сервер, skipped). Без изменений — без правил. recheck_all:
+  смен района > max(2 %, 10) — не меняет, а place_conflict + уведомление (districts_held). app/geoaudit.py + web/geoaudit.js
+  (/learn, «Проверка правил»): правила против карты (< 70 % — bad), ЖК-мусор (JUNK_CX, ingest не принимает),
+  «улицы»-подписи (parser.is_field_label). /fix: Enter не сохраняет (Ctrl+Enter), «Применить ко всем» выключено со списком,
+  удаление — «⋯», похожий район при создании нового.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
@@ -453,7 +463,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 230 тестов
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 233 теста
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены

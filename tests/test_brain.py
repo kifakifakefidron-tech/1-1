@@ -38,12 +38,13 @@ def test_old_links_map_to_one_queue():
 def test_rule_vs_map_conflict_goes_to_queue_and_admin_resolves(env):
     c, conn = env
     districtmap.save_polygon(conn, "Катюша", "district", KAT)
-    lid = add(conn, "2-к квартира 50 м², 3/9 эт., ФМР, ЖК Мозаика. 6 млн. 89180000071")
+    lid = add(conn, "2-к квартира 50 м², 3/9 эт., ФМР, ЖК Мозаика, ул. Новаторов 9. 6 млн. 89180000071")
     conn.execute("UPDATE listings SET lat = 45.01, lon = 38.91, geo_status = 'ok', geo_src = 'osm-house', district = 'ФМР' WHERE id = ?",
                  (lid,))
     conn.commit()
+    # правило ДОМА главнее контура (ТЗ «админка-гео»): дом и карта спорят — в «Спорные», решает админ
     learning.learn(conn, conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone(), "Мозаика", "ФМР",
-                   {"cx_district": True})
+                   {"addr": True})
     autolearn.recheck_all(conn)
     assert brain.counts(conn)["conflict"] == 1
     d = c.get("/api/admin/fix?kind=conflict").json()
@@ -60,7 +61,7 @@ def test_learn_overview_and_knowledge(env):
     c.post(f"/api/admin/listings/{lid}/place", json={"district": "ЦМР", "learn": {"addr": True, "street": True}})
     c.post(f"/api/admin/listings/{lid}/geo", json={"lat": 45.03, "lon": 38.97})
     ov = c.get("/api/admin/learn").json()
-    assert ov["total"] >= 1 and ov["knowledge"]["rules"] >= 2 and ov["knowledge"]["points"] >= 1
+    assert ov["total"] >= 1 and ov["knowledge"]["rules"] >= 1 and ov["knowledge"]["points"] >= 1   # улица на 1 объекте — не учится
     assert [s["key"] for s in ov["pipeline"]["district"]][:3] == ["yours", "rules", "map"]
     items = c.get("/api/admin/learn/knowledge").json()["items"]
     assert {x["type"] for x in items} == {"rule", "point"}

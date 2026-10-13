@@ -1504,7 +1504,19 @@ def api_admin_place(request: Request, body: dict | None = None):
         x = geo.canonical_district(str(x))
         if x and x != district and x not in extra:
             extra.append(x)
-    learned = learning.learn(conn, row, cx, district, body.get("learn") or {}, extra)
+    # ТЗ «админка-гео» P0.1: подтверждение без изменений правил не создаёт; правила района — только безопасные
+    want = dict(body.get("learn") or {})
+    unchanged = cx == row["complex"] and district == row["district"] and extra == json.loads(row["extra_districts"] or "[]")
+    skipped = []
+    if unchanged:
+        want = {}
+    elif want.get("street") or want.get("cx_district"):
+        ok = learning.allowed(learning.safety(conn, row), district)
+        for k in ("street", "cx_district"):
+            if want.get(k) and not ok[k][0]:
+                want.pop(k)
+                skipped.append(f"{'улица' if k == 'street' else 'ЖК'} → район не выучено: {ok[k][1]}")
+    learned = learning.learn(conn, row, cx, district, want, extra)
     if body.get("price") not in (None, ""):
         price = _parse_admin_price(body.get("price"), row["deal"])
         if price is None:
@@ -1545,7 +1557,7 @@ def api_admin_place(request: Request, body: dict | None = None):
         applied += 1
     conn.commit()
     price = conn.execute("SELECT price FROM listings WHERE id = ?", (lid,)).fetchone()[0]
-    return JSONResponse({"ok": True, "complex": cx, "district": district, "extra": extra, "learned": learned,
+    return JSONResponse({"ok": True, "complex": cx, "district": district, "extra": extra, "learned": learned, "skipped": skipped,
                          "applied": applied, "price": price})
 
 
@@ -1598,6 +1610,7 @@ def _fix_item(conn, lid: int) -> dict | None:
         "was_district": _was_district(conn, r),
         "conflict": (r["place_conflict"] or "").split(":", 1)[-1] or None,
         "zone": _zone(conn, r["district"]),
+        "learn_stats": learning.safety(conn, r),   # распределение улицы и ЖК по районам — какие правила безопасно учить
     }
 
 
@@ -1928,6 +1941,8 @@ def api_admin_fix(request: Request, body: dict | None = None):
                              "complex": districtmap.complex_at(conn, lat, lon)})
     left = conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE} AND {where}").fetchone()[0]
     exclude = {int(x) for x in q.get("exclude", "").split(",") if x.strip().isdigit()}
+    if request.method == "POST":   # разобранные/пропущенные — в теле запроса, не в адресе (длина адреса ограничена)
+        exclude |= {int(x) for x in ((body or {}).get("exclude") or []) if str(x).isdigit()}
     group = None
     if q.get("id"):
         item = _fix_item(conn, _num(q.get("id"), int) or 0)   # конкретный объект (из базы номера, из окна объекта)
@@ -1946,8 +1961,13 @@ def api_admin_fix(request: Request, body: dict | None = None):
         if groups and len(groups[0]["ids"]) > 1:
             group = groups[0]
     if group:
-        group = {"label": group["label"], "ids": group["ids"][:500], "count": len(group["ids"]),
-                 "same_place": not group["key"].startswith("street:")}
+        gi = group["ids"][:500]
+        ph = ",".join("?" * min(len(gi), 60))
+        rows_g = conn.execute(f"SELECT id, title, street, house, complex, district FROM listings WHERE id IN ({ph})", gi[:60]).fetchall()
+        group = {"label": group["label"], "ids": gi, "count": len(group["ids"]),
+                 "same_place": not group["key"].startswith("street:"),
+                 "items": [{"id": g["id"], "title": g["title"], "addr": ", ".join(x for x in (g["street"], g["house"]) if x),
+                            "complex": g["complex"], "district": g["district"]} for g in rows_g]}
     complexes = sorted({c.name for _, c in geo._complexes()} | {r[0] for r in conn.execute(
         "SELECT DISTINCT complex FROM listings WHERE complex IS NOT NULL AND is_active = 1")},
         key=lambda x: x.lower().replace("ё", "е"))
@@ -2135,13 +2155,42 @@ def api_admin_recheck(request: Request, body: dict | None = None):
     return JSONResponse({"ok": True, **rep})
 
 
+def api_admin_geo_audit(request: Request, body: dict | None = None):
+    """ТЗ «админка-гео» P0.0: GET — отчёт (ничего не меняет); POST {rules: [id], junk: [имя], labels: bool} — применить
+    выбранное админом (каждое изменение объекта — в журнал правок, откат по объекту)."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    from . import geoaudit
+    conn = db.get()
+    if request.method == "POST":
+        body = body or {}
+        res = geoaudit.apply(conn, [int(x) for x in body.get("rules") or [] if str(x).isdigit()],
+                             [str(x) for x in body.get("junk") or []], bool(body.get("labels")))
+        _bump_cache()
+        return JSONResponse({"ok": True, **res})
+    return JSONResponse(geoaudit.report(conn))
+
+
 def api_admin_edits(request: Request, body: dict | None = None):
     _, err = _need_admin(request)
     if err:
         return err
     conn = db.get()
     if request.method == "POST":
-        return JSONResponse({"ok": agent.revert_edit(conn, _num((body or {}).get("id"), int) or 0)})
+        ok = agent.revert_edit(conn, _num((body or {}).get("id"), int) or 0)
+        if ok:
+            _bump_cache()
+        return JSONResponse({"ok": ok})
+    lid = _num(request.query_params.get("listing"), int)
+    if lid:   # история одного объекта: что, кем/чем, когда (ТЗ «админка-гео» P0.3)
+        rows = conn.execute("""SELECT e.*, u.name AS u_name, u.email AS u_email FROM listing_edits e
+                               LEFT JOIN users u ON u.id = e.user_id WHERE e.listing_id = ? ORDER BY e.id DESC LIMIT 200""",
+                            (lid,)).fetchall()
+        return JSONResponse({"items": [{"id": r["id"], "ts": r["ts"], "field": r["field"], "old": json.loads(r["old"] or "null"),
+                                        "new": json.loads(r["new"] or "null"), "reverted": r["reverted"],
+                                        "who": r["src"] or ("сервис" if r["user_id"] == 0 else (r["u_name"] or r["u_email"] or "пользователь"))}
+                                       for r in rows]})
     return JSONResponse({"items": agent.edits_for_admin(conn)})
 
 
@@ -2259,7 +2308,8 @@ routes = [
     Route("/api/admin/chats", threaded(api_admin_chats), methods=["GET", "POST"]),
     Route("/api/admin/listings/{id:int}/geo", threaded(api_admin_geo), methods=["POST"]),
     Route("/api/admin/geo-queue", threaded(api_admin_geo_queue)),
-    Route("/api/admin/fix", threaded(api_admin_fix)),
+    Route("/api/admin/fix", threaded(api_admin_fix), methods=["GET", "POST"]),
+    Route("/api/admin/geo-audit", threaded(api_admin_geo_audit), methods=["GET", "POST"]),
     Route("/api/admin/dir", threaded(api_admin_dir), methods=["GET", "POST"]),
     Route("/api/admin/reconcile", threaded(api_admin_reconcile), methods=["GET", "POST"]),
     Route("/admin/map", threaded(districts_map_page)),
