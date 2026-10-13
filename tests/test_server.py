@@ -69,7 +69,7 @@ def test_since_counts_only_new(client):
 
 
 def test_info_pages(client):
-    for path, word in (("/how", "Как работает 1+1"), ("/privacy", "152-ФЗ"), ("/terms", "Пользовательское соглашение")):
+    for path, word in (("/how", "Все объекты из риелторских чатов"), ("/privacy", "152-ФЗ"), ("/terms", "Пользовательское соглашение")):
         r = client.get(path)
         assert r.status_code == 200 and word in r.text and "{{" not in r.text
 
