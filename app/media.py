@@ -25,6 +25,8 @@ ATTACH_WINDOW = 180        # фото и текст объявления — в 
 WAIT_TEXT = 600            # текста рядом нет 10 минут — фото «сирота»
 KEEP = 3 * 86400           # старше — уже не скачиваем
 MAX_BYTES = 6_000_000
+CHAT_PHOTOS = 1   # из чата — строго одно фото на объект (решение Артёма 13.10: альбомы и коллажи путали квартиры);
+                  # больше — только у фида СТРЕЛ и своих объектов агентов
 _MAGIC = {b"\xff\xd8\xff": "jpg", b"\x89PNG": "png", b"RIFF": "webp"}
 
 
@@ -55,17 +57,22 @@ def remember(conn: sqlite3.Connection, source: str, profile_id: str, chat_id: st
 
 
 def _listing_for(conn: sqlite3.Connection, r) -> tuple[str, int | None]:
-    """Объявление этого агента рядом по времени: ('ok', id) | ('wait', None) | ('skip', None)."""
-    msgs = conn.execute(
-        """SELECT m.id, ABS(m.ts - ?) AS dt FROM messages m
-           WHERE m.source = ? AND m.chat_id = ? AND COALESCE(m.sender, '') = COALESCE(?, '') AND ABS(m.ts - ?) <= ?
-           ORDER BY dt LIMIT 3""", (r["ts"], r["source"], r["chat_id"], r["sender"], r["ts"], ATTACH_WINDOW)).fetchall()
-    for m in msgs:
-        lids = [x[0] for x in conn.execute("SELECT DISTINCT listing_id FROM listing_events WHERE message_id = ?", (m["id"],))]
-        if len(lids) == 1:
-            return "ok", lids[0]
-        if len(lids) > 1:
-            return "skip", None   # портянка: несколько объектов в одном сообщении
+    """Объявление этого агента, к которому относится фото: ('ok', id) | ('wait', None) | ('skip', None).
+
+    Фото принадлежит ПОСЛЕДНЕМУ тексту этого агента в чате до него (подпись к фото — то же время), и только если
+    между ними нет другого его текста: так фото следующей квартиры не уезжает к предыдущей."""
+    m = conn.execute(
+        """SELECT m.id, m.ts FROM messages m
+           WHERE m.source = ? AND m.chat_id = ? AND COALESCE(m.sender, '') = COALESCE(?, '')
+             AND m.ts <= ? + 5 AND m.ts >= ? - ?
+           ORDER BY m.ts DESC LIMIT 1""", (r["source"], r["chat_id"], r["sender"], r["ts"], r["ts"], ATTACH_WINDOW)).fetchone()
+    if m is None:
+        return ("wait", None) if time.time() - r["ts"] < WAIT_TEXT else ("skip", None)
+    lids = [x[0] for x in conn.execute("SELECT DISTINCT listing_id FROM listing_events WHERE message_id = ?", (m["id"],))]
+    if len(lids) == 1:
+        return "ok", lids[0]
+    if len(lids) > 1:
+        return "skip", None   # портянка: несколько объектов в одном сообщении — чьё фото, непонятно
     return ("wait", None) if time.time() - r["ts"] < WAIT_TEXT else ("skip", None)
 
 
@@ -91,7 +98,7 @@ def _fetch(link: str) -> bytes | None:
 def attach(conn: sqlite3.Connection, limit: int = 15) -> dict:
     """Привязать и скачать новые фото (не больше limit за раз)."""
     out = {"photos": 0, "skipped": 0}
-    rows = conn.execute("""SELECT * FROM chat_media WHERE status = 'new' AND ts > ? ORDER BY ts DESC LIMIT 300""",
+    rows = conn.execute("""SELECT * FROM chat_media WHERE status = 'new' AND ts > ? ORDER BY ts ASC, id ASC LIMIT 300""",
                         (int(time.time()) - KEEP,)).fetchall()
     for r in rows:
         if out["photos"] >= limit:
@@ -105,7 +112,7 @@ def attach(conn: sqlite3.Connection, limit: int = 15) -> dict:
             continue
         row = conn.execute("SELECT photos, owner_user_id, source, is_active FROM listings WHERE id = ?", (lid,)).fetchone()
         photos = json.loads(row["photos"] or "[]") if row else []
-        if row is None or row["owner_user_id"] or row["source"] != "chat" or len(photos) >= config.MAX_PHOTOS:
+        if row is None or row["owner_user_id"] or row["source"] != "chat" or len(photos) >= CHAT_PHOTOS:
             conn.execute("UPDATE chat_media SET status = 'skip', listing_id = ? WHERE id = ?", (lid, r["id"]))
             continue
         db.flush(conn)   # не держать базу, пока качаем
@@ -125,7 +132,7 @@ def attach(conn: sqlite3.Connection, limit: int = 15) -> dict:
         url = f"/photos/{lid}/{name}"
         row = conn.execute("SELECT photos FROM listings WHERE id = ?", (lid,)).fetchone()
         photos = json.loads(row["photos"] or "[]")
-        if url not in photos and len(photos) < config.MAX_PHOTOS:
+        if url not in photos and len(photos) < CHAT_PHOTOS:
             photos.append(url)
             conn.execute("UPDATE listings SET photos = ? WHERE id = ?", (json.dumps(photos), lid))
             out["photos"] += 1
@@ -133,3 +140,21 @@ def attach(conn: sqlite3.Connection, limit: int = 15) -> dict:
         conn.commit()
     conn.commit()
     return out
+
+
+def trim_chat_photos(conn: sqlite3.Connection) -> int:
+    """Один раз: у объявлений из чатов оставить только первое фото (раньше брали весь альбом — бывали чужие коллажи).
+    Фид СТРЕЛ, свои объекты и фото, которые агент загрузил сам (owner_user_id), не трогаем."""
+    if db.get_state(conn, "chat_photos_1") == "1":
+        return 0
+    n = 0
+    for lid, photos in conn.execute("""SELECT id, photos FROM listings WHERE source = 'chat' AND owner_user_id IS NULL
+                                       AND photos IS NOT NULL AND photos != '[]'""").fetchall():
+        lst = json.loads(photos or "[]")
+        if len(lst) > CHAT_PHOTOS:
+            conn.execute("UPDATE listings SET photos = ? WHERE id = ?", (json.dumps(lst[:CHAT_PHOTOS]), lid))
+            n += 1
+    db.set_state(conn, "chat_photos_1", "1")
+    conn.commit()
+    log.info("фото из чатов: оставлено по одному у %d объектов", n)
+    return n

@@ -35,9 +35,11 @@ def tick(conn) -> dict:
         stats["purged"] = purged
     llm.failures = 0
     stats["processed"] = ingest.process_pending(conn, limit=300, budget_s=60)
+    from . import media
+    if media.trim_chat_photos(conn):   # один раз: у объявлений из чатов — по одному фото
+        stats["photos_trimmed"] = True
     if config.WAPPI_ENABLED:
-        from . import media
-        got = media.attach(conn)   # фото из альбомов — в карточки объектов
+        got = media.attach(conn)   # фото из чатов — по одному в карточку объекта
         if got["photos"]:
             stats["photos"] = got["photos"]
     stats["queue"] = conn.execute("SELECT COUNT(*) FROM messages WHERE status='new'").fetchone()[0]

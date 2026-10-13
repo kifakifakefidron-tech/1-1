@@ -198,4 +198,16 @@ def test_album_photos_attach_to_listing(conn, monkeypatch, tmp_path):
     res = media.attach(conn)
     lid = conn.execute("SELECT listing_id FROM listing_events").fetchone()[0]
     photos = json.loads(conn.execute("SELECT photos FROM listings WHERE id = ?", (lid,)).fetchone()[0])
-    assert res["photos"] == 3 and len(photos) == 3            # фото чужого номера к объекту не прилипло
+    assert res["photos"] == 1 and len(photos) == 1            # из чата — строго одно фото (первое из альбома)
+    assert photos[0].endswith(".jpg") and conn.execute("SELECT url FROM chat_media WHERE msg_id = 'a1'").fetchone()[0] == photos[0]
+
+
+
+def test_trim_chat_photos_once(conn):
+    from app import media
+    conn.execute("""INSERT INTO listings (type, deal, price, title, phones, first_seen, last_seen, seen_count, is_active, source, photos)
+                    VALUES ('flat','sale',1,'t','[]',1,1,1,1,'chat','["/a","/b","/c"]')""")
+    conn.execute("""INSERT INTO listings (type, deal, price, title, phones, first_seen, last_seen, seen_count, is_active, source, photos)
+                    VALUES ('flat','sale',1,'t','[]',1,1,1,1,'feed','["/a","/b"]')""")
+    assert media.trim_chat_photos(conn) == 1 and media.trim_chat_photos(conn) == 0
+    assert [json.loads(r[0]) for r in conn.execute("SELECT photos FROM listings ORDER BY id")] == [["/a"], ["/a", "/b"]]
