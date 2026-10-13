@@ -151,3 +151,11 @@ def test_how_page_filled(client):
     page = client.get("/how").text
     assert "{{" not in page                                  # все подстановки заполнены
     assert "49 ₽" in page and "399 ₽" in page and "дней в архиве" in page
+
+
+def test_stock_block_and_wanted_tickers(client):
+    from app import db, widgets
+    blocks = [{"id": "ust1", "type": "stock", "data": {"ticker": "sber<script>"}}, {"id": "ust2", "type": "stock", "data": {"ticker": "x"}}]
+    st = client.post("/api/settings", json={"blocks": blocks}).json()["settings"]["blocks"]
+    assert [b["data"]["ticker"] for b in st] == ["SBERSCRIPT"[:12], ""]
+    assert widgets.wanted_tickers(db.get()) == ["SBERSCRIPT"]

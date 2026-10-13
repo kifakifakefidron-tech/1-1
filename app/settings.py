@@ -19,7 +19,7 @@ COLORS = ("gold", "teal", "sky", "violet", "coral", "rose", "lime", "slate")
 DEFAULTS = {"pick_color": "gold", "pick_cover": "", "pick_brand": "", "pick_name": "", "pick_phone": "", "cabinet_order": [],
             "blocks": []}
 # Свои блоки кабинета — только безопасные виды и только данные (никакой разметки и скриптов от пользователя)
-BLOCK_TYPES = ("note", "todo", "links", "search", "goal", "countdown")
+BLOCK_TYPES = ("note", "todo", "links", "search", "goal", "countdown", "stock")
 MAX_BLOCKS = 12
 
 
@@ -54,6 +54,9 @@ def _blocks(raw) -> list[dict]:
                 except (TypeError, ValueError):
                     return dflt
             data = {"n": num(d.get("n"), 0, 99999, 0), "of": num(d.get("of"), 1, 99999, 5)}
+        elif t == "stock":   # бумага Мосбиржи: только код (SMLT, SBER, TMOS…), цены грузит worker
+            tk = re.sub(r"[^A-Z0-9]", "", str(d.get("ticker") or "").upper())[:12]
+            data = {"ticker": tk if len(tk) >= 2 else ""}
         else:   # countdown
             date = str(d.get("date") or "")
             data = {"date": date if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) else ""}

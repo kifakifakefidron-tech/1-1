@@ -8,6 +8,8 @@
   * средние ставки по ипотеке в Краснодарском крае — статистика ЦБ (xlsx, раз в месяц, кэш сутки):
     все ипотечные кредиты и кредиты по ДДУ (новостройки); вторичка — расчёт: (ставка·объём всех − ставка·объём ДДУ) /
     (объём всех − объём ДДУ). Это средние по всем выданным кредитам, включая льготные программы;
+  * биржа — Московская биржа ISS (бесплатно, с задержкой ~15 мин): индекс МосБиржи, RGBI, акции застройщиков и бумаги
+    из своих блоков кабинета, графики за 30 торговых дней, 15 мин;
   * ставки банков — таблицу ведёт админ (готового бесплатного источника ставок банков нет);
   * новости — официальная RSS-лента «РБК Недвижимость» (rssexport.rbc.ru, РБК сам раздаёт её для сайтов и читалок):
     берём ТОЛЬКО заголовок, первую фразу анонса (≤ 200 знаков), рубрику и ссылку; полный текст и фото не храним
@@ -283,6 +285,104 @@ def set_banks(conn: sqlite3.Connection, items: list, avg: dict | None = None) ->
     return {**data, "programs": PROGRAMS}
 
 
+# ─── Московская биржа (ISS, бесплатные данные с задержкой ~15 мин) ─────────────────────────────────────────
+ISS = "https://iss.moex.com/iss"
+MOEX_INDICES = (("IMOEX", "Индекс МосБиржи"), ("RGBI", "Гособлигации (RGBI)"))
+MOEX_DEVELOPERS = ("SMLT", "PIKK", "LSRG", "ETLN")   # застройщики — то, что ближе всего риелтору
+MOEX_MAX_TICKERS = 40
+TICKER_RE = re.compile(r"^[A-Z0-9]{2,12}$")
+
+
+def _iss(path: str) -> dict:
+    return json.loads(_http(f"{ISS}{path}{'&' if '?' in path else '?'}iss.meta=off", timeout=20))
+
+
+def _rows(block: dict) -> list[dict]:
+    return [dict(zip(block["columns"], r)) for r in block.get("data", [])]
+
+
+def _history(path: str, days: int = 45) -> list[list]:
+    """Цены закрытия за последние ~30 торговых дней: [[дата, цена], …]."""
+    since = (datetime.now(MSK) - timedelta(days=days)).strftime("%Y-%m-%d")
+    rows = _rows(_iss(f"/history/{path}.json?from={since}&history.columns=TRADEDATE,CLOSE")["history"])
+    return [[r["TRADEDATE"], r["CLOSE"]] for r in rows if r.get("CLOSE") is not None][-30:]
+
+
+def wanted_tickers(conn: sqlite3.Connection) -> list[str]:
+    """Бумаги из своих блоков кабинета (вид «Акция») — их тоже загружаем."""
+    out: list[str] = []
+    for (raw,) in conn.execute("SELECT settings FROM users WHERE settings LIKE '%\"stock\"%'"):
+        try:
+            for b in json.loads(raw).get("blocks", []):
+                t = str((b.get("data") or {}).get("ticker") or "")
+                if b.get("type") == "stock" and TICKER_RE.match(t) and t not in out:
+                    out.append(t)
+        except (TypeError, ValueError, AttributeError):
+            continue
+    return out[:MOEX_MAX_TICKERS]
+
+
+def _shares(tickers: list[str]) -> dict:
+    """Акции и фонды: TQBR (акции), что не нашлось — TQTF (фонды)."""
+    out: dict = {}
+    left = list(tickers)
+    for board in ("TQBR", "TQTF"):
+        if not left:
+            break
+        d = _iss(f"/engines/stock/markets/shares/boards/{board}/securities.json?securities={','.join(left)}"
+                 "&iss.only=marketdata,securities&marketdata.columns=SECID,LAST,LASTTOPREVPRICE,MARKETPRICE"
+                 "&securities.columns=SECID,SHORTNAME,PREVPRICE")
+        md = {r["SECID"]: r for r in _rows(d["marketdata"])}
+        for s in _rows(d["securities"]):
+            m = md.get(s["SECID"], {})
+            price = m.get("LAST") or m.get("MARKETPRICE") or s.get("PREVPRICE")
+            if price is None:
+                continue
+            ch = m.get("LASTTOPREVPRICE")
+            if ch is None and s.get("PREVPRICE") and m.get("MARKETPRICE"):
+                ch = round((m["MARKETPRICE"] / s["PREVPRICE"] - 1) * 100, 2)
+            try:
+                hist = _history(f"engines/stock/markets/shares/boards/{board}/securities/{s['SECID']}")
+            except Exception:  # noqa: BLE001 — без графика тоже показываем
+                hist = []
+            out[s["SECID"]] = {"name": s["SHORTNAME"], "price": price, "change": ch, "hist": hist}
+        left = [t for t in left if t not in out]
+    return out
+
+
+def _moex_fetch(extra: list[str]) -> dict | None:
+    d = _iss("/engines/stock/markets/index/securities.json?securities=" + ",".join(t for t, _ in MOEX_INDICES)
+             + "&iss.only=marketdata&marketdata.columns=SECID,CURRENTVALUE,LASTCHANGEPRC,TRADEDATE,UPDATETIME")
+    md = {r["SECID"]: r for r in _rows(d["marketdata"])}
+    indices = []
+    for t, name in MOEX_INDICES:
+        r = md.get(t)
+        if not r or r.get("CURRENTVALUE") is None:
+            continue
+        try:
+            hist = _history(f"engines/stock/markets/index/securities/{t}")
+        except Exception:  # noqa: BLE001
+            hist = []
+        indices.append({"id": t, "name": name, "value": r["CURRENTVALUE"], "change": r.get("LASTCHANGEPRC"),
+                        "time": f"{r.get('TRADEDATE') or ''} {r.get('UPDATETIME') or ''}".strip(), "hist": hist})
+    tickers = list(MOEX_DEVELOPERS) + [t for t in extra if t not in MOEX_DEVELOPERS]
+    shares = _shares(tickers)
+    if not indices and not shares:
+        return None
+    return {"indices": indices, "shares": shares, "developers": [t for t in MOEX_DEVELOPERS if t in shares],
+            "asked": tickers, "source": "Московская биржа, данные с задержкой"}
+
+
+def moex(conn: sqlite3.Connection, force: bool = False) -> dict | None:
+    """Индексы, застройщики и бумаги из блоков. Добавили новую бумагу — загружаем сразу, не ждём срока кэша."""
+    extra = wanted_tickers(conn) if _online.get("on") else []
+    raw = db.get_state(conn, "w:moex")
+    if extra and raw and not force:
+        asked = set((json.loads(raw).get("data") or {}).get("asked") or [])
+        force = any(t not in asked for t in extra)
+    return _cached(conn, "moex", 900, lambda: _moex_fetch(extra), force)
+
+
 RBC_RSS = "https://rssexport.rbc.ru/realty/news/30/full.rss"
 NEWS_MAX = 12
 
@@ -330,7 +430,7 @@ def news(conn: sqlite3.Connection, force: bool = False) -> dict | None:
 def all_widgets(conn: sqlite3.Connection) -> dict:
     """Всё для кабинета; каждое — {ts, data} или None (источник ещё ни разу не ответил)."""
     return {"weather": weather(conn), "keyrate": keyrate(conn), "currency": currency(conn),
-            "mortgage": mortgage(conn), "banks": banks(conn), "news": news(conn)}
+            "mortgage": mortgage(conn), "banks": banks(conn), "news": news(conn), "moex": moex(conn)}
 
 
 _online: dict = {"on": False}
@@ -345,5 +445,6 @@ def refresh(conn: sqlite3.Connection) -> None:
         currency(conn)
         mortgage(conn)
         news(conn)
+        moex(conn)
     finally:
         _online["on"] = False

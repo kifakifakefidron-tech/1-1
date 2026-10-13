@@ -96,47 +96,77 @@
 
   // ─── ипотека в крае (ЦБ) + ставки банков ──────────────────────────
   let mortRates = {};
-  const PROG = { secondary: "Вторичка", new: "Новостр.", family: "Семейная", ihc: "ИЖС" };
+  // Ипотека — только вторичка (решение Артёма 13.10: ставки новостроек не ведём)
+  const PROG = { secondary: "Вторичка" };
   function mortgage(m, banks) {
-    const b = (banks && banks.items) || [];
+    const all = (banks && banks.items) || [];
+    const b = all.filter((x) => x.secondary != null).sort((x, y) => x.secondary - y.secondary);
     const d = m ? m.data : null;
     const edit = me.is_admin ? `<button type="button" class="wm-edit" id="banksEdit">${b.length ? "Изменить ставки банков" : "+ Внести ставки банков"}</button>` : "";
-    const best = (k) => { const v = b.map((x) => x[k]).filter((x) => x != null); return v.length ? Math.min(...v) : null; };
-    mortRates = { sec: best("secondary") ?? (d && d.secondary), new: best("new") ?? (d && d.new), family: best("family") };
-    // средняя по рынку: из таблицы ДОМ.РФ, которую вставил админ; если её нет — средние ЦБ по краю
     const ma = banks && banks.avg;
-    const avg = ma && (ma.secondary != null || ma.new != null)
-      ? `<p class="g-sub wm-avg">Средневзвешенная ставка по рынку на ${new Date(ma.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}:
-        вторичка ${ma.secondary != null ? pct(ma.secondary) : "—"}, новостройки ${ma.new != null ? pct(ma.new) : "—"}</p>`
-      : d ? `<p class="g-sub wm-avg">В среднем по краю за ${esc((d.month || "").toLowerCase())} (ЦБ): вторичка ${d.secondary != null ? pct(d.secondary) : "—"},
-      новостройки ${pct(d.new)}</p>` : "";
-    if (!b.length) {   // ставок банков ещё нет — показываем средние ЦБ
-      put("wMort", `${head("percent", "Ипотека · Краснодарский край")}
-        ${d ? `<div class="wm-rows">${d.secondary != null ? `<div class="wm-row main"><span>Вторичка</span><b>${pct(d.secondary)}</b></div>` : ""}
-          <div class="wm-row"><span>Новостройки</span><b>${pct(d.new)}</b></div></div>
-          <p class="g-sub">Средние ставки по выданным кредитам за ${esc((d.month || "").toLowerCase())} (ЦБ). Ставки конкретных банков появятся, когда их внесут.</p>`
+    mortRates = { best: b.length ? b[0].secondary : null, avg: ma && ma.secondary != null ? ma.secondary : null, cb: d && d.secondary != null ? d.secondary : null };
+    // средняя по рынку: из таблицы ДОМ.РФ, которую вставил админ; если её нет — средняя ЦБ по краю
+    const avg = mortRates.avg != null
+      ? `<p class="g-sub wm-avg">Средневзвешенная по рынку на ${new Date(ma.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}: ${pct(ma.secondary)}</p>`
+      : mortRates.cb != null ? `<p class="g-sub wm-avg">В среднем по краю за ${esc((d.month || "").toLowerCase())} (ЦБ): ${pct(d.secondary)}</p>` : "";
+    if (!b.length) {   // ставок банков ещё нет — средняя ЦБ по краю
+      put("wMort", `${head("percent", "Ипотека · вторичка")}
+        ${mortRates.cb != null ? `<div class="wm-rows"><div class="wm-row main"><span>В среднем по краю</span><b>${pct(d.secondary)}</b></div></div>
+          <p class="g-sub">Средняя ставка по выданным кредитам на вторичное жильё за ${esc((d.month || "").toLowerCase())} (ЦБ). Ставки банков появятся, когда их внесут.</p>`
           : `<p class="g-empty">Данные загрузятся позже.</p>`}${edit}`, 2);
       return;
     }
-    const cols = Object.keys(PROG).filter((k) => b.some((x) => x[k] != null));
-    const bs = best("secondary");
     const upd = banks.ts ? new Date(banks.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "short" }) : "";
     const age = banks.ts ? Math.floor((Date.now() / 1000 - banks.ts) / 86400) : 0;
-    put("wMort", `${head("percent", "Ипотека · ставки банков", upd ? `<span class="g-sub wm-upd${age >= 7 ? " old" : ""}" style="margin:0"
+    const lo = b[0].secondary, hi = b[b.length - 1].secondary;
+    put("wMort", `${head("percent", "Ипотека · вторичка", upd ? `<span class="g-sub wm-upd${age >= 7 ? " old" : ""}" style="margin:0"
         title="${age >= 7 ? `Ставкам ${age} дн. — пора обновить` : "Обновлено"}">на ${upd}</span>` : "")}
-      ${bs != null ? `<div class="wm-best"><span>Вторичка — от</span><b>${pct(bs)}</b></div>` : ""}
-      <table class="wm-t"><thead><tr><th>Банк</th>${cols.map((k) => `<th>${PROG[k]}</th>`).join("")}</tr></thead>
-        <tbody>${b.slice(0, 8).map((x) => `<tr><td>${esc(x.bank)}</td>${cols.map((k) => `<td${x[k] != null && x[k] === best(k) ? ' class="top"' : ""}>${x[k] != null ? pct(x[k]) : "—"}</td>`).join("")}</tr>`).join("")}</tbody></table>
+      <div class="wm-best"><span>Лучшая — ${esc(b[0].bank)}</span><b>${pct(lo)}</b></div>
+      <div class="wm-list">${b.map((x, i) => `<div class="wm-bank${i ? "" : " lead"}"><span title="${esc(x.bank)}">${esc(x.bank)}</span>
+        <i style="--w:${hi > lo ? Math.round(15 + (x.secondary - lo) / (hi - lo) * 85) : 15}%"></i><b>${pct(x.secondary)}</b></div>`).join("")}</div>
       ${avg}${edit}`, 2);
   }
 
-  // ─── курсы ЦБ ─────────────────────────────────────────────────────
-  function fx(c) {
-    if (!c) { put("wFx", `${head("coins", "Курсы ЦБ")}<p class="g-empty">Загрузятся через минуту.</p>`, 3); return; }
+  // ─── курсы ЦБ и биржа: вкладки, чтобы блок не рос в высоту ─────────
+  // мини-график за ~30 торговых дней (данные Мосбиржи с задержкой)
+  function spark(hist, up) {
+    const v = (hist || []).map((x) => x[1]).filter((x) => x != null);
+    if (v.length < 2) return "";
+    const W = 100, H = 30, lo = Math.min(...v), hi = Math.max(...v), k = hi - lo || 1;
+    const pts = v.map((y, i) => `${(i / (v.length - 1) * W).toFixed(1)},${(H - 2 - (y - lo) / k * (H - 4)).toFixed(1)}`);
+    return `<svg class="mspark ${up ? "up" : "down"}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+      <path class="a" d="M0,${H} L${pts.join(" L")} L${W},${H} Z"/><path class="l" d="M${pts.join(" L")}"/></svg>`;
+  }
+  const chg = (c) => (c == null ? "<span></span>" : `<span class="chg ${c >= 0 ? "up" : "down"}">${ic(c >= 0 ? "arrow-up" : "arrow-down")}${num(Math.abs(c), 2)}%</span>`);
+  let fxTab = (() => { try { return localStorage.getItem("fxTab") || "fx"; } catch { return "fx"; } })();
+  let fxData = null, moexData = null;
+  function fx(c, m) {
+    fxData = c; moexData = m ? m.data : null;
     const sym = { USD: "$", EUR: "€", CNY: "¥" };
-    put("wFx", `${head("coins", "Курсы ЦБ", `<span class="g-sub" style="margin:0">на ${esc(c.data.date)}</span>`)}
-      ${c.data.items.map((x) => `<div class="wf-row"><span>${sym[x.code] || ""} ${x.code}</span><b>${num(x.value, 2)} ₽</b>
-        ${x.change != null ? `<span class="chg ${x.change > 0 ? "up" : "down"}">${ic(x.change > 0 ? "arrow-up" : "arrow-down")}${num(Math.abs(x.change), 2)}</span>` : "<span></span>"}</div>`).join("")}`, 3);
+    const tabs = [["fx", "Валюта"], ...(moexData && moexData.indices.length ? [["idx", "Индексы"]] : []),
+      ...(moexData && moexData.developers.length ? [["dev", "Застройщики"]] : [])];
+    if (!tabs.some(([k]) => k === fxTab)) fxTab = "fx";
+    let body;
+    if (fxTab === "fx") body = c ? c.data.items.map((x) => `<div class="wf-row"><span>${sym[x.code] || ""} ${x.code}</span><b>${num(x.value, 2)} ₽</b>
+        ${x.change != null ? `<span class="chg ${x.change > 0 ? "up" : "down"}">${ic(x.change > 0 ? "arrow-up" : "arrow-down")}${num(Math.abs(x.change), 2)}</span>` : "<span></span>"}</div>`).join("")
+        + `<p class="wf-src">ЦБ РФ на ${esc(c.data.date)}</p>` : `<p class="g-empty">Загрузятся через минуту.</p>`;
+    else if (fxTab === "idx") body = moexData.indices.map((x) => `<div class="wf-q"><span class="wf-n"><b>${esc(x.name)}</b>${chg(x.change)}</span>
+        <span class="wf-v">${num(x.value, 2)}</span>${spark(x.hist, (x.change || 0) >= 0)}</div>`).join("")
+        + `<p class="wf-src">${esc(moexData.source)} · график за месяц</p>`;
+    else body = moexData.developers.map((t) => { const x = moexData.shares[t];
+        return `<div class="wf-q sm"><span class="wf-n"><b>${esc(x.name.replace(/ ао$/, ""))}</b>${chg(x.change)}</span>
+          <span class="wf-v">${num(x.price, 2)} ₽</span>${spark(x.hist, (x.change || 0) >= 0)}</div>`; }).join("")
+        + `<p class="wf-src">${esc(moexData.source)} · свою бумагу можно добавить блоком «Акция»</p>`;
+    put("wFx", `${head("coins", "Курсы и биржа")}
+      ${tabs.length > 1 ? `<div class="wf-tabs">${tabs.map(([k, t]) => `<button type="button" data-fx-tab="${k}" class="${k === fxTab ? "on" : ""}">${t}</button>`).join("")}</div>` : ""}
+      <div class="wf-body">${body}</div>`, 3);
+    const box = $("wFx");
+    box.querySelectorAll("[data-fx-tab]").forEach((btn) => btn.addEventListener("click", () => {
+      fxTab = btn.dataset.fxTab;
+      try { localStorage.setItem("fxTab", fxTab); } catch { /* */ }
+      fx(fxData, moexData ? { data: moexData } : null);
+    }));
+    document.querySelectorAll("[data-ub-stock]").forEach(fillStock);
   }
 
   // ─── мой день ─────────────────────────────────────────────────────
@@ -202,19 +232,15 @@
         : `<p class="g-empty">Пока тихо. Нажмите «Следить» у поиска — сообщим о новых объектах и снижении цены.</p>`}`, 6);
   }
 
-  // ─── новости недвижимости: заголовок + первая фраза + ссылка на РБК ─
-  let rbcAll = false;
+  // ─── новости недвижимости: заголовок + первая фраза + ссылка на РБК; список листается внутри блока ─
   function rbc(n) {
     if (!n || !n.data.items.length) { put("wRbc", `${head("news", "Новости недвижимости")}<p class="g-empty">Загрузятся через несколько минут.</p>`, 8); return; }
-    const d = n.data, list = rbcAll ? d.items : d.items.slice(0, 3);
+    const d = n.data;
     put("wRbc", `${head("news", "Новости недвижимости", `<a class="g-link" href="${esc(d.source_url)}" target="_blank" rel="noopener">${esc(d.source)} ${ic("external")}</a>`)}
-      ${list.map((x) => `<a class="wr-it" href="${esc(x.url)}" target="_blank" rel="noopener">
+      <div class="wr-list">${d.items.map((x) => `<a class="wr-it" href="${esc(x.url)}" target="_blank" rel="noopener">
         <span class="wr-meta">${x.tag ? `<i>${esc(x.tag)}</i>` : ""}<small>${ago(x.ts)}</small></span>
-        <b>${esc(x.title)}</b>${x.lead ? `<p>${esc(x.lead)}</p>` : ""}</a>`).join("")}
-      <div class="wr-foot"><small>Источник: ${esc(d.source)}. Читать полностью — на сайте РБК.</small>
-        ${d.items.length > 3 ? `<button type="button" class="chip" id="wrMore">${rbcAll ? "Свернуть" : `Ещё ${d.items.length - 3}`}</button>` : ""}</div>`, 8);
-    const more = $("wrMore");
-    if (more) more.onclick = () => { rbcAll = !rbcAll; rbc(n); };
+        <b>${esc(x.title)}</b>${x.lead ? `<p>${esc(x.lead)}</p>` : ""}</a>`).join("")}</div>
+      <div class="wr-foot"><small>Источник: ${esc(d.source)}. Читать полностью — на сайте РБК.</small></div>`, 8);
   }
 
   // ─── рынок ────────────────────────────────────────────────────────
@@ -232,9 +258,8 @@
   // ─── ипотечный калькулятор ───────────────────────────────────────
   const calc = { price: 6, down: 20, rate: 11, years: 20 };
   function calcHtml() {
-    const presets = [["sec", "Вторичка"], ["new", "Новостройки"], ["family", "Семейная"]].filter(([k]) => mortRates[k] != null)
-      .map(([k, t]) => `<button type="button" data-rate="${mortRates[k]}">${t} ${pct(mortRates[k])}</button>`).join("")
-      + (mortRates.family == null ? `<button type="button" data-rate="6">Семейная 6%</button>` : "");
+    const presets = [["best", "Лучшая банков"], ["avg", "Средняя по рынку"], ["cb", "Средняя ЦБ"]].filter(([k]) => mortRates[k] != null)
+      .map(([k, t]) => `<button type="button" data-rate="${mortRates[k]}">${t} ${pct(mortRates[k])}</button>`).join("");
     put("wCalc", `${head("calc", "Ипотечный калькулятор")}
       <div class="wq-grid"><div class="wq-in">
         <div class="wq-f"><label>Цена объекта <b id="qPriceV"></b></label><input type="range" id="qPrice" min="1" max="40" step="0.1" value="${calc.price}"></div>
@@ -390,7 +415,7 @@
     if (!r.ok) { toast("Не получилось загрузить кабинет — обновите страницу"); return; }
     dash = r.data;
     const w = dash.widgets;
-    weather(w.weather); rate(w.keyrate); mortgage(w.mortgage, w.banks); fx(w.currency); rbc(w.news);
+    weather(w.weather); rate(w.keyrate); mortgage(w.mortgage, w.banks); fx(w.currency, w.moex); rbc(w.news);
     day(); clientsW(); crm(); news(); market(); calcHtml(); admin();
     layout();
     if (me.is_admin && new URLSearchParams(location.search).has("banks")) { openBanks(); history.replaceState(null, "", "/cabinet"); }
@@ -419,6 +444,7 @@
     search: { t: "Мой поиск", ic: "search", d: "Сохранённый поиск: сколько объектов и сколько новых за сутки" },
     goal: { t: "Цель", ic: "trend", d: "Например, «Сделок в месяц: 2 из 5» — с кнопками +1 / −1" },
     countdown: { t: "Обратный отсчёт", ic: "hourglass", d: "Сколько дней до сделки, отпуска или конца месяца" },
+    stock: { t: "Акция", ic: "trend", d: "Цена бумаги Мосбиржи с графиком за месяц: SBER, SMLT, PIKK, фонд TMOS…" },
   };
   const BCOLORS = ["gold", "teal", "sky", "violet", "coral", "rose", "lime", "slate"];
   let blocks = [], savedList = null;
@@ -451,6 +477,7 @@
           style="stroke-dasharray:${(pct / 100 * 314).toFixed(1)} 314"/></svg><div class="ub-goal-n"><b>${d.n || 0}</b><small>из ${d.of || 5}</small></div></div>
         <div class="ub-goal-acts"><button type="button" class="pill light" data-ub-goal="${b.id}:-1">−1</button><button type="button" class="pill" data-ub-goal="${b.id}:1">+1</button></div>`;
     }
+    if (b.type === "stock") body = `<div class="ub-stock" data-ub-stock="${esc(d.ticker || "")}"></div>`;
     if (b.type === "countdown") {
       if (!d.date) body = `<p class="g-empty">Укажите дату — нажмите ✎.</p>`;
       else {
@@ -477,6 +504,20 @@
       if (!el.querySelector(":scope > .g-grip")) addGrip(el);
     }
     fillSearchBlocks();
+    document.querySelectorAll("[data-ub-stock]").forEach(fillStock);
+  }
+  function fillStock(el) {
+    const t = el.dataset.ubStock;
+    if (!t) { el.innerHTML = `<p class="g-empty">Укажите код бумаги — нажмите ✎.</p>`; return; }
+    const x = moexData && moexData.shares[t];
+    if (!x) {
+      const asked = moexData && moexData.asked.includes(t);
+      el.innerHTML = `<p class="g-empty">${asked ? `Бумагу ${esc(t)} не нашли на Мосбирже — проверьте код.` : `Загружаем ${esc(t)} — обычно пара минут.`}</p>`;
+      return;
+    }
+    el.innerHTML = `<div class="ub-st-h"><span><b>${esc(x.name.replace(/ ао$/, ""))}</b><small>${esc(t)}</small></span>${chg(x.change)}</div>
+      <div class="ub-st-v">${num(x.price, 2)} ₽</div>${spark(x.hist, (x.change || 0) >= 0)}
+      <p class="wf-src">Мосбиржа, с задержкой · за месяц</p>`;
   }
   async function fillSearchBlocks() {
     const els = document.querySelectorAll("[data-ub-search]");
@@ -527,6 +568,9 @@
       : `<p class="note">Сохранённых поисков пока нет. На главной настройте фильтры и нажмите «Следить» — поиск появится здесь.</p>`;
     if (b.type === "goal") fields = `<div class="ub-two"><label class="ub-f"><span>Сейчас</span><input name="n" type="number" min="0" value="${x.n || 0}"></label>
       <label class="ub-f"><span>Цель</span><input name="of" type="number" min="1" value="${x.of || 5}"></label></div>`;
+    if (b.type === "stock") fields = `<label class="ub-f"><span>Код бумаги на Мосбирже</span><input name="ticker" maxlength="12" value="${esc(x.ticker || "")}"
+      placeholder="Например, SBER" autocapitalize="characters" style="text-transform:uppercase"></label>
+      <p class="note">Застройщики: SMLT (Самолёт), PIKK (ПИК), LSRG (ЛСР), ETLN (Эталон). Банки: SBER, VTBR. Фонды: TMOS, SBMX.</p>`;
     if (b.type === "countdown") fields = `<label class="ub-f"><span>Дата</span><input name="date" type="date" value="${esc(x.date || "")}"></label>`;
     d.innerHTML = `<div class="dlg-body"><div class="d-dlg-head"><h2>${isNew ? "Новый блок" : "Изменить блок"} · ${T.t}</h2><button type="button" class="close" data-close aria-label="Закрыть">✕</button></div>
       <form class="ub-form" id="ubForm">
@@ -551,6 +595,7 @@
       if (b.type === "search") data.saved_id = f.saved_id ? Number(f.saved_id.value) : null;
       if (b.type === "goal") { data.n = Number(f.n.value); data.of = Number(f.of.value); }
       if (b.type === "countdown") data.date = f.date.value;
+      if (b.type === "stock") data.ticker = f.ticker.value.trim().toUpperCase();
       const nb = { ...b, title: f.title.value.trim(), color: d.dataset.color, data };
       blocks = isNew ? [...blocks, nb] : blocks.map((x) => (x.id === b.id ? nb : x));
       if (!(await saveBlocks())) { toast("Не сохранилось — попробуйте ещё раз"); return; }
