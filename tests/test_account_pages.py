@@ -145,3 +145,9 @@ def test_new_matches_for_client_and_to_pick(client):
     again = client.post(f"/api/clients/{cid}/topick", json={"ids": [lid]}).json()
     assert again["pick"]["id"] == r["pick"]["id"]                            # та же подборка клиента
     assert client.get(f"/api/clients/{cid}/match?since=1").json()["items"] == []   # уже предложен — не повторяем
+
+
+def test_how_page_filled(client):
+    page = client.get("/how").text
+    assert "{{" not in page                                  # все подстановки заполнены
+    assert "49 ₽" in page and "399 ₽" in page and "дней в архиве" in page

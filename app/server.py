@@ -222,6 +222,16 @@ def _prices_text() -> str:
     return f"{first}{plans}"
 
 
+def _price_cards() -> str:
+    """Шаги цены для страницы «Как это работает»: бесплатно → первая неделя → обычные тарифы."""
+    cards = [("Сначала", f"{config.TRIAL_DAYS} дней", "бесплатно", "без карты, при первом входе", "free")]
+    if config.SUB_FIRST:
+        cards.append(("Потом", f"{config.SUB_FIRST[1]} ₽", f"за первые {config.SUB_FIRST[0]} дней", "один раз, чтобы попробовать", "first"))
+    for d, pr in sorted(config.SUB_PLANS):
+        cards.append(("Дальше" if len(cards) < 3 else "Или", f"{pr} ₽", f"за {d} дней", f"≈ {pr / d:.0f} ₽ в день".replace(".", ","), "plan"))
+    return "".join(f'<li class="hw-price {k}"><small>{a}</small><b>{b}</b><span>{c}</span><em>{e}</em></li>' for a, b, c, e, k in cards)
+
+
 def _page(name: str) -> Response:
     """Текстовая страница с подстановкой данных оператора и условий подписки."""
     html = (WEB / name).read_text(encoding="utf-8")
@@ -229,7 +239,8 @@ def _page(name: str) -> Response:
         "OPERATOR_NAME": config.OPERATOR_NAME, "OPERATOR_INN": config.OPERATOR_INN,
         "CONTACT_EMAIL": config.CONTACT_EMAIL or "почту из раздела «Контакты»", "POLICY_DATE": config.POLICY_DATE,
         "SITE_URL": config.SITE_URL, "TRIAL_DAYS": config.TRIAL_DAYS, "SUB_PRICE": config.SUB_PRICE, "PRICES": _prices_text(),
-        "SUB_DAYS": config.SUB_DAYS, "STALE_DAYS": config.STALE_DAYS,
+        "SUB_DAYS": config.SUB_DAYS, "STALE_DAYS": config.STALE_DAYS, "ARCHIVE_DAYS": config.ARCHIVE_DAYS,
+        "PRICE_CARDS": _price_cards(),
     }.items():
         html = html.replace("{{" + key + "}}", str(val))
     return Response(html, media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})

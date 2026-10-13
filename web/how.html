@@ -18,98 +18,202 @@
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css?v=25">
 <link rel="stylesheet" href="/static/motion.css?v=34">
-<link rel="stylesheet" href="/static/doc.css?v=2">
 <link rel="stylesheet" href="/static/theme.css?v=14">
-<link rel="stylesheet" href="/static/glass.css?v=19">
+<link rel="stylesheet" href="/static/glass.css?v=21">
+<link rel="stylesheet" href="/static/how.css?v=1">
 </head>
 <body>
-<header class="nav"><div class="nav-in">
-  <a class="brand" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="40" height="40" style="border-radius:10px">
-    <span class="brand-text"><b class="brand-name">1+1</b><span class="brand-sub">поиск объектов Краснодара</span></span></a>
-  <nav class="nav-links doc-nav"><a class="nav-link" href="/work">В работе</a><a class="nav-link" href="/planner">Планер</a><a class="nav-link" href="/picks">Подборки</a><a class="nav-link" href="/market">Аналитика</a><a class="nav-link" href="/cabinet">Кабинет</a><a class="nav-cta" href="/">← К поиску</a></nav>
-</div></header>
+<main class="hw">
 
-<main class="doc">
-  <h1>Как работает 1+1</h1>
-  <p class="lead">Мы собираем объявления о квартирах, домах, участках и коммерции Краснодара из десятков риелторских чатов
-    и показываем их в одном месте — с нормальным поиском, фильтрами и картой. Наша цель — чтобы покупатель и агент
-    тратили на поиск минуты, а не часы.</p>
+  <!-- ═══ первый экран ═══ -->
+  <section class="hw-hero">
+    <div class="hw-hero-t">
+      <p class="hw-eyebrow">Как это работает</p>
+      <h1>Все объекты из риелторских чатов — <em>в одном поиске</em></h1>
+      <p class="hw-lead">1+1 читает объявления о квартирах, домах, участках и коммерции Краснодара из десятков чатов WhatsApp,
+        Telegram и MAX, раскладывает их по полочкам и показывает как на большом сайте: с фильтрами, картой и аналитикой.
+        Поиск — минуты, а не часы.</p>
+      <div class="hw-cta"><a class="pill" href="/">Перейти к поиску</a><a class="pill light" href="#tools">Что умеет сервис</a></div>
+    </div>
+    <svg class="hw-ill" viewBox="0 0 420 300" aria-hidden="true">
+      <defs><linearGradient id="hwG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f3e8bc"/><stop offset="1" stop-color="#c9a85c"/></linearGradient></defs>
+      <g class="hw-chat" style="--d:0s"><rect x="10" y="30" width="118" height="46" rx="16"/><rect x="24" y="44" width="70" height="7" rx="3.5" class="l"/><rect x="24" y="57" width="48" height="7" rx="3.5" class="l2"/></g>
+      <g class="hw-chat" style="--d:.4s"><rect x="10" y="126" width="118" height="46" rx="16"/><rect x="24" y="140" width="80" height="7" rx="3.5" class="l"/><rect x="24" y="153" width="40" height="7" rx="3.5" class="l2"/></g>
+      <g class="hw-chat" style="--d:.8s"><rect x="10" y="222" width="118" height="46" rx="16"/><rect x="24" y="236" width="62" height="7" rx="3.5" class="l"/><rect x="24" y="249" width="54" height="7" rx="3.5" class="l2"/></g>
+      <path class="hw-flow" d="M128 53 C 170 53, 160 150, 186 150"/>
+      <path class="hw-flow" d="M128 149 L 186 150"/>
+      <path class="hw-flow" d="M128 245 C 170 245, 160 150, 186 150"/>
+      <path class="hw-flow out" d="M254 150 C 280 150, 280 70, 300 70"/>
+      <path class="hw-flow out" d="M254 150 L 300 150"/>
+      <path class="hw-flow out" d="M254 150 C 280 150, 280 230, 300 230"/>
+      <circle cx="220" cy="150" r="46" class="hw-core-glow"/>
+      <circle cx="220" cy="150" r="34" fill="url(#hwG)"/>
+      <text x="220" y="158" text-anchor="middle" class="hw-core-t">1+1</text>
+      <g class="hw-card" style="--d:1.2s"><rect x="300" y="44" width="110" height="52" rx="12"/><rect x="308" y="52" width="36" height="36" rx="8" class="ph"/><rect x="352" y="56" width="48" height="8" rx="4" class="pr"/><rect x="352" y="70" width="36" height="6" rx="3" class="l2"/></g>
+      <g class="hw-card" style="--d:1.5s"><rect x="300" y="124" width="110" height="52" rx="12"/><rect x="308" y="132" width="36" height="36" rx="8" class="ph"/><rect x="352" y="136" width="42" height="8" rx="4" class="pr"/><rect x="352" y="150" width="44" height="6" rx="3" class="l2"/></g>
+      <g class="hw-card" style="--d:1.8s"><rect x="300" y="204" width="110" height="52" rx="12"/><rect x="308" y="212" width="36" height="36" rx="8" class="ph"/><rect x="352" y="216" width="50" height="8" rx="4" class="pr"/><rect x="352" y="230" width="30" height="6" rx="3" class="l2"/></g>
+    </svg>
+  </section>
 
-  <ol class="steps3">
-    <li><b>1</b>Агенты публикуют объекты в чатах WhatsApp, Telegram и MAX — как и раньше.</li>
-    <li><b>2</b>1+1 читает эти сообщения, понимает цену, площадь, этаж, район и ЖК и раскладывает по полочкам.</li>
-    <li><b>3</b>Вы ищете как на большом сайте: по словам, комнатам, цене, району и на карте.</li>
-  </ol>
+  <section class="hw-live" id="hwLive" aria-label="Сейчас на 1+1">
+    <div><b data-k="sale">—</b><span>объектов в продаже</span></div>
+    <div><b data-k="rent">—</b><span>в аренду</span></div>
+    <div><b data-k="districts">—</b><span>районов Краснодара</span></div>
+    <div><b data-k="duplicates_merged">—</b><span>повторов склеено в одну карточку</span></div>
+  </section>
 
-  <h2>Откуда объекты</h2>
-  <p>Из открытых риелторских чатов, где агенты сами публикуют предложения для коллег. Мы ничего не придумываем: каждое
-    поле в карточке взято из текста объявления. Если в тексте нет района или ЖК — мы их не «угадываем».</p>
-  <p>Одно и то же объявление, разосланное агентом по многим чатам, показывается <b>одной карточкой</b>. Если один
-    объект продают разные агенты — вы увидите каждого: это рынок, и выбор за вами.</p>
-  <p>Объект пропадает из поиска, если агент не присылал его <b>{{STALE_DAYS}} дней</b> — так в выдаче остаются актуальные варианты.</p>
-  <p>Отдельно показываем объекты партнёра — агентства недвижимости «СТРЕЛЫ» — с фотографиями и ссылкой на сайт.</p>
+  <!-- ═══ путь объявления ═══ -->
+  <section class="hw-sec">
+    <p class="hw-eyebrow">Путь объявления</p>
+    <h2>От сообщения в чате до карточки — за пару минут</h2>
+    <ol class="hw-pipe">
+      <li style="--i:0"><span class="hw-pi"><svg class="ic"><use href="/static/icons.svg?v=4#i-chat"/></svg></span><b>Агент пишет в чат</b>
+        <span>Как и раньше — в WhatsApp, Telegram или MAX. Ничего нового делать не нужно.</span></li>
+      <li style="--i:1"><span class="hw-pi"><svg class="ic"><use href="/static/icons.svg?v=4#i-sparkle"/></svg></span><b>Сервис понимает текст</b>
+        <span>Цена (даже «7,8 лимона» и «5600»), площадь или сотки, комнаты, этаж, район, ЖК, улица, продажа или аренда.</span></li>
+      <li style="--i:2"><span class="hw-pi"><svg class="ic"><use href="/static/icons.svg?v=4#i-shield"/></svg></span><b>Проверяет</b>
+        <span>Склеивает повторы одного текста, убирает другие города, ставит точку на карте по справочнику адресов.</span></li>
+      <li style="--i:3"><span class="hw-pi"><svg class="ic"><use href="/static/icons.svg?v=4#i-search"/></svg></span><b>Объект в поиске</b>
+        <span>С фильтрами, картой, историей цены и уведомлениями тем, кто следит за таким поиском.</span></li>
+    </ol>
+  </section>
 
-  <h2>Как пользоваться</h2>
-  <h3>Поиск</h3>
-  <p>Пишите как в чате: «2к фмр», «студия самолёт», «однушка до 5 млн». Сайт понимает жаргон районов (ФМР, ЦМР,
-    Восточка, РИП…), «евро-2», «мини», «однушку». Остальное — в фильтрах: комнаты, цена ползунком, площадь, этаж, районы, ЖК.</p>
-  <h3>Комнаты</h3>
-  <p>Кнопка «Студии» показывает студии и мини-однушки; «1» — однокомнатные, евро-двушки и мини-двушки; «2» — двухкомнатные,
-    евро-трёшки и мини-трёшки, и так далее.</p>
-  <h3>Карта</h3>
-  <p>Ценники на карте — это объекты по вашим фильтрам. Нажмите на ценник — увидите фото, адрес, цену за метр и контакт.</p>
-  <h3>Избранное</h3>
-  <p>Нажмите ♡ на понравившемся объекте — он сохранится в «Избранном» на любом вашем устройстве.</p>
-  <h3>🔥 Горячее и дни в продаже</h3>
-  <p>Кнопка «🔥 Горячее» оставит объекты, где цена снизилась за неделю, цена за метр заметно ниже рынка или в тексте «срочно».
-    На карточке видно, сколько дней объект продаётся, а в окне объекта — график, как менялась цена.</p>
-  <h3>⚖ Сравнение</h3>
-  <p>Нажмите ⚖ на 2–3 объектах и «Сравнить» — цена, метр, площадь, этаж и район встанут рядом, лучшее подсвечено.</p>
+  <!-- ═══ разбор на примере ═══ -->
+  <section class="hw-sec hw-split">
+    <div>
+      <p class="hw-eyebrow">Разбор на примере</p>
+      <h2>Каждое поле — из текста объявления</h2>
+      <p class="hw-p">Мы ничего не придумываем: если в тексте нет района или ЖК, их не будет и в карточке. Жаргон понимаем —
+        ФМР, Восточка, РИП, «евро-2», «однушка», «сотка». Номер агента из описания вырезается: он показывается отдельно и только
+        тем, у кого есть доступ.</p>
+    </div>
+    <div class="hw-demo">
+      <div class="hw-msg"><small>Сообщение в чате</small>
+        <p>Продаётся <mark class="m1">2к</mark>, <mark class="m2">58 м²</mark>, <mark class="m3">7/16 эт.</mark>,
+          <mark class="m4">ЖК Мозаика</mark>, <mark class="m5">ФМР</mark>. Ремонт, мебель. <mark class="m6">Цена 7500</mark>. <span class="hw-nw">8 918 •••-••-••</span></p></div>
+      <svg class="hw-arrow" viewBox="0 0 24 40" aria-hidden="true"><path d="M12 2v32M5 27l7 8 7-8"/></svg>
+      <div class="hw-parsed">
+        <span class="m6"><small>Цена</small><b>7,5 млн ₽</b></span>
+        <span class="m1"><small>Комнаты</small><b>2</b></span>
+        <span class="m2"><small>Площадь</small><b>58 м²</b></span>
+        <span class="m3"><small>Этаж</small><b>7 из 16</b></span>
+        <span class="m4"><small>ЖК</small><b>Мозаика</b></span>
+        <span class="m5"><small>Район</small><b>ФМР</b></span>
+      </div>
+    </div>
+  </section>
 
-  <h2>Инструменты агента</h2>
-  <p><b>Статусы и заметки.</b> В окне объекта отметьте «📞 Звонил», «👀 Показ», «🤔 Думает», «❌ Отказ» или «✅ Сделка» и напишите
-    заметку — видите только вы. В «Избранном» объекты фильтруются по статусам.</p>
-  <p><b>📅 Планер.</b> Показы, созвоны и встречи в календаре, объекты — из избранного, с напоминанием на сайте и на почту.
-    Одна ссылка — и все показы появятся в календаре телефона.</p>
-  <p><b>📁 Подборки для клиента.</b> Соберите объекты и отправьте клиенту ссылку: фото, цены, карта и только ваш контакт.
-    Текст объявления можно переписать под клиента. Видно, открывал ли клиент подборку.</p>
-  <p><b>🙋 Запросы покупателей.</b> Сообщения «куплю/ищу/запрос» из чатов — отдельной лентой.</p>
-  <p><b>📊 Аналитика.</b> Цена квадратного метра и аренды по районам и ЖК, динамика за неделю и месяц.</p>
-  <p><b>🎁 Приведи коллегу.</b> Ссылка-приглашение в кабинете: когда коллега подтвердит свой номер, вам — неделя доступа.</p>
+  <!-- ═══ жизнь объекта ═══ -->
+  <section class="hw-sec">
+    <p class="hw-eyebrow">Жизнь объекта</p>
+    <h2>В поиске — только актуальное</h2>
+    <div class="hw-life">
+      <div class="hw-lseg on" style="flex:{{STALE_DAYS}}"><b>{{STALE_DAYS}} дней на сайте</b><span>Каждый новый пост в чатах продлевает срок</span></div>
+      <div class="hw-lseg arch" style="flex:{{ARCHIVE_DAYS}}"><b>{{ARCHIVE_DAYS}} дней в архиве</b><span>Не виден в поиске. Пришёл снова — вернётся с историей</span></div>
+      <div class="hw-lseg end"><b>Удаление</b><span>Если так и не появился</span></div>
+    </div>
+    <p class="hw-p sm">Одно и то же объявление, разосланное по многим чатам, — одна карточка. Один объект у разных агентов — отдельные
+      карточки: это рынок, выбор за вами. Агент может сам отметить «продано» или снять объект.</p>
+  </section>
 
-  <h2>Телефоны агентов</h2>
-  <p>Номера агентов открываются после входа. <b>Первые {{TRIAL_DAYS}} дней — бесплатно</b>, дальше подписка —
-    <b>{{PRICES}}</b>. Поиск, фильтры, карта и избранное бесплатны всегда.</p>
-  <div class="note-box">Номера показываются только вошедшим пользователям и только в карточке конкретного объекта —
-    их нельзя выгрузить списком. Использовать номера для рассылок и спама запрещено правилами сервиса.</div>
+  <!-- ═══ рынок ═══ -->
+  <section class="hw-sec" id="hwMarket" hidden>
+    <p class="hw-eyebrow">Рынок прямо сейчас</p>
+    <h2>Цены по данным 1+1</h2>
+    <div class="hw-charts">
+      <figure class="hw-chart"><figcaption>Медиана, тыс. ₽ за м² — по комнатам</figcaption><div id="hwRooms" class="hw-cols"></div></figure>
+      <figure class="hw-chart"><figcaption>Самые дорогие районы, тыс. ₽ за м²</figcaption><div id="hwDistr" class="hw-bars"></div></figure>
+    </div>
+    <p class="hw-p sm">Считаем по квартирам в продаже, медианой — так один слишком дорогой или дешёвый объект не искажает картину.
+      Подробно по районам и ЖК — в <a href="/market">аналитике</a>.</p>
+  </section>
 
-  <h2>Для агентов</h2>
-  <p><b>Убрать свой номер.</b> Если вы не хотите, чтобы ваш номер показывался на 1+1, напишите нам на
-    <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a> или нажмите «Сообщить об ошибке → Это мой номер» в любом
-    вашем объявлении. Номер перестанет показываться во всех объявлениях.</p>
-  <p><b>Кабинет агента.</b> Подтвердите свой номер (код с вашего телефона) — увидите все свои объявления на сайте, сможете
-    поправить цену и описание, добавить фото, отметить «продано» и добавить свой объект. Объявления подтверждённых агентов
-    помечены «✓ Проверенный агент».</p>
+  <!-- ═══ комнаты ═══ -->
+  <section class="hw-sec hw-split">
+    <div>
+      <p class="hw-eyebrow">Кнопки «Комнаты»</p>
+      <h2>Евро и мини — там, где их ищут</h2>
+      <p class="hw-p">Евро-двушка по жизни — однушка с большой кухней-гостиной, поэтому она находится по кнопке «1». Так поиск
+        показывает всё, что подходит человеку, а не только точное число в объявлении.</p>
+    </div>
+    <div class="hw-rooms">
+      <div><span class="hw-rk">Студии</span><span>студии</span><span>мини-1</span></div>
+      <div><span class="hw-rk">1</span><span>1-к</span><span>евро-2</span><span>мини-1</span><span>мини-2</span></div>
+      <div><span class="hw-rk">2</span><span>2-к</span><span>евро-3</span><span>мини-2</span><span>мини-3</span></div>
+      <div><span class="hw-rk">3</span><span>3-к</span><span>евро-4</span><span>мини-3</span></div>
+    </div>
+  </section>
 
-  <h2>Частые вопросы</h2>
-  <details><summary>Почему у объекта нет цены или района?</summary>
-    <p>Их не было в тексте объявления. Мы не дописываем данные «по догадке», чтобы не вводить вас в заблуждение.</p></details>
-  <details><summary>Нашёл ошибку в объявлении</summary>
-    <p>Откройте объект и нажмите «Сообщить об ошибке» внизу. Мы проверим и поправим или уберём объект.</p></details>
-  <details><summary>Объект уже продан</summary>
-    <p>Сообщите об этом через «Сообщить об ошибке» — объект снимем. Объекты, которые давно не присылали, исчезают сами.</p></details>
-  <details><summary>Как отменить подписку?</summary>
-    <p>Подписка не продлевается сама: закончился оплаченный срок — номера снова скрыты, ничего отменять не нужно.</p></details>
-  <details><summary>Как с вами связаться?</summary>
-    <p>Пишите на <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a>.</p></details>
+  <!-- ═══ инструменты ═══ -->
+  <section class="hw-sec" id="tools">
+    <p class="hw-eyebrow">Инструменты агента</p>
+    <h2>Не только поиск — рабочее место риелтора</h2>
+    <div class="hw-tools">
+      <a href="/" class="hw-tool"><svg class="ic"><use href="/static/icons.svg?v=4#i-map"/></svg><b>Поиск и карта</b><span>Пишите как в чате: «2к фмр до 7 млн». Ценники на карте — по тем же фильтрам.</span></a>
+      <a href="/?hot=1" class="hw-tool"><svg class="ic"><use href="/static/icons.svg?v=4#i-flame"/></svg><b>Горячее</b><span>Цена снизилась за неделю, метр заметно ниже рынка или «срочно» в тексте.</span></a>
+      <a href="/" class="hw-tool"><svg class="ic"><use href="/static/icons.svg?v=4#i-scale"/></svg><b>Сравнение</b><span>До 5 объектов рядом: цена, метр, площадь, этаж — лучшее подсвечено.</span></a>
+      <a href="/work" class="hw-tool"><svg class="ic"><use href="/static/icons.svg?v=4#i-briefcase"/></svg><b>В работе</b><span>Избранное со статусами «звонил, показ, думает, отказ», заметки и снижение цены.</span></a>
+      <a href="/clients" class="hw-tool"><svg class="ic"><use href="/static/icons.svg?v=4#i-users"/></svg><b>Клиенты</b><span>Этапы сделки, пожелания и подбор — новое под клиента приходит само.</span></a>
+      <a href="/picks" class="hw-tool"><svg class="ic"><use href="/static/icons.svg?v=4#i-folder"/></svg><b>Подборки</b><span>Одна ссылка клиенту: фото, цены, карта и только ваш контакт. Видно, когда открыл.</span></a>
+      <a href="/planner" class="hw-tool"><svg class="ic"><use href="/static/icons.svg?v=4#i-calendar"/></svg><b>Планер</b><span>Показы и созвоны, напоминания на сайте и почте, календарь телефона.</span></a>
+      <a href="/notifications" class="hw-tool"><svg class="ic"><use href="/static/icons.svg?v=4#i-bell"/></svg><b>Уведомления</b><span>Новые объекты по поискам, изменения цены и снятие объектов из избранного.</span></a>
+      <a href="/market" class="hw-tool"><svg class="ic"><use href="/static/icons.svg?v=4#i-chart"/></svg><b>Аналитика</b><span>Цена метра и аренды по районам и ЖК, динамика за неделю и месяц.</span></a>
+      <a href="/my" class="hw-tool"><svg class="ic"><use href="/static/icons.svg?v=4#i-home"/></svg><b>Мои объекты</b><span>Подтвердите номер — правьте свои объявления, добавляйте фото и свои объекты.</span></a>
+      <a href="/cabinet" class="hw-tool"><svg class="ic"><use href="/static/icons.svg?v=4#i-grid"/></svg><b>Кабинет</b><span>День, ставки банков, курсы, новости недвижимости и свои блоки.</span></a>
+      <a href="/settings#stApp2" class="hw-tool"><svg class="ic"><use href="/static/icons.svg?v=4#i-device"/></svg><b>Приложение</b><span>Добавьте 1+1 на экран телефона — откроется как обычное приложение.</span></a>
+    </div>
+  </section>
 
-  <a class="pill cta" href="/">Перейти к поиску →</a>
-  <p class="meta" style="margin-top:40px"><a href="/privacy">Политика конфиденциальности</a> · <a href="/terms">Пользовательское соглашение</a></p>
+  <!-- ═══ цены ═══ -->
+  <section class="hw-sec">
+    <p class="hw-eyebrow">Доступ к номерам агентов</p>
+    <h2>Поиск, карта и избранное — бесплатно всегда</h2>
+    <p class="hw-p">Платно — только номера агентов и рабочие инструменты. Подписка не продлевается сама: закончился срок — номера
+      снова скрыты, отменять ничего не нужно.</p>
+    <ol class="hw-prices">{{PRICE_CARDS}}</ol>
+    <div class="hw-note"><svg class="ic"><use href="/static/icons.svg?v=4#i-shield"/></svg><span>Номера видны только вошедшим и только
+      в карточке конкретного объекта — выгрузить их списком нельзя. Использовать номера для рассылок и спама запрещено правилами сервиса.</span></div>
+  </section>
+
+  <!-- ═══ для агентов ═══ -->
+  <section class="hw-sec hw-two">
+    <div class="hw-box"><h3>Ваш номер — под вашим контролем</h3>
+      <p>Не хотите, чтобы номер показывался? Напишите на <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a> или нажмите
+        «Сообщить об ошибке → Это мой номер» в любом своём объявлении — номер перестанет показываться везде.</p></div>
+    <div class="hw-box"><h3>Проверенный агент</h3>
+      <p>Подтвердите номер кодом со своего телефона — увидите все свои объявления, сможете поправить цену и описание, добавить фото,
+        отметить «продано». Ваши объявления получат отметку «Проверенный агент».</p></div>
+  </section>
+
+  <!-- ═══ вопросы ═══ -->
+  <section class="hw-sec hw-faq">
+    <p class="hw-eyebrow">Частые вопросы</p>
+    <h2>Коротко о главном</h2>
+    <details><summary>Почему у объекта нет цены или района?</summary>
+      <p>Их не было в тексте объявления. Мы не дописываем данные «по догадке», чтобы не вводить вас в заблуждение.</p></details>
+    <details><summary>Нашёл ошибку в объявлении</summary>
+      <p>Откройте объект и нажмите «Сообщить об ошибке» внизу. Мы проверим и поправим или уберём объект.</p></details>
+    <details><summary>Объект уже продан</summary>
+      <p>Сообщите через «Сообщить об ошибке» — снимем. Можно и просто скрыть его для себя: «Скрыть» в окне объекта.
+        Объекты, которые давно не присылали, уходят в архив сами.</p></details>
+    <details><summary>Как отменить подписку?</summary>
+      <p>Подписка не продлевается сама: закончился оплаченный срок — номера снова скрыты, ничего отменять не нужно.</p></details>
+    <details><summary>Как с вами связаться?</summary>
+      <p>Пишите на <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a>.</p></details>
+  </section>
+
+  <section class="hw-final">
+    <h2>Попробуйте — {{TRIAL_DAYS}} дней бесплатно</h2>
+    <p>Вход по почте, без карты.</p>
+    <div class="hw-cta"><a class="pill" href="/?login=1">Войти</a><a class="pill light" href="/">Сначала посмотреть поиск</a></div>
+  </section>
+  <p class="hw-legal"><a href="/privacy">Политика конфиденциальности</a> · <a href="/terms">Пользовательское соглашение</a></p>
 </main>
 <script src="/static/icons.js?v=5"></script>
-<script src="/static/pickers.js?v=7"></script>
+<script src="/static/pickers.js?v=8"></script>
 <script src="/static/max.js?v=1"></script>
-<script src="/static/rail.js?v=8"></script>
+<script src="/static/rail.js?v=9"></script>
+<script src="/static/how.js?v=1"></script>
 <script src="/static/objview.js?v=2"></script>
 <script src="/static/bell.js?v=4"></script>
 </body>
