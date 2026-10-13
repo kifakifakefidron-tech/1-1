@@ -41,15 +41,15 @@ def add(conn: sqlite3.Connection, user_id: int, listing_id: int, text: str, kind
     nid = conn.execute("""INSERT INTO work_notes (user_id, listing_id, client_id, collection_id, kind, text, ts)
                           VALUES (?,?,?,?,?,?,?)""",
                        (user_id, listing_id, client["id"] if client else None, pick["id"] if pick else None, kind, text, now)).lastrowid
-    if client is not None:   # объект попадает к клиенту; показ — сразу «показан»
+    if client is not None:   # объект — у клиента; показ — сразу «Показ» (вперёд только)
         from . import clients
         cur = conn.execute("SELECT status FROM client_items WHERE client_id = ? AND listing_id = ?",
                            (client["id"], listing_id)).fetchone()
-        if kind == "show" and (cur is None or cur["status"] in ("offered", "liked")):
-            clients.set_item(conn, user_id, client["id"], listing_id, "shown")
+        if kind == "show":
+            clients.set_pair(conn, user_id, client["id"], listing_id, "show", pick_id=pick["id"] if pick else None,
+                             auto=True, commit=False)
         elif cur is None:
-            clients.set_item(conn, user_id, client["id"], listing_id, "offered")
-        conn.execute("UPDATE clients SET updated = ? WHERE id = ?", (now, client["id"]))
+            clients.set_pair(conn, user_id, client["id"], listing_id, "matched", commit=False)
     conn.commit()
     return {"ok": True, "id": nid}
 

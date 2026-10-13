@@ -21,7 +21,12 @@ SORTS = {
     "price_desc": "l.price IS NULL, l.price DESC, l.id DESC",
     "price_m2": "l.price_m2 IS NULL, l.price_m2 ASC, l.id DESC",
     "area_desc": "l.area IS NULL, l.area DESC, l.id DESC",
+    "market": "l.market_diff IS NULL, l.market_diff ASC, l.id DESC",   # ниже рынка — первыми
 }
+# состояние — по тексту объявления (search_text: нижний регистр, ё → е)
+COND_SQL = {"pcho": "(l.search_text LIKE '%пчо%' OR l.search_text LIKE '%предчистов%' OR l.search_text LIKE '%white box%')",
+            "repair": "(l.search_text LIKE '%ремонт%' AND l.search_text NOT LIKE '%без ремонт%' AND l.search_text NOT LIKE '%под ремонт%')",
+            "furniture": "(l.search_text LIKE '%мебел%' OR l.search_text LIKE '%меблир%')"}
 
 
 @dataclass
@@ -47,6 +52,13 @@ class Query:
     hot: bool = False          # «🔥 Горячее»: цена снизилась за неделю, ниже рынка, «срочно»
     sort: str = "new"
     hide_user: int | None = None   # не показывать объекты, которые этот человек скрыл для себя
+    # подбор под клиента (ТЗ v2)
+    exclude_client: int | None = None   # без объектов, уже связанных с клиентом, и тех, что «не подходит»
+    with_photo: bool = False
+    cond: list[str] = field(default_factory=list)   # pcho | repair | furniture — по тексту объявления
+    no_encumbrance: bool = False
+    mortgage: bool = False              # клиенту нужна ипотека — без «только наличные»
+    budget_near: int | None = None      # сортировка «ближе к бюджету»
     page: int = 1
     size: int = 30
 
@@ -183,6 +195,20 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
         w.append("(l.floor IS NULL OR l.floor > 1)")
     if qr.not_last:
         w.append("(l.floor IS NULL OR l.floors IS NULL OR l.floor < l.floors)")
+    if qr.exclude_client:
+        w.append("""NOT EXISTS (SELECT 1 FROM client_items ci WHERE ci.client_id = ? AND ci.listing_id = l.id)
+                    AND NOT EXISTS (SELECT 1 FROM client_hidden ch WHERE ch.client_id = ? AND ch.listing_id = l.id)""")
+        p += [qr.exclude_client, qr.exclude_client]
+    if qr.with_photo:
+        w.append("json_array_length(COALESCE(l.photos, '[]')) > 0")
+    conds = [COND_SQL[c] for c in qr.cond if c in COND_SQL]
+    if conds:
+        w.append("(" + " OR ".join(conds) + ")")
+    if qr.no_encumbrance:
+        w.append("NOT (l.search_text LIKE '%обрем%' AND l.search_text NOT LIKE '%без обрем%' AND l.search_text NOT LIKE '%обременен нет%'"
+                 " AND l.search_text NOT LIKE '%обременения нет%' AND l.search_text NOT LIKE '%обременений нет%')")
+    if qr.mortgage:
+        w.append("NOT (l.search_text LIKE '%только налич%' OR l.search_text LIKE '%без ипотек%' OR l.search_text LIKE '%ипотека не%')")
     if qr.fresh_days:
         w.append("l.last_seen >= ?"); p.append(now - qr.fresh_days * 86400)
     if qr.new_days:
@@ -239,6 +265,8 @@ def search(conn: sqlite3.Connection, qr: Query, now: int, with_contacts: bool) -
     page = max(1, qr.page)
     # Объекты СТРЕЛ сортируются вместе со всеми, без вывода вперёд (решение 07.10)
     order = SORTS.get(qr.sort, SORTS["new"])
+    if qr.sort == "budget" and qr.budget_near:   # ближе к бюджету клиента
+        order = f"l.price IS NULL, ABS(l.price - {int(qr.budget_near)}) ASC, l.id DESC"
     if qr.hl:   # новое в сохранённом поиске — наверх
         order = f"(l.first_seen > {int(qr.hl)}) DESC, " + order
     rows = conn.execute(
