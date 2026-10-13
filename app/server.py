@@ -779,6 +779,7 @@ def api_admin_overview(request: Request, body: dict | None = None):
         "optouts": one("SELECT COUNT(*) FROM optout_phones"),
         "wappi_enabled": config.WAPPI_ENABLED, "payments": payments.available(),
         "price": config.SUB_PRICE, "period_days": config.SUB_DAYS,
+        "p0_report": json.loads(db.get_state(conn, "p0_report") or "null"),
         "feed_synced": int(db.get_state(conn, "feed_synced") or 0),
     })
 
