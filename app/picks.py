@@ -37,13 +37,16 @@ def _default_contact(conn: sqlite3.Connection, user) -> tuple[str, str]:
 
 def mine(conn: sqlite3.Connection, user_id: int) -> list[dict]:
     out = []
-    for r in conn.execute("""SELECT c.*, (SELECT COUNT(*) FROM collection_items i WHERE i.collection_id = c.id) AS n
-                             FROM collections c WHERE c.user_id = ? ORDER BY c.updated DESC""", (user_id,)):
+    for r in conn.execute("""SELECT c.*, (SELECT COUNT(*) FROM collection_items i WHERE i.collection_id = c.id) AS n,
+                                    k.name AS client_name
+                             FROM collections c LEFT JOIN clients k ON k.id = c.client_id AND k.user_id = c.user_id
+                             WHERE c.user_id = ? ORDER BY c.updated DESC""", (user_id,)):
         d = dict(r)
         d["url"] = f"{config.PICK_URL}/c/{r['token']}"   # ссылка для клиента (на нейтральном адресе, если он задан)
         d["items"] = [dict(x) for x in conn.execute(
             """SELECT i.listing_id, i.note, i.text, i.pos, l.title, l.price, l.deal, l.is_active, l.photos,
-                      l.description AS orig
+                      l.description AS orig, l.type, l.rooms, l.area, l.land, l.floor, l.floors, l.complex, l.district,
+                      l.street, l.house
                FROM collection_items i JOIN listings l ON l.id = i.listing_id
                WHERE i.collection_id = ? ORDER BY i.pos, i.added""", (r["id"],))]
         for it in d["items"]:
@@ -76,6 +79,16 @@ def save(conn: sqlite3.Connection, user, body: dict) -> dict:
                             _phone(str(body.get("contact_phone") or phone)), now, now)).lastrowid
     if body.get("listing_id"):
         set_item(conn, user["id"], int(cid), int(body["listing_id"]), True, commit=False)
+    if "client_id" in body:   # подборка для клиента из CRM (только своего)
+        k = body.get("client_id")
+        ok = str(k).isdigit() and conn.execute("SELECT 1 FROM clients WHERE id = ? AND user_id = ?", (int(k), user["id"])).fetchone()
+        conn.execute("UPDATE collections SET client_id = ? WHERE id = ? AND user_id = ?", (int(k) if ok else None, int(cid), user["id"]))
+    if body.get("copy_of"):   # «Дублировать»: те же объекты, комментарии и тексты, новая ссылка
+        src = conn.execute("SELECT id FROM collections WHERE id = ? AND user_id = ?", (int(body["copy_of"]), user["id"])).fetchone()
+        if src:
+            conn.execute("""INSERT OR IGNORE INTO collection_items (collection_id, listing_id, pos, note, text, added)
+                            SELECT ?, listing_id, pos, note, text, ? FROM collection_items WHERE collection_id = ?""",
+                         (int(cid), now, src[0]))
     conn.commit()
     return next(c for c in mine(conn, user["id"]) if c["id"] == int(cid))
 
