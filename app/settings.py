@@ -16,7 +16,49 @@ from pathlib import Path
 from . import config
 
 COLORS = ("gold", "teal", "sky", "violet", "coral", "rose", "lime", "slate")
-DEFAULTS = {"pick_color": "gold", "pick_cover": "", "pick_brand": "", "pick_name": "", "pick_phone": "", "cabinet_order": []}
+DEFAULTS = {"pick_color": "gold", "pick_cover": "", "pick_brand": "", "pick_name": "", "pick_phone": "", "cabinet_order": [],
+            "blocks": []}
+# Свои блоки кабинета — только безопасные виды и только данные (никакой разметки и скриптов от пользователя)
+BLOCK_TYPES = ("note", "todo", "links", "search", "goal", "countdown")
+MAX_BLOCKS = 12
+
+
+def _blocks(raw) -> list[dict]:
+    out = []
+    for b in (raw if isinstance(raw, list) else [])[:MAX_BLOCKS]:
+        if not isinstance(b, dict) or b.get("type") not in BLOCK_TYPES:
+            continue
+        t = b["type"]
+        bid = "u" + re.sub(r"[^a-z0-9]", "", str(b.get("id") or "").lower().removeprefix("u"))[:10]
+        if len(bid) < 3:
+            continue
+        d = b.get("data") if isinstance(b.get("data"), dict) else {}
+        title = str(b.get("title") or "").strip()[:60]
+        color = b.get("color") if b.get("color") in COLORS else "gold"
+        if t == "note":
+            data = {"text": str(d.get("text") or "")[:2000]}
+        elif t == "todo":
+            data = {"items": [{"t": str(x.get("t") or "").strip()[:200], "done": bool(x.get("done"))}
+                              for x in (d.get("items") or [])[:40] if isinstance(x, dict) and str(x.get("t") or "").strip()]}
+        elif t == "links":
+            data = {"items": [{"t": str(x.get("t") or "").strip()[:60] or str(x.get("u"))[:60], "u": str(x.get("u")).strip()[:300]}
+                              for x in (d.get("items") or [])[:12]
+                              if isinstance(x, dict) and re.match(r"^https?://[^\s<>\"']+$", str(x.get("u") or "").strip())]}
+        elif t == "search":
+            sid = d.get("saved_id")
+            data = {"saved_id": int(sid) if str(sid).isdigit() else None}
+        elif t == "goal":
+            def num(v, lo, hi, dflt):
+                try:
+                    return max(lo, min(hi, int(v)))
+                except (TypeError, ValueError):
+                    return dflt
+            data = {"n": num(d.get("n"), 0, 99999, 0), "of": num(d.get("of"), 1, 99999, 5)}
+        else:   # countdown
+            date = str(d.get("date") or "")
+            data = {"date": date if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) else ""}
+        out.append({"id": bid, "type": t, "title": title, "color": color, "data": data})
+    return out
 _MAGIC = {b"\xff\xd8\xff": "jpg", b"\x89PNG": "png", b"RIFF": "webp"}
 COVER_DIR = "0"   # обложки подборок: data/photos/0/<хеш>.jpg (тот же путь /photos/…, что и у фото объектов)
 
@@ -52,6 +94,8 @@ def save(conn: sqlite3.Connection, user_id: int, patch: dict) -> dict:
             cur[k] = str(patch[k] or "").strip()[:n]
     if "pick_phone" in patch:
         cur["pick_phone"] = _phone(str(patch["pick_phone"] or ""))
+    if "blocks" in patch:
+        cur["blocks"] = _blocks(patch["blocks"])
     if "cabinet_order" in patch and isinstance(patch["cabinet_order"], list):
         cur["cabinet_order"] = [str(x)[:30] for x in patch["cabinet_order"] if re.fullmatch(r"[A-Za-z0-9_-]{1,30}", str(x))][:40]
     if "name" in patch:   # имя в профиле — колонка users.name

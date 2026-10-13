@@ -394,11 +394,198 @@
       : `<span class="d-att calm">${ic("check")}Всё под контролем — срочных дел нет</span>`;
   }
 
+
+  // ─── свои блоки кабинета: заметка, дела, ссылки, мой поиск, цель, обратный отсчёт (только данные — без чужого кода) ───
+  const BTYPES = {
+    note: { t: "Заметка", ic: "note", d: "Короткий текст под рукой: скрипт звонка, реквизиты, важное" },
+    todo: { t: "Список дел", ic: "check", d: "Галочки: что сделать сегодня или по сделке" },
+    links: { t: "Ссылки", ic: "link", d: "Свои полезные сайты: Росреестр, банки, CRM агентства" },
+    search: { t: "Мой поиск", ic: "search", d: "Сохранённый поиск: сколько объектов и сколько новых за сутки" },
+    goal: { t: "Цель", ic: "trend", d: "Например, «Сделок в месяц: 2 из 5» — с кнопками +1 / −1" },
+    countdown: { t: "Обратный отсчёт", ic: "hourglass", d: "Сколько дней до сделки, отпуска или конца месяца" },
+  };
+  const BCOLORS = ["gold", "teal", "sky", "violet", "coral", "rose", "lime", "slate"];
+  let blocks = [], savedList = null;
+  const newId = () => "u" + Math.random().toString(36).slice(2, 9);
+  async function saveBlocks() {
+    const r = await call("/api/settings", { blocks });
+    if (r.ok) blocks = r.data.settings.blocks;
+    return r.ok;
+  }
+  function blockHTML(b) {
+    const T = BTYPES[b.type], d = b.data || {};
+    const tools = `<span class="ub-tools"><button type="button" class="ub-btn" data-ub-edit="${b.id}" aria-label="Изменить">${ic("edit")}</button></span>`;
+    let body = "";
+    if (b.type === "note") body = d.text ? `<p class="ub-note">${esc(d.text)}</p>` : `<p class="g-empty">Пусто — нажмите ✎, чтобы написать.</p>`;
+    if (b.type === "todo") {
+      const items = d.items || [];
+      const done = items.filter((x) => x.done).length;
+      body = `${items.length ? `<div class="ub-bar"><i style="--w:${Math.round(done / items.length * 100)}%"></i></div>` : ""}
+        <ul class="ub-todo">${items.map((x, i) => `<li class="${x.done ? "done" : ""}"><button type="button" data-ub-check="${b.id}:${i}" aria-label="Отметить">${ic("check")}</button><span>${esc(x.t)}</span></li>`).join("")}</ul>
+        <form class="ub-add" data-ub-add="${b.id}"><input maxlength="200" placeholder="Новое дело…" aria-label="Новое дело"><button type="submit" class="ub-btn" aria-label="Добавить">${ic("plus")}</button></form>`;
+    }
+    if (b.type === "links") body = (d.items || []).length ? `<div class="ub-links">${d.items.map((x) => {
+        let host = ""; try { host = new URL(x.u).hostname.replace(/^www\./, ""); } catch { /* */ }
+        return `<a href="${esc(x.u)}" target="_blank" rel="noopener noreferrer"><b>${esc(x.t)}</b><small>${esc(host)}</small>${ic("external")}</a>`; }).join("")}</div>`
+      : `<p class="g-empty">Добавьте ссылки — нажмите ✎.</p>`;
+    if (b.type === "search") body = `<div class="ub-search" data-ub-search="${b.id}"><p class="g-empty">Считаем…</p></div>`;
+    if (b.type === "goal") {
+      const pct = Math.min(100, Math.round((d.n || 0) / (d.of || 1) * 100));
+      body = `<div class="ub-goal"><svg viewBox="0 0 120 120" class="ub-ring"><circle cx="60" cy="60" r="50"/><circle cx="60" cy="60" r="50" class="v"
+          style="stroke-dasharray:${(pct / 100 * 314).toFixed(1)} 314"/></svg><div class="ub-goal-n"><b>${d.n || 0}</b><small>из ${d.of || 5}</small></div></div>
+        <div class="ub-goal-acts"><button type="button" class="pill light" data-ub-goal="${b.id}:-1">−1</button><button type="button" class="pill" data-ub-goal="${b.id}:1">+1</button></div>`;
+    }
+    if (b.type === "countdown") {
+      if (!d.date) body = `<p class="g-empty">Укажите дату — нажмите ✎.</p>`;
+      else {
+        const days = Math.ceil((new Date(`${d.date}T00:00`) - new Date(new Date().toDateString())) / 86400000);
+        body = `<div class="ub-cd"><b>${Math.abs(days)}</b><span>${days > 0 ? plural(days, "день", "дня", "дней") + " осталось" : days === 0 ? "сегодня!" : plural(-days, "день", "дня", "дней") + " назад"}</span>
+          <small>${new Date(`${d.date}T12:00`).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })}</small></div>`;
+      }
+    }
+    return `${head(T.ic, esc(b.title || T.t), tools)}${body}`;
+  }
+  function renderBlocks() {
+    const box = $("bento");
+    box.querySelectorAll(":scope > .g.ub").forEach((el) => { if (!blocks.some((b) => b.id === el.id)) el.remove(); });
+    for (const b of blocks) {
+      let el = document.getElementById(b.id);
+      if (!el) {
+        el = document.createElement("section");
+        el.id = b.id;
+        el.className = `g ub c-${b.color}`;
+        box.insertBefore(el, $("wAdd"));
+      }
+      el.className = `g ub ub-${b.type} c-${b.color}`;
+      el.innerHTML = blockHTML(b);
+      if (!el.querySelector(":scope > .g-grip")) addGrip(el);
+    }
+    fillSearchBlocks();
+  }
+  async function fillSearchBlocks() {
+    const els = document.querySelectorAll("[data-ub-search]");
+    if (!els.length) return;
+    if (!savedList) { const r = await call("/api/saved"); savedList = (r.ok && r.data.items) || []; }
+    for (const el of els) {
+      const b = blocks.find((x) => x.id === el.dataset.ubSearch);
+      const s = savedList.find((x) => x.id === (b && b.data.saved_id));
+      if (!s) { el.innerHTML = `<p class="g-empty">Выберите сохранённый поиск — нажмите ✎. Сохранить поиск можно кнопкой «Следить» на главной.</p>`; continue; }
+      let params;
+      try { params = typeof s.params === "string" && s.params.trim().startsWith("{") ? new URLSearchParams(JSON.parse(s.params)) : new URLSearchParams(s.params || ""); }
+      catch { params = new URLSearchParams(); }
+      params.set("size", "1");
+      const [all, fresh] = await Promise.all([call(`/api/listings?${params}`), call(`/api/listings?${params}&new_days=1`)]);
+      el.innerHTML = `<a class="ub-sres" href="${esc(s.url || "/")}"><span><b>${num(all.ok ? all.data.total : 0)}</b><small>объектов</small></span>
+        <span class="new"><b>+${num(fresh.ok ? fresh.data.total : 0)}</b><small>новых за сутки</small></span></a><p class="ub-stitle">${esc(s.title || "")}</p>`;
+    }
+  }
+  function addGrip(g) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "g-grip"; b.title = "Перетащите, чтобы поменять порядок"; b.setAttribute("aria-label", "Переставить блок");
+    b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></svg>';
+    g.appendChild(b);
+  }
+  // окно: выбрать вид нового блока / изменить блок
+  function blockDlg() {
+    let d = document.getElementById("ubDlg");
+    if (!d) { d = document.createElement("dialog"); d.id = "ubDlg"; d.className = "small-dlg ub-dlg"; document.body.appendChild(d); }
+    return d;
+  }
+  function openAddBlock() {
+    const d = blockDlg();
+    d.innerHTML = `<div class="dlg-body"><div class="d-dlg-head"><h2>Свой блок</h2><button type="button" class="close" data-close aria-label="Закрыть">✕</button></div>
+      <p class="note">Выберите, что добавить в кабинет. Блок можно переставить за ⠿ и изменить кнопкой ✎.</p>
+      <div class="ub-types">${Object.entries(BTYPES).map(([k, v]) => `<button type="button" class="ub-type" data-ub-new="${k}">${ic(v.ic)}<b>${v.t}</b><small>${v.d}</small></button>`).join("")}</div></div>`;
+    d.showModal();
+  }
+  async function openEditBlock(b, isNew) {
+    const d = blockDlg(), T = BTYPES[b.type], x = b.data || {};
+    if (b.type === "search" && !savedList) { const r = await call("/api/saved"); savedList = (r.ok && r.data.items) || []; }
+    let fields = "";
+    if (b.type === "note") fields = `<label class="ub-f"><span>Текст</span><textarea name="text" rows="6" maxlength="2000">${esc(x.text || "")}</textarea></label>`;
+    if (b.type === "todo") fields = `<label class="ub-f"><span>Дела — по одному в строке</span><textarea name="items" rows="7" maxlength="6000">${esc((x.items || []).map((i) => (i.done ? "[x] " : "") + i.t).join("\n"))}</textarea></label>`;
+    if (b.type === "links") fields = `<label class="ub-f"><span>Ссылки — по одной в строке: «Название — https://адрес»</span><textarea name="items" rows="6" maxlength="4000"
+      placeholder="Росреестр — https://rosreestr.gov.ru">${esc((x.items || []).map((i) => `${i.t} — ${i.u}`).join("\n"))}</textarea></label>`;
+    if (b.type === "search") fields = savedList.length ? `<label class="ub-f"><span>Сохранённый поиск</span><select name="saved_id">${savedList.map((s) =>
+        `<option value="${s.id}"${s.id === x.saved_id ? " selected" : ""}>${esc(s.title || "Поиск")}</option>`).join("")}</select></label>`
+      : `<p class="note">Сохранённых поисков пока нет. На главной настройте фильтры и нажмите «Следить» — поиск появится здесь.</p>`;
+    if (b.type === "goal") fields = `<div class="ub-two"><label class="ub-f"><span>Сейчас</span><input name="n" type="number" min="0" value="${x.n || 0}"></label>
+      <label class="ub-f"><span>Цель</span><input name="of" type="number" min="1" value="${x.of || 5}"></label></div>`;
+    if (b.type === "countdown") fields = `<label class="ub-f"><span>Дата</span><input name="date" type="date" value="${esc(x.date || "")}"></label>`;
+    d.innerHTML = `<div class="dlg-body"><div class="d-dlg-head"><h2>${isNew ? "Новый блок" : "Изменить блок"} · ${T.t}</h2><button type="button" class="close" data-close aria-label="Закрыть">✕</button></div>
+      <form class="ub-form" id="ubForm">
+        <label class="ub-f"><span>Название</span><input name="title" maxlength="60" value="${esc(b.title || "")}" placeholder="${T.t}"></label>
+        ${fields}
+        <div class="ub-f"><span>Цвет</span><div class="ub-colors">${BCOLORS.map((c) => `<button type="button" class="ub-color c-${c}${c === (b.color || "gold") ? " on" : ""}" data-ub-color="${c}" aria-label="${c}"></button>`).join("")}</div></div>
+        <div class="d-dlg-acts">${isNew ? "" : `<button type="button" class="chip danger" data-ub-del="${b.id}">Удалить блок</button>`}
+          <button type="submit" class="pill">${isNew ? "Добавить в кабинет" : "Сохранить"}</button></div>
+      </form></div>`;
+    d.dataset.color = b.color || "gold";
+    if (!d.open) d.showModal();
+    if (window.Pick) Pick.auto(d);
+    $("ubForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = e.target, data = {};
+      if (b.type === "note") data.text = f.text.value;
+      if (b.type === "todo") data.items = f.items.value.split("\n").map((s) => s.trim()).filter(Boolean).map((s) => ({ t: s.replace(/^\[x\]\s*/i, ""), done: /^\[x\]/i.test(s) }));
+      if (b.type === "links") data.items = f.items.value.split("\n").map((s) => s.trim()).filter(Boolean).map((s) => {
+        const m = s.match(/^(.*?)\s*[—–-]\s*(https?:\/\/\S+)$/) || s.match(/^()(https?:\/\/\S+)$/);
+        return m ? { t: m[1] || m[2], u: m[2] } : null;
+      }).filter(Boolean);
+      if (b.type === "search") data.saved_id = f.saved_id ? Number(f.saved_id.value) : null;
+      if (b.type === "goal") { data.n = Number(f.n.value); data.of = Number(f.of.value); }
+      if (b.type === "countdown") data.date = f.date.value;
+      const nb = { ...b, title: f.title.value.trim(), color: d.dataset.color, data };
+      blocks = isNew ? [...blocks, nb] : blocks.map((x) => (x.id === b.id ? nb : x));
+      if (!(await saveBlocks())) { toast("Не сохранилось — попробуйте ещё раз"); return; }
+      d.close(); renderBlocks();
+      toast(isNew ? "Блок добавлен в кабинет" : "Сохранено");
+      if (isNew) document.getElementById(nb.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
+  document.addEventListener("click", async (e) => {
+    const t = e.target.closest("button");
+    if (!t) return;
+    if (t.id === "ubAdd") { openAddBlock(); return; }
+    if (t.dataset.ubNew) { openEditBlock({ id: newId(), type: t.dataset.ubNew, title: "", color: "gold", data: {} }, true); return; }
+    if (t.dataset.ubEdit) { openEditBlock(blocks.find((x) => x.id === t.dataset.ubEdit), false); return; }
+    if (t.dataset.ubColor) { blockDlg().dataset.color = t.dataset.ubColor; t.parentElement.querySelectorAll(".ub-color").forEach((x) => x.classList.toggle("on", x === t)); return; }
+    if (t.dataset.ubDel) {
+      if (!confirm("Удалить этот блок из кабинета?")) return;
+      blocks = blocks.filter((x) => x.id !== t.dataset.ubDel);
+      await saveBlocks(); blockDlg().close(); renderBlocks(); toast("Блок удалён"); return;
+    }
+    if (t.dataset.ubCheck) {
+      const [id, i] = t.dataset.ubCheck.split(":");
+      const b = blocks.find((x) => x.id === id);
+      b.data.items[Number(i)].done = !b.data.items[Number(i)].done;
+      renderBlocks(); saveBlocks(); return;
+    }
+    if (t.dataset.ubGoal) {
+      const [id, dv] = t.dataset.ubGoal.split(":");
+      const b = blocks.find((x) => x.id === id);
+      b.data.n = Math.max(0, (b.data.n || 0) + Number(dv));
+      renderBlocks(); saveBlocks();
+      if (Number(dv) > 0 && b.data.n === b.data.of) toast("Цель достигнута — поздравляем!", 3000);
+    }
+  });
+  document.addEventListener("submit", async (e) => {
+    const f = e.target.closest("[data-ub-add]");
+    if (!f) return;
+    e.preventDefault();
+    const v = f.querySelector("input").value.trim();
+    if (!v) return;
+    const b = blocks.find((x) => x.id === f.dataset.ubAdd);
+    b.data.items = [...(b.data.items || []), { t: v, done: false }];
+    renderBlocks(); saveBlocks();
+    document.querySelector(`[data-ub-add="${b.id}"] input`)?.focus();
+  });
+
   // ─── порядок блоков: перетащите блок за ⠿ — сохраняется в аккаунте ───
   async function layout() {
     const box = $("bento");
-    const blocks = () => [...box.querySelectorAll(":scope > .g")];
-    blocks().forEach((g) => {
+    const sections = () => [...box.querySelectorAll(":scope > .g")];
+    sections().forEach((g) => {
       if (g.querySelector(":scope > .g-grip")) return;
       const b = document.createElement("button");
       b.type = "button"; b.className = "g-grip"; b.title = "Перетащите, чтобы поменять порядок"; b.setAttribute("aria-label", "Переставить блок");
@@ -406,13 +593,16 @@
       g.appendChild(b);
     });
     const r = await call("/api/settings");
+    blocks = (r.ok && r.data.settings.blocks) || [];
+    renderBlocks();   // свои блоки — до сортировки, чтобы встали на сохранённые места
     const order = (r.ok && r.data.settings.cabinet_order) || [];
     if (order.length) {   // сохранённый порядок; новые блоки, которых в нём нет, — в конце
-      const byId = Object.fromEntries(blocks().map((g) => [g.id, g]));
+      const byId = Object.fromEntries(sections().map((g) => [g.id, g]));
       order.forEach((id) => { if (byId[id]) box.appendChild(byId[id]); });
-      blocks().filter((g) => !order.includes(g.id) && g.id !== "wAdmin").forEach((g) => box.appendChild(g));
+      sections().filter((g) => !order.includes(g.id) && g.id !== "wAdmin" && g.id !== "wAdd").forEach((g) => box.appendChild(g));
       if (byId.wAdmin) box.appendChild(byId.wAdmin);
     }
+    box.appendChild($("wAdd"));   // «+ Свой блок» — всегда последним
   }
   let drag = null;
   function flip(box, move) {   // плавно: соседи переезжают, а не прыгают
@@ -440,7 +630,7 @@
     const box = $("bento");
     const under = document.elementFromPoint(e.clientX, e.clientY);
     const target = under && under.closest("#bento > .g");
-    if (!target || target === drag.el || target.id === "wAdmin") return;
+    if (!target || target === drag.el || target.id === "wAdmin" || target.id === "wAdd") return;
     const r = target.getBoundingClientRect();
     const after = e.clientY > r.top + r.height / 2 || (e.clientX > r.left + r.width / 2 && Math.abs(e.clientY - (r.top + r.height / 2)) < r.height / 3);
     const ref = after ? target.nextElementSibling : target;
@@ -455,7 +645,7 @@
     el.classList.remove("lifting");
     document.body.classList.remove("d-arranging");
     if (!moved) { toast("Потяните блок за ⠿, чтобы переставить"); return; }
-    const order = [...$("bento").querySelectorAll(":scope > .g")].map((g) => g.id).filter((id) => id && id !== "wAdmin");
+    const order = [...$("bento").querySelectorAll(":scope > .g")].map((g) => g.id).filter((id) => id && id !== "wAdmin" && id !== "wAdd");
     const r = await call("/api/settings", { cabinet_order: order });
     toast(r.ok ? "Порядок блоков сохранён" : "Не сохранилось — попробуйте ещё раз");
   });

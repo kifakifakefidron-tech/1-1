@@ -43,6 +43,23 @@ def test_settings_save_and_validate(client):
     assert cover.startswith("/photos/0/") and client.get(cover).status_code == 200
 
 
+def test_cabinet_own_blocks_sanitized(client):
+    blocks = [
+        {"id": "uabc123", "type": "links", "title": "Ссылки", "color": "teal",
+         "data": {"items": [{"t": "Росреестр", "u": "https://rosreestr.gov.ru"}, {"t": "зло", "u": "javascript:alert(1)"}]}},
+        {"id": "ugoal1", "type": "goal", "title": "Сделки", "color": "nope", "data": {"n": -5, "of": "abc"}},
+        {"id": "u<x>", "type": "html", "data": {"html": "<script>"}},
+        {"id": "!!", "type": "note", "data": {"text": "x"}},
+        {"id": "ucd1", "type": "countdown", "data": {"date": "2026-12-31<b>"}},
+    ]
+    st = client.post("/api/settings", json={"blocks": blocks}).json()["settings"]["blocks"]
+    assert [b["type"] for b in st] == ["links", "goal", "countdown"]   # чужой вид и плохой id отброшены
+    assert st[0]["data"]["items"] == [{"t": "Росреестр", "u": "https://rosreestr.gov.ru"}]
+    assert st[1]["color"] == "gold" and st[1]["data"] == {"n": 0, "of": 5}
+    assert st[2]["data"]["date"] == ""
+    assert client.get("/api/settings").json()["settings"]["blocks"] == st
+
+
 def test_pick_page_neutral_and_pick_domain(client, monkeypatch):
     lid = client.get("/api/listings").json()["items"][0]["id"]
     client.post("/api/settings", json={"pick_color": "sky", "pick_brand": "Моё агентство"})

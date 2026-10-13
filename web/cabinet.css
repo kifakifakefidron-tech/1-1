@@ -314,3 +314,65 @@ body.d-arranging .g:not(.lifting) { opacity: .85; }
 .bk-lbl .pk-btn { width: auto; min-height: 36px; padding: 6px 12px; border-radius: 999px; }
 .bank-row.fresh input { border-color: rgba(182, 219, 122, .6) !important; background: rgba(182, 219, 122, .08) !important; }
 .wm-upd.old { color: #f6b8a4 !important; }
+
+/* свои блоки кабинета */
+.w-add { display: grid; padding: 0 !important; background: none !important; border: 1.5px dashed var(--glass-line-2) !important; box-shadow: none !important; }
+.ub-addbtn { display: grid; place-content: center; justify-items: center; gap: 4px; min-height: 150px; padding: 18px; border: 0; background: none;
+  color: var(--ink-2); cursor: pointer; border-radius: inherit; transition: background .2s, color .2s; }
+.ub-addbtn:hover { background: rgba(227, 203, 143, .06); color: var(--ink); }
+.ub-addbtn span { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: rgba(227, 203, 143, .15); color: var(--gold);
+  font: 300 30px/1 var(--body); transition: transform .3s var(--spring); }
+.ub-addbtn:hover span { transform: rotate(90deg) scale(1.08); }
+.ub-addbtn b { font-size: 15px; } .ub-addbtn small { font-size: 12px; color: var(--ink-3); text-align: center; }
+.g.ub::before { content: ""; position: absolute; left: 0; top: 18px; bottom: 18px; width: 3px; border-radius: 0 3px 3px 0; background: var(--c); }
+.ub-tools { display: inline-flex; gap: 4px; margin-right: 34px; }
+.ub-btn { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .05);
+  color: var(--ink-3); cursor: pointer; }
+.ub-btn:hover { color: var(--ink); background: rgba(255, 255, 255, .1); }
+.ub-btn svg { width: 15px; height: 15px; }
+.ub-note { margin: 0; white-space: pre-line; line-height: 1.55; font-size: 14px; color: var(--ink-2); max-height: 260px; overflow: auto; }
+.ub-bar { height: 5px; border-radius: 4px; background: rgba(255, 255, 255, .08); margin-bottom: 10px; overflow: hidden; }
+.ub-bar i { display: block; height: 100%; width: var(--w); background: var(--c); transition: width .4s var(--ease); }
+.ub-todo { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 240px; overflow: auto; }
+.ub-todo li { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.ub-todo li button { display: grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 7px; border: 1.5px solid var(--glass-line-2);
+  background: none; color: transparent; cursor: pointer; transition: background .2s, color .2s; }
+.ub-todo li button svg { width: 13px; height: 13px; }
+.ub-todo li.done button { background: var(--c); border-color: var(--c); color: #0f2f2e; }
+.ub-todo li.done span { text-decoration: line-through; color: var(--ink-3); }
+.ub-add { display: flex; gap: 6px; margin-top: 8px; }
+.ub-add input { flex: 1; min-width: 0; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--glass-line); background: rgba(0, 0, 0, .15); color: var(--ink); font: 13.5px var(--body); }
+.ub-links { display: grid; gap: 6px; }
+.ub-links a { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 12px; background: rgba(255, 255, 255, .05); color: var(--ink); text-decoration: none; }
+.ub-links a:hover { background: rgba(255, 255, 255, .1); }
+.ub-links b { font-size: 14px; } .ub-links small { margin-left: auto; color: var(--ink-3); font-size: 12px; }
+.ub-links svg { width: 14px; height: 14px; color: var(--ink-3); flex: none; }
+.ub-sres { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; text-decoration: none; color: var(--ink); }
+.ub-sres span { display: grid; padding: 12px; border-radius: 14px; background: rgba(255, 255, 255, .05); }
+.ub-sres b { font: 600 26px var(--display); } .ub-sres small { color: var(--ink-3); font-size: 12px; }
+.ub-sres .new b { color: var(--c); }
+.ub-stitle { margin: 8px 0 0; font-size: 12.5px; color: var(--ink-3); }
+.ub-goal { position: relative; width: 120px; height: 120px; margin: 4px auto 10px; }
+.ub-ring { width: 120px; height: 120px; transform: rotate(-90deg); }
+.ub-ring circle { fill: none; stroke: rgba(255, 255, 255, .08); stroke-width: 10; }
+.ub-ring circle.v { stroke: var(--c); stroke-linecap: round; transition: stroke-dasharray .5s var(--ease); }
+.ub-goal-n { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; }
+.ub-goal-n b { font: 600 30px/1 var(--display); } .ub-goal-n small { color: var(--ink-3); font-size: 12px; }
+.ub-goal-acts { display: flex; justify-content: center; gap: 8px; }
+.ub-cd { display: grid; justify-items: center; gap: 2px; padding: 10px 0; }
+.ub-cd b { font: 600 48px/1 var(--display); color: var(--c); } .ub-cd span { font-size: 14px; } .ub-cd small { color: var(--ink-3); font-size: 12px; }
+.ub-types { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin-top: 12px; }
+.ub-type { display: grid; gap: 4px; justify-items: start; padding: 14px; border-radius: 16px; border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .05);
+  color: var(--ink); text-align: left; cursor: pointer; transition: background .2s, border-color .2s, transform .25s var(--spring); }
+.ub-type:hover { background: rgba(255, 255, 255, .1); border-color: rgba(227, 203, 143, .45); transform: translateY(-2px); }
+.ub-type svg { width: 22px; height: 22px; color: var(--gold); } .ub-type b { font-size: 15px; } .ub-type small { font-size: 12.5px; color: var(--ink-3); line-height: 1.4; }
+.ub-form { display: grid; gap: 12px; margin-top: 10px; }
+.ub-f { display: grid; gap: 6px; } .ub-f > span { font: 600 11px/1 var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.ub-f input, .ub-f textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--glass-line);
+  background: rgba(0, 0, 0, .16); color: var(--ink); font: 14px/1.45 var(--body); }
+.ub-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ub-colors { display: flex; gap: 8px; flex-wrap: wrap; }
+.ub-color { width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--c); cursor: pointer; transition: transform .2s; }
+.ub-color.on { box-shadow: 0 0 0 3px rgba(4, 50, 49, 1), 0 0 0 5px var(--c); }
+.ub-color:hover { transform: scale(1.1); }
+.w-add > .g-grip { display: none; }
