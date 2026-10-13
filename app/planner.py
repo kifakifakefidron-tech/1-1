@@ -142,6 +142,14 @@ def save_event(conn: sqlite3.Connection, user_id: int, body: dict) -> dict:
                 place=str(body.get("place") or "").strip()[:200],
                 note=str(body.get("note") or "").strip()[:3000], remind_min=remind,
                 done=1 if body.get("done") else 0)
+    if client_id:   # контакт — это сам клиент? его имя и номер уже в карточке клиента, копию не храним
+        cl = conn.execute("SELECT name, phone FROM clients WHERE id = ?", (client_id,)).fetchone()
+        if cl and vals["contact_phone"] and vals["contact_phone"] == (cl["phone"] or ""):
+            vals["contact_phone"] = ""
+            if vals["contact_name"].lower() == (cl["name"] or "").strip().lower():
+                vals["contact_name"] = ""
+        elif cl and not vals["contact_phone"] and vals["contact_name"].lower() == (cl["name"] or "").strip().lower():
+            vals["contact_name"] = ""
     now = int(time.time())
     eid = body.get("id")
     if eid:
@@ -259,7 +267,7 @@ def remind(conn: sqlite3.Connection, send=None, now: int | None = None) -> int:
         when = datetime.fromtimestamp(r["ts"], MSK)
         day = "сегодня" if when.date() == datetime.fromtimestamp(now, MSK).date() else when.strftime("%d.%m")
         title = f"{KINDS.get(r['kind'], '•')}: {r['title']} — {day} в {when.strftime('%H:%M')}"
-        body = " · ".join(x for x in (r["contact_name"], r["contact_phone"], r["place"], r["l_title"]) if x)
+        body = " · ".join(x for x in (r["contact_name"] or r["cl_name"], r["contact_phone"] or r["cl_phone"], r["place"], r["l_title"]) if x)
         notices.add(conn, r["user_id"], "plan", title, body, url=f"/planner?event={r['id']}",
                     listing_id=r["listing_id"], dedup_s=60)
         conn.execute("UPDATE planner_events SET reminded = 1 WHERE id = ?", (r["id"],))
@@ -318,7 +326,7 @@ def ics(conn: sqlite3.Connection, user_id: int, event_id: int | None = None) -> 
              "X-WR-CALNAME:1+1 · показы и созвоны", "X-WR-TIMEZONE:Europe/Moscow"]
     for r in rows:
         desc = "\n".join(x for x in (
-            f"{r['contact_name']} {r['contact_phone']}".strip(), r["l_title"] or "",
+            f"{r['contact_name'] or r['cl_name'] or ''} {r['contact_phone'] or r['cl_phone'] or ''}".strip(), r["l_title"] or "",
             f"{config.SITE_URL}/?open={r['listing_id']}" if r["listing_id"] else "", r["note"] or "") if x)
         place = r["place"] or ", ".join(x for x in (r["l_complex"] and f"ЖК {r['l_complex']}",
                                                      r["l_street"] and f"ул. {r['l_street']} {r['l_house'] or ''}".strip()) if x)

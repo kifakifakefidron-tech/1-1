@@ -261,16 +261,43 @@
     $("dItems").innerHTML = cur.items.length ? cur.items.map((o) => `<div class="c-it${o.is_active ? "" : " off"}">
         ${o.photo ? `<img src="${esc(o.photo)}" alt="" loading="lazy">` : `<span class="noimg"></span>`}
         <div><a href="/?open=${o.id}" target="_blank">${esc(o.complex ? `ЖК ${o.complex}` : o.title)}</a>
-          <small>${esc(o.title)} · ${esc(money(o.price, o.deal))} ₽${o.is_active ? "" : " · снят"}</small></div>
+          <small>${esc(o.title)} · ${esc(money(o.price, o.deal))} ₽${o.is_active ? "" : " · снят"}</small>
+          ${(() => { const w = lastWork(o.id); return w ? `<small class="c-wk">${ic((WK[w.kind] || WK.note)[0])}${(WK[w.kind] || WK.note)[1]}${w.text ? ": " + esc(w.text.slice(0, 90)) : ""}</small>` : ""; })()}</div>
         <select data-item="${o.id}" aria-label="Статус">${Object.entries(st).map(([k, t]) => `<option value="${k}"${o.status === k ? " selected" : ""}>${t}</option>`).join("")}
           <option value="__del">Убрать</option></select></div>`).join("")
       : `<p class="g-empty">Объектов пока нет. Нажмите «Подобрать» — сервис найдёт подходящие по пожеланиям, или добавьте из окна объекта кнопкой «Клиенту».</p>`;
   }
+  const plural = (n, a, b, c) => (n % 10 === 1 && n % 100 !== 11 ? a : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? b : c);
+  // подборки клиента: все его ссылки в одном месте; новая — сразу привязана к клиенту
+  function picksHTML() {
+    const ps = cur.picks || [];
+    $("dPicks").innerHTML = `<div class="c-picks-h"><h3>Подборки клиента</h3>
+        <button type="button" class="pill light" data-new-pick>${ic("plus")}Новая подборка</button></div>
+      ${ps.length ? `<div class="c-picks-l">${ps.map((p) => `<a class="c-pick" href="/picks?open=${p.id}">
+          <span class="c-pick-c c-${esc(p.color || "gold")}">${ic("folder")}</span>
+          <span><b>${esc(p.title)}</b><small>${p.n} ${plural(p.n, "объект", "объекта", "объектов")} · ${p.views
+            ? `открывал ${p.views} ${plural(p.views, "раз", "раза", "раз")}` : "ещё не открывал"}</small></span></a>`).join("")}</div>`
+        : `<p class="g-empty">Подборок пока нет. Объекты из подборки клиента сами появятся ниже со статусом «предложен».</p>`}`;
+  }
+  async function newPick() {
+    const r = await call("/api/picks", { title: `Для ${cur.client.name}`.slice(0, 120), client_id: cur.client.id });
+    if (!r.ok) { toast(r.data.detail || "Подборки — по подписке"); return; }
+    location.href = `/picks?open=${r.data.pick.id}`;
+  }
+  const WK = { note: ["note", "Заметка"], call: ["phone", "Звонок"], show: ["home", "Показ"], meet: ["users", "Встреча"] };
+  const lastWork = (lid) => (cur.work || []).find((w) => w.listing_id === lid);
   function upgradeItems() { if (window.Pick) $("dItems").querySelectorAll("select[data-item]").forEach((s) => Pick.select(s)); }
   function logHTML() {
     const ico = { note: "note", stage: "layers", object: "home", event: "calendar", new: "user", next: "clock" };
-    $("dLog").innerHTML = cur.log.map((x) => `<li>${ic(ico[x.kind] || "note")}<span>${esc(x.text)}</span>
-      <small>${new Date(x.ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</small></li>`).join("");
+    const when = (ts) => new Date(ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    // журнал по объектам (из окна объекта и подборок) — вместе с историей клиента, по времени
+    const rows = cur.log.map((x) => ({ ts: x.ts, html: `<li>${ic(ico[x.kind] || "note")}<span>${esc(x.text)}</span><small>${when(x.ts)}</small></li>` }))
+      .concat((cur.work || []).map((w) => ({ ts: w.ts, html: `<li class="c-log-wk">${ic((WK[w.kind] || WK.note)[0])}<span>
+          <b>${(WK[w.kind] || WK.note)[1]}</b> · <a href="/?open=${w.listing_id}">${esc(w.l_complex ? `ЖК ${w.l_complex}` : w.l_title || "объект")}</a>
+          ${w.pick_title ? `<a class="c-log-tag" href="/picks?open=${w.collection_id}">${esc(w.pick_title)}</a>` : ""}
+          ${w.text ? `<br>${esc(w.text)}` : ""}</span><small>${when(w.ts)}</small></li>` })))
+      .sort((a, b) => b.ts - a.ts);
+    $("dLog").innerHTML = rows.map((x) => x.html).join("");
   }
   function tasksHTML() {
     const id = cur.client.id;
@@ -287,7 +314,7 @@
       const r = await call(`/api/clients?id=${id}`);
       if (!r.ok) { toast("Клиент не найден"); return; }
       cur = r.data;
-      itemsHTML(); upgradeItems(); logHTML(); tasksHTML();
+      itemsHTML(); upgradeItems(); logHTML(); tasksHTML(); picksHTML();
     } else cur = null;
     header(); stagesHTML(); fillForm(); tab("card");
     if (!$("cDlg").open) $("cDlg").showModal();
@@ -295,7 +322,7 @@
   }
   async function refreshCur() {
     const r = await call(`/api/clients?id=${cur.client.id}`);
-    if (r.ok) { cur = r.data; header(); stagesHTML(); itemsHTML(); upgradeItems(); logHTML(); tasksHTML(); }
+    if (r.ok) { cur = r.data; header(); stagesHTML(); itemsHTML(); upgradeItems(); logHTML(); tasksHTML(); picksHTML(); }
   }
   let matchPage = 1, matchSince = 0, freshIds = [];   // matchSince — из уведомления «новое под клиента»
   function matchItem(o) {
@@ -365,6 +392,7 @@
     if (t.id === "dMatch") { matchSince = 0; match(); return; }
     if (t.hasAttribute("data-all-match")) { matchSince = 0; match(); return; }
     if (t.hasAttribute("data-topick")) { toPick(); return; }
+    if (t.hasAttribute("data-new-pick")) { newPick(); return; }
     if (t.hasAttribute("data-match-more")) { t.disabled = true; match(true); return; }
     if (t.id === "dDelete" && cur) {
       if (!confirm(`Удалить клиента «${cur.client.name}» со всей историей?`)) return;

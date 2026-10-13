@@ -379,3 +379,7 @@ a.evv-row:hover { background: rgba(255, 255, 255, .1); }
 .evv-acts svg { width: 16px; height: 16px; }
 .evv-acts .chip { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
 .ev-newcl { justify-self: start; font-size: 13px; color: var(--gold); text-decoration: none; }
+
+.ev-clinfo { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin: 8px 0 0; color: var(--ink-2); font-size: 13.5px; }
+.ev-clinfo svg { width: 15px; height: 15px; color: var(--gold); }
+.ev-clinfo a { color: var(--gold); }

@@ -279,15 +279,19 @@
     $("evClient").innerHTML = `<option value="">Без клиента</option>` + list.map((c) =>
       `<option value="${c.id}"${c.id === selected ? " selected" : ""}>${esc(c.name)}${c.phone ? " · " + esc(c.phone) : ""}</option>`).join("");
   }
-  let autoContact = { name: "", phone: "" };   // что подставили из клиента — меняем, только если человек сам не правил
-  function pickClient(id) {
+  // клиент: имя и номер — из его карточки (в событие не копируем, чтобы номер нигде не повторялся)
+  function clientInfo(id) {
     const c = (data.clients || []).find((x) => x.id === id);
+    const el = $("evClInfo");
+    el.hidden = !c;
+    if (c) el.innerHTML = `${ic("user")}<b>${esc(c.name)}</b>${c.phone ? ` · <a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : ""}
+      · <a href="/clients?id=${c.id}">карточка</a>`;
+    return c;
+  }
+  function pickClient(id) {
+    const c = clientInfo(id);
     const f = $("evForm");
-    if (!c) return;
-    if (!f.contact_name.value || f.contact_name.value === autoContact.name) f.contact_name.value = c.name || "";
-    if (!f.contact_phone.value || f.contact_phone.value === autoContact.phone) f.contact_phone.value = c.phone || "";
-    autoContact = { name: c.name || "", phone: c.phone || "" };
-    if (!f.title.value) f.title.value = `${KINDS[kind]}: ${c.name}`;
+    if (c && !f.title.value) f.title.value = `${KINDS[kind]}: ${c.name}`;
   }
   function showObj() {
     const l = objects.get(Number($("evListing").value));
@@ -358,10 +362,9 @@
       if (r.ok) objects.set(lid, { ...r.data, photo: (r.data.photos || [])[0] }); else lid = null;
     }
     fillListings(lid);
-    autoContact = { name: "", phone: "" };
     const cid = src ? src.client_id : preset.client || CLIENT_ID || null;
     fillClients(cid);
-    if (!ev && cid) pickClient(cid);
+    if (!ev && cid) pickClient(cid); else clientInfo(cid);
     if (!ev && lid) await prefillFromListing(lid);
     upgradeForm();
     if (window.Pick) Pick.refresh(f);
@@ -576,10 +579,6 @@
     const sp = new URLSearchParams(location.search);
     if (sp.get("add")) {
       await openEvent(null, { kind: KINDS[sp.get("add")] ? sp.get("add") : "show", listing: Number(sp.get("listing")) || null });
-      if (CLIENT_ID) {   // из карточки клиента: подставить имя и телефон клиента
-        const r = await call(`/api/clients?id=${CLIENT_ID}`);
-        if (r.ok) { const f = $("evForm"); f.contact_name.value = r.data.client.name || ""; if (r.data.client.phone) f.contact_phone.value = r.data.client.phone; }
-      }
     } else if (sp.get("event")) {
       const id = Number(sp.get("event"));
       let ev = findEv(id);

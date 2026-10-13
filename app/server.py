@@ -22,7 +22,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import (accounts, agent, autolearn, bankrates, brain, buyers, clients, dashboard, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
-               market, notify, payments, picks, planner, region, search, settings, stats, tg, wappi, widgets)
+               market, notify, payments, picks, planner, region, search, settings, stats, tg, wappi, widgets, worklog)
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -400,6 +400,8 @@ def api_listing(request: Request, body: dict | None = None):
     d["note"] = hooks.get_note(conn, user["id"], lid) if user else None
     d["status"] = hooks.get_status(conn, user["id"], lid) if user else None
     d["plans"] = planner.for_listing(conn, user["id"], lid) if user else []
+    d["work"] = worklog.for_listing(conn, user["id"], lid) if user else []
+    d["work_ctx"] = worklog.context(conn, user["id"], lid) if user else None
     # «Покупатели под объект» — только админу (решение Артёма 11.10)
     d["buyers"] = buyers.for_listing(conn, {**dict(row), "extra_districts": d.get("extra_districts") or []}, access)         if user and user["is_admin"] else []
     d["favorite"] = bool(user and conn.execute(
@@ -880,6 +882,27 @@ def api_note(request: Request, body: dict | None = None):
                    str(body["text"]) if "text" in body else None,
                    str(body.get("status") or "") if "status" in body else "keep")
     return JSONResponse({"ok": True})
+
+
+def api_worklog(request: Request, body: dict | None = None):
+    """Журнал работы по объекту: POST {listing_id, text, kind, client_id?, pick_id?}; DELETE {id}; GET ?listing=."""
+    user, err = _need_user(request)
+    if err:
+        return err
+    conn = db.get()
+    body = body or {}
+    if request.method == "DELETE":
+        worklog.delete(conn, user["id"], _num(body.get("id"), int) or 0)
+        return JSONResponse({"ok": True})
+    if request.method == "POST":
+        if _too_often(request, "worklog", 600, 3600):
+            return _err("Слишком часто — попробуйте позже.", 429)
+        res = worklog.add(conn, user["id"], _num(body.get("listing_id"), int) or 0, str(body.get("text") or ""),
+                          str(body.get("kind") or "note"), body.get("client_id"), body.get("pick_id"))
+        if "error" in res:
+            return _err(res["error"])
+    lid = _num(request.query_params.get("listing") or body.get("listing_id"), int) or 0
+    return JSONResponse({"items": worklog.for_listing(conn, user["id"], lid), "ctx": worklog.context(conn, user["id"], lid)})
 
 
 def api_saved(request: Request, body: dict | None = None):
@@ -2099,6 +2122,7 @@ routes = [
     Route("/api/parse", threaded(api_parse), methods=["POST"]),
     Route("/api/messages", threaded(api_add_message), methods=["POST"]),
     Route("/api/notes/{id:int}", threaded(api_note), methods=["POST"]),
+    Route("/api/worklog", threaded(api_worklog), methods=["GET", "POST", "DELETE"]),
     Route("/api/saved", threaded(api_saved), methods=["GET", "POST", "DELETE"]),
     Route("/api/notices", threaded(api_notices), methods=["GET", "POST"]),
     Route("/notifications", threaded(notices_page)),

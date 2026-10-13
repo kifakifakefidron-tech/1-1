@@ -39,7 +39,7 @@ def test_pick_flow_and_public_page_has_no_agent_phones(env):
     assert pub["items"][0]["note"] == "Лучший по цене"
     assert "1112233" not in str(pub).replace("+79001112233", "") and "phones" not in pub["items"][0]   # чужих телефонов нет
     page = c.get(f"/c/{p['token']}")
-    assert page.status_code == 200 and 'og:title" content="Для Ольги"' in page.text
+    assert page.status_code == 200 and 'og:title" content="Подобрали для вас"' in page.text and "Для Ольги" not in page.text
     assert conn.execute("SELECT views FROM collections").fetchone()[0] == 1
     c.request("DELETE", "/api/picks", json={"id": p["id"]})
     assert c.get(f"/api/c/{p['token']}").status_code == 404

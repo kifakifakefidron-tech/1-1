@@ -243,3 +243,45 @@
   .pk2-price { font-size: 17px; }
   .pk2-com { margin-top: 6px; }
 }
+
+/* v4: цветные плитки, клиент подборки, журнал, описание в избранном */
+.pk2-cov { place-items: center; color: #0f2f2e; background: var(--cc, var(--gold-300)); position: relative; }
+.pk2-cov b { font: 600 26px/1 var(--display); }
+.pk2-cov i { position: absolute; right: 4px; bottom: 4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: rgba(15, 47, 46, .22);
+  font: 600 11px/18px var(--body); font-style: normal; text-align: center; }
+.c-gold { --cc: linear-gradient(150deg, #f3e8bc, #c9a85c); } .c-teal { --cc: linear-gradient(150deg, #8fd1cb, #2a9a92); }
+.c-sky { --cc: linear-gradient(150deg, #bfe3ff, #5aa9e6); } .c-violet { --cc: linear-gradient(150deg, #ddd2ff, #9a84f0); }
+.c-coral { --cc: linear-gradient(150deg, #ffd0c2, #f08a6c); } .c-rose { --cc: linear-gradient(150deg, #ffd3e6, #e77aa8); }
+.c-lime { --cc: linear-gradient(150deg, #e5f7b5, #9bc34a); } .c-slate { --cc: linear-gradient(150deg, #d5dde2, #7f939e); }
+.pk2-col.n0 { background: var(--cc); color: #0f2f2e; }
+.pk2-colors { display: flex; gap: 8px; flex-wrap: wrap; }
+.pk2-color { width: 32px; height: 32px; border-radius: 50%; border: 2px solid transparent; background: var(--cc); cursor: pointer; transition: transform .2s; }
+.pk2-color:hover { transform: scale(1.08); }
+.pk2-color.on { border-color: var(--ink); box-shadow: 0 0 0 3px rgba(243, 232, 188, .2); }
+.pk2-new-cl { flex: 0 0 190px; min-width: 0; }
+.pk2-new-cl .pk-btn, .pk2-new-cl select { width: 100%; height: 40px; border-radius: 999px; }
+.pk2-client { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; padding: 6px 6px 6px 12px; border-radius: 999px;
+  background: rgba(0, 0, 0, .14); border: 1px solid var(--glass-line); width: max-content; max-width: 100%; }
+.pk2-client > svg { width: 16px; height: 16px; color: var(--gold); }
+.pk2-client > span { color: var(--ink-3); font-size: 13px; }
+.pk2-client .pk-btn, .pk2-client select { min-width: 180px; height: 34px; border-radius: 999px; }
+.pk2-client a { display: inline-flex; align-items: center; gap: 2px; padding: 0 8px; color: var(--gold); font-size: 13px; text-decoration: none; }
+.pk2-client a svg { width: 14px; height: 14px; }
+.pk2-wn { margin: 6px 0 0; padding: 8px 10px; border-radius: 12px; background: rgba(227, 203, 143, .07); border-left: 2px solid var(--gold); }
+.pk2-wn-k { font-size: 11.5px; color: var(--gold); letter-spacing: .02em; }
+.pk2-wn p { margin: 2px 0 0; font-size: 13px; color: var(--ink-2); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.pk2-wn small { color: var(--ink-3); font-size: 11.5px; }
+.pk2-oacts { flex-wrap: wrap; }
+.pk2-strip { grid-auto-columns: 210px; }
+.pk2-fdesc { margin: 4px 0 0; color: var(--ink-3); font-size: 12px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.pk2-fopen { margin-top: 4px; color: var(--gold); font-size: 12px; text-decoration: none; }
+.pk2-fopen:hover { text-decoration: underline; }
+.pk2-dlg .wk-kinds { display: flex; gap: 4px; flex-wrap: wrap; }
+.pk2-dlg .wk-kinds button { padding: 7px 13px; border-radius: 999px; border: 1px solid var(--glass-line); background: none; color: var(--ink-2); font: 500 13px var(--body); cursor: pointer; }
+.pk2-dlg .wk-kinds button.on { background: rgba(227, 203, 143, .16); border-color: rgba(227, 203, 143, .5); color: var(--ink); }
+@media (max-width: 900px) {
+  .pk2-new { flex-wrap: wrap; border-radius: 22px; padding: 6px; }
+  .pk2-new input { flex: 1 1 100%; padding: 8px 10px; }
+  .pk2-new-cl { flex: 1 1 auto; }
+  .pk2-client { width: 100%; border-radius: 16px; }
+}

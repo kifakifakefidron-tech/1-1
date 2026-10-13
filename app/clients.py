@@ -155,7 +155,13 @@ def detail(conn: sqlite3.Connection, user_id: int, cid: int) -> dict:
                                          (cid,))]
     events = [dict(r) for r in conn.execute("""SELECT id, kind, title, ts, done, listing_id FROM planner_events
                                                WHERE user_id = ? AND client_id = ? ORDER BY ts DESC LIMIT 50""", (user_id, cid))]
-    return {"client": _row(c), "items": items, "log": log, "events": events}
+    from . import worklog
+    picks = [dict(r) for r in conn.execute("""SELECT k.id, k.title, k.views, k.viewed_at, k.updated, k.color,
+                                                     (SELECT COUNT(*) FROM collection_items i WHERE i.collection_id = k.id) AS n
+                                              FROM collections k WHERE k.user_id = ? AND k.client_id = ? ORDER BY k.updated DESC""",
+                                           (user_id, cid))]
+    return {"client": _row(c), "items": items, "log": log, "events": events,
+            "work": worklog.for_client(conn, user_id, cid), "picks": picks}
 
 
 def set_item(conn: sqlite3.Connection, user_id: int, cid: int, listing_id: int, status: str | None) -> dict:

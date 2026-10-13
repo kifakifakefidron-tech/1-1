@@ -18,9 +18,9 @@
 <link rel="stylesheet" href="/static/style.css?v=25">
 <link rel="stylesheet" href="/static/motion.css?v=34">
 <link rel="stylesheet" href="/static/doc.css?v=2">
-<link rel="stylesheet" href="/static/planner.css?v=7">
+<link rel="stylesheet" href="/static/planner.css?v=8">
 <link rel="stylesheet" href="/static/theme.css?v=14">
-<link rel="stylesheet" href="/static/glass.css?v=20">
+<link rel="stylesheet" href="/static/glass.css?v=21">
 </head>
 <body>
 <header class="nav"><div class="nav-in">
@@ -120,12 +120,13 @@
       <div id="evObj"></div>
     </section>
     <section class="ev-sec">
-      <p class="ev-lbl">Клиент <small>— кому показ или встреча; имя и телефон подставятся сами</small></p>
+      <p class="ev-lbl">Клиент <small>— кому показ или встреча; имя и телефон — из карточки клиента</small></p>
       <select id="evClient" aria-label="Клиент"></select>
+      <p class="ev-clinfo" id="evClInfo" hidden></p>
       <a class="ev-newcl" href="/clients?new=1">+ Новый клиент</a>
     </section>
     <section class="ev-sec ev-grid">
-      <label class="ev-f"><span>Контакт</span><input name="contact_name" maxlength="100" placeholder="Имя агента или клиента"></label>
+      <label class="ev-f"><span>Контакт по объекту</span><input name="contact_name" maxlength="100" placeholder="Агент или собственник"></label>
       <label class="ev-f"><span>Телефон</span><input name="contact_phone" maxlength="30" inputmode="tel" placeholder="+7…"></label>
       <label class="ev-f wide"><span>Где</span><input name="place" maxlength="200" placeholder="Адрес, место встречи"></label>
       <label class="ev-f wide"><span>Заметка</span><textarea name="note" rows="2" maxlength="3000" placeholder="Что взять, о чём спросить…"></textarea></label>
@@ -170,7 +171,7 @@
 <script src="/static/max.js?v=1"></script>
 <script src="/static/rail.js?v=8"></script>
 <script src="/static/pickers.js?v=7"></script>
-<script src="/static/planner.js?v=10"></script>
+<script src="/static/planner.js?v=12"></script>
 <script src="/static/objview.js?v=2"></script>
 <script src="/static/bell.js?v=4"></script>
 </body>

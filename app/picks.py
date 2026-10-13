@@ -11,7 +11,7 @@ import secrets
 import sqlite3
 import time
 
-from . import config, parser
+from . import config, parser, settings, worklog
 
 MAX_COLLECTIONS = 200
 MAX_ITEMS = 60
@@ -43,6 +43,8 @@ def mine(conn: sqlite3.Connection, user_id: int) -> list[dict]:
                              WHERE c.user_id = ? ORDER BY c.updated DESC""", (user_id,)):
         d = dict(r)
         d["url"] = f"{config.PICK_URL}/c/{r['token']}"   # ссылка для клиента (на нейтральном адресе, если он задан)
+        d["color"] = r["color"] if r["color"] in settings.COLORS else settings.COLORS[r["id"] % len(settings.COLORS)]
+        d["notes"] = {str(k): v[:5] for k, v in worklog.for_pick(conn, user_id, r["id"], r["client_id"]).items()}
         d["items"] = [dict(x) for x in conn.execute(
             """SELECT i.listing_id, i.note, i.text, i.pos, l.title, l.price, l.deal, l.is_active, l.photos,
                       l.description AS orig, l.type, l.rooms, l.area, l.land, l.floor, l.floors, l.complex, l.district,
@@ -65,10 +67,20 @@ def save(conn: sqlite3.Connection, user, body: dict) -> dict:
     if cid:
         if not conn.execute("SELECT 1 FROM collections WHERE id = ? AND user_id = ?", (int(cid), user["id"])).fetchone():
             return {"error": "Подборка не найдена."}
-        conn.execute("""UPDATE collections SET title = ?, note = ?, contact_name = ?, contact_phone = ?, updated = ?
-                        WHERE id = ? AND user_id = ?""",
-                     (title, note, str(body.get("contact_name") or "").strip()[:100], _phone(str(body.get("contact_phone") or "")),
-                      now, int(cid), user["id"]))
+        # меняем только присланные поля: смена клиента или цвета не должна стирать сообщение и контакт
+        fields = {"updated": now}
+        if "title" in body:
+            fields["title"] = title
+        if "note" in body:
+            fields["note"] = note
+        if "contact_name" in body:
+            fields["contact_name"] = str(body.get("contact_name") or "").strip()[:100]
+        if "contact_phone" in body:
+            fields["contact_phone"] = _phone(str(body.get("contact_phone") or ""))
+        if "client_title" in body:
+            fields["client_title"] = str(body.get("client_title") or "").strip()[:120] or None
+        conn.execute(f"UPDATE collections SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ? AND user_id = ?",
+                     (*fields.values(), int(cid), user["id"]))
     else:
         if conn.execute("SELECT COUNT(*) FROM collections WHERE user_id = ?", (user["id"],)).fetchone()[0] >= MAX_COLLECTIONS:
             return {"error": "Слишком много подборок — удалите старые."}
@@ -79,10 +91,16 @@ def save(conn: sqlite3.Connection, user, body: dict) -> dict:
                             _phone(str(body.get("contact_phone") or phone)), now, now)).lastrowid
     if body.get("listing_id"):
         set_item(conn, user["id"], int(cid), int(body["listing_id"]), True, commit=False)
-    if "client_id" in body:   # подборка для клиента из CRM (только своего)
+    if "color" in body:
+        c = str(body.get("color") or "")
+        conn.execute("UPDATE collections SET color = ? WHERE id = ? AND user_id = ?",
+                     (c if c in settings.COLORS else None, int(cid), user["id"]))
+    if "client_id" in body:   # подборка для клиента из CRM (только своего); объекты подборки сразу попадают к клиенту
         k = body.get("client_id")
         ok = str(k).isdigit() and conn.execute("SELECT 1 FROM clients WHERE id = ? AND user_id = ?", (int(k), user["id"])).fetchone()
         conn.execute("UPDATE collections SET client_id = ? WHERE id = ? AND user_id = ?", (int(k) if ok else None, int(cid), user["id"]))
+        if ok:
+            _sync_client(conn, int(cid))
     if body.get("copy_of"):   # «Дублировать»: те же объекты, комментарии и тексты, новая ссылка
         src = conn.execute("SELECT id FROM collections WHERE id = ? AND user_id = ?", (int(body["copy_of"]), user["id"])).fetchone()
         if src:
@@ -91,6 +109,18 @@ def save(conn: sqlite3.Connection, user, body: dict) -> dict:
                          (int(cid), now, src[0]))
     conn.commit()
     return next(c for c in mine(conn, user["id"]) if c["id"] == int(cid))
+
+
+def _sync_client(conn: sqlite3.Connection, cid: int, listing_id: int | None = None) -> None:
+    """Объекты подборки клиента — в его карточку («предложен»), если их там ещё нет. Статусы, что уже стоят, не трогаем."""
+    row = conn.execute("SELECT client_id FROM collections WHERE id = ?", (cid,)).fetchone()
+    if not row or not row["client_id"]:
+        return
+    now = int(time.time())
+    conn.execute(f"""INSERT OR IGNORE INTO client_items (client_id, listing_id, status, ts)
+                     SELECT ?, listing_id, 'offered', ? FROM collection_items WHERE collection_id = ?
+                     {"AND listing_id = ?" if listing_id else ""}""",
+                 (row["client_id"], now, cid, *([listing_id] if listing_id else [])))
 
 
 def delete(conn: sqlite3.Connection, user_id: int, cid: int) -> None:
@@ -115,6 +145,7 @@ def set_item(conn: sqlite3.Connection, user_id: int, cid: int, listing_id: int, 
         conn.execute("""INSERT INTO collection_items (collection_id, listing_id, pos, note, added) VALUES (?,?,?,?,?)
                         ON CONFLICT(collection_id, listing_id) DO UPDATE SET note = COALESCE(excluded.note, note)""",
                      (cid, listing_id, n, (note or "").strip()[:1000] if note is not None else None, int(time.time())))
+        _sync_client(conn, cid, listing_id)
         if text is not None:
             clean = parser.strip_phones(str(text)).strip()[:5000]
             conn.execute("UPDATE collection_items SET text = ? WHERE collection_id = ? AND listing_id = ?",
@@ -167,5 +198,7 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True) -> dic
             "description": (r["item_text"] or parser.strip_phones(r["description"] or ""))[:5000],
             "note": r["item_note"] or "", "is_active": r["is_active"]})
     from . import settings
-    return {"title": c["title"], "note": c["note"], "contact_name": c["contact_name"], "contact_phone": c["contact_phone"],
+    # название подборки — для агента («Ирине — 2к ФМР»); клиент видит только свой заголовок (или нейтральный)
+    return {"title": c["client_title"] or "Подобрали для вас", "note": c["note"],
+            "contact_name": c["contact_name"], "contact_phone": c["contact_phone"],
             "updated": c["updated"], "items": items, "style": settings.public_pick_style(conn, c["user_id"])}

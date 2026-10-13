@@ -451,7 +451,7 @@
   const newId = () => "u" + Math.random().toString(36).slice(2, 9);
   async function saveBlocks() {
     const r = await call("/api/settings", { blocks });
-    if (r.ok) blocks = r.data.settings.blocks;
+    if (r.ok) blocks = r.data.settings.blocks || [];
     return r.ok;
   }
   function blockHTML(b) {

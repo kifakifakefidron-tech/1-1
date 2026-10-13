@@ -154,3 +154,27 @@ body.c-dragging .c-col { transition: background .2s, border-color .2s, transform
 .c-fresh > svg { width: 22px; height: 22px; color: var(--gold); flex: none; }
 .c-fresh > span { display: grid; flex: 1; min-width: 180px; }
 .c-fresh small { color: var(--ink-3); font-size: 12.5px; }
+
+/* подборки клиента и журнал по объектам */
+.c-picks { margin-bottom: 16px; }
+.c-picks-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.c-picks-h h3 { margin: 0; font: 600 15px var(--body); }
+.c-picks-h .pill { display: inline-flex; align-items: center; gap: 6px; }
+.c-picks-h .pill svg { width: 15px; height: 15px; }
+.c-picks-l { display: grid; gap: 6px; }
+.c-pick { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 10px; align-items: center; padding: 8px; border-radius: 14px;
+  background: rgba(255, 255, 255, .04); color: inherit; text-decoration: none; }
+.c-pick:hover { background: rgba(255, 255, 255, .08); }
+.c-pick span:last-child { display: grid; min-width: 0; }
+.c-pick b { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.c-pick small { color: var(--ink-3); font-size: 12px; }
+.c-pick-c { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: var(--cc, var(--gold-300)); color: #0f2f2e; }
+.c-pick-c svg { width: 17px; height: 17px; }
+.c-gold { --cc: linear-gradient(150deg, #f3e8bc, #c9a85c); } .c-teal { --cc: linear-gradient(150deg, #8fd1cb, #2a9a92); }
+.c-sky { --cc: linear-gradient(150deg, #bfe3ff, #5aa9e6); } .c-violet { --cc: linear-gradient(150deg, #ddd2ff, #9a84f0); }
+.c-coral { --cc: linear-gradient(150deg, #ffd0c2, #f08a6c); } .c-rose { --cc: linear-gradient(150deg, #ffd3e6, #e77aa8); }
+.c-lime { --cc: linear-gradient(150deg, #e5f7b5, #9bc34a); } .c-slate { --cc: linear-gradient(150deg, #d5dde2, #7f939e); }
+.c-wk { display: flex !important; align-items: center; gap: 4px; color: var(--gold) !important; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.c-wk svg { width: 12px; height: 12px; flex: none; }
+.c-log-wk a { color: var(--ink); }
+.c-log-tag { display: inline-block; margin-left: 4px; padding: 1px 8px; border-radius: 999px; background: rgba(255, 255, 255, .07); font-size: 12px; text-decoration: none; }

@@ -18,8 +18,8 @@
 <link rel="stylesheet" href="/static/style.css?v=25">
 <link rel="stylesheet" href="/static/motion.css?v=34">
 <link rel="stylesheet" href="/static/theme.css?v=14">
-<link rel="stylesheet" href="/static/glass.css?v=22">
-<link rel="stylesheet" href="/static/picks.css?v=7">
+<link rel="stylesheet" href="/static/glass.css?v=23">
+<link rel="stylesheet" href="/static/picks.css?v=8">
 </head>
 <body>
 <main class="pk2">
@@ -27,7 +27,8 @@
     <div><p class="pk2-eyebrow">Для клиентов</p><h1>Подборки</h1>
       <p class="pk2-lead">Одна красивая ссылка: фото, цены, карта и только ваш контакт. Видно, когда клиент открыл.</p></div>
     <form class="pk2-new" id="pksNew" autocomplete="off">
-      <input name="title" maxlength="120" placeholder="Новая подборка, напр. «Ирине — 2к ФМР»" aria-label="Название новой подборки">
+      <input name="title" maxlength="120" placeholder="Новая подборка, напр. «2к ФМР до 8 млн»" aria-label="Название новой подборки">
+      <span class="pk2-new-cl"><select name="client" id="pkNewClient" aria-label="Для какого клиента"><option value="">Без клиента</option></select></span>
       <button type="submit" class="pill"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Создать</button></form>
   </header>
   <div id="pksMsg" class="note-box" hidden></div>
@@ -58,12 +59,34 @@
   </form>
 </dialog>
 
+<dialog class="pk2-dlg" id="pkNoteDlg">
+  <form method="dialog" class="pk2-dlg-in" id="pkNoteForm">
+    <h2>Запись по объекту</h2>
+    <p class="pk2-hint" id="pkNoteFor"></p>
+    <div class="wk-kinds" id="pkNoteKinds">
+      <button type="button" class="on" data-nk="note">Заметка</button><button type="button" data-nk="call">Звонок</button>
+      <button type="button" data-nk="show">Показ</button><button type="button" data-nk="meet">Встреча</button></div>
+    <textarea id="pkNoteText" rows="4" maxlength="2000" placeholder="Что было: показали, клиенту понравилось, торг…"></textarea>
+    <div class="pk2-dlg-acts"><span></span><button type="submit" class="chip" value="cancel">Отмена</button><button type="button" class="pill" id="pkNoteSave">Записать</button></div>
+  </form>
+</dialog>
+
+<dialog class="pk2-dlg" id="pkClientDlg">
+  <form method="dialog" class="pk2-dlg-in" id="pkClientForm">
+    <h2>Новый клиент</h2>
+    <p class="pk2-hint">Номер хранится только в карточке клиента — в подборках, заметках и планере он подтягивается сам.</p>
+    <label class="agent-field"><span>Имя</span><input name="name" maxlength="80" required placeholder="Анна"></label>
+    <label class="agent-field"><span>Телефон</span><input name="phone" maxlength="30" inputmode="tel" placeholder="+7…"></label>
+    <div class="pk2-dlg-acts"><span></span><button type="submit" class="chip" value="cancel">Отмена</button><button type="button" class="pill" id="pkClientSave">Создать клиента</button></div>
+  </form>
+</dialog>
+
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
 <script src="/static/icons.js?v=5"></script>
 <script src="/static/pickers.js?v=8"></script>
 <script src="/static/max.js?v=1"></script>
 <script src="/static/rail.js?v=9"></script>
-<script src="/static/picks.js?v=7"></script>
+<script src="/static/picks.js?v=8"></script>
 <script src="/static/objview.js?v=2"></script>
 <script src="/static/bell.js?v=4"></script>
 </body>

@@ -733,6 +733,29 @@
       <summary><span class="dv-acc-ic">${icon}</span><span class="dv-acc-t">${title}</span>${hint ? `<span class="dv-acc-h">${hint}</span>` : ""}</summary>
       <div class="dv-acc-b">${body}</div></details>` : "";
 
+  // Журнал работы по объекту: заметка / звонок / показ — для клиента или подборки (видно и у клиента, и в подборке)
+  const WK = { note: ["note", "Заметка"], call: ["phone", "Звонок"], show: ["home", "Показ"], meet: ["users", "Встреча"] };
+  function journalHTML(o) {
+    const work = o.work || [], ctx = o.work_ctx || { clients: [], picks: [] };
+    const when = (ts) => new Date(ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    const opts = [`<option value="">Без привязки</option>`]
+      .concat(ctx.clients.map((c) => `<option value="c:${c.id}">Клиент · ${esc(c.name)}${c.has ? " ✓" : ""}</option>`))
+      .concat(ctx.picks.map((p) => `<option value="p:${p.id}">Подборка · ${esc(p.title)}${p.has ? " ✓" : ""}</option>`)).join("");
+    return `<form class="wk-add" data-wk-add="${o.id}" autocomplete="off">
+        <div class="wk-kinds" role="radiogroup" aria-label="Что было">${Object.entries(WK).map(([k, [icon, t]], i) =>
+          `<button type="button" role="radio" aria-checked="${i ? "false" : "true"}" class="${i ? "" : "on"}" data-wk-kind="${k}">${ic(icon)}${t}</button>`).join("")}</div>
+        <textarea name="text" rows="2" maxlength="2000" placeholder="Что было: созвонились, показали, торг, ответ клиента…"></textarea>
+        <div class="wk-row"><select name="to" aria-label="Для кого">${opts}</select><button type="submit" class="pill">Записать</button></div>
+        ${ctx.clients.length || ctx.picks.length ? "" : `<p class="note">Создайте клиента в «Клиентах» или подборку — заметки можно будет привязать к ним.</p>`}
+      </form>
+      <ul class="wk-list">${work.map((w) => `<li class="k-${esc(w.kind)}"><span class="wk-ic">${ic((WK[w.kind] || WK.note)[0])}</span>
+        <div><p class="wk-h"><b>${(WK[w.kind] || WK.note)[1]}</b><time>${esc(when(w.ts))}</time>
+          ${w.client_name ? `<a class="wk-tag" href="/clients?id=${w.client_id}" target="_top">${ic("user")}${esc(w.client_name)}</a>` : ""}
+          ${w.pick_title ? `<a class="wk-tag" href="/picks?open=${w.collection_id}" target="_top">${ic("folder")}${esc(w.pick_title)}</a>` : ""}</p>
+          ${w.text ? `<p class="wk-t">${esc(w.text)}</p>` : ""}</div>
+        <button type="button" class="wk-del" data-wk-del="${w.id}" data-id="${o.id}" aria-label="Удалить запись">${ic("x")}</button></li>`).join("")}</ul>`;
+  }
+
   function detailHTML(o) {
     const rooms = o.rooms == null ? null : o.rooms === 0 ? "студия" : o.rooms >= 5 ? "5+" : String(o.rooms);
     const floor = o.floor ? (o.floors ? `${o.floor} из ${o.floors}` : String(o.floor)) : (o.floors ? `этажей: ${o.floors}` : null);
@@ -771,10 +794,13 @@
           <small>средняя цена м² — ${esc(num(m.median))} ₽ · ${esc(m.base)}, ${m.n} ${plural(m.n, "объект", "объекта", "объектов")}</small></p>` : "")
       + chart;
     const priceHint = [days != null ? `${days < 1 ? "новое" : days + " дн."}` : "", chart ? "график" : ""].filter(Boolean).join(" · ");
-    const notesBody = u && !o.loading ? `<div class="chips dv-crm">${Object.entries(STATUSES).map(([k, v]) =>
+    const notesBody = u && !o.loading ? `<p class="dv-sub-h">Статус</p><div class="chips dv-crm">${Object.entries(STATUSES).map(([k, v]) =>
         `<button type="button" class="chip${st === k ? " on" : ""}" data-crm="${k}" data-id="${o.id}">${v}</button>`).join("")}</div>
-      <textarea class="d-note-text" data-note="${o.id}" rows="3" maxlength="2000" placeholder="Заметка — видите только вы. Например: звонил 12.10, торг 100 т.р.">${esc(o.note || "")}</textarea>
-      <span class="note d-note-saved" hidden>Сохранено</span>` : "";
+      <p class="dv-sub-h">Моя заметка</p>
+      <textarea class="d-note-text" data-note="${o.id}" rows="2" maxlength="2000" placeholder="Видите только вы. Например: торг 100 т.р., собственник один">${esc(o.note || "")}</textarea>
+      <span class="note d-note-saved" hidden>Сохранено</span>
+      <p class="dv-sub-h">Журнал: что, кому и когда</p>
+      <div class="wk" data-wk="${o.id}">${journalHTML(o)}</div>` : "";
     const when = (ts) => new Date(ts * 1000).toLocaleString("ru-RU", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
     const plans = (o.plans || []);
     const plansBody = plans.length ? `<ul class="dv-list">${plans.map((p) => `<li><a href="/planner?event=${p.id}">${PLAN_KINDS[p.kind] || ""} · ${esc(when(p.ts))}</a>${p.done ? " ✓" : ""}
@@ -825,7 +851,7 @@
         ${o.description ? `<div class="dv-desc clamp"><p>${esc(o.description)}</p><button type="button" class="dv-desc-more" data-desc-more>Читать полностью</button></div>` : ""}
         <div class="dv-accs">
           ${acc("📈", "Цена и рынок", priceHint, priceBody)}
-          ${acc("📝", "Мой статус и заметка", st ? STATUSES[st] : o.note ? "есть заметка" : "", notesBody)}
+          ${acc("📝", "Работа с объектом", [st ? STATUSES[st] : "", (o.work || []).length ? `записей: ${o.work.length}` : o.note ? "есть заметка" : ""].filter(Boolean).join(" · "), notesBody)}
           ${acc("📅", "В планере", plans.length ? `${plans.length}` : "", plansBody)}
           ${acc("🙋", "Покупатели под объект", `${buyers.length >= 30 ? "30+" : buyers.length}`, buyersBody, { cls: "good" })}
           ${acc("👥", "Похожие у других агентов", `${same.length}`, sameBody)}
@@ -1801,6 +1827,50 @@
       syncControls();
       refresh();
     });
+
+    // журнал работы: вид записи, записать, удалить
+    document.addEventListener("click", async (e) => {
+      const k = e.target.closest("[data-wk-kind]");
+      if (k) {
+        k.parentElement.querySelectorAll("[data-wk-kind]").forEach((b) => { b.classList.toggle("on", b === k); b.setAttribute("aria-checked", String(b === k)); });
+        return;
+      }
+      const del = e.target.closest("[data-wk-del]");
+      if (!del) return;
+      if (!confirm("Удалить запись из журнала?")) return;
+      const id = Number(del.dataset.id);
+      await call("/api/worklog", { id: Number(del.dataset.wkDel) }, "DELETE");
+      const r = await call(`/api/worklog?listing=${id}`);
+      if (r.ok) refreshJournal(id, r.data);
+    });
+    document.addEventListener("submit", async (e) => {
+      const f = e.target.closest("[data-wk-add]");
+      if (!f) return;
+      e.preventDefault();
+      const id = Number(f.dataset.wkAdd);
+      const kind = (f.querySelector("[data-wk-kind].on") || {}).dataset?.wkKind || "note";
+      const to = f.to.value, text = f.text.value.trim();
+      if (!text && kind === "note") { f.text.focus(); return; }
+      const btn = f.querySelector("[type=submit]");
+      btn.disabled = true;
+      const r = await call("/api/worklog", { listing_id: id, text, kind,
+        client_id: to.startsWith("c:") ? Number(to.slice(2)) : null, pick_id: to.startsWith("p:") ? Number(to.slice(2)) : null });
+      btn.disabled = false;
+      if (!r.ok) { toast(r.data.detail || "Не сохранилось"); return; }
+      refreshJournal(id, r.data);
+      toast("Записано в журнал", 1600);
+    });
+    function refreshJournal(id, data) {
+      const o = known.get(id);
+      if (o) { o.work = data.items; o.work_ctx = data.ctx; }
+      document.querySelectorAll(`[data-wk="${id}"]`).forEach((box) => {
+        const keep = box.querySelector("select[name=to]");
+        const to = keep ? keep.value : "";
+        box.innerHTML = journalHTML(o || { id, work: data.items, work_ctx: data.ctx });
+        const sel = box.querySelector("select[name=to]");
+        if (sel) { sel.value = to; if (window.Pick) Pick.select(sel, { searchPlaceholder: "Клиент или подборка" }); }
+      });
+    }
 
     let noteTimer = 0;
     document.addEventListener("input", (e) => {

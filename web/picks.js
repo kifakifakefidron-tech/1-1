@@ -24,6 +24,9 @@
     .filter(Boolean).join(" · ");
 
   let list = [], favs = null, clientsList = null, q = "", filter = "all", tab = "items", favQ = "";
+  const COLORS = ["gold", "teal", "sky", "violet", "coral", "rose", "lime", "slate"];
+  const NK = { note: "Заметка", call: "Звонок", show: "Показ", meet: "Встреча" };
+  const when = (ts) => new Date(ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   let open = Number(new URLSearchParams(location.search).get("open")) || 0;
   const isPhone = () => matchMedia("(max-width: 900px)").matches;
 
@@ -51,6 +54,7 @@
     list = r.data.items;
     $("pksApp").hidden = false;
     if (!open && list.length && !isPhone()) open = list[0].id;
+    await loadClients();
     render();
     if (open) loadSide();
   }
@@ -59,9 +63,22 @@
     if (r.ok) list = r.data.items;
     render();
   }
-  async function loadSide() {   // избранное (добавлять) и клиенты (для кого подборка) — один раз
+  async function loadClients() {
+    const r = await call("/api/clients");
+    clientsList = r.ok ? (r.data.items || []).filter((c) => !c.archived) : [];
+    fillNewClient();
+  }
+  function clientOptions(sel) {
+    return `<option value="">Без клиента</option>${(clientsList || []).map((c) =>
+      `<option value="${c.id}"${c.id === sel ? " selected" : ""}>${esc(c.name)}</option>`).join("")}<option value="new">+ Новый клиент…</option>`;
+  }
+  function fillNewClient(sel) {
+    const s = $("pkNewClient");
+    s.innerHTML = clientOptions(sel != null ? sel : Number(s.value) || null);
+    if (window.Pick) Pick.select(s, { searchPlaceholder: "Найти клиента" });
+  }
+  async function loadSide() {   // избранное (добавлять) — один раз
     if (favs === null) { const r = await call("/api/favorites"); favs = r.ok ? r.data.items.filter((f) => f.favorite !== false) : []; }
-    if (clientsList === null) { const r = await call("/api/clients"); clientsList = r.ok ? (r.data.items || []).filter((c) => !c.archived) : []; }
     renderDetail();
   }
 
@@ -79,10 +96,10 @@
   }
 
   // ─── список подборок ──────────────────────────────────────────────
-  function cover(p, n = 3) {
-    const ph = p.items.map((x) => x.photo).filter(Boolean).slice(0, n);
-    if (!ph.length) return `<span class="pk2-cov empty">${ic("folder")}</span>`;
-    return `<span class="pk2-cov n${ph.length}">${ph.map((u) => `<img src="${esc(u)}" alt="" loading="lazy">`).join("")}</span>`;
+  // в списке подборка — цветная плитка (цвет выбирается в «Оформлении»), буква клиента или названия и число объектов
+  function cover(p) {
+    const letter = (p.client_name || p.title || "П").trim().charAt(0).toUpperCase();
+    return `<span class="pk2-cov c-${esc(p.color)}"><b>${esc(letter)}</b><i>${p.n}</i></span>`;
   }
   function seenBadge(p) {
     if (p.views) return `<span class="pk2-st seen"><i></i>Открывал ${p.views} ${plural(p.views, "раз", "раза", "раз")} · ${esc(ago(p.viewed_at))}</span>`;
@@ -128,12 +145,22 @@
         <small>${esc(sub(it))}</small>
         <input class="pk2-com" data-com="${it.listing_id}" data-pid="${p.id}" maxlength="1000" value="${esc(it.note || "")}"
           placeholder="Комментарий для клиента" aria-label="Комментарий для клиента">
+        ${notesFor(p, it)}
         <div class="pk2-oacts">
           <button type="button" class="pk2-ib" data-move="-1" data-i="${i}" data-pid="${p.id}" ${i ? "" : "disabled"} aria-label="Выше" title="Выше">${ic("arrow-up")}</button>
           <button type="button" class="pk2-ib" data-move="1" data-i="${i}" data-pid="${p.id}" ${i < p.items.length - 1 ? "" : "disabled"} aria-label="Ниже" title="Ниже">${ic("arrow-down")}</button>
-          <button type="button" class="pk2-tb${it.text ? " on" : ""}" data-text="${it.listing_id}" data-pid="${p.id}">${ic("edit")}${it.text ? "Свой текст" : "Текст"}</button>
+          <button type="button" class="pk2-tb${it.text ? " on" : ""}" data-text="${it.listing_id}" data-pid="${p.id}" title="Текст объявления для клиента">${ic("edit")}${it.text ? "Свой текст" : "Текст"}</button>
+          <button type="button" class="pk2-tb" data-wnote="${it.listing_id}" data-pid="${p.id}" title="Записать: звонок, показ, заметка">${ic("note")}Запись</button>
           <button type="button" class="pk2-ib danger" data-rm="${it.listing_id}" data-pid="${p.id}" aria-label="Убрать из подборки" title="Убрать">${ic("x")}</button>
         </div></div></article>`;
+  }
+  // журнал по объекту в этой подборке (и про её клиента) — видит только агент
+  function notesFor(p, it) {
+    const ns = (p.notes || {})[it.listing_id] || [];
+    if (!ns.length) return "";
+    const n = ns[0];
+    return `<div class="pk2-wn" title="Журнал — видите только вы"><span class="pk2-wn-k k-${esc(n.kind)}">${NK[n.kind] || "Заметка"} · ${esc(when(n.ts))}</span>
+      ${n.text ? `<p>${esc(n.text)}</p>` : ""}${ns.length > 1 ? `<small>ещё ${ns.length - 1} в журнале объекта</small>` : ""}</div>`;
   }
   function addStrip(p) {
     if (favs === null) return `<p class="pk2-hint">Загружаем избранное…</p>`;
@@ -144,7 +171,9 @@
     if (!add.length) return `<p class="pk2-hint">${s ? "Ничего не нашлось." : "Всё избранное уже в подборке."}</p>`;
     return `<div class="pk2-strip">${add.slice(0, 40).map((f) => `<div class="pk2-fav">
         <span class="pk2-fph">${f.photos && f.photos[0] ? `<img src="${esc(f.photos[0])}" alt="" loading="lazy">` : ic("home")}</span>
-        <b>${esc(money(f.price, f.deal))}</b><small>${esc(f.complex ? `ЖК ${f.complex}` : f.title)}</small>
+        <b>${esc(money(f.price, f.deal))}</b><small>${esc(f.complex ? `ЖК ${f.complex} · ${f.title}` : f.title)}</small>
+        ${f.description ? `<p class="pk2-fdesc">${esc(f.description.slice(0, 220))}</p>` : ""}
+        <a class="pk2-fopen" href="/?open=${f.id}">Открыть объект</a>
         <button type="button" class="pk2-addb" data-add="${f.id}" data-pid="${p.id}" aria-label="Добавить в подборку">${ic("plus")}</button></div>`).join("")}</div>`;
   }
   function renderDetail() {
@@ -153,16 +182,17 @@
     document.body.classList.toggle("pk-open", !!p);
     if (!p) { box.innerHTML = emptyState(); return; }
     const ph = p.items.map((x) => x.photo).filter(Boolean).slice(0, 3);
-    const clientOpts = (clientsList || []).map((c) => `<option value="${c.id}"${c.id === p.client_id ? " selected" : ""}>${esc(c.name)}</option>`).join("");
     box.innerHTML = `
       <button type="button" class="pk2-back" data-back>${ic("chevron-left")}Все подборки</button>
       <header class="pk2-hero">
-        <div class="pk2-col n${ph.length}">${ph.map((u) => `<img src="${esc(u)}" alt="">`).join("") || `<span>${ic("folder")}</span>`}</div>
+        <div class="pk2-col n${ph.length} c-${esc(p.color)}">${ph.map((u) => `<img src="${esc(u)}" alt="">`).join("") || `<span>${ic("folder")}</span>`}</div>
         <div class="pk2-hero-b">
           <p class="pk2-eyebrow">Подборка · обновлена ${esc(ago(p.updated))}</p>
           <h2>${esc(p.title)}</h2>
-          <p class="pk2-hero-m"><span>${p.n} ${plural(p.n, "объект", "объекта", "объектов")}</span>
-            ${p.client_name ? `<a href="/clients?id=${p.client_id}">${ic("user")}${esc(p.client_name)}</a>` : ""}${seenBadge(p)}</p>
+          <p class="pk2-hero-m"><span>${p.n} ${plural(p.n, "объект", "объекта", "объектов")}</span>${seenBadge(p)}</p>
+          <div class="pk2-client">${ic("user")}<span>Клиент</span>
+            <select data-pk-client="${p.id}" aria-label="Клиент подборки">${clientOptions(p.client_id)}</select>
+            ${p.client_id ? `<a href="/clients?id=${p.client_id}" title="Карточка клиента: пожелания, история, все объекты">Карточка ${ic("chevron")}</a>` : ""}</div>
         </div>
       </header>
       <div class="pk2-share">
@@ -187,18 +217,21 @@
           <div id="pkFavs">${addStrip(p)}</div>
         </section>` : `
         <form class="pk2-form" data-edit="${p.id}">
-          <label class="agent-field"><span>Название</span><input name="title" maxlength="120" value="${esc(p.title)}"></label>
+          <label class="agent-field"><span>Название — видите только вы</span><input name="title" maxlength="120" value="${esc(p.title)}"></label>
+          <label class="agent-field"><span>Заголовок для клиента</span><input name="client_title" maxlength="120" value="${esc(p.client_title || "")}"
+            placeholder="Подобрали для вас"></label>
           <label class="agent-field"><span>Сообщение клиенту</span><textarea name="note" rows="4" maxlength="2000"
             placeholder="Например: подобрал варианты по вашему запросу, первые два — лучшие по цене">${esc(p.note || "")}</textarea></label>
           <div class="pk2-two">
             <label class="agent-field"><span>Ваше имя</span><input name="contact_name" maxlength="100" value="${esc(p.contact_name || "")}" placeholder="Как клиенту вас называть"></label>
             <label class="agent-field"><span>Ваш телефон</span><input name="contact_phone" maxlength="30" inputmode="tel" value="${esc(p.contact_phone || "")}" placeholder="+7…"></label>
           </div>
-          <label class="agent-field"><span>Для клиента из «Клиентов»</span><select name="client_id"><option value="">— не связана —</option>${clientOpts}</select></label>
+          <div class="agent-field"><span>Цвет подборки в списке</span><div class="pk2-colors">${COLORS.map((c) =>
+            `<button type="button" class="pk2-color c-${c}${c === p.color ? " on" : ""}" data-color="${c}" aria-label="Цвет ${c}"></button>`).join("")}</div></div>
           <p class="pk2-hint">Цвет, обложку и подпись подборок можно задать в <a href="/settings">Настройках</a> — для всех подборок сразу.</p>
           <div class="pk2-form-acts"><button type="submit" class="pill">Сохранить</button></div>
         </form>`}`;
-    if (window.Pick) box.querySelectorAll("select").forEach((s) => Pick.select(s));
+    if (window.Pick) box.querySelectorAll("select").forEach((s) => Pick.select(s, { searchPlaceholder: "Найти клиента" }));
   }
   function render() { stats(); renderList(); renderDetail(); }
 
@@ -280,6 +313,75 @@
       open = 0; toast("Подборка удалена"); await reload(); return;
     }
   });
+  // клиент подборки: выбрали — сохраняем сразу; «+ Новый клиент…» — окно создания
+  let clientFor = null;   // {pid} — для какой подборки создаём клиента; null — для формы «Создать»
+  document.addEventListener("change", async (e) => {
+    const s = e.target;
+    if (s.id === "pkNewClient" && s.value === "new") { clientFor = null; openClient(); return; }
+    if (!s.dataset || !s.dataset.pkClient) return;
+    const pid = Number(s.dataset.pkClient);
+    if (s.value === "new") { clientFor = { pid }; openClient(); return; }
+    await setClient(pid, Number(s.value) || null);
+  });
+  async function setClient(pid, cid) {
+    const r = await call("/api/picks", { id: pid, client_id: cid });
+    if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
+    toast(cid ? "Подборка привязана — объекты уже в карточке клиента" : "Клиент отвязан");
+    await reload();
+  }
+  function openClient() {
+    const f = $("pkClientForm");
+    f.reset();
+    $("pkClientDlg").showModal();
+    setTimeout(() => f.name.focus(), 50);
+  }
+  $("pkClientDlg").addEventListener("close", () => {   // отменили — вернуть выбор как был
+    const p = clientFor && list.find((x) => x.id === clientFor.pid);
+    if (clientFor && p) renderDetail(); else if (!clientFor && $("pkNewClient").value === "new") fillNewClient(null);
+  });
+  $("pkClientSave").onclick = async () => {
+    const f = $("pkClientForm");
+    if (!f.name.value.trim()) { f.name.focus(); return; }
+    const r = await call("/api/clients", { name: f.name.value.trim(), phone: f.phone.value });
+    if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
+    const cid = r.data.client.id, target = clientFor;
+    await loadClients();
+    $("pkClientDlg").close();
+    if (target) await setClient(target.pid, cid); else fillNewClient(cid);
+    toast(`Клиент «${r.data.client.name}» создан`);
+  };
+  // запись в журнал объекта из подборки
+  let noteFor = null;
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-wnote], [data-nk], [data-color]");
+    if (!b) return;
+    if (b.dataset.nk) { $("pkNoteKinds").querySelectorAll("[data-nk]").forEach((x) => x.classList.toggle("on", x === b)); return; }
+    if (b.dataset.color) {
+      const p = list.find((x) => x.id === open);
+      b.parentElement.querySelectorAll("[data-color]").forEach((x) => x.classList.toggle("on", x === b));
+      call("/api/picks", { id: p.id, color: b.dataset.color }).then((r) => { if (r.ok) { p.color = b.dataset.color; renderList(); } });
+      return;
+    }
+    const p = list.find((x) => x.id === Number(b.dataset.pid));
+    const it = p.items.find((x) => x.listing_id === Number(b.dataset.wnote));
+    noteFor = { pid: p.id, lid: it.listing_id };
+    $("pkNoteFor").textContent = `${it.title}${p.client_name ? ` · клиент ${p.client_name}` : ""} — запись появится в журнале объекта${p.client_name ? " и в карточке клиента" : ""}.`;
+    $("pkNoteText").value = "";
+    $("pkNoteKinds").querySelectorAll("[data-nk]").forEach((x, i) => x.classList.toggle("on", !i));
+    $("pkNoteDlg").showModal();
+    setTimeout(() => $("pkNoteText").focus(), 50);
+  });
+  $("pkNoteSave").onclick = async () => {
+    const kind = ($("pkNoteKinds").querySelector(".on") || {}).dataset?.nk || "note";
+    const text = $("pkNoteText").value.trim();
+    if (!text && kind === "note") { $("pkNoteText").focus(); return; }
+    const r = await call("/api/worklog", { listing_id: noteFor.lid, pick_id: noteFor.pid, kind, text });
+    if (!r.ok) { toast(r.data.detail || "Не сохранилось"); return; }
+    $("pkNoteDlg").close();
+    toast("Записано");
+    await reload();
+  };
+
   $("pkSeg").addEventListener("click", (e) => {
     const b = e.target.closest("[data-f]");
     if (!b) return;
@@ -298,14 +400,16 @@
     const f = e.target;
     if (f.id === "pksNew") {
       e.preventDefault();
-      const r = await call("/api/picks", { title: f.title.value });
+      const cl = Number($("pkNewClient").value) || null;
+      const cName = cl && (clientsList.find((c) => c.id === cl) || {}).name;
+      const r = await call("/api/picks", { title: f.title.value.trim() || (cName ? `Для ${cName}` : ""), ...(cl ? { client_id: cl } : {}) });
       if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
-      f.reset(); open = r.data.pick.id; tab = "items"; await reload(); loadSide(); return;
+      f.title.value = ""; fillNewClient(null); open = r.data.pick.id; tab = "items"; await reload(); loadSide(); return;
     }
     if (f.dataset.edit) {
       e.preventDefault();
-      const r = await call("/api/picks", { id: Number(f.dataset.edit), title: f.title.value, note: f.note.value,
-        contact_name: f.contact_name.value, contact_phone: f.contact_phone.value, client_id: f.client_id.value || null });
+      const r = await call("/api/picks", { id: Number(f.dataset.edit), title: f.title.value, note: f.note.value, client_title: f.client_title.value,
+        contact_name: f.contact_name.value, contact_phone: f.contact_phone.value });
       if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
       toast("Сохранено"); await reload();
     }

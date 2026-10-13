@@ -478,3 +478,33 @@ html.embed dialog::backdrop { background: transparent !important; backdrop-filte
 .item .marks { min-width: 0; max-width: 100%; }
 .item .mark { max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 640px) { .item .mark { padding: 2px 7px; font-size: 10.5px; } }
+
+/* журнал работы по объекту (окно объекта) */
+.wk-add { display: grid; gap: 8px; padding: 12px; border-radius: 16px; background: rgba(255, 255, 255, .04); border: 1px solid var(--glass-line); }
+.wk-kinds { display: flex; gap: 4px; flex-wrap: wrap; }
+.wk-kinds button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 11px; border-radius: 999px; border: 1px solid var(--glass-line);
+  background: none; color: var(--ink-2); font: 500 13px var(--body); cursor: pointer; }
+.wk-kinds button svg { width: 15px; height: 15px; }
+.wk-kinds button.on { background: rgba(227, 203, 143, .16); border-color: rgba(227, 203, 143, .5); color: var(--ink); }
+.wk-add textarea { width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 12px; border: 1px solid var(--glass-line);
+  background: rgba(0, 0, 0, .15); color: var(--ink); font: 14px/1.45 var(--body); resize: vertical; outline: none; }
+.wk-add textarea:focus { border-color: rgba(227, 203, 143, .5); }
+.wk-row { display: flex; gap: 8px; align-items: center; }
+.wk-row > :first-child { flex: 1; min-width: 0; }
+.wk-row .pill { flex: none; }
+.wk-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.wk-list li { display: grid; grid-template-columns: 30px minmax(0, 1fr) 28px; gap: 10px; align-items: start; padding: 10px; border-radius: 14px;
+  background: rgba(255, 255, 255, .03); }
+.wk-ic { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: rgba(255, 255, 255, .07); color: var(--gold); }
+.wk-ic svg { width: 15px; height: 15px; }
+.wk-list .k-call .wk-ic { color: #9ad1ff; } .wk-list .k-show .wk-ic { color: var(--ok); } .wk-list .k-meet .wk-ic { color: #c4b5fd; }
+.wk-h { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; font-size: 13px; }
+.wk-h time { color: var(--ink-3); font-size: 12px; }
+.wk-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, .07);
+  color: var(--ink) !important; font-size: 12px; text-decoration: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wk-tag svg { width: 12px; height: 12px; flex: none; }
+.wk-tag:hover { background: rgba(227, 203, 143, .18); }
+.wk-t { margin: 4px 0 0; color: var(--ink-2); font-size: 14px; line-height: 1.45; white-space: pre-line; overflow-wrap: anywhere; }
+.wk-del { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 9px; background: none; color: var(--ink-3); cursor: pointer; }
+.wk-del:hover { background: rgba(255, 255, 255, .08); color: var(--bad); }
+.wk-del svg { width: 14px; height: 14px; }

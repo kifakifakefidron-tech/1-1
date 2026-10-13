@@ -65,7 +65,7 @@ def test_pick_page_neutral_and_pick_domain(client, monkeypatch):
     client.post("/api/settings", json={"pick_color": "sky", "pick_brand": "Моё агентство"})
     p = client.post("/api/picks", json={"title": "Для Анны", "listing_id": lid}).json()["pick"]
     page = client.get(f"/c/{p['token']}").text
-    assert "1+1" not in page and "Для Анны" in page
+    assert "1+1" not in page and "Для Анны" not in page   # название подборки — только агенту
     pub = client.get(f"/api/c/{p['token']}").json()
     assert pub["style"] == {"color": "sky", "cover": "", "brand": "Моё агентство"}
     # нейтральный адрес: с основного — переадресация, ссылка в управлении — на него
