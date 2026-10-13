@@ -32,9 +32,33 @@ def _street_key(v: str | None) -> str:
     return " ".join(re.sub(_STREET_WORDS, " ", words(v or "")).split())
 
 
+CITY = "краснодар"   # посёлок не указан = Краснодар (акт 14.10, С3: в ключе точки/правила всегда есть населённый пункт)
+
+
+def place_key(settlement: str | None) -> str:
+    return words(settlement or "") or CITY
+
+
 def addr_key(street: str | None, house: str | None, settlement: str | None = None) -> str | None:
     s, h = _street_key(street), words(house or "").replace(" ", "")
-    return f"addr:{words(settlement or '')}|{s}|{h}" if s and h else None
+    return f"addr:{place_key(settlement)}|{s}|{h}" if s and h else None
+
+
+def migrate_city_keys(conn: sqlite3.Connection) -> int:
+    """Один раз: старые ключи «addr:|…» / «street:|…» (без населённого пункта) → «…:краснодар|…»."""
+    n = 0
+    for table, idcol in (("geo_learned", "rowid"), ("learned_rules", "id")):
+        for r in conn.execute(f"""SELECT {idcol} AS i, key FROM {table}
+                                  WHERE key LIKE 'addr:|%' OR key LIKE 'street:|%'""").fetchall():
+            new = r["key"].replace(":|", f":{CITY}|", 1)
+            try:
+                conn.execute(f"UPDATE {table} SET key = ? WHERE {idcol} = ?", (new, r["i"]))
+                n += 1
+            except sqlite3.IntegrityError:   # такой ключ уже есть — старый дубль убираем
+                conn.execute(f"DELETE FROM {table} WHERE {idcol} = ?", (r["i"],))
+    conn.commit()
+    rules(conn, fresh=True)
+    return n
 
 
 def cx_key(name: str | None) -> str | None:
@@ -97,7 +121,7 @@ def rule_label(kind: str, label: str | None, v: dict) -> str:
 
 def street_key(street: str | None, settlement: str | None = None) -> str | None:
     s = _street_key(street)
-    return f"street:{words(settlement or '')}|{s}" if s else None
+    return f"street:{place_key(settlement)}|{s}" if s else None
 
 
 def rules(conn: sqlite3.Connection, fresh: bool = False) -> dict:
@@ -527,7 +551,7 @@ def dir_item(conn: sqlite3.Connection, kind: str, name: str) -> dict:
                 if street_key(r["street"]) == k]
         where = f"id IN ({','.join(map(str, rows)) or '0'})"
         p = ()
-        rule = rs.get(("street", f"street:|{k[8:]}" if k else ""))
+        rule = rs.get(("street", k or ""))
         info = {"kb_district": ", ".join(geo.street_districts(name)) or None, "rule": rule["district"] if rule else None}
     dist = [dict(r) for r in conn.execute(
         f"""SELECT COALESCE(district, '{NONE}') AS name, COUNT(*) AS n FROM listings WHERE is_active = 1 AND {where}

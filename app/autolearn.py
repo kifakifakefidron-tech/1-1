@@ -28,6 +28,7 @@ CX_SPREAD_KM = 1.5      # точки фида одного ЖК дальше э�
 CX_FAR_KM = 2.0         # ответ геокодера дальше этого от точки ЖК — ошибка геокодера
 OUT_OF_DISTRICT_KM = 1.0  # точка дальше этого за контуром района из объявления — ошибка
 GENERIC_CX = {"жилой квартал", "жилой комплекс", "жилой дом", "квартал", "парк", "центр"}   # слово, а не название: точку не ставим
+_GENERIC_KEYS = {x.replace(" ", "") for x in GENERIC_CX}   # ключ ЖК (geo.complex_key) — без пробелов
 GEO_SRC = {"feed-house": "тот же дом в фиде СТРЕЛ", "feed-cx": "ЖК по объектам фида СТРЕЛ",
            "map-cx": "центр ЖК на карте районов", "map-district": "центр района на карте (примерно)",
            "osm-house": "дом в справочнике адресов OSM", "osm-near": "соседний дом той же улицы (OSM)",
@@ -130,7 +131,7 @@ class Known:
                     self.cx[k] = (mid, "feed-cx")
                 else:
                     del self.cx[k]
-        for k in [k for k in self.cx if k.removeprefix("cx:") in GENERIC_CX]:
+        for k in [k for k in self.cx if k.removeprefix("cx:") in _GENERIC_KEYS]:
             del self.cx[k]
         # «Самолёт 2» / «Самолёт 3» → точка ЖК «Самолёт»: контур или середина объектов фида всех очередей
         self.cx_base: dict[str, tuple[tuple[float, float], str]] = {}
@@ -517,7 +518,7 @@ def recheck_all(conn: sqlite3.Connection) -> dict:
         if not r["complex"] and r["type"] in ("flat", "new") and r["geo_src"] in HOUSE_SRC + (None, "geocoder")                 and (r["id"], "complex") not in undone:
             cx = districtmap.complex_at(conn, r["lat"], r["lon"])
             rec = geo.resolve_complex(cx) if cx else None
-            if rec and learning.cx_key(rec.name).removeprefix("cx:") not in GENERIC_CX:
+            if rec and learning.cx_key(rec.name).removeprefix("cx:") not in _GENERIC_KEYS:
                 d["complex"] = rec.name
                 _log(conn, r["id"], "complex", None, rec.name, now)
                 rep["complexes"] += 1

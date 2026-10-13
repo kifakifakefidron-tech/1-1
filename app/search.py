@@ -15,11 +15,11 @@ from . import geo
 from .rules import TYPE_LABELS
 from .textnorm import norm, words
 
-SORTS = {
+SORTS = {   # цена «под вопросом» (pricefix) в сортировках по цене — в самом конце
     "new": "l.last_seen DESC, l.id DESC",
-    "price_asc": "l.price IS NULL, l.price ASC, l.id DESC",
-    "price_desc": "l.price IS NULL, l.price DESC, l.id DESC",
-    "price_m2": "l.price_m2 IS NULL, l.price_m2 ASC, l.id DESC",
+    "price_asc": "l.price IS NULL OR l.price_doubt IS 1, l.price ASC, l.id DESC",
+    "price_desc": "l.price IS NULL OR l.price_doubt IS 1, l.price DESC, l.id DESC",
+    "price_m2": "l.price_m2 IS NULL OR l.price_doubt IS 1, l.price_m2 ASC, l.id DESC",
     "area_desc": "l.area IS NULL, l.area DESC, l.id DESC",
     "market": "l.market_diff IS NULL, l.market_diff ASC, l.id DESC",   # ниже рынка — первыми
 }
@@ -157,7 +157,7 @@ def _fts_query(q: str) -> str | None:
     return interpret(q)[0]
 
 
-HOT_MARKET = -12   # «Горячее»: на 12 % и больше дешевле медианы м² (отметка «ниже рынка» на карточке — от 7 %)
+HOT_MARKET = -15   # «Горячее»: на 15 % и больше дешевле медианы м² по 15+ сравнимым (hooks.update_market_diff)
 
 
 def _where(qr: Query, now: int) -> tuple[str, list]:
@@ -184,6 +184,8 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
             w.append(f"l.{col} >= ?"); p.append(lo)
         if hi is not None:
             w.append(f"l.{col} <= ?"); p.append(hi)
+        if col == "price" and (lo is not None or hi is not None):
+            w.append("l.price_doubt IS NOT 1")   # цена под вопросом — в ценовой фильтр не попадает
     if qr.districts:   # основной район или один из дополнительных (объект на границе районов)
         q = ",".join("?" * len(qr.districts))
         w.append(f"(l.district IN ({q}) OR EXISTS (SELECT 1 FROM json_each(l.extra_districts) j WHERE j.value IN ({q})))")
@@ -216,8 +218,9 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
     if qr.since:
         w.append("l.first_seen > ?"); p.append(qr.since)
     if qr.hot:
-        w.append(f"""((l.prev_price > l.price AND l.price_changed_at >= ?) OR l.market_diff <= {HOT_MARKET}
-                     OR l.search_text LIKE '%срочн%')""")
+        # акт 14.10, С6: «Горячее» — 5–8 % базы: цена снизилась за неделю, заметно ниже рынка или «срочно» и дешевле рынка
+        w.append(f"""l.price_doubt IS NOT 1 AND ((l.prev_price > l.price AND l.prev_price < l.price * 1.5 AND l.price_changed_at >= ?)
+                     OR l.market_diff <= {HOT_MARKET} OR (l.search_text LIKE '%срочн%' AND l.market_diff <= -5))""")
         p.append(now - 7 * 86400)
     if fts:
         w.append("l.id IN (SELECT rowid FROM listings_fts WHERE listings_fts MATCH ?)"); p.append(fts)
@@ -276,6 +279,7 @@ def row_to_item(r: sqlite3.Row, with_contacts: bool) -> dict:
     from .parser import guard_phones
     d["description"] = guard_phones(d["description"])   # номеров в описании не отдаём никому — они в контакте
     keys = r.keys()
+    d["price_doubt"] = bool(r["price_doubt"]) if "price_doubt" in keys else False
     d["geo_level"] = geo_level(r["lat"], r["geo_status"], r["geo_src"]) if "geo_src" in keys and "lat" in keys else None
     d["verified"] = bool(r["verified"]) if "verified" in r.keys() else None
     d["photos"] = json.loads(r["photos"] or "[]")
@@ -317,7 +321,8 @@ def map_points(conn: sqlite3.Connection, qr: Query, now: int) -> dict:
     where, params = _where(qr, now)
     rows = conn.execute(
         f"""SELECT l.id, l.lat, l.lon, l.price, l.title, l.source, l.complex, l.district, l.street,
-                   l.geo_status = 'approx' AS approx, json_extract(l.photos, '$[0]') AS photo, {GEO_LEVEL} AS level
+                   l.geo_status = 'approx' AS approx, json_extract(l.photos, '$[0]') AS photo, {GEO_LEVEL} AS level,
+                   l.price_doubt IS 1 AS doubt
             FROM listings l WHERE {where} AND l.lat IS NOT NULL LIMIT 20000""",
         params,
     ).fetchall()
@@ -333,7 +338,7 @@ def map_points(conn: sqlite3.Connection, qr: Query, now: int) -> dict:
             g = groups.setdefault(k, {"complex": r["complex"], "lat": r["lat"], "lon": r["lon"], "n": 0,
                                       "price_min": None, "photo": None})
             g["n"] += 1
-            if r["price"] and (g["price_min"] is None or r["price"] < g["price_min"]):
+            if r["price"] and not r["doubt"] and (g["price_min"] is None or r["price"] < g["price_min"]):
                 g["price_min"] = r["price"]
             g["photo"] = g["photo"] or r["photo"]
         else:

@@ -399,13 +399,14 @@ def api_listing(request: Request, body: dict | None = None):
         roles = json.loads(row["phone_roles"] or "{}")
         d["sender_phone"] = next((p for p, role in roles.items() if role == "sender" and p not in d["phones"]), None)
     # текст объявления старее цены (цена обновилась позже текста) — честно говорим об этом в карточке
-    if row["description_ts"] and row["price_changed_at"] and row["price_changed_at"] > row["description_ts"]:
+    # акт 14.10, Б2: в тексте другая цена — плашка всегда (не только когда цена обновилась позже текста)
+    if not row["price_fixed"]:
         from .p0fix import price_gap
         tp = price_gap(row["price"], row["description"], row["deal"])
         if tp:
-            d["text_price"] = {"price": tp, "ts": row["description_ts"]}
+            d["text_price"] = {"price": tp, "ts": row["description_ts"] or row["last_seen"]}
     d["can_edit"] = bool(user) and agent.can_edit(conn, user, row)[0]
-    d["market"] = hooks.market_for(conn, d)
+    d["market"] = hooks.market_for(conn, d) if not row["price_doubt"] else None
     d["same"] = hooks.same_elsewhere(conn, row)
     d["note"] = hooks.get_note(conn, user["id"], lid) if user else None
     d["status"] = hooks.get_status(conn, user["id"], lid) if user else None
@@ -787,6 +788,8 @@ def api_admin_overview(request: Request, body: dict | None = None):
         "price": config.SUB_PRICE, "period_days": config.SUB_DAYS,
         "p0_report": json.loads(db.get_state(conn, "p0_report") or "null"),
         "cx_report": json.loads(db.get_state(conn, "cx_norm_report") or "null"),
+        "price_report": json.loads(db.get_state(conn, "price_fix_report") or "null"),
+        "geo_cleanup": json.loads(db.get_state(conn, "geo_cleanup_report") or "null"),
         "feed_synced": int(db.get_state(conn, "feed_synced") or 0),
     })
 

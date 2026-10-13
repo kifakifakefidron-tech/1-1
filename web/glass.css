@@ -615,3 +615,6 @@ html.embed dialog::backdrop { background: transparent !important; backdrop-filte
 .pin.cx { background: var(--teal-800); color: var(--gold-100); border-style: dashed; border-color: var(--gold-300); }
 .pin.cx::after { border-color: var(--gold-300); }
 .dv-vague { margin: 6px 0 0; font-size: 13px; color: var(--ink-3); }
+
+/* Цена «под вопросом» (акт 14.10, Б1) */
+.mark.doubt { color: var(--bad); border-color: currentColor; }

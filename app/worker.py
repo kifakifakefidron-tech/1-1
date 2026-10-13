@@ -85,6 +85,14 @@ def tick(conn) -> dict:
     synced = feed.maybe_sync(conn)
     if synced:
         stats["feed"] = synced
+    from . import pricefix
+    pf = pricefix.maybe_run(conn)   # один раз (акт 14.10, Б1–Б2): цены в тысячах и перебитые склейкой — отчёт в «Обзоре»
+    if pf:
+        stats["price_fix"] = pf["scale"] + pf["text"]
+    from . import geoaudit
+    gc = geoaudit.auto_cleanup(conn)   # один раз (акт 14.10): уборка правил и справочников, отчёт — в «Обзоре»
+    if gc:
+        stats["geo_cleanup"] = gc.get("listings", 0)
     from . import cxnorm
     cx = cxnorm.maybe_run(conn)   # один раз (ТЗ v2, P1.7): одно название на один ЖК, отчёт — в админке
     if cx:

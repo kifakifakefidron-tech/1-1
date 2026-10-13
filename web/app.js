@@ -404,7 +404,8 @@
     if (o.prev_price && o.price && o.prev_price > o.price && o.price_changed_at > now - 14 * 86400) {
       b.push(`<span class="mark down">Цена ↓ ${esc(fmtShortPrice(o.prev_price - o.price, o.deal))}</span>`);
     }
-    if (o.market_diff != null) b.push(`<span class="mark good">ниже рынка на ${Math.abs(o.market_diff)}%</span>`);
+    if (o.market_diff != null) b.push(`<span class="mark good" title="${o.market_n ? `сравнили с ${o.market_n} похожими объектами` : ""}">ниже рынка на ${Math.abs(o.market_diff)}%</span>`);
+    if (o.price_doubt) b.push(`<span class="mark doubt" title="Цена в объявлении записана неоднозначно — уточните у агента">цена под вопросом</span>`);
     return b.length ? `<div class="marks">${b.join("")}</div>` : "";
   }
 
@@ -928,8 +929,10 @@
             ${address(o) ? `<a class="ya-link" href="https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(yaQuery(o))}" target="_blank" rel="noopener">на карте ↗</a>` : ""}</p>
           <div class="dv-price"><b>${esc(fmtPrice(o.price, o.deal))}</b>
             ${o.price_m2 && o.deal !== "rent" ? `<span>${esc(num(o.price_m2))} ₽/м²</span>` : ""}${marketTag}</div>
-          ${o.text_price ? `<p class="dv-tp">${ic("alert")}<span>Текст объявления от ${esc(new Date(o.text_price.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }))},
-            в нём цена ${esc(fmtPrice(o.text_price.price, o.deal))}. Актуальная цена — <b>${esc(fmtPrice(o.price, o.deal))}</b></span></p>` : ""}
+          ${o.text_price ? `<p class="dv-tp">${ic("alert")}<span>В тексте объявления (от ${esc(new Date(o.text_price.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }))})
+            другая цена — ${esc(fmtPrice(o.text_price.price, o.deal))}. В карточке — <b>${esc(fmtPrice(o.price, o.deal))}</b> (из более свежего сообщения). Уточните у агента.</span></p>` : ""}
+          ${o.price_doubt ? `<p class="dv-tp">${ic("alert")}<span>Цена записана в объявлении неоднозначно (например, «5400» без «тыс.» или «млн»). Уточните у агента —
+            в сортировках по цене и фильтрах этот объект не участвует.</span></p>` : ""}
         </div>
         <div class="dv-acts">${actions}</div>
         ${contactHTML(o)}
