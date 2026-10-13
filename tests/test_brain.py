@@ -60,7 +60,7 @@ def test_learn_overview_and_knowledge(env):
     c.post(f"/api/admin/listings/{lid}/place", json={"district": "ЦМР", "learn": {"addr": True, "street": True}})
     c.post(f"/api/admin/listings/{lid}/geo", json={"lat": 45.03, "lon": 38.97})
     ov = c.get("/api/admin/learn").json()
-    assert ov["total"] >= 1 and ov["knowledge"]["rules"] >= 2 and ov["knowledge"]["points"] >= 1
+    assert ov["total"] >= 1 and ov["knowledge"]["rules"] >= 1 and ov["knowledge"]["points"] >= 1   # улица на 1 объекте — не учится
     assert [s["key"] for s in ov["pipeline"]["district"]][:3] == ["yours", "rules", "map"]
     items = c.get("/api/admin/learn/knowledge").json()["items"]
     assert {x["type"] for x in items} == {"rule", "point"}

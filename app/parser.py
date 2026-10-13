@@ -230,7 +230,7 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
     if complex_rec is None and lines_place.get("complex"):
         complex_rec = lines_place["complex"]
 
-    street = obj.get("street") if _in_text(obj.get("street"), text_words) else None
+    street = obj.get("street") if _in_text(obj.get("street"), text_words) and not is_field_label(obj.get("street")) else None
     street = street or r.street
     house = obj.get("house") or r.house
     if house and not _in_text(str(house), text_words):
@@ -269,6 +269,15 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
         description=description, fragment=fragment.strip(), phones=phones, phone_roles=roles,
         room_kind=room_kind, article=rules.extract_article(fragment),
     )
+
+
+# Подписи полей объявления — не улицы («Площадь: 45 м²», «Этаж 3/9», «Цена 5 млн»): нейросеть иногда отдаёт их улицей
+FIELD_LABELS = {"площадь", "общая площадь", "площадь дома", "этаж", "этажность", "цена", "стоимость", "комнат", "комнаты",
+                "состояние", "ремонт", "район", "адрес", "жк", "тип", "отделка", "балкон", "санузел", "кухня", "участок"}
+
+
+def is_field_label(street: str | None) -> bool:
+    return bool(street) and words(street).strip() in FIELD_LABELS
 
 
 def address_from_text(fragment: str) -> tuple[str | None, str | None]:

@@ -174,7 +174,6 @@
          <button type="button" class="linkish" id="dmAll">Показать по всем районам</button>`
       : `Объектов с точной точкой: ${d.checked}. Нажмите на район в списке или на карте — останутся только вопросы по нему.`)
       + `<br>Раскройте группу, снимите галочки с объектов, которые переносить не нужно, и нажмите кнопку.`;
-    $("dmFill").hidden = true;
     // 1) без района, но внутри обведённого района — по районам
     const groups = {};
     for (const o of empty) (groups[o.map] = groups[o.map] || []).push(o);
@@ -187,7 +186,10 @@
           <div class="dm-grp-acts"><button type="button" class="pill" data-apply>Проставить «${esc(dist)}» отмеченным</button></div>
         </div></details>`).join("");
     // 2) расхождения по ЖК и улицам
-    const diffHtml = diffs.slice(0, 80).map((x) => `
+    // группы, где переносить нечего (все объекты уже в районе по карте), — шум: не показываем
+    const real = diffs.filter((x) => x.items.length);
+    const hiddenZero = diffs.length - real.length;
+    const diffHtml = real.slice(0, 80).map((x) => `
       <details class="dm-grp" data-grp${only ? " open" : ""}>
         <summary><span>${x.kind === "complex" ? "ЖК" : "ул."} <b>${esc(x.name)}</b>
           <small>у нас: ${x.ours.map(([n, c]) => `${esc(n)} ${c}`).join(", ")} · по карте: ${x.map_all.map(([n, c]) => `${esc(n)} ${c}`).join(", ")}</small></span>
@@ -195,7 +197,7 @@
         <div class="dm-grp-body">
           ${x.items.length ? `<label class="dm-all"><input type="checkbox" data-all checked> отметить все</label>${x.items.map((o) => objRow(o)).join("")}`
             : `<p class="note">Объекты уже в правильном районе.</p>`}
-          ${x.kind === "complex" ? `<label class="dm-remember"><input type="checkbox" data-remember="${esc(x.name)}" data-to="${esc(x.map)}" checked>
+          ${x.kind === "complex" ? `<label class="dm-remember"><input type="checkbox" data-remember="${esc(x.name)}" data-to="${esc(x.map)}">
             Запомнить: ЖК ${esc(x.name)} — район «${esc(x.map)}» (новые объявления сразу туда)</label>`
             : `<label class="dm-remember"><input type="checkbox" data-remember-street="${esc(x.name)}" data-to="${esc(x.map)}">
             Запомнить: ул. ${esc(x.name)} — район «${esc(x.map)}» (для объявлений этой улицы без своего района)</label>`}
@@ -206,7 +208,8 @@
         </div></details>`).join("");
     $("dmDiffs").innerHTML =
       (empty.length ? `<h4 class="dm-sub">Без района, но внутри обведённого района · ${only ? empty.length : d.empty_total}</h4>${emptyHtml}` : "") +
-      (diffHtml ? `<h4 class="dm-sub">Расхождения по ЖК и улицам · ${diffs.length}</h4>${diffHtml}` : "") ||
+      (diffHtml ? `<h4 class="dm-sub">Расхождения по ЖК и улицам · ${real.length}${real.length > 80 ? ` (показаны 80 из ${real.length})` : ""}
+        ${hiddenZero ? `<small class="note"> · скрыто без объектов к переносу: ${hiddenZero}</small>` : ""}</h4>${diffHtml}` : "") ||
       `<p class="note">${only ? `По району «${esc(only)}» вопросов нет 🎉` : "Расхождений нет 🎉"}</p>`;
   }
 
@@ -286,17 +289,14 @@
       await load(); await check();
     } else if (b.id === "dmAll") {
       checkAll = true; renderCheck();
-    } else if (b.id === "dmFill") {
-      const r = await call("/api/admin/reconcile", { action: "fill_empty" });
-      toast(`Район проставлен ${r.data.listings} объектам`); await check(); await load();
     } else if (b.hasAttribute("data-apply")) {
       await applyGroup(b.closest("[data-grp]"));
-    } else if (b.dataset.accept) {
-      const r = await call("/api/admin/reconcile", { action: "accept", kind: b.dataset.accept, name: b.dataset.name, district: b.dataset.to });
-      toast(`Принято · объектов: ${r.data.listings}`); await check(); await load();
-    } else if (b.dataset.ignore) {
-      await call("/api/admin/reconcile", { action: "ignore", key: b.dataset.ignore });
-      b.closest("li").remove();
+    } else if (b.dataset.ignore) {   // «Оставить как есть»: группа уходит из списка (раньше искали <li> — ошибка)
+      const r = await call("/api/admin/reconcile", { action: "ignore", key: b.dataset.ignore });
+      if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
+      const g = b.closest("[data-grp]");
+      if (g) g.remove();
+      toast("Оставили как есть — больше не спросим");
     }
   });
   $("dmQ").addEventListener("input", renderList);
