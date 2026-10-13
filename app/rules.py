@@ -299,6 +299,20 @@ def _is_address_fraction(text: str, m: re.Match) -> bool:
     return bool(re.match(r"\s?(?:[кk]\s?\d|лит|корп|стр)", text[m.end(): m.end() + 6], re.IGNORECASE))
 
 
+_MULTI_FLOOR = re.compile(
+    r"этаж(?:и|ах)\s*[:\-]?\s*(\d{1,2})(?:\s*,\s*\d{1,2})*\s*(?:и|,)\s*(\d{1,2})\b"      # «этажи 2 и 6», «этажи 2, 6»
+    r"|\bна\s+(\d{1,2})(?:\s*,\s*\d{1,2})*\s*и\s*(\d{1,2})\s*-?\s*(?:м\s+)?этаж", re.I)   # «на 3 и 7 этажах»
+
+
+def multi_units(text: str) -> int:
+    """Сколько квартир на разных этажах в одном посте («этажи 2 и 6» → 2); 0 — одна."""
+    m = _MULTI_FLOOR.search(text or "")
+    if not m:
+        return 0
+    nums = re.findall(r"\d{1,2}", m.group(0))
+    return len(set(nums)) if len(set(nums)) > 1 else 0
+
+
 def extract_floor(text: str) -> tuple[int | None, int | None]:
     # Сначала явное «этаж 5/9», «5 этаж из 9», потом просто «5/9» (но не номер дома)
     for rx in (_FLOOR3_RE, _FLOOR2_RE, _FLOOR_OF_RE, _FLOOR_RE):

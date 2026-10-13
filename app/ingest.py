@@ -53,7 +53,9 @@ def make_title(o: dict) -> str:
         parts.append(f"{_fmt_num(o['area'])} м²")
     if o.get("land"):
         parts.append(f"{'участок ' if t == 'house' else ''}{_fmt_num(o['land'])} сот.")
-    if o.get("floor"):
+    if o.get("multi_units"):   # «этажи 2 и 6»: в посте несколько квартир — этаж одной из них не выдаём за общий
+        parts.append(f"{o['multi_units']} кв. в посте")
+    elif o.get("floor"):
         parts.append(f"{o['floor']}/{o['floors']} эт." if o.get("floors") else f"{o['floor']} эт.")
     if o.get("deal") == "rent":
         parts.insert(0, "Аренда:")
@@ -89,6 +91,8 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         o.complex = None if geoaudit.is_junk_complex(o.complex) else cxnorm.canonical(conn, o.complex)
     fh = dedupe.fragment_hash(o.fragment)
     d = o.to_dict()
+    from .rules import multi_units
+    d["multi_units"] = multi_units(o.fragment) or None   # склейку повторов это не меняет (P3): этаж остаётся как разобран
     ban = conn.execute("SELECT listing_id FROM banned WHERE kind = 'frag' AND key = ?", (fh,)).fetchone()
     if ban is not None:   # этот текст админ удалил навсегда
         return ban[0] or 0, "banned"
@@ -124,6 +128,8 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
              json.dumps(d.get("phone_roles") or {}, ensure_ascii=False), ts),
         )
         lid = cur.lastrowid
+        if d.get("multi_units"):
+            conn.execute("UPDATE listings SET multi_units = ? WHERE id = ?", (d["multi_units"], lid))
         why = "new"
     else:
         lid = match["id"]

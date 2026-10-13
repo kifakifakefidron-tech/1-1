@@ -413,6 +413,29 @@ def mark_levels(conn: sqlite3.Connection) -> int:
     return n
 
 
+def mark_multi(conn: sqlite3.Connection) -> int:
+    """Один раз (state multi_v1): «этажи 2 и 6» у уже собранных — пометка «2 кв. в посте» в заголовке."""
+    if conn.execute("SELECT 1 FROM state WHERE key = 'multi_v1'").fetchone():
+        return 0
+    from .ingest import _reindex, make_search_text, make_title
+    from .rules import multi_units
+    n = 0
+    for r in conn.execute("SELECT * FROM listings WHERE fragment LIKE '%этаж%'").fetchall():
+        k = multi_units(r["fragment"])
+        if not k:
+            continue
+        d = {**dict(r), "multi_units": k}
+        d["title"] = make_title(d)
+        d["search_text"] = make_search_text(d)
+        conn.execute("UPDATE listings SET multi_units = ?, title = ?, search_text = ? WHERE id = ?",
+                     (k, d["title"], d["search_text"], r["id"]))
+        _reindex(conn, r["id"], d["search_text"])
+        n += 1
+    conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('multi_v1', ?)", (str(n),))
+    conn.commit()
+    return n
+
+
 def recheck_all(conn: sqlite3.Connection) -> dict:
     """Все объекты заново:
       1) точка — дом из справочника адресов / фида / ваших правок лучше прежней точки геокодера или примерной;
@@ -426,6 +449,7 @@ def recheck_all(conn: sqlite3.Connection) -> dict:
     from . import geo
     from .ingest import _reindex, make_search_text, make_title
     mark_levels(conn)
+    mark_multi(conn)
     known = Known(conn)
     rep: Counter = Counter()
     now = int(time.time())

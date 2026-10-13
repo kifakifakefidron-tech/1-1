@@ -117,6 +117,14 @@ def tick(conn) -> dict:
     notify.check_health(conn, dict(wappi.errors), llm.failures)
     notify.daily_summary(conn)
     try:
+        from . import geoquality
+        if geoquality.snapshot(conn):   # раз в сутки — качество гео-данных (динамика на /learn)
+            stats["geo_quality"] = True
+        if geoquality.weekly(conn):     # раз в неделю — отчёт админу: что сервис поменял сам, очереди, правила
+            stats["geo_weekly"] = True
+    except Exception:  # noqa: BLE001
+        log.exception("качество гео-данных не посчитано")
+    try:
         from . import market
         if market.snapshot(conn):   # раз в сутки — медианы рынка для динамики
             stats["market_snapshot"] = True

@@ -94,9 +94,11 @@
         <form class="inline-form" id="fxCoordsForm">
           <input id="fxCoords" placeholder="Координаты или ссылка с Яндекс/Google Карт">
           <button type="submit" class="pill light">Найти</button>
+          <button type="button" class="pill light" id="fxPasteYa" title="Взять ссылку или координаты из буфера обмена">Вставить из буфера</button>
         </form>
         <p class="note"><a id="fxYa" class="ya-link" target="_blank" rel="noopener">🔎 Найти адрес в Яндекс Картах ↗</a>
-          — найдите дом, нажмите на него, скопируйте ссылку из адресной строки и вставьте в поле выше.</p>
+          — найдите дом, нажмите на него и скопируйте ссылку («Поделиться» или адресная строка). Вернитесь сюда — точка
+          встанет сама (браузер может спросить разрешение на буфер обмена); иначе — «Вставить из буфера».</p>
         <p class="note" id="fxGeoNow"></p>
         <div class="fx-offer" id="fxOffer"></div>
         <p class="note">Точка запомнится для этого дома и ЖК — объявления с тем же адресом встанут сюда же.</p>
@@ -125,6 +127,6 @@
 <script src="/static/combo.js?v=3"></script>
 <script src="/static/yasel.js?v=3"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/fix.js?v=21"></script>
+<script src="/static/fix.js?v=22"></script>
 </body>
 </html>

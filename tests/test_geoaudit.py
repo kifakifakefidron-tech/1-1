@@ -183,3 +183,29 @@ def test_map_groups_complex_level_and_hides_vague(env):
     assert len(res["complexes"]) == 1 and res["complexes"][0]["n"] == 2 and res["complexes"][0]["price_min"] == 4_000_000
     assert c.get(f"/api/listings/{v}").json()["geo_level"] == "street"
     assert c.get(f"/api/listings/{a}").json()["geo_approx"] is True
+
+
+def test_quality_dashboard_snapshot_weekly_and_cli(env, capsys):
+    from app import geoquality
+    from tools import geo_audit
+    c, conn = env
+    add(conn, "2-к квартира 50 м², 3/9 эт., ул. Тестовая 1. 6 млн. 89180000501", 45.0, 38.9)
+    q = c.get("/api/admin/geo-quality").json()
+    assert q["now"]["total"] == 1 and "no_district" in q["labels"]
+    assert geoquality.snapshot(conn) and not geoquality.snapshot(conn)   # раз в сутки
+    text = geoquality.weekly(conn)
+    assert text and "за неделю" in text and geoquality.weekly(conn) is None   # раз в неделю
+    assert conn.execute("SELECT COUNT(*) FROM notices WHERE title LIKE 'Отчёт за неделю%'").fetchone()[0] == 1
+    assert geo_audit.main(["x", str(conn.execute("PRAGMA database_list").fetchone()[2])]) == 0
+    assert "Без района" in capsys.readouterr().out
+
+
+def test_post_with_two_flats_is_marked():
+    """ТЗ P4.0.2: «этажи 2 и 6» — в посте две квартиры: пометка в заголовке, этаж одной не выдаём за общий."""
+    from app import db, ingest
+    conn = db.connect(":memory:")
+    mid = ingest.add_message(conn, source="wa", text="Трешка 80 м², этажи 2 и 6, дом 9 эт. 9 млн. ул. Тестовая 3. 89180000601",
+                             chat_id="c", msg_id="m1", ts=int(time.time()))
+    lid = ingest.process_message(conn, mid, use_llm=False)["results"][0]["listing_id"]
+    r = conn.execute("SELECT title, multi_units FROM listings WHERE id = ?", (lid,)).fetchone()
+    assert r["multi_units"] == 2 and "2 кв. в посте" in r["title"] and "эт." not in r["title"]

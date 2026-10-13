@@ -2188,6 +2188,17 @@ def api_admin_geo_audit(request: Request, body: dict | None = None):
     return JSONResponse(geoaudit.report(conn))
 
 
+def api_admin_geo_quality(request: Request, body: dict | None = None):
+    """Панель качества на /learn: сейчас, неделю назад, по дням."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    from . import geoquality
+    if request.query_params.get("outside"):   # карта районов: точки домов вне всех контуров
+        return JSONResponse({"items": geoquality.outside_points(db.get())})
+    return JSONResponse(geoquality.dashboard(db.get()))
+
+
 def api_admin_edits(request: Request, body: dict | None = None):
     _, err = _need_admin(request)
     if err:
@@ -2323,6 +2334,7 @@ routes = [
     Route("/api/admin/edits", threaded(api_admin_edits), methods=["GET", "POST"]),
     Route("/api/admin/chats", threaded(api_admin_chats), methods=["GET", "POST"]),
     Route("/api/admin/listings/{id:int}/geo", threaded(api_admin_geo), methods=["POST"]),
+    Route("/api/admin/geo-quality", threaded(api_admin_geo_quality)),
     Route("/api/admin/geo-queue", threaded(api_admin_geo_queue)),
     Route("/api/admin/fix", threaded(api_admin_fix), methods=["GET", "POST"]),
     Route("/api/admin/geo-audit", threaded(api_admin_geo_audit), methods=["GET", "POST"]),
