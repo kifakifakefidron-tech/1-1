@@ -304,3 +304,11 @@
 }
 .pk2-ph { aspect-ratio: 1 / 1; }
 @media (max-width: 600px) { .pk2-ph { aspect-ratio: 1 / 1; min-height: 0; align-self: start; margin: 8px 0 8px 8px; border-radius: 14px; overflow: hidden; } }
+
+/* P1: статус для клиента, ответ клиента, поиск по базе */
+.pk2-pst { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; font-size: 12px; color: var(--ink-3); }
+.pk2-pst .pk-btn, .pk2-pst select { height: 30px; min-height: 30px; border-radius: 999px; font-size: 12.5px; width: auto; }
+.pk2-re { display: block; margin-top: 6px; font-size: 12.5px; }
+.pk2-re.r-ok { color: var(--ok); } .pk2-re.r-bad { color: var(--bad); } .pk2-re.r-gold { color: var(--gold); }
+.pk2-search.sm.wide { width: min(320px, 100%); }
+.pk2-tools .pk-btn { height: 40px; border-radius: 999px; }

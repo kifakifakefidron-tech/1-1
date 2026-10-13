@@ -97,3 +97,17 @@ def test_delete_pick_forgets_its_statuses_and_manual_stage_is_kept(env):
     c.request("DELETE", "/api/picks", json={"id": pid})
     d = c.get(f"/api/clients?id={cid}").json()
     assert d["items"] == [] and any("Убран из подборки" in x["text"] for x in d["log"])
+
+
+def test_complex_names_merged(env):
+    from app import cxnorm
+    c, conn = env
+    a = add(conn, "Студия 25 м², 5/16 эт., ЖК Самолёт 2, ул. Западный обход 39. 3 600 000 руб. 89181112233")
+    b = add(conn, "Студия 24 м², 7/16 эт., ЖК Самолёт 2, ул. Западный обход 39. 3 650 000 руб. 89184445566")
+    conn.execute("UPDATE listings SET complex = 'Самолёт 2' WHERE id = ?", (a,))
+    conn.execute("UPDATE listings SET complex = 'САМОЛЕТ-2' WHERE id = ?", (b,))
+    conn.commit()
+    rep = cxnorm.run(conn, apply=True)
+    names = {r[0] for r in conn.execute("SELECT DISTINCT complex FROM listings WHERE id IN (?, ?)", (a, b))}
+    assert len(names) == 1 and rep["groups"] == 1
+    assert cxnorm.canonical(conn, "самолет 2") == names.pop()

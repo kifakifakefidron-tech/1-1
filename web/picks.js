@@ -26,6 +26,11 @@
   let list = [], favs = null, clientsList = null, q = "", filter = "all", tab = "items", favQ = "";
   const COLORS = ["gold", "teal", "sky", "violet", "coral", "rose", "lime", "slate"];
   const NK = { note: "Заметка", call: "Звонок", show: "Показ", meet: "Встреча" };
+  // статус объекта для клиента подборки (одна пара клиент+объект) и ответ клиента со страницы подборки
+  const PAIR = { sent: "Отправлен", opened: "Открыл", liked: "Понравился", rejected: "Не подходит", show: "Показ",
+    talks: "Переговоры", deal: "Сделка", lost: "Отказ", matched: "Подобран" };
+  const REACT = { like: ["Нравится", "ok"], no: ["Не подходит", "bad"], want_show: ["Хочет посмотреть", "ok"], question: ["Вопрос", "gold"] };
+  let clientFilter = 0, baseQ = "", baseRes = null, baseTimer = 0;
   const when = (ts) => new Date(ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   let open = Number(new URLSearchParams(location.search).get("open")) || 0;
   const isPhone = () => matchMedia("(max-width: 900px)").matches;
@@ -108,7 +113,7 @@
   }
   function visible() {
     const s = q.trim().toLowerCase();
-    return list.filter((p) => (filter === "all" || (filter === "seen" ? p.views : !p.views))
+    return list.filter((p) => (!clientFilter || p.client_id === clientFilter) && (filter === "all" || (filter === "seen" ? p.views : !p.views))
       && (!s || `${p.title} ${p.client_name || ""} ${p.items.map((x) => `${x.title} ${x.complex || ""}`).join(" ")}`.toLowerCase().includes(s)));
   }
   function renderList() {
@@ -146,6 +151,9 @@
         <small>${esc(sub(it))}</small>
         <input class="pk2-com" data-com="${it.listing_id}" data-pid="${p.id}" maxlength="1000" value="${esc(it.note || "")}"
           placeholder="Комментарий для клиента" aria-label="Комментарий для клиента">
+        ${it.reaction ? `<span class="pk2-re r-${REACT[it.reaction][1]}">Ответ клиента: ${REACT[it.reaction][0]}${it.reaction_text ? ` — «${esc(it.reaction_text)}»` : ""}</span>` : ""}
+        ${p.client_id ? `<label class="pk2-pst"><span>Статус для ${esc(p.client_name || "клиента")}</span><select data-pst="${it.listing_id}" data-pid="${p.id}" aria-label="Статус">
+          ${Object.entries(PAIR).map(([k, v]) => `<option value="${k}"${(it.status || "sent") === k ? " selected" : ""}>${v}</option>`).join("")}</select></label>` : ""}
         ${notesFor(p, it)}
         <div class="pk2-oacts">
           <button type="button" class="pk2-ib" data-move="-1" data-i="${i}" data-pid="${p.id}" ${i ? "" : "disabled"} aria-label="Выше" title="Выше">${ic("arrow-up")}</button>
@@ -163,6 +171,21 @@
     return `<div class="pk2-wn" title="Журнал — видите только вы"><span class="pk2-wn-k k-${esc(n.kind)}">${NK[n.kind] || "Заметка"} · ${esc(when(n.ts))}</span>
       ${n.text ? `<p>${esc(n.text)}</p>` : ""}${ns.length > 1 ? `<small>ещё ${ns.length - 1} в журнале объекта</small>` : ""}</div>`;
   }
+  function favCard(f, p) {
+    return `<div class="pk2-fav">
+        <span class="pk2-fph">${f.photos && f.photos[0] ? `<img src="${esc(f.photos[0])}" alt="" loading="lazy">` : ic("home")}</span>
+        <b>${esc(money(f.price, f.deal))}</b><small>${esc(f.complex ? `ЖК ${f.complex} · ${f.title}` : f.title)}</small>
+        ${f.description ? `<p class="pk2-fdesc">${esc(f.description.slice(0, 220))}</p>` : ""}
+        <a class="pk2-fopen" href="/?open=${f.id}">Открыть объект</a>
+        <button type="button" class="pk2-addb" data-add="${f.id}" data-pid="${p.id}" aria-label="Добавить в подборку">${ic("plus")}</button></div>`;
+  }
+  function baseStrip(p) {
+    if (!baseQ.trim()) return `<p class="pk2-hint">Пишите как в поиске на главной: «2к фмр до 7 млн», «студия самолёт», улица — покажем 20 объектов.</p>`;
+    if (baseRes === null) return `<p class="pk2-hint">Ищем…</p>`;
+    const inPick = new Set(p.items.map((x) => x.listing_id));
+    const items = baseRes.filter((f) => !inPick.has(f.id));
+    return items.length ? `<div class="pk2-strip">${items.map((f) => favCard(f, p)).join("")}</div>` : `<p class="pk2-hint">Ничего не нашлось.</p>`;
+  }
   function addStrip(p) {
     if (favs === null) return `<p class="pk2-hint">Загружаем избранное…</p>`;
     const inPick = new Set(p.items.map((x) => x.listing_id));
@@ -170,12 +193,7 @@
     const add = favs.filter((f) => !inPick.has(f.id) && (!s || `${f.title} ${f.complex || ""} ${f.district || ""}`.toLowerCase().includes(s)));
     if (!favs.length) return `<p class="pk2-hint">Избранное пусто. Отмечайте объекты сердечком на <a href="/">поиске</a> — они появятся здесь.</p>`;
     if (!add.length) return `<p class="pk2-hint">${s ? "Ничего не нашлось." : "Всё избранное уже в подборке."}</p>`;
-    return `<div class="pk2-strip">${add.slice(0, 40).map((f) => `<div class="pk2-fav">
-        <span class="pk2-fph">${f.photos && f.photos[0] ? `<img src="${esc(f.photos[0])}" alt="" loading="lazy">` : ic("home")}</span>
-        <b>${esc(money(f.price, f.deal))}</b><small>${esc(f.complex ? `ЖК ${f.complex} · ${f.title}` : f.title)}</small>
-        ${f.description ? `<p class="pk2-fdesc">${esc(f.description.slice(0, 220))}</p>` : ""}
-        <a class="pk2-fopen" href="/?open=${f.id}">Открыть объект</a>
-        <button type="button" class="pk2-addb" data-add="${f.id}" data-pid="${p.id}" aria-label="Добавить в подборку">${ic("plus")}</button></div>`).join("")}</div>`;
+    return `<div class="pk2-strip">${add.slice(0, 40).map((f) => favCard(f, p)).join("")}</div>`;
   }
   function renderDetail() {
     const box = $("pkDetail");
@@ -212,7 +230,13 @@
           <div class="pk2-grid" id="pkGrid">${p.items.map((it, i) => objCard(p, it, i)).join("")}</div>`
           : `<div class="pk2-noitems">${ic("home")}<b>В подборке пока нет объектов</b><span>Добавьте из избранного ниже или кнопкой «В подборку» в окне объекта.</span></div>`}
         <section class="pk2-add">
-          <div class="pk2-add-h"><h3>${ic("heart")}Добавить из избранного</h3>
+          <div class="pk2-add-h"><h3>${ic("search")}Найти на 1+1 и добавить</h3>
+            <label class="pk2-search sm wide"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              <input id="pkBaseQ" type="search" value="${esc(baseQ)}" placeholder="«2к фмр», ЖК, улица" aria-label="Найти объект на 1+1"></label></div>
+          <div id="pkBase">${baseStrip(p)}</div>
+        </section>
+        <section class="pk2-add">
+          <div class="pk2-add-h"><h3>${ic("heart")}Из избранного</h3>
             <label class="pk2-search sm"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
               <input id="pkFavQ" type="search" value="${esc(favQ)}" placeholder="ЖК, улица" aria-label="Найти в избранном"></label></div>
           <div id="pkFavs">${addStrip(p)}</div>
@@ -234,7 +258,7 @@
         </form>`}`;
     if (window.Pick) box.querySelectorAll("select").forEach((s) => Pick.select(s, { searchPlaceholder: "Найти клиента" }));
   }
-  function render() { stats(); renderList(); renderDetail(); }
+  function render() { stats(); fillClientFilter(); renderList(); renderDetail(); }
 
   // ─── действия ─────────────────────────────────────────────────────
   async function setOrder(pid, ids) {
@@ -391,6 +415,39 @@
     renderList();
   });
   $("pkQ").addEventListener("input", (e) => { q = e.target.value; renderList(); });
+  // фильтр по клиенту
+  function fillClientFilter() {
+    const sel = $("pkCl");
+    if (!sel) return;
+    const used = [...new Map(list.filter((p) => p.client_id).map((p) => [p.client_id, p.client_name])).entries()];
+    sel.hidden = !used.length;
+    sel.innerHTML = `<option value="">Все клиенты</option>` + used.map(([id, n]) => `<option value="${id}"${id === clientFilter ? " selected" : ""}>${esc(n || "Клиент")}</option>`).join("");
+    if (window.Pick && used.length) Pick.select(sel, { searchPlaceholder: "Найти клиента" });
+  }
+  $("pkCl").addEventListener("change", (e) => { clientFilter = Number(e.target.value) || 0; renderList(); });
+  // статус объекта в подборке
+  document.addEventListener("change", async (e) => {
+    const sel = e.target;
+    if (!sel.dataset || !sel.dataset.pst) return;
+    const r = await call(`/api/picks/${sel.dataset.pid}/items`, { listing_id: Number(sel.dataset.pst), status: sel.value });
+    toast(r.ok ? "Статус сохранён — запись в журнале объекта" : (r.data.detail || "Не получилось"), 2000);
+    if (r.ok) await reload();
+  });
+  document.addEventListener("input", (e) => {
+    if (e.target.id !== "pkBaseQ") return;
+    baseQ = e.target.value;
+    clearTimeout(baseTimer);
+    baseTimer = setTimeout(async () => {
+      const p = list.find((x) => x.id === open);
+      if (!baseQ.trim()) { baseRes = []; if (p) $("pkBase").innerHTML = baseStrip(p); return; }
+      baseRes = null;
+      if (p) $("pkBase").innerHTML = baseStrip(p);
+      const r = await call(`/api/listings?q=${encodeURIComponent(baseQ.trim())}&size=20`);
+      baseRes = r.ok ? r.data.items : [];
+      const p2 = list.find((x) => x.id === open);
+      if (p2 && $("pkBase")) $("pkBase").innerHTML = baseStrip(p2);
+    }, 350);
+  });
   document.addEventListener("input", (e) => {
     if (e.target.id !== "pkFavQ") return;
     favQ = e.target.value;

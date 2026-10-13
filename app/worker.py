@@ -85,6 +85,10 @@ def tick(conn) -> dict:
     synced = feed.maybe_sync(conn)
     if synced:
         stats["feed"] = synced
+    from . import cxnorm
+    cx = cxnorm.maybe_run(conn)   # один раз (ТЗ v2, P1.7): одно название на один ЖК, отчёт — в админке
+    if cx:
+        stats["cx_norm"] = cx["listings"]
     if not db.get_state(conn, "p0_phones_v1"):   # один раз (ТЗ v2, P0): вырезать номера из описаний, отчёт — в админке
         from . import p0fix
         ph = p0fix.phones_report(conn, apply=True, examples=10)

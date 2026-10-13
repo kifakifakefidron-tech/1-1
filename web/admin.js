@@ -38,6 +38,7 @@
       card(o.optouts, "скрытых номеров"),
       ...(o.p0_report ? [card(o.p0_report.phones, "номеров вырезано из описаний"),
         card(o.p0_report.prices, "цена в карточке ≠ цене в тексте")] : []),
+      ...(o.cx_report ? [card(o.cx_report.listings, `объектов: одно название ЖК (групп ${o.cx_report.groups})`)] : []),
       card(o.wappi_enabled ? "включён" : "на паузе", "сбор из чатов (Wappi)"),
       card(o.payments ? "включена" : "выключена", `оплата (${o.price} ₽ / ${o.period_days} дн.)`),
       card(day(o.feed_synced), "фид СТРЕЛ обновлён"),

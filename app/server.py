@@ -411,6 +411,7 @@ def api_listing(request: Request, body: dict | None = None):
     d["status"] = hooks.get_status(conn, user["id"], lid) if user else None
     d["plans"] = planner.for_listing(conn, user["id"], lid) if user else []
     d["work"] = worklog.for_listing(conn, user["id"], lid) if user else []
+    d["pairs"] = clients.for_listing(conn, user["id"], lid) if user else []
     d["work_ctx"] = worklog.context(conn, user["id"], lid) if user else None
     # «Покупатели под объект» — только админу (решение Артёма 11.10)
     d["buyers"] = buyers.for_listing(conn, {**dict(row), "extra_districts": d.get("extra_districts") or []}, access)         if user and user["is_admin"] else []
@@ -610,10 +611,15 @@ def api_favorites(request: Request, body: dict | None = None):
         WHERE f.user_id IS NOT NULL OR n.status IS NOT NULL
         ORDER BY crm_ts DESC""", (user["id"], user["id"])).fetchall()
     items = []
+    pairs: dict[int, list] = {}
+    for p in db.get().execute("""SELECT i.listing_id, c.id, c.name, i.status, i.reaction FROM client_items i
+                                 JOIN clients c ON c.id = i.client_id WHERE c.user_id = ?""", (user["id"],)):
+        pairs.setdefault(p["listing_id"], []).append({"id": p["id"], "name": p["name"], "status": p["status"],
+                                                       "label": clients.PAIR.get(p["status"], ""), "reaction": p["reaction"]})
     for r in rows:
         it = search.row_to_item(r, False)
         it.update(status=r["crm_status"], note=r["crm_note"] or "", favorite=r["fav_at"] is not None,
-                  touched=r["crm_ts"], fav_price=r["fav_price"])
+                  touched=r["crm_ts"], fav_price=r["fav_price"], clients=pairs.get(r["id"], []))
         items.append(it)
     return JSONResponse({"items": items})
 
@@ -780,6 +786,7 @@ def api_admin_overview(request: Request, body: dict | None = None):
         "wappi_enabled": config.WAPPI_ENABLED, "payments": payments.available(),
         "price": config.SUB_PRICE, "period_days": config.SUB_DAYS,
         "p0_report": json.loads(db.get_state(conn, "p0_report") or "null"),
+        "cx_report": json.loads(db.get_state(conn, "cx_norm_report") or "null"),
         "feed_synced": int(db.get_state(conn, "feed_synced") or 0),
     })
 

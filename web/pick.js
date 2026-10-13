@@ -58,10 +58,51 @@
         ${o.is_active ? "" : `<p class="pk-gone">Объект уже снят с продажи — уточните у агента.</p>`}
         ${o.note ? `<p class="pk-comment"><b>Комментарий агента:</b> ${esc(o.note)}</p>` : ""}
         ${o.description ? `<details class="pk-desc" open><summary>Описание</summary><p>${esc(o.description)}</p></details>` : ""}
+        ${o.is_active ? reactHTML(o) : ""}
       </div></li>`).join("") || `<li class="pk-empty">В подборке пока нет объектов.</li>`;
     window.__pick = d;
     drawMap(d.items);
   }
+
+  // ответ клиента по объекту — агент сразу видит его у себя (статус, история, уведомление)
+  const RE = [["like", "Нравится"], ["want_show", "Хочу посмотреть"], ["no", "Не подходит"], ["question", "Задать вопрос"]];
+  const RE_OK = { like: "Агент увидит, что вам понравилось.", want_show: "Агент свяжется, чтобы договориться о показе.",
+    no: "Понятно — агент учтёт и подберёт другие варианты.", question: "Вопрос отправлен — агент ответит." };
+  function reactHTML(o) {
+    return `<div class="pk-react" data-lid="${o.id}"><p class="pk-react-h">Как вам этот вариант?</p>
+      <div class="pk-react-b">${RE.map(([k, t]) => `<button type="button" class="pk-rb r-${k}${o.reaction === k ? " on" : ""}" data-re="${k}">${t}</button>`).join("")}</div>
+      <form class="pk-q" hidden><textarea name="text" rows="2" maxlength="1000" placeholder="Ваш вопрос об этом объекте" required></textarea>
+        <input name="phone" inputmode="tel" maxlength="30" placeholder="Телефон для ответа (необязательно)">
+        <button type="submit" class="pk-send">Отправить вопрос</button></form>
+      <p class="pk-react-ok"${o.reaction ? "" : " hidden"}>${o.reaction ? RE_OK[o.reaction] : ""}</p></div>`;
+  }
+  const asAgent = new URLSearchParams(location.search).get("as") === "agent";
+  async function sendReact(box, kind, text = "", phone = "") {
+    const ok = box.querySelector(".pk-react-ok");
+    if (asAgent) { ok.hidden = false; ok.textContent = "Это вид клиента: ответы ставит сам клиент по своей ссылке."; return; }
+    const r = await fetch(`/api/c/${encodeURIComponent(token)}/react`, { method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ listing_id: Number(box.dataset.lid), kind, text, phone }) });
+    const d = await r.json().catch(() => ({}));
+    ok.hidden = false;
+    if (!r.ok) { ok.textContent = d.detail || "Не получилось отправить — попробуйте ещё раз."; return; }
+    box.querySelectorAll("[data-re]").forEach((b) => b.classList.toggle("on", b.dataset.re === kind));
+    box.querySelector(".pk-q").hidden = true;
+    ok.textContent = RE_OK[kind];
+  }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-re]");
+    if (!b) return;
+    const box = b.closest(".pk-react");
+    if (b.dataset.re === "question") { const f = box.querySelector(".pk-q"); f.hidden = !f.hidden; if (!f.hidden) f.text.focus(); return; }
+    sendReact(box, b.dataset.re);
+  });
+  document.addEventListener("submit", (e) => {
+    const f = e.target.closest(".pk-q");
+    if (!f) return;
+    e.preventDefault();
+    if (!f.text.value.trim()) return;
+    sendReact(f.closest(".pk-react"), "question", f.text.value.trim(), f.phone.value.trim());
+  });
 
   // вид подборки из настроек агента: цвет, обложка, подпись (имя или агентство)
   const PALETTE = { gold: "#e3cb8f", teal: "#5fd0c0", sky: "#7cc4f5", violet: "#b9a3f5", coral: "#f29a7e", rose: "#f08fb6", lime: "#b6db7a", slate: "#9fb3b1" };

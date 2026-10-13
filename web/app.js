@@ -418,8 +418,12 @@
   // знак «СТРЕЛЫ» — две стрелки (бренд агентства-партнёра)
   const STRELY = `<svg class="strely-ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 12.5L8 7M8 7V11M8 7H4"/><path d="M7.5 9.5L13 4M13 4V8M13 4H9"/></svg>`;
 
-  // «Клиенту»: предложить объект клиенту из CRM (/clients) — список клиентов с отметкой, кому уже предложен
-  async function openClientMenu(id) {
+  // «Клиенту ▾» (ТЗ v2): одна кнопка вместо «В подборку» и «Клиенту». Выбрали клиента — объект в его подборке
+  // (статус «Отправлен»), ссылку можно сразу скопировать. Новый клиент — прямо здесь. «Без клиента» — вторым пунктом.
+  const PAIR_L = { matched: "подобран", sent: "отправлен", opened: "открыл", liked: "понравился", rejected: "не подходит",
+    show: "показ", talks: "переговоры", deal: "сделка", lost: "отказ" };
+  let cmData = null, cmFor = 0, cmDone = null;
+  function cmDlg() {
     let dlg = $("clientDlg");
     if (!dlg) {
       dlg = document.createElement("dialog");
@@ -427,17 +431,63 @@
       dlg.className = "small-dlg client-dlg";
       document.body.appendChild(dlg);
     }
-    dlg.innerHTML = `<div class="dlg-body"><div class="cm-head"><h2>Предложить клиенту</h2>
-      <button type="button" class="close" data-close-dlg aria-label="Закрыть">✕</button></div><div class="cm-list"><p class="note">Загружаем…</p></div></div>`;
+    return dlg;
+  }
+  async function openClientMenu(id) {
+    cmFor = id; cmDone = null;
+    const dlg = cmDlg();
+    const o = known.get(id) || {};
+    dlg.innerHTML = `<div class="dlg-body"><div class="cm-head"><h2>Клиенту</h2>
+        <button type="button" class="close" data-close-dlg aria-label="Закрыть">✕</button></div>
+      ${o.title ? `<p class="cm-obj">${esc(headline(o) || o.title)} · ${esc(fmtPrice(o.price, o.deal))}</p>` : ""}
+      <label class="cm-search">${ic("search")}<input id="cmQ" placeholder="Найти клиента" autocomplete="off" aria-label="Найти клиента"></label>
+      <div class="cm-done" id="cmDone" hidden></div>
+      <div class="cm-list"><p class="note">Загружаем…</p></div>
+      <details class="cm-newbox"><summary>${ic("plus")}Новый клиент</summary>
+        <form class="cm-new-f" id="cmNew" autocomplete="off"><input name="name" maxlength="80" placeholder="Имя" required>
+          <input name="phone" maxlength="30" inputmode="tel" placeholder="Телефон (необязательно)">
+          <button type="submit" class="pill">Создать и добавить</button></form></details>
+      <button type="button" class="cm-nopick" data-pick-open="${id}">${ic("folder")}В подборку без клиента…</button></div>`;
     if (!dlg.open) dlg.showModal();
     const r = await call(`/api/clients?listing=${id}`);
     if (!r.ok) { dlg.querySelector(".cm-list").innerHTML = `<p class="note">Не получилось загрузить клиентов.</p>`; return; }
-    const has = new Map(r.data.items.map((x) => [x.id, x.status]));
-    const ST = { offered: "предложен", liked: "понравился", shown: "показан", rejected: "отказ" };
-    dlg.querySelector(".cm-list").innerHTML = (r.data.clients.length ? r.data.clients.map((c) => `<button type="button" class="cm-it${has.has(c.id) ? " on" : ""}"
-        data-client-add="${c.id}" data-listing="${id}"><span class="cm-ava">${esc((c.name || "К")[0].toUpperCase())}</span>
-        <span class="cm-name">${esc(c.name)}</span><small>${has.has(c.id) ? `уже: ${ST[has.get(c.id)] || ""}` : "предложить"}</small></button>`).join("")
-      : `<p class="note">Клиентов пока нет.</p>`) + `<a class="pill light cm-new" href="/clients?new=1">${ic("plus")}Новый клиент</a>`;
+    cmData = r.data;
+    cmRender();
+    $("cmQ").addEventListener("input", cmRender);
+    $("cmNew").addEventListener("submit", cmCreate);
+  }
+  function cmRender() {
+    const box = cmDlg().querySelector(".cm-list");
+    const q = ($("cmQ") && $("cmQ").value.trim().toLowerCase()) || "";
+    const has = new Map(cmData.items.map((x) => [x.id, x.status]));
+    const list = cmData.clients.filter((c) => !q || c.name.toLowerCase().includes(q))
+      .sort((a, b) => (has.has(b.id) ? 1 : 0) - (has.has(a.id) ? 1 : 0));
+    box.innerHTML = list.length ? list.map((c) => `<button type="button" class="cm-it${has.has(c.id) ? " on" : ""}" data-client-add="${c.id}">
+        <span class="cm-ava">${esc((c.name || "К")[0].toUpperCase())}</span><span class="cm-name">${esc(c.name)}</span>
+        <small>${has.has(c.id) ? esc(PAIR_L[has.get(c.id)] || has.get(c.id)) : "в подборку"}</small></button>`).join("")
+      : `<p class="note">${cmData.clients.length ? "Никого не нашли." : "Клиентов пока нет — создайте ниже."}</p>`;
+    const done = $("cmDone");
+    done.hidden = !cmDone;
+    if (cmDone) done.innerHTML = `${ic("check")}<span>Добавлено: <b>${esc(cmDone.name)}</b> — в подборке «${esc(cmDone.pick.title || "")}»</span>
+      <button type="button" class="pill light" data-copy-url="${esc(cmDone.pick.url || "")}">${ic("link")}Скопировать ссылку</button>`;
+  }
+  async function cmAdd(cid) {
+    const r = await call(`/api/clients/${cid}/add`, { listing_id: cmFor });
+    if (!r.ok) { toast(r.data.detail || "Не получилось", 3500); return; }
+    const c = cmData.clients.find((x) => x.id === cid) || { name: "" };
+    cmDone = { name: c.name, pick: r.data.pick || {} };
+    const rr = await call(`/api/clients?listing=${cmFor}`);
+    if (rr.ok) cmData = rr.data;
+    cmRender();
+  }
+  async function cmCreate(e) {
+    e.preventDefault();
+    const f = e.target;
+    const r = await call("/api/clients", { name: f.name.value.trim(), phone: f.phone.value });
+    if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
+    cmData.clients.unshift({ id: r.data.client.id, name: r.data.client.name });
+    f.reset(); f.closest("details").open = false;
+    await cmAdd(r.data.client.id);
   }
 
   function itemHTML(o) {
@@ -465,6 +515,7 @@
       <div class="item-foot">
         <div class="item-meta" title="Сколько дней объявление на 1+1 (с первого появления в чатах риелторов) и когда его присылали последний раз"><span class="on-sale">${esc(onSite(daysOnSale(o)))}</span> · ${esc(updated(o.last_seen))}</div>
         ${favMode ? `<a class="plan-btn" href="/planner?add=show&listing=${o.id}" title="Запланировать показ или звонок" aria-label="Запланировать">📅</a>` : ""}
+        ${me() ? `<button type="button" class="cmp-btn cli-btn" data-client-open="${o.id}" title="Клиенту: в подборку клиента" aria-label="Клиенту">${ic("users")}</button>` : ""}
         <button type="button" class="cmp-btn${cmp.includes(o.id) ? " on" : ""}" data-cmp="${o.id}" title="Сравнить" aria-label="Добавить к сравнению">⚖</button>
       </div>
     </li>`;
@@ -783,8 +834,7 @@
     const actions = [
       `<button type="button" class="dv-act${inCmp ? " on" : ""}" data-cmp="${o.id}"><i>⚖</i><span>${inCmp ? "В сравнении" : "Сравнить"}</span></button>`,
       u ? `<a class="dv-act" href="/planner?add=show&listing=${o.id}"><i>📅</i><span>Запланировать</span></a>` : "",
-      u ? `<button type="button" class="dv-act" data-pick-open="${o.id}"><i>📁</i><span>В подборку</span></button>` : "",
-      u ? `<button type="button" class="dv-act" data-client-open="${o.id}"><i>${ic("users")}</i><span>Клиенту</span></button>` : "",
+      u ? `<button type="button" class="dv-act" data-client-open="${o.id}"><i>${ic("users")}</i><span>Клиенту ▾</span></button>` : "",
       `<button type="button" class="dv-act" data-share="${o.id}"><i>${ic("share")}</i><span>Поделиться</span></button>`,
       u ? `<button type="button" class="dv-act" data-hide-open="${o.id}"><i>${ic("eye")}</i><span>Скрыть</span></button>` : "",
     ].join("");
@@ -797,8 +847,14 @@
           <small>средняя цена м² — ${esc(num(m.median))} ₽ · ${esc(m.base)}, ${m.n} ${plural(m.n, "объект", "объекта", "объектов")}</small></p>` : "")
       + chart;
     const priceHint = [days != null ? `${days < 1 ? "новое" : days + " дн."}` : "", chart ? "график" : ""].filter(Boolean).join(" · ");
-    const notesBody = u && !o.loading ? `<div class="wk-sec"><p class="wk-sh">Статус</p><div class="chips dv-crm">${Object.entries(STATUSES).map(([k, v]) =>
-        `<button type="button" class="chip${st === k ? " on" : ""}" data-crm="${k}" data-id="${o.id}">${v}</button>`).join("")}</div></div>
+    const pairs = o.pairs || [];
+    const notesBody = u && !o.loading ? `<div class="wk-sec"><p class="wk-sh">Клиенты по объекту</p>
+      ${pairs.length ? `<div class="pr-list">${pairs.map((p) => `<div class="pr-it"><a href="/clients?id=${p.id}" target="_top">${ic("user")}${esc(p.name)}</a>
+        ${p.reaction ? `<span class="pr-re">ответ: ${esc({ like: "нравится", no: "не подходит", want_show: "хочет посмотреть", question: "вопрос" }[p.reaction] || "")}</span>` : ""}
+        <select data-pair-set="${p.id}:${o.id}" aria-label="Статус для ${esc(p.name)}">${Object.entries(PAIR_L).map(([k, v]) =>
+          `<option value="${k}"${p.status === k ? " selected" : ""}>${v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></div>`).join("")}</div>`
+        : `<p class="wk-empty">Объект ещё не отправлен ни одному клиенту.</p>`}
+      <button type="button" class="wk-open" data-client-open="${o.id}">${ic("users")}Клиенту ▾ <small>в подборку клиента</small></button></div>
       <div class="wk-sec"><p class="wk-sh">Журнал — что, кому и когда</p><div class="wk" data-wk="${o.id}">${journalHTML(o)}</div></div>
       <div class="wk-sec"><p class="wk-sh">Личная заметка <small>видите только вы</small></p>
       <textarea class="d-note-text wk-note" data-note="${o.id}" rows="2" maxlength="2000" placeholder="Например: торг 100 т.р., собственник один">${esc(o.note || "")}</textarea>
@@ -858,7 +914,7 @@
         ${o.description ? `<div class="dv-desc clamp"><p>${esc(o.description)}</p><button type="button" class="dv-desc-more" data-desc-more>Читать полностью</button></div>` : ""}
         <div class="dv-accs">
           ${acc("📈", "Цена и рынок", priceHint, priceBody)}
-          ${acc("📝", "Работа с объектом", [st ? STATUSES[st] : "", (o.work || []).length ? `записей: ${o.work.length}` : o.note ? "есть заметка" : ""].filter(Boolean).join(" · "), notesBody)}
+          ${acc("📝", "Работа с объектом", [(o.pairs || []).length ? `клиентов: ${o.pairs.length}` : "", (o.work || []).length ? `записей: ${o.work.length}` : o.note ? "есть заметка" : ""].filter(Boolean).join(" · "), notesBody)}
           ${acc("📅", "В планере", plans.length ? `${plans.length}` : "", plansBody)}
           ${acc("🙋", "Покупатели под объект", `${buyers.length >= 30 ? "30+" : buyers.length}`, buyersBody, { cls: "good" })}
           ${acc("👥", "Похожие у других агентов", `${same.length}`, sameBody)}
@@ -1460,6 +1516,7 @@
     $("favBtn").innerHTML = `Избранное${n ? `<i class="nav-badge">${n}</i>` : ""}`;
     $("adminLink").hidden = !(u && u.is_admin);
     $("plannerLink").hidden = !u;
+    $("toClientBtn").hidden = !u;
     $("plannerMore").hidden = !u;   // на узком экране — в «Ещё ▾»
     $("adminMore").hidden = !(u && u.is_admin);
     if ($("heroLogin")) { $("heroLogin").hidden = !!u; $("heroCabinet").hidden = !u; }
@@ -1735,13 +1792,12 @@
         renderSaved(); return;
       }
       if (t.dataset.clientOpen) { openClientMenu(Number(t.dataset.clientOpen)); return; }
-      if (t.dataset.clientAdd) {
-        call(`/api/clients/${t.dataset.clientAdd}/items`, { listing_id: Number(t.dataset.listing), status: "offered" }).then((r) => {
-          if (r.ok) { toast("Объект добавлен клиенту — он в его карточке"); openClientMenu(Number(t.dataset.listing)); }
-          else toast(r.data.detail || "Не получилось");
-        });
+      if (t.dataset.clientAdd) { cmAdd(Number(t.dataset.clientAdd)); return; }
+      if (t.dataset.copyUrl !== undefined) {
+        navigator.clipboard.writeText(t.dataset.copyUrl).then(() => toast("Ссылка на подборку скопирована"), () => prompt("Скопируйте ссылку:", t.dataset.copyUrl));
         return;
       }
+
       if (t.hasAttribute("data-close-dlg")) { t.closest("dialog").close(); return; }
       if (t.dataset.galStep) {
         const g = t.parentElement.querySelector(".dv-gal");
@@ -1911,6 +1967,14 @@
       });
     }
 
+    // статус пары клиент+объект из окна объекта («Клиенты по объекту»)
+    document.addEventListener("change", (e) => {
+      const t = e.target;
+      if (!t.dataset || !t.dataset.pairSet) return;
+      const [cid, lid] = t.dataset.pairSet.split(":").map(Number);
+      call(`/api/clients/${cid}/items`, { listing_id: lid, status: t.value }).then((r) => toast(r.ok ? "Статус сохранён" : (r.data.detail || "Не получилось"), 1500));
+    });
+
     let noteTimer = 0;
     document.addEventListener("input", (e) => {
       const t = e.target;
@@ -1934,6 +1998,16 @@
       if (state.hot) toast("🔥 Цена снизилась за неделю, ниже рынка или «срочно»", 3200);
     });
     $("watchBtn").addEventListener("click", watchSearch);
+    // «Клиент из поиска»: фильтры этой страницы → пожелания нового клиента (/clients?new=1&from=…)
+    $("toClientBtn").addEventListener("click", () => {
+      const pm = toNum(state.priceMin), px = toNum(state.priceMax);
+      const wishes = { types: state.types.filter((t) => ["flat", "house", "land", "commercial"].includes(t)),
+        area_min: toNum(state.areaMin) || "", area_max: toNum(state.areaMax) || "", not_first: state.notFirst || undefined,
+        complexes: state.complexes };
+      const from = { rooms: state.rooms, districts: state.districts, wishes,
+        price_min: pm != null ? Math.round(pm * priceMul()) : null, price_max: px != null ? Math.round(px * priceMul()) : null };
+      location.href = `/clients?new=1&from=${encodeURIComponent(JSON.stringify(from))}`;
+    });
     $("shareSearchBtn").addEventListener("click", () => share(location.href, "Подборка объектов на 1+1"));
 
     $("psMin").addEventListener("input", () => onSlider("min"));
