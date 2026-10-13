@@ -19,9 +19,9 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=31">
+<link rel="stylesheet" href="/static/glass.css?v=33">
 <link rel="stylesheet" href="/static/cabinet.css?v=19">
-<link rel="stylesheet" href="/static/clients.css?v=9">
+<link rel="stylesheet" href="/static/clients.css?v=10">
 </head>
 <body class="dash-body">
 <main class="dash">
@@ -76,14 +76,14 @@
         <div class="c-f wide"><span>Комнаты</span><div class="chips" id="fRooms"></div></div>
         <label class="c-f"><span id="fBudgetL">Бюджет от, млн ₽</span><input name="budget_min" inputmode="decimal"></label>
         <label class="c-f"><span id="fBudgetH">Бюджет до, млн ₽</span><input name="budget_max" inputmode="decimal"></label>
-        <div class="c-f wide"><span>Районы</span><div class="c-dist"><div class="chips" id="fDistricts"></div><select id="fDistrictAdd" multiple data-placeholder="Выбрать районы" aria-label="Районы"></select></div></div>
+        <div class="c-f wide" data-pk-down><span>Районы</span><div class="c-dist"><div class="chips" id="fDistricts"></div><select id="fDistrictAdd" multiple data-placeholder="Выбрать районы" aria-label="Районы"></select></div></div>
         <details class="c-f wide c-more-w" id="fMore"><summary>Ещё пожелания <small id="fMoreN"></small></summary>
           <div class="c-grid">
             <div class="c-f wide"><span>Что ищет</span><div class="chips" id="fTypes"></div></div>
             <label class="c-f"><span>Площадь от, м²</span><input name="area_min" inputmode="decimal"></label>
             <label class="c-f"><span>Площадь до, м²</span><input name="area_max" inputmode="decimal"></label>
             <div class="c-f wide"><span>Этаж</span><div class="chips" id="fFloor"></div></div>
-            <div class="c-f wide"><span>ЖК</span><select id="fComplexes" multiple data-placeholder="Любые ЖК" aria-label="ЖК"></select></div>
+            <div class="c-f wide" data-pk-down><span>ЖК</span><select id="fComplexes" multiple data-placeholder="Любые ЖК" aria-label="ЖК"></select></div>
             <div class="c-f wide"><span>Состояние</span><div class="chips" id="fCond"></div></div>
             <div class="c-f wide"><span>Обременение</span><div class="chips" id="fEnc"></div></div>
             <div class="c-f wide"><span>Как платит</span><div class="chips" id="fPay"></div></div>
@@ -105,6 +105,7 @@
     </form>
 
     <div class="c-pane" data-pane="items" hidden>
+      <div class="c-report" id="dReport"></div>
       <div class="c-picks" id="dPicks"></div>
       <div class="c-items" id="dItems"></div>
       <div class="c-match-h"><h3>Подходят по пожеланиям <b id="dMatchN"></b></h3><button type="button" class="pill light" id="dMatch"><span data-ic="sparkle"></span>Обновить</button></div>
@@ -135,9 +136,9 @@
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
 <script src="/static/icons.js?v=6"></script>
 <script src="/static/max.js?v=2"></script>
-<script src="/static/rail.js?v=11"></script>
-<script src="/static/pickers.js?v=9"></script>
-<script src="/static/clients.js?v=13"></script>
+<script src="/static/rail.js?v=12"></script>
+<script src="/static/pickers.js?v=10"></script>
+<script src="/static/clients.js?v=14"></script>
 <script src="/static/objview.js?v=3"></script>
 <script src="/static/bell.js?v=5"></script>
 </body>

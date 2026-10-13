@@ -439,6 +439,12 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   Все / У клиентов / Без клиента / Скрытые, чипы клиентов со статусом, фильтр по клиенту (/api/favorites → clients).
   Главная — «Клиент из поиска» (/clients?new=1&from=JSON). ЖК: app/cxnorm.py (ключ complex_key, «X 1» = «X»), разово
   (state cx_norm_v1, отчёт cx_norm_report в «Обзоре»), новые — ingest.save_object → cxnorm.canonical.
+  P2 (ветка p2-ux): клиенту никогда не показываем «Коллега (по коду)» (picks.PROMO_NAME); в подборке без контакта —
+  форма «Как вас показать клиенту» (для всех подборок → /api/settings pick_name/pick_phone); collections.hide_address —
+  клиенту без номера дома, точка округлена до ~300 м (picks._coarse); снятый объект: клиенту без описания, агенту
+  «Снят — похожие» (GET /api/picks/{id}/similar, POST items {replace, listing_id} — на то же место); отчёт по клиенту
+  (сводка + «Скопировать отчёт»); нижняя панель телефона — подписи под иконками (.rail-lbl); выпадающие районы/ЖК в
+  форме клиента — только вниз (data-pk-down в pickers.place); шапка главной на 641–820 px без прокрутки вбок.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
@@ -447,7 +453,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 229 тестов
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 230 тестов
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены

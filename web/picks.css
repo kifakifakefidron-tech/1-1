@@ -312,3 +312,27 @@
 .pk2-re.r-ok { color: var(--ok); } .pk2-re.r-bad { color: var(--bad); } .pk2-re.r-gold { color: var(--gold); }
 .pk2-search.sm.wide { width: min(320px, 100%); }
 .pk2-tools .pk-btn { height: 40px; border-radius: 999px; }
+
+/* P2: контакт агента, скрыть адрес, похожие на снятый */
+.pk2-me { display: grid; gap: 8px; margin: 12px 0 0; padding: 12px 14px; border-radius: 16px; border: 1px solid rgba(227, 203, 143, .4);
+  background: rgba(227, 203, 143, .08); }
+.pk2-me p { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.45; }
+.pk2-me p svg { width: 17px; height: 17px; color: var(--gold); flex: none; margin-top: 1px; }
+.pk2-me-f { display: flex; flex-wrap: wrap; gap: 6px; }
+.pk2-me-f input { flex: 1 1 160px; min-width: 0; height: 40px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--glass-line);
+  background: rgba(0, 0, 0, .16); color: var(--ink); font: 14px var(--body); }
+.pk2-me-f .pill { height: 40px; }
+.pk2-me-all { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-3); }
+.pk2-me-all input, .pk2-hide input { accent-color: var(--gold-300); width: 17px; height: 17px; }
+.pk2-hide { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 14px; background: rgba(255, 255, 255, .04); cursor: pointer; }
+.pk2-hide span { display: grid; gap: 2px; } .pk2-hide small { color: var(--ink-3); font-size: 12.5px; }
+.pk2-sim { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 8px; border: 0; background: rgba(227, 203, 143, .14);
+  color: var(--gold-200); font: 600 13px var(--body); cursor: pointer; }
+.pk2-sim svg { width: 15px; height: 15px; }
+.pk2-sims { display: grid; gap: 8px; }
+.pk2-simit { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px; border-radius: 14px; background: rgba(255, 255, 255, .04); }
+.pk2-simit .pk2-fph { width: 64px; margin: 0; }
+.pk2-simit span:nth-child(2) { display: grid; min-width: 0; font-size: 13px; }
+.pk2-simit small { color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk2-simit a { color: var(--gold); font-size: 12px; }
+@media (max-width: 600px) { .pk2-obj .pk2-sim { grid-column: 1 / -1; } }

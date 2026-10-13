@@ -111,3 +111,26 @@ def test_complex_names_merged(env):
     names = {r[0] for r in conn.execute("SELECT DISTINCT complex FROM listings WHERE id IN (?, ?)", (a, b))}
     assert len(names) == 1 and rep["groups"] == 1
     assert cxnorm.canonical(conn, "самолет 2") == names.pop()
+
+
+def test_p2_contact_hidden_address_and_similar(env):
+    c, conn = env
+    a = add(conn, "2-к квартира 58 м², 7/16 эт., ФМР, ул. Ставропольская 10, дом 5. 6 300 000 руб. 89181112233")
+    b = add(conn, "2-к квартира 57 м², 9/16 эт., ФМР, ул. Ставропольская 12. 6 500 000 руб. 89184445566")
+    conn.execute("UPDATE listings SET lat = 45.0123, lon = 38.9876, geo_status = 'osm-house' WHERE id = ?", (a,))
+    conn.execute("UPDATE users SET name = 'Коллега (по коду)'")
+    conn.commit()
+    p = c.post("/api/picks", json={"title": "Тест", "listing_id": a}).json()["pick"]
+    assert p["contact_name"] == ""                       # служебное имя в подборку не попадает
+    token = p["url"].rsplit("/", 1)[1]
+    c.post("/api/picks", json={"id": p["id"], "hide_address": True})
+    it = c.get(f"/api/c/{token}?as=agent").json()["items"][0]
+    assert it["house"] is None and it["approx"] and abs(it["lat"] - 45.0123) < 0.003 and it["lat"] != 45.0123
+    # объект сняли — клиенту без описания; агенту — похожие и замена на то же место
+    conn.execute("UPDATE listings SET is_active = 0 WHERE id = ?", (a,))
+    conn.commit()
+    assert c.get(f"/api/c/{token}?as=agent").json()["items"][0]["description"] == ""
+    sims = c.get(f"/api/picks/{p['id']}/similar?listing={a}").json()["items"]
+    assert [x["id"] for x in sims] == [b]
+    c.post(f"/api/picks/{p['id']}/items", json={"replace": a, "listing_id": b})
+    assert [x["listing_id"] for x in c.get("/api/picks").json()["items"][0]["items"]] == [b]

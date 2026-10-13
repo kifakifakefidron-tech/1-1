@@ -306,6 +306,27 @@
             <a class="pill light" href="/picks?open=${p.id}">Открыть</a></span></div>`; }).join("")}</div>`
         : `<p class="g-empty">Подборок пока нет. Объекты из подборки клиента сами появятся ниже со статусом «отправлен».</p>`}`;
   }
+  // отчёт по клиенту: что отправлено, что открыл, что понравилось, показы
+  function reportHTML() {
+    const it = cur.items, n = (f) => it.filter(f).length;
+    const sent = n((o) => o.status !== "matched"), opened = n((o) => o.opened_at || ["opened", "liked", "rejected", "show", "talks", "deal"].includes(o.status));
+    const liked = n((o) => o.status === "liked" || o.reaction === "like" || o.reaction === "want_show"), no = n((o) => o.status === "rejected");
+    const shows = n((o) => ["show", "talks", "deal"].includes(o.status)) + (cur.events || []).filter((e) => e.kind === "show").length;
+    if (!it.length) { $("dReport").innerHTML = ""; return; }
+    const cell = (v, t, c = "") => `<span class="c-rc ${c}"><b>${v}</b><small>${t}</small></span>`;
+    $("dReport").innerHTML = `<div class="c-rep">${cell(sent, "отправлено")}${cell(opened, "открыл")}${cell(liked, "понравилось", "ok")}${cell(no, "не подходит", "bad")}${cell(shows, "показов", "gold")}</div>
+      <button type="button" class="chip c-rep-copy" data-report-copy>${ic("note")}Скопировать отчёт</button>`;
+  }
+  function reportText() {
+    const label = data.item_status;
+    const lines = cur.items.map((o) => `• ${o.complex ? `ЖК ${o.complex}, ` : ""}${o.title} — ${money(o.price, o.deal)} ₽: ${(label[o.status] || o.status).toLowerCase()}`
+      + (o.reaction ? ` (ответ: ${REACT[o.reaction]}${o.reaction_text ? ` — «${o.reaction_text}»` : ""})` : ""));
+    return `Клиент: ${cur.client.name}
+Этап: ${data.stages[cur.client.stage]}
+Объекты (${cur.items.length}):
+${lines.join("
+")}`;
+  }
   async function newPick() {
     const matched = cur.items.filter((o) => o.status === "matched").map((o) => o.id);
     const n = (cur.picks || []).length + 1;
@@ -347,7 +368,7 @@
       const r = await call(`/api/clients?id=${id}`);
       if (!r.ok) { toast("Клиент не найден"); return; }
       cur = r.data;
-      itemsHTML(); upgradeItems(); logHTML(); tasksHTML(); picksHTML();
+      itemsHTML(); upgradeItems(); logHTML(); tasksHTML(); picksHTML(); reportHTML();
     } else cur = null;
     header(); stagesHTML(); fillForm(); tab("card");
     if (!$("cDlg").open) $("cDlg").showModal();
@@ -355,7 +376,7 @@
   }
   async function refreshCur() {
     const r = await call(`/api/clients?id=${cur.client.id}`);
-    if (r.ok) { cur = r.data; header(); stagesHTML(); itemsHTML(); upgradeItems(); logHTML(); tasksHTML(); picksHTML(); }
+    if (r.ok) { cur = r.data; header(); stagesHTML(); itemsHTML(); upgradeItems(); logHTML(); tasksHTML(); picksHTML(); reportHTML(); }
   }
   let matchPage = 1, matchSince = 0, freshIds = [];   // matchSince — из уведомления «новое под клиента»
   let mSort = "new", mPhoto = false, mNotFirst = false, showHidden = false;
@@ -472,6 +493,11 @@
     if (t.hasAttribute("data-all-match")) { matchSince = 0; match(); return; }
     if (t.hasAttribute("data-topick")) { toPick(); return; }
     if (t.hasAttribute("data-new-pick")) { newPick(); return; }
+    if (t.hasAttribute("data-report-copy")) {
+      const txt = reportText();
+      try { await navigator.clipboard.writeText(txt); toast("Отчёт скопирован — можно вставить в сообщение"); } catch { prompt("Скопируйте отчёт:", txt); }
+      return;
+    }
     if (t.dataset.copyPick) {
       try { await navigator.clipboard.writeText(t.dataset.copyPick); toast("Ссылка скопирована — отправьте клиенту"); }
       catch { prompt("Скопируйте ссылку:", t.dataset.copyPick); }

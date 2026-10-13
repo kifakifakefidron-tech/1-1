@@ -1027,6 +1027,8 @@ def api_pick_items(request: Request, body: dict | None = None):
     cid = int(request.path_params["id"])
     if "order" in body:
         res = picks.move(db.get(), user["id"], cid, [int(x) for x in body["order"] if str(x).isdigit()])
+    elif "replace" in body:   # снятый объект → похожий на то же место
+        res = picks.replace(db.get(), user["id"], cid, _num(body.get("replace"), int) or 0, _num(body.get("listing_id"), int) or 0)
     elif "status" in body:   # статус объекта в подборке клиента (понравился, не подходит, показ…)
         res = picks.set_status(db.get(), user["id"], cid, int(body.get("listing_id") or 0), str(body["status"]))
     else:
@@ -1039,6 +1041,15 @@ def api_pick_items(request: Request, body: dict | None = None):
 _PREVIEW_BOT = re.compile(r"bot\b|bot/|crawl|spider|preview|whatsapp/|telegrambot|facebookexternalhit|vkshare|skypeuripreview|"
                           r"slack|discord|viber|yandex|google|bing|headless|python|curl|wget|okhttp|java/", re.I)
 PV_COOKIE = "pv"
+
+
+def api_pick_similar(request: Request, body: dict | None = None):
+    """Снятый объект в подборке → 3 похожих на сайте (агенту, для замены в один клик)."""
+    user, err = _need_access(request)
+    if err:
+        return err
+    return JSONResponse({"items": picks.similar(db.get(), user["id"], int(request.path_params["id"]),
+                                                _num(request.query_params.get("listing"), int) or 0)})
 
 
 def api_pick_react(request: Request, body: dict | None = None):
@@ -2228,6 +2239,7 @@ routes = [
     Route("/c/{token}", threaded(pick_page)),
     Route("/api/picks", threaded(api_picks), methods=["GET", "POST", "DELETE"]),
     Route("/api/picks/{id:int}/items", threaded(api_pick_items), methods=["POST"]),
+    Route("/api/picks/{id:int}/similar", threaded(api_pick_similar)),
     Route("/api/c/{token}", threaded(api_pick_public)),
     Route("/api/c/{token}/react", threaded(api_pick_react), methods=["POST"]),
     Route("/planner/{uid:int}-{token}.ics", threaded(planner_feed)),

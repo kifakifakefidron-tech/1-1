@@ -26,12 +26,12 @@
   const params = new URLSearchParams(location.search);
   // все разделы сайта: название + коротко, зачем (подсказка при наведении; на телефоне — меню «Ещё»)
   const ITEMS = [
-    { href: "/", icon: "search", tip: "Поиск объектов", desc: "Все объекты из чатов: фильтры, карта, районы", main: true,
+    { href: "/", icon: "search", tip: "Поиск объектов", short: "Поиск", desc: "Все объекты из чатов: фильтры, карта, районы", main: true,
       on: () => path === "/" && !params.has("fav") && !params.has("agent") },
     { href: "/cabinet", icon: "grid", tip: "Кабинет", desc: "Ваш день: дела, ставки, курсы и биржа, новости", main: true, user: true },
     { href: "/my", icon: "home", tip: "Мои объекты", desc: "Свои объявления: добавить, изменить, снять", user: true, also: ["/my/edit"] },
     { href: "/clients", icon: "users", tip: "Клиенты", desc: "Клиенты по этапам, их подборки и журнал: что кому показали", main: true, user: true },
-    { href: "/work", icon: "heart", tip: "В работе", desc: "Избранное и объекты в работе: звонил, показ, думает", main: true, user: true,
+    { href: "/work", icon: "heart", tip: "В работе", desc: "Закладки и каким клиентам объекты отправлены", main: true, user: true,
       count: (c) => c.work, countTip: (n) => `в работе: ${n}` },
     { href: "/planner", icon: "calendar", tip: "Планер", desc: "Показы, звонки и встречи с напоминаниями", main: true, user: true,
       count: (c) => c.plan_today + c.plan_overdue, countTip: (n) => `дел на сегодня и просроченных: ${n}`, hot: (c) => c.plan_overdue > 0 },
@@ -65,9 +65,9 @@
     const who = me ? (me.name || me.email || "").replace(/[<>"]/g, "") : "";
     rail.innerHTML = `<a class="rail-logo" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="38" height="38"></a>`
       + items.map((it) => it.sep ? `<span class="rail-sep"></span>`
-        : `<a class="rail-a${isOn(it) ? " on" : ""}${it.main ? " main" : ""}" href="${it.href}" aria-label="${it.tip}">${ic(it.icon)}${it.bell ? `<b class="rail-n" hidden></b>` : badge(it)}${tipHTML(it.tip, badge(it) ? `${it.desc} · ${it.countTip(it.count(counts))}` : it.desc)}</a>`).join("")
+        : `<a class="rail-a${isOn(it) ? " on" : ""}${it.main ? " main" : ""}" href="${it.href}" aria-label="${it.tip}">${ic(it.icon)}<span class="rail-lbl">${it.short || it.tip}</span>${it.bell ? `<b class="rail-n" hidden></b>` : badge(it)}${tipHTML(it.tip, badge(it) ? `${it.desc} · ${it.countTip(it.count(counts))}` : it.desc)}</a>`).join("")
       + `<span class="rail-gap"></span>`
-      + `<button type="button" class="rail-a main rail-more" aria-label="Все разделы" aria-expanded="false">${ic("grid")}</button>`
+      + `<button type="button" class="rail-a main rail-more" aria-label="Все разделы" aria-expanded="false">${ic("grid")}<span class="rail-lbl">Ещё</span></button>`
       + (me ? `<a class="rail-ava" href="/cabinet" aria-label="Кабинет">${((me.name || me.email || "1").trim()[0] || "1").toUpperCase()}${tipHTML("Кабинет", who)}</a>`
         : `<a class="rail-a main" href="/?login=1" aria-label="Войти">${ic("user")}${tipHTML("Войти", "Неделя бесплатно — без карты")}</a>`);
     document.body.prepend(rail);

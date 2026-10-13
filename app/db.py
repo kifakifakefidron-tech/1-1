@@ -373,6 +373,7 @@ MIGRATIONS = [
     ("collections", "client_id", "INTEGER"),
     ("collections", "color", "TEXT"),
     ("collections", "views_unique", "INTEGER NOT NULL DEFAULT 0"),
+    ("collections", "hide_address", "INTEGER NOT NULL DEFAULT 0"),   # клиенту — без номера дома, точка округлена ~300 м
     ("client_items", "pick_id", "INTEGER"),        # в какой подборке отправлен (статусы из подборки уходят вместе с ней)
     ("client_items", "sent_at", "INTEGER"),
     ("client_items", "opened_at", "INTEGER"),

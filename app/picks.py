@@ -14,6 +14,7 @@ import time
 from . import config, parser, rules, settings, worklog
 
 MAX_COLLECTIONS = 200
+PROMO_NAME = "Коллега (по коду)"   # служебное имя аккаунта по промокоду — клиенту его не показываем никогда
 MAX_ITEMS = 60
 
 
@@ -32,7 +33,8 @@ def _default_contact(conn: sqlite3.Connection, user) -> tuple[str, str]:
     st = settings.get(conn, user["id"])
     ph = conn.execute("SELECT phone FROM agent_phones WHERE user_id = ? ORDER BY verified_at DESC LIMIT 1",
                       (user["id"],)).fetchone()
-    return (st["pick_name"] or user["name"] or "").strip(), (st["pick_phone"] or (ph[0] if ph else ""))
+    name = st["pick_name"] or (user["name"] if user["name"] != PROMO_NAME else "") or ""
+    return name.strip(), (st["pick_phone"] or (ph[0] if ph else ""))
 
 
 def mine(conn: sqlite3.Connection, user_id: int) -> list[dict]:
@@ -84,6 +86,8 @@ def save(conn: sqlite3.Connection, user, body: dict) -> dict:
             fields["contact_phone"] = _phone(str(body.get("contact_phone") or ""))
         if "client_title" in body:
             fields["client_title"] = str(body.get("client_title") or "").strip()[:120] or None
+        if "hide_address" in body:
+            fields["hide_address"] = 1 if body.get("hide_address") else 0
         conn.execute(f"UPDATE collections SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ? AND user_id = ?",
                      (*fields.values(), int(cid), user["id"]))
     else:
@@ -305,6 +309,50 @@ def _mail_agent(conn: sqlite3.Connection, user_id: int, subject: str, body: str)
     threading.Thread(target=mailer.send_text, args=(row["email"], f"1+1 · {subject}"[:150], msg), daemon=True).start()
 
 
+def _coarse(v, hide: bool):
+    """Скрыть точный адрес: точка округляется примерно до 300 м (клиент видит квартал, а не дом)."""
+    return None if v is None else (round(v / 0.003) * 0.003 if hide else v)
+
+
+def similar(conn: sqlite3.Connection, user_id: int, cid: int, listing_id: int) -> list[dict]:
+    """Снятый объект в подборке → 3 похожих на сайте: та же сделка и комнаты, тот же ЖК или район, цена ±15 %."""
+    from . import search
+    if not conn.execute("SELECT 1 FROM collections WHERE id = ? AND user_id = ?", (cid, user_id)).fetchone():
+        return []
+    o = conn.execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    if o is None:
+        return []
+    params = [o["deal"], o["id"], cid]
+    w = ["l.is_active = 1", "l.deal = ?", "l.id != ?",
+         "NOT EXISTS (SELECT 1 FROM collection_items i WHERE i.collection_id = ? AND i.listing_id = l.id)"]
+    if o["rooms"] is not None:
+        w.append("l.rooms = ?"); params.append(o["rooms"])
+    if o["complex"]:
+        w.append("(l.complex = ? OR l.district = ?)"); params += [o["complex"], o["district"]]
+    elif o["district"]:
+        w.append("l.district = ?"); params.append(o["district"])
+    if o["price"]:
+        w.append("l.price BETWEEN ? AND ?"); params += [int(o["price"] * .85), int(o["price"] * 1.15)]
+    rows = conn.execute(f"""SELECT l.*, 0 AS verified FROM listings l WHERE {' AND '.join(w)}
+                            ORDER BY (l.complex = ?) DESC, ABS(COALESCE(l.price, 0) - ?) LIMIT 3""",
+                        params + [o["complex"] or "", o["price"] or 0]).fetchall()
+    return [search.row_to_item(r, False) for r in rows]
+
+
+def replace(conn: sqlite3.Connection, user_id: int, cid: int, old_id: int, new_id: int) -> dict:
+    """Заменить снятый объект похожим — на то же место в подборке."""
+    pos = conn.execute("SELECT pos FROM collection_items WHERE collection_id = ? AND listing_id = ?", (cid, old_id)).fetchone()
+    if pos is None:
+        return {"error": "Объекта нет в подборке."}
+    res = set_item(conn, user_id, cid, new_id, True, commit=False)
+    if "error" in res:
+        return res
+    set_item(conn, user_id, cid, old_id, False, commit=False)
+    conn.execute("UPDATE collection_items SET pos = ? WHERE collection_id = ? AND listing_id = ?", (pos[0], cid, new_id))
+    conn.commit()
+    return {"ok": True}
+
+
 def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device: str = "") -> dict | None:
     """Для клиента: без телефонов агентов из объявлений, без исходного текста и чатов.
     count_view — засчитывать ли открытие (сервер решает: не агент, не вошедший пользователь, не робот-превью)."""
@@ -314,6 +362,7 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
     if count_view:
         count_open(conn, c["id"], device or "unknown")
     items = []
+    hide = bool(c["hide_address"])
     # ответ этого устройства по каждому объекту (последний) — клиент видит, что уже ответил
     mine_r = {r[0]: r[1] for r in conn.execute(
         """SELECT listing_id, kind FROM pick_reactions WHERE collection_id = ? AND device = ? ORDER BY ts""",
@@ -324,14 +373,16 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
             "id": r["id"], "title": r["title"], "type": r["type"], "deal": r["deal"], "price": r["price"],
             "price_m2": r["price_m2"], "rooms": r["rooms"], "room_kind": r["room_kind"], "area": r["area"], "land": r["land"],
             "floor": r["floor"], "floors": r["floors"], "district": r["district"], "complex": r["complex"],
-            "settlement": r["settlement"], "street": r["street"], "house": r["house"],
-            "lat": r["lat"] if r["geo_status"] != "approx" else None, "lon": r["lon"] if r["geo_status"] != "approx" else None,
+            "settlement": r["settlement"], "street": r["street"], "house": None if hide else r["house"],
+            "lat": _coarse(r["lat"], hide) if r["geo_status"] != "approx" else None,
+            "lon": _coarse(r["lon"], hide) if r["geo_status"] != "approx" else None, "approx": hide,
             "photos": json.loads(r["photos"] or "[]"),
-            "description": parser.guard_phones(r["item_text"] or parser.client_text(r["description"]))[:5000],
+            "description": "" if not r["is_active"] else
+                           parser.guard_phones(r["item_text"] or parser.client_text(r["description"]))[:5000],
             "note": r["item_note"] or "", "is_active": r["is_active"],
             "reaction": mine_r.get(r["id"])})
     from . import settings
     # название подборки — для агента («Ирине — 2к ФМР»); клиент видит только свой заголовок (или нейтральный)
     return {"title": c["client_title"] or "Подобрали для вас", "note": c["note"],
-            "contact_name": c["contact_name"], "contact_phone": c["contact_phone"],
+            "contact_name": "" if (c["contact_name"] or "") == PROMO_NAME else c["contact_name"], "contact_phone": c["contact_phone"],
             "updated": c["updated"], "items": items, "style": settings.public_pick_style(conn, c["user_id"])}

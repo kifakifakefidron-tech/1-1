@@ -206,3 +206,13 @@ body.c-dragging .c-col { transition: background .2s, border-color .2s, transform
 .c-pick-a { display: flex; gap: 6px; align-items: center; }
 .c-pick-a .pill { height: 32px; display: inline-flex; align-items: center; padding: 0 14px; text-decoration: none; }
 .c-pick > span:nth-child(2) { display: grid; min-width: 0; }
+
+/* отчёт по клиенту */
+.c-report { margin-bottom: 14px; }
+.c-rep { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.c-rc { display: grid; justify-items: center; padding: 10px 4px; border-radius: 14px; background: rgba(255, 255, 255, .05); text-align: center; }
+.c-rc b { font: 600 20px var(--display); } .c-rc small { color: var(--ink-3); font-size: 11.5px; }
+.c-rc.ok b { color: var(--ok); } .c-rc.bad b { color: var(--bad); } .c-rc.gold b { color: var(--gold); }
+.c-rep-copy { margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; }
+.c-rep-copy svg { width: 14px; height: 14px; }
+@media (max-width: 480px) { .c-rep { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

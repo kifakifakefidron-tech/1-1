@@ -145,6 +145,7 @@
     return `<article class="pk2-obj${it.is_active ? "" : " gone"}" draggable="true" data-lid="${it.listing_id}" data-pid="${p.id}" style="--i:${i}">
       <a class="pk2-ph" href="/?open=${it.listing_id}">${it.photo ? `<img src="${esc(it.photo)}" alt="" loading="lazy">` : `<span>${ic("home")}Фото у агента</span>`}
         <span class="pk2-num">${i + 1}</span>${it.is_active ? "" : `<span class="pk2-gone">Снят с сайта</span>`}</a>
+      ${it.is_active ? "" : `<button type="button" class="pk2-sim" data-sim="${it.listing_id}" data-pid="${p.id}">${ic("repeat")}Снят — показать похожие</button>`}
       <div class="pk2-ob">
         <b class="pk2-price">${esc(money(it.price, it.deal))}</b>
         <a class="pk2-ot" href="/?open=${it.listing_id}">${esc(it.title)}</a>
@@ -222,7 +223,12 @@
         <button type="button" class="pk2-act" data-dup="${p.id}">${ic("layers")}<span>Дублировать</span></button>
         <button type="button" class="pk2-act danger" data-del="${p.id}">${ic("trash")}<span>Удалить</span></button>
       </div>
-      ${p.contact_phone ? "" : `<button type="button" class="pk2-warn" data-tab="setup">${ic("alert")}Укажите свой телефон — клиент увидит только ваш контакт</button>`}
+      ${p.contact_phone && p.contact_name && p.contact_name !== "Коллега (по коду)" ? "" : `<form class="pk2-me" data-me="${p.id}" autocomplete="off">
+        <p>${ic("user")}<b>Как вас показать клиенту?</b> Клиент видит только ваш контакт — без него ему некуда позвонить.</p>
+        <div class="pk2-me-f"><input name="name" maxlength="80" placeholder="Ваше имя" value="${esc(p.contact_name && p.contact_name !== "Коллега (по коду)" ? p.contact_name : "")}" required>
+          <input name="phone" maxlength="30" inputmode="tel" placeholder="Ваш телефон" value="${esc(p.contact_phone || "")}" required>
+          <button type="submit" class="pill">Сохранить</button></div>
+        <label class="pk2-me-all"><input type="checkbox" name="all" checked>Для всех подборок</label></form>`}
       <nav class="pk2-tabs"><button type="button" data-tab="items" class="${tab === "items" ? "on" : ""}">Объекты <b>${p.items.length}</b></button>
         <button type="button" data-tab="setup" class="${tab === "setup" ? "on" : ""}">Оформление и контакт</button></nav>
       ${tab === "items" ? `
@@ -251,6 +257,8 @@
             <label class="agent-field"><span>Ваше имя</span><input name="contact_name" maxlength="100" value="${esc(p.contact_name || "")}" placeholder="Как клиенту вас называть"></label>
             <label class="agent-field"><span>Ваш телефон</span><input name="contact_phone" maxlength="30" inputmode="tel" value="${esc(p.contact_phone || "")}" placeholder="+7…"></label>
           </div>
+          <label class="pk2-hide"><input type="checkbox" data-hide-addr="${p.id}"${p.hide_address ? " checked" : ""}>
+            <span><b>Скрыть точный адрес</b><small>Клиент увидит улицу без номера дома, точка на карте — примерно в пределах квартала</small></span></label>
           <div class="agent-field"><span>Цвет подборки в списке</span><div class="pk2-colors">${COLORS.map((c) =>
             `<button type="button" class="pk2-color c-${c}${c === p.color ? " on" : ""}" data-color="${c}" aria-label="Цвет ${c}"></button>`).join("")}</div></div>
           <p class="pk2-hint">Цвет, обложку и подпись подборок можно задать в <a href="/settings">Настройках</a> — для всех подборок сразу.</p>
@@ -406,6 +414,54 @@
     toast("Записано");
     await reload();
   };
+
+  // контакт агента для клиента: сразу в этой подборке, «для всех» — в настройках и в подборках без контакта
+  document.addEventListener("submit", async (e) => {
+    const f = e.target.closest("[data-me]");
+    if (!f) return;
+    e.preventDefault();
+    const name = f.name.value.trim(), phone = f.phone.value.trim();
+    const ids = f.all.checked ? list.filter((x) => x.id === Number(f.dataset.me) || !x.contact_phone || !x.contact_name || x.contact_name === "Коллега (по коду)").map((x) => x.id)
+      : [Number(f.dataset.me)];
+    for (const id of ids) await call("/api/picks", { id, contact_name: name, contact_phone: phone });
+    if (f.all.checked) await call("/api/settings", { pick_name: name, pick_phone: phone });
+    toast(f.all.checked ? "Сохранено — так вы будете в новых подборках" : "Сохранено");
+    await reload();
+  });
+  document.addEventListener("change", async (e) => {
+    const c = e.target;
+    if (!c.dataset || !c.dataset.hideAddr) return;
+    const r = await call("/api/picks", { id: Number(c.dataset.hideAddr), hide_address: c.checked });
+    toast(r.ok ? (c.checked ? "Клиент не увидит номер дома" : "Клиент видит точный адрес") : "Не получилось");
+    if (r.ok) { const p = list.find((x) => x.id === Number(c.dataset.hideAddr)); if (p) p.hide_address = c.checked ? 1 : 0; }
+  });
+  // снятый объект → похожие, замена на то же место
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-sim], [data-swap]");
+    if (!b) return;
+    if (b.dataset.swap) {
+      const [pid, oldId, newId] = b.dataset.swap.split(":").map(Number);
+      const r = await call(`/api/picks/${pid}/items`, { replace: oldId, listing_id: newId });
+      toast(r.ok ? "Заменили — новый объект на том же месте" : (r.data.detail || "Не получилось"));
+      if (r.ok) { $("pkSimDlg").close(); await reload(); }
+      return;
+    }
+    const pid = Number(b.dataset.pid), lid = Number(b.dataset.sim);
+    const r = await call(`/api/picks/${pid}/similar?listing=${lid}`);
+    const items = r.ok ? r.data.items : [];
+    let d = $("pkSimDlg");
+    if (!d) { d = document.createElement("dialog"); d.id = "pkSimDlg"; d.className = "pk2-dlg"; document.body.appendChild(d); }
+    d.innerHTML = `<div class="pk2-dlg-in"><h2>Похожие на снятый объект</h2>
+      <p class="pk2-hint">Те же комнаты, тот же ЖК или район, цена ±15 %. «Заменить» поставит объект на то же место в подборке.</p>
+      ${items.length ? `<div class="pk2-sims">${items.map((f) => `<div class="pk2-simit">
+          <span class="pk2-fph">${f.photos && f.photos[0] ? `<img src="${esc(f.photos[0])}" alt="">` : ic("home")}</span>
+          <span><b>${esc(money(f.price, f.deal))}</b><small>${esc(f.complex ? `ЖК ${f.complex} · ${f.title}` : f.title)}</small>
+            <a href="/?open=${f.id}">Открыть</a></span>
+          <button type="button" class="pill" data-swap="${pid}:${lid}:${f.id}">Заменить</button></div>`).join("")}</div>`
+        : `<p class="pk2-hint">Похожих сейчас нет на сайте.</p>`}
+      <div class="pk2-dlg-acts"><span></span><button type="button" class="chip" onclick="this.closest('dialog').close()">Закрыть</button></div></div>`;
+    d.showModal();
+  });
 
   $("pkSeg").addEventListener("click", (e) => {
     const b = e.target.closest("[data-f]");
