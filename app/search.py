@@ -218,6 +218,8 @@ def mask_phone(p: str) -> str:
 
 def row_to_item(r: sqlite3.Row, with_contacts: bool) -> dict:
     d = {k: r[k] for k in PUBLIC_FIELDS}
+    from .parser import guard_phones
+    d["description"] = guard_phones(d["description"])   # номеров в описании не отдаём никому — они в контакте
     d["verified"] = bool(r["verified"]) if "verified" in r.keys() else None
     d["photos"] = json.loads(r["photos"] or "[]")
     d["extra_districts"] = json.loads(r["extra_districts"] or "[]")

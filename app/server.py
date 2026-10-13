@@ -8,6 +8,7 @@ import html
 import json
 import logging
 import re
+import secrets
 import sqlite3
 import threading
 import time
@@ -394,6 +395,15 @@ def api_listing(request: Request, body: dict | None = None):
         if d.get("fragment"):
             d["fragment"] = parser.strip_phones(d["fragment"])
     row = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
+    if access and phones:   # кто прислал объявление в чат, если это другой номер (не тот, что в тексте)
+        roles = json.loads(row["phone_roles"] or "{}")
+        d["sender_phone"] = next((p for p, role in roles.items() if role == "sender" and p not in d["phones"]), None)
+    # текст объявления старее цены (цена обновилась позже текста) — честно говорим об этом в карточке
+    if row["description_ts"] and row["price_changed_at"] and row["price_changed_at"] > row["description_ts"]:
+        from .p0fix import price_gap
+        tp = price_gap(row["price"], row["description"], row["deal"])
+        if tp:
+            d["text_price"] = {"price": tp, "ts": row["description_ts"]}
     d["can_edit"] = bool(user) and agent.can_edit(conn, user, row)[0]
     d["market"] = hooks.market_for(conn, d)
     d["same"] = hooks.same_elsewhere(conn, row)
@@ -769,6 +779,7 @@ def api_admin_overview(request: Request, body: dict | None = None):
         "optouts": one("SELECT COUNT(*) FROM optout_phones"),
         "wappi_enabled": config.WAPPI_ENABLED, "payments": payments.available(),
         "price": config.SUB_PRICE, "period_days": config.SUB_DAYS,
+        "p0_report": json.loads(db.get_state(conn, "p0_report") or "null"),
         "feed_synced": int(db.get_state(conn, "feed_synced") or 0),
     })
 
@@ -1015,9 +1026,30 @@ def api_pick_items(request: Request, body: dict | None = None):
     return _err(res["error"]) if "error" in res else JSONResponse(res)
 
 
+# Роботы, которые открывают ссылку ради превью (WhatsApp, Telegram, VK…), и поисковики — это не клиент
+_PREVIEW_BOT = re.compile(r"bot\b|bot/|crawl|spider|preview|whatsapp/|telegrambot|facebookexternalhit|vkshare|skypeuripreview|"
+                          r"slack|discord|viber|yandex|google|bing|headless|python|curl|wget|okhttp|java/", re.I)
+PV_COOKIE = "pv"
+
+
 def api_pick_public(request: Request, body: dict | None = None):
-    d = picks.public(db.get(), request.path_params["token"])
-    return JSONResponse(d) if d else _err("Подборка не найдена или удалена.", 404)
+    """Подборка для клиента. Открытие засчитываем честно: не агент («Как видит клиент» — ?as=agent), не вошедший
+    пользователь сервиса, не робот-превью мессенджера; уникальные — по метке устройства (кука pv), раз в день."""
+    ua = request.headers.get("user-agent", "")
+    count = (current_user(request) is None and request.query_params.get("as") != "agent"
+             and bool(ua) and not _PREVIEW_BOT.search(ua))
+    device = request.cookies.get(PV_COOKIE) or ""
+    new_device = count and not re.fullmatch(r"[A-Za-z0-9_-]{16,64}", device)
+    if new_device:
+        device = secrets.token_urlsafe(16)
+    d = picks.public(db.get(), request.path_params["token"], count_view=count, device=device)
+    if not d:
+        return _err("Подборка не найдена или удалена.", 404)
+    resp = JSONResponse(d)
+    if new_device:
+        resp.set_cookie(PV_COOKIE, device, max_age=365 * 86400, httponly=True, samesite="lax",
+                        secure=request.headers.get("x-forwarded-proto", request.url.scheme) == "https")
+    return resp
 
 
 def pick_page(request: Request, body: dict | None = None):

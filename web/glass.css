@@ -547,3 +547,10 @@ html.embed dialog::backdrop { background: transparent !important; backdrop-filte
   background: rgba(0, 0, 0, .55); color: #fff; cursor: pointer; }
 .adm-ph button:hover { background: var(--bad); }
 .adm-ph button svg { width: 15px; height: 15px; }
+
+/* P0.2: текст объявления старее цены; кто прислал в чат */
+.dv-tp { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0 0; padding: 8px 12px; border-radius: 12px;
+  background: rgba(227, 203, 143, .1); color: var(--ink-2); font-size: 13px; line-height: 1.45; }
+.dv-tp svg { width: 16px; height: 16px; color: var(--gold); flex: none; margin-top: 1px; }
+.dv-sender { margin: 6px 0 0; color: var(--ink-3); font-size: 12.5px; }
+.dv-sender a { color: var(--ink-2); }

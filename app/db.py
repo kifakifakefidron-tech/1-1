@@ -289,6 +289,11 @@ CREATE TABLE IF NOT EXISTS hidden_listings (   -- агент скрыл объе
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
     reason TEXT, ts INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)
 );
+-- Честные просмотры подборки: одно устройство — один раз в день (агент, вошедшие и боты-превью не считаются)
+CREATE TABLE IF NOT EXISTS collection_views (
+    collection_id INTEGER NOT NULL, day TEXT NOT NULL, device TEXT NOT NULL, ts INTEGER NOT NULL,
+    PRIMARY KEY (collection_id, day, device)
+);
 -- Журнал работы агента по объекту (app/worklog.py): заметка/звонок/показ, к клиенту и/или подборке
 CREATE TABLE IF NOT EXISTS work_notes (
     id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
@@ -356,7 +361,10 @@ MIGRATIONS = [
     ("users", "settings", "TEXT"),
     ("clients", "match_seen", "INTEGER"),   # до какого момента новые объекты под пожелания клиента уже показали агенту
     ("collections", "client_id", "INTEGER"),
-    ("collections", "color", "TEXT"),          # цвет подборки в списке (палитра settings.COLORS)
+    ("collections", "color", "TEXT"),
+    ("collections", "views_unique", "INTEGER NOT NULL DEFAULT 0"),   # уникальные открытия клиентом (устройство в день)
+    ("listings", "phone_roles", "TEXT"),       # {"+7…": "text" | "sender"} — номер в тексте / прислал в чат
+    ("listings", "description_ts", "INTEGER"), # когда последний раз обновлялся текст объявления          # цвет подборки в списке (палитра settings.COLORS)
     ("collections", "client_title", "TEXT"),   # заголовок, который видит клиент (название подборки — только агенту)   # подборка сделана для клиента CRM («Всё в подборку»)   # настройки аккаунта (app/settings.py): вид подборок, порядок блоков кабинета   # цвет события в планере (gold, sky, …; пусто — по виду события)   # событие по клиенту (CRM)  # источники спорят: «rule:…» (правило ≠ карта), «votes:…» (карта ≠ соседи)   # откуда район, если его поставил сервис сам: map | vote-house | vote-cx                     # какую ошибочную цену разбор давал (её и не принимаем)   # админ сам поставил продажу/аренду — автоматика не трогает                     # свой текст объявления для клиента (вместо исходного)                              # статус агента по объекту: call | show | think | refuse | deal                   # % к медиане м² по ЖК/району (hooks.update_market_diff)
 ]
 

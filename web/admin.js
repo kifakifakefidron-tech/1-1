@@ -36,10 +36,15 @@
       card(o.users_access, "с открытым доступом"), card(o.users_paid, "оплатили подписку"),
       card(o.views_24h, "открытий номеров за сутки"), card(o.complaints_new, "новых жалоб"),
       card(o.optouts, "скрытых номеров"),
+      ...(o.p0_report ? [card(o.p0_report.phones, "номеров вырезано из описаний"),
+        card(o.p0_report.prices, "цена в карточке ≠ цене в тексте")] : []),
       card(o.wappi_enabled ? "включён" : "на паузе", "сбор из чатов (Wappi)"),
       card(o.payments ? "включена" : "выключена", `оплата (${o.price} ₽ / ${o.period_days} дн.)`),
       card(day(o.feed_synced), "фид СТРЕЛ обновлён"),
-    ].join("");
+    ].join("") + (o.p0_report && o.p0_report.price_examples.length ? `<details class="adm-p0"><summary>Цена в карточке ≠ цене в тексте —
+      ${o.p0_report.prices} (проверьте и поправьте цену в окне объекта)</summary><ul>${o.p0_report.price_examples.map((e) =>
+        `<li><a href="/?open=${e.id}" target="_blank">${esc(e.title)}</a> — в карточке ${esc(Number(e.card).toLocaleString("ru-RU"))} ₽,
+        в тексте ${esc(Number(e.text).toLocaleString("ru-RU"))} ₽</li>`).join("")}</ul></details>` : "");
     online();
     stats();
   }

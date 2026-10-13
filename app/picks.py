@@ -54,7 +54,7 @@ def mine(conn: sqlite3.Connection, user_id: int) -> list[dict]:
         for it in d["items"]:
             photos = json.loads(it.pop("photos") or "[]")
             it["photo"] = photos[0] if photos else None
-            it["orig"] = parser.strip_phones(it["orig"] or "")   # исходный текст — без телефонов
+            it["orig"] = parser.client_text(it["orig"])   # стартовый текст для клиента — уже очищенный
         out.append(d)
     return out
 
@@ -174,17 +174,29 @@ def with_listing(conn: sqlite3.Connection, user_id: int, listing_id: int) -> lis
                                            WHERE c.user_id = ? AND i.listing_id = ?""", (user_id, listing_id))]
 
 
-def public(conn: sqlite3.Connection, token: str, count_view: bool = True) -> dict | None:
-    """Для клиента: без телефонов агентов из объявлений, без исходного текста и чатов."""
+def count_open(conn: sqlite3.Connection, cid: int, device: str) -> None:
+    """Клиент открыл подборку: всего +1; уникально — одно устройство раз в день (МСК)."""
+    from datetime import datetime, timedelta, timezone
+    now = int(time.time())
+    day = datetime.fromtimestamp(now, timezone(timedelta(hours=3))).strftime("%Y-%m-%d")
+    try:
+        conn.execute("UPDATE collections SET views = views + 1, viewed_at = ? WHERE id = ?", (now, cid))
+        if conn.execute("INSERT OR IGNORE INTO collection_views (collection_id, day, device, ts) VALUES (?,?,?,?)",
+                        (cid, day, device[:64], now)).rowcount:
+            conn.execute("UPDATE collections SET views_unique = views_unique + 1 WHERE id = ?", (cid,))
+        conn.commit()
+    except sqlite3.OperationalError:   # база занята — просмотр не засчитаем, страницу покажем
+        conn.rollback()
+
+
+def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device: str = "") -> dict | None:
+    """Для клиента: без телефонов агентов из объявлений, без исходного текста и чатов.
+    count_view — засчитывать ли открытие (сервер решает: не агент, не вошедший пользователь, не робот-превью)."""
     c = conn.execute("SELECT * FROM collections WHERE token = ?", (token,)).fetchone()
     if c is None:
         return None
     if count_view:
-        try:
-            conn.execute("UPDATE collections SET views = views + 1, viewed_at = ? WHERE id = ?", (int(time.time()), c["id"]))
-            conn.commit()
-        except sqlite3.OperationalError:   # база занята — просмотр не засчитаем, страницу покажем
-            conn.rollback()
+        count_open(conn, c["id"], device or "unknown")
     items = []
     for r in conn.execute("""SELECT l.*, i.note AS item_note, i.text AS item_text FROM collection_items i JOIN listings l ON l.id = i.listing_id
                              WHERE i.collection_id = ? ORDER BY i.pos, i.added""", (c["id"],)):
@@ -195,7 +207,7 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True) -> dic
             "settlement": r["settlement"], "street": r["street"], "house": r["house"],
             "lat": r["lat"] if r["geo_status"] != "approx" else None, "lon": r["lon"] if r["geo_status"] != "approx" else None,
             "photos": json.loads(r["photos"] or "[]"),
-            "description": (r["item_text"] or parser.strip_phones(r["description"] or ""))[:5000],
+            "description": parser.guard_phones(r["item_text"] or parser.client_text(r["description"]))[:5000],
             "note": r["item_note"] or "", "is_active": r["is_active"]})
     from . import settings
     # название подборки — для агента («Ирине — 2к ФМР»); клиент видит только свой заголовок (или нейтральный)

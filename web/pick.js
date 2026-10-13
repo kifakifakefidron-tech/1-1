@@ -31,7 +31,9 @@
   async function load() {
     let d;
     try {
-      const r = await fetch(`/api/c/${encodeURIComponent(token)}`);
+      // «Как видит клиент» из кабинета агента — ?as=agent: такое открытие не считаем просмотром клиента
+      const asAgent = new URLSearchParams(location.search).get("as") === "agent";
+      const r = await fetch(`/api/c/${encodeURIComponent(token)}${asAgent ? "?as=agent" : ""}`, { credentials: "same-origin" });
       if (!r.ok) throw new Error((await r.json()).detail);
       d = await r.json();
     } catch (e) {

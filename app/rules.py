@@ -322,7 +322,58 @@ def extract_floor(text: str) -> tuple[int | None, int | None]:
 
 
 # ─── телефоны ──────────────────────────────────────────────────────────────
-_PHONE_RE = re.compile(r"(?:\+?7|8)[\s\-‐(]*\d{3}[\s\-‐)]*\d{3}[\s\-‐]*\d{2}[\s\-‐]*\d{2}(?!\d)")
+# Телефон в любом написании агентов: +7/7/8 в начале или 10 цифр с девятки; скобки, пробелы, дефисы (любые тире),
+# точки; цифры после кода — любыми группами («8(918)33-260-33», «8.918.123.45.67», «9181234567»). Перевод строки
+# разделителем не считается — номер не склеивается из двух строк (цена + этаж и т. п.).
+_SEP = r"[ \t\u00a0\-‐‑–—.]{0,2}"
+_PHONE_RE = re.compile(
+    r"(?<![\d+])(?P<pre>\+\s?7|7|8)?" + _SEP + r"\(?" + _SEP + r"(?P<code>[3-9]" + _SEP + r"\d" + _SEP + r"\d)" + _SEP + r"\)?" + _SEP
+    + r"\d(?:" + _SEP + r"\d){6}(?!\d)")
+# Подписи перед номером, которые тоже убираем вместе с ним: «WA:», «тел.», «📞», «Telegram -» …
+_PHONE_LABEL_RE = re.compile(
+    r"(?:(?:тел(?:ефон)?|т|моб|сот|whats\s?app|wa|ватсап|вотсап|tg|telegram|телеграм|max|макс|viber|вайбер|звоните|пишите)"
+    r"\.?\s*[:\-–—]?\s*|[\U0001F4DE\U0001F4E9\U0001F4F1\u260E\u2706\U0001F4F2\U0001F4E7]\uFE0F?\s*)+$", re.I)
+
+
+def find_phones(text: str) -> list[tuple[int, int, str]]:
+    """Все номера в тексте: (начало, конец, «+7…»). Без кода 7/8 — только мобильные (с девятки)."""
+    out, pos, text = [], 0, text or ""
+    while True:   # сдвиг по одному символу: отвергнутое совпадение («6 300 000 8 9…») не должно «съесть» номер
+        m = _PHONE_RE.search(text, pos)
+        if m is None:
+            return out
+        p = normalize_phone(m.group(0))
+        if p and (m.group("pre") or m.group("code").startswith("9")):
+            out.append((m.start(), m.end(), p))
+            pos = m.end()
+        else:
+            pos = m.start() + 1
+
+
+def mask_phones(text: str, repl: str) -> str:
+    """Номера → метка (для нейросети: ей номера не нужны)."""
+    out, pos = [], 0
+    for a, b, _ in find_phones(text or ""):
+        out.append(text[pos:a] + repl)
+        pos = b
+    return "".join(out) + (text or "")[pos:]
+
+
+def remove_phones(text: str) -> str:
+    """Вырезает номера вместе с подписью перед ними («📩WA:8(918)…» → «»)."""
+    if not text:
+        return text or ""
+    found = find_phones(text)
+    if not found:
+        return text
+    parts, pos = [], 0
+    for a, b, _ in found:
+        head = text[pos:a]
+        lab = _PHONE_LABEL_RE.search(head)
+        parts.append(head[:lab.start()] if lab else head)
+        pos = b
+    parts.append(text[pos:])
+    return "".join(parts)
 
 
 def normalize_phone(raw: str) -> str | None:
@@ -336,9 +387,8 @@ def normalize_phone(raw: str) -> str | None:
 
 def extract_phones(text: str) -> list[str]:
     out: list[str] = []
-    for m in _PHONE_RE.finditer(text):
-        p = normalize_phone(m.group(0))
-        if p and p not in out:
+    for _, _, p in find_phones(text):
+        if p not in out:
             out.append(p)
     return out
 

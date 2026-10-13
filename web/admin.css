@@ -210,3 +210,7 @@ tr.peek td { background: rgba(0, 0, 0, .12); }
 .cmp-ph img { width: 90px; height: 90px; object-fit: cover; border-radius: 8px; }
 .cmp-ph .gone img { opacity: .35; }
 .cmp-ph button { font-size: 12px; }
+
+.adm-p0 { grid-column: 1 / -1; margin-top: 6px; padding: 10px 14px; border-radius: 14px; background: rgba(255, 255, 255, .04); }
+.adm-p0 summary { cursor: pointer; }
+.adm-p0 ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13.5px; }

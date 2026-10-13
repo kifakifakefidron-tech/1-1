@@ -111,13 +111,14 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
             """INSERT INTO listings (type, deal, rooms, area, land, floor, floors, price, price_m2,
                    district, complex, settlement, street, house, title, description, fragment, phones,
                    first_seen, last_seen, seen_count, is_active, search_text, room_kind, rooms_mask, article,
-                   extra_districts)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,1,?,?,?,?,?)""",
+                   extra_districts, phone_roles, description_ts)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,1,?,?,?,?,?,?,?)""",
             (d["type"], d["deal"], d["rooms"], d["area"], d["land"], d["floor"], d["floors"], d["price"],
              _price_m2(d["price"], d["area"]), d["district"], d["complex"], d["settlement"], d["street"],
              d["house"], d["title"], d["description"], d["fragment"], json.dumps(d["phones"], ensure_ascii=False),
              ts, ts, d["search_text"], d["room_kind"], rooms_mask(d["room_kind"], d["rooms"]), d["article"],
-             json.dumps(d.get("extra_districts") or [], ensure_ascii=False)),
+             json.dumps(d.get("extra_districts") or [], ensure_ascii=False),
+             json.dumps(d.get("phone_roles") or {}, ensure_ascii=False), ts),
         )
         lid = cur.lastrowid
         why = "new"
@@ -133,22 +134,28 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
                 merged[k] = d[k]
         # Карточкой управляет агент (кабинет): его цену меняет только более свежий пост, описание не трогаем
         owned = bool(cur_d.get("owner_user_id"))
+        new_price = False
         if ts >= cur_d["last_seen"] and d["price"] and ts > (cur_d.get("owner_edited_at") or 0):
             if not cur_d.get("price_fixed") or d["price"] not in (cur_d.get("price_wrong"), cur_d["price"]):
+                new_price = d["price"] != cur_d["price"]
                 merged["price"] = d["price"]   # исправленную админом цену меняет только действительно новая цена
         # Описание берём более полное, но не теряем то, где назван ЖК/улица карточки
         # (иначе в карточке «ЖК Мечта», а в описании про ЖК ни слова)
         def mentions(desc: str | None) -> int:
             w = words(desc or "")
             return sum(1 for v in (merged.get("complex"), merged.get("street")) if v and words(v) and words(v) in w)
-        if not owned and (mentions(d["description"]) > mentions(cur_d["description"]) or (
+        if not owned and d["description"] and (new_price or mentions(d["description"]) > mentions(cur_d["description"]) or (
                 mentions(d["description"]) == mentions(cur_d["description"])
                 and len(d["description"] or "") > len(cur_d["description"] or "") * 1.2)):
-            merged["description"] = d["description"]
+            merged["description"] = d["description"]   # новая цена — значит, и текст этого (свежего) поста
         # Агент отметил «продано» — повторы старого поста объект не возвращают (только новый пост через 3 дня)
         active = 0 if cur_d.get("sold_at") and ts < cur_d["sold_at"] + 3 * 86400 else 1
-        if len(d["fragment"] or "") > len(cur_d["fragment"] or ""):
+        if (new_price and not owned and d["fragment"]) or len(d["fragment"] or "") > len(cur_d["fragment"] or ""):
             merged["fragment"] = d["fragment"]
+        roles = json.loads(cur_d.get("phone_roles") or "{}")
+        for p, role in (d.get("phone_roles") or {}).items():
+            if roles.get(p) != "text":   # «в тексте» важнее «прислал»
+                roles[p] = role
         phones = json.loads(cur_d["phones"] or "[]")
         for p in d["phones"]:
             if p not in phones:
@@ -163,7 +170,8 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
                    complex=?, settlement=?, street=?, house=?, title=?, description=?, fragment=?, phones=?,
                    last_seen=MAX(last_seen, ?), first_seen=MIN(first_seen, ?), seen_count=seen_count+1,
                    is_active=?, sold_at=CASE WHEN ? THEN NULL ELSE sold_at END, search_text=?, geo_status=CASE WHEN ? AND geo_status NOT IN ('manual', 'feed') THEN 'pending' ELSE geo_status END,
-                   room_kind=?, rooms_mask=?, article=?, extra_districts=?
+                   room_kind=?, rooms_mask=?, article=?, extra_districts=?, phone_roles=?,
+                   description_ts=CASE WHEN ? THEN ? ELSE description_ts END
                WHERE id=?""",
             (merged["rooms"], merged["area"], merged["land"], merged["floor"], merged["floors"], merged["price"],
              _price_m2(merged["price"], merged["area"]), merged["district"], merged["complex"], merged["settlement"],
@@ -171,7 +179,8 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
              merged["phones"], ts, ts, active, active, merged["search_text"], geo_reset,
              merged.get("room_kind"), rooms_mask(merged.get("room_kind"), merged["rooms"]), merged.get("article"),
              json.dumps(list(dict.fromkeys(json.loads(cur_d.get("extra_districts") or "[]") + (d.get("extra_districts") or []))),
-                        ensure_ascii=False), lid),
+                        ensure_ascii=False), json.dumps(roles, ensure_ascii=False),
+             merged["description"] != cur_d["description"], ts, lid),
         )
         d["search_text"] = merged["search_text"]
     _reindex(conn, lid, d["search_text"])

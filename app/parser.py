@@ -33,6 +33,7 @@ class ParsedObject:
     description: str
     fragment: str
     phones: list[str] = field(default_factory=list)
+    phone_roles: dict = field(default_factory=dict)   # {"+7…": "text" | "sender"} — в тексте / прислал в чат
     room_kind: str | None = None      # studio | classic | euro | mini
     article: str | None = None        # «Артикул: 337» — объект есть на сайте СТРЕЛ
     extra_districts: list[str] = field(default_factory=list)   # ещё районы (правила админа: объект на границе)
@@ -78,13 +79,90 @@ _CONTACT_TAIL = re.compile(r"[\s,;:]*(?:тел(?:ефон)?\.?|т\.|звонит
 
 
 def strip_phones(description: str) -> str:
-    """Убирает телефоны агентов из описания: его видят и покупатели без кода доступа."""
+    """Убирает телефоны агентов из описания (с подписями «WA:», «тел.», «📞»): описание видят и гости.
+    Номера при этом не теряются — они в listings.phones (контакт объекта)."""
     out = []
-    for line in description.splitlines():
-        if rules.extract_phones(line):
-            line = _CONTACT_TAIL.sub("", rules._PHONE_RE.sub("", line)).rstrip()
+    for line in (description or "").splitlines():
+        if rules.find_phones(line):
+            line = re.sub(r"[ \t]{2,}", " ", _CONTACT_TAIL.sub("", rules.remove_phones(line))).strip(" ,;:-–—\t")
+            if not re.sub(r"[\W_]+", "", line):   # от строки остались только значки
+                continue
         out.append(line)
     return "\n".join(out).strip()
+
+
+# ─── текст для клиента (подборка /c/…): без кухни агентов ─────────────────────────────────────────────
+# Строка убирается целиком, если в ней: ДКП, обременение, залог/задаток, комиссия («+ Ваши», «оплачиваю», 🍋),
+# ключи/сейф, «пишите/звоните/по номеру», прайс, «для коллег», цена (её клиент видит крупно в карточке).
+_CLIENT_DROP = re.compile(
+    r"дкп|обрем|заклад|задат|комисси|оплачива|вознагра|\bваши\b|\+\s*ваш|для\s+коллег|коллегам|агент|риэлт|риелт|"
+    r"ключ|в\s+сейфе|гнезд|пиш(?:ите|у)|звон(?:ите|ить)|по\s+(?:этому\s+)?номеру|контакт|прайс|в\s+лс\b|"
+    r"\bцена\b|\bстоимост|\bторг\b|разбивк|\U0001F34B", re.I)
+# Аббревиатуры, которые остаются заглавными, и слова, после которых название пишем с большой буквы
+_CLIENT_ABBR = {"ЖК", "ПЧО", "ИЖС", "СНТ", "ДНТ", "КП", "ТЦ", "ТРЦ", "ФМР", "ЦМР", "ЮМР", "ЧМР", "ГМР", "СМР", "ККБ", "РИП",
+                "ЗИП", "ХБК", "МЖК", "КСК", "ЕВРО", "АГВ", "ЛСР", "ССК", "ВТБ", "СВО"}
+_CLIENT_NAME_AFTER = {"жк", "п.", "пос.", "поселок", "посёлок", "ул.", "улица", "район", "мкр", "мкр.", "ст.", "станица", "х.",
+                      "хутор", "пр.", "пр-т", "проспект", "пер.", "переулок", "кп"}
+_CLIENT_KEEP = set(" .,;:!?()«»\"'%/№+-–—=×*²³°₽\n")
+
+
+def _client_chars(line: str) -> str:
+    """Только буквы (кириллица/латиница), цифры и обычная пунктуация: значки ♟ ➳ ✔️ 🔑 💯 убираем."""
+    out = []
+    for ch in line:
+        if ch.isdigit() or ch in _CLIENT_KEEP or ("а" <= ch.lower() <= "я") or ch.lower() == "ё" or ("a" <= ch.lower() <= "z"):
+            out.append(ch)
+        else:
+            out.append(" ")
+    return re.sub(r"[ \t]{2,}", " ", "".join(out)).strip(" ,;:-–—*=")
+
+
+def _client_case(line: str) -> str:
+    """КАПС → обычный регистр, аббревиатуры (ЖК, ПЧО, ФМР…) и названия после «ЖК/ул./п.» — с большой буквы."""
+    words_ = line.split(" ")
+    all_letters = re.sub(r"[^A-Za-zА-ЯЁа-яё]", "", line)
+    shouty = len(all_letters) >= 6 and sum(ch.isupper() for ch in all_letters) >= len(all_letters) * 0.6   # строка капсом
+    out, prev = [], ""
+    for i, w in enumerate(words_):
+        letters = re.sub(r"[^A-Za-zА-ЯЁа-яё]", "", w)
+        if letters.upper() in _CLIENT_ABBR:
+            out.append(w)
+        elif letters and letters == letters.upper() and (len(letters) >= 3 or shouty):
+            low = w.lower()
+            if i == 0 or prev.lower() in _CLIENT_NAME_AFTER or prev.endswith((".", "!", "?")):
+                low = re.sub(r"[a-zа-яё]", lambda m: m.group(0).upper(), low, count=1)
+            out.append(low)
+        else:
+            out.append(w)
+        prev = w
+    res = " ".join(out)
+    return re.sub(r"^[a-zа-яё]", lambda m: m.group(0).upper(), res)
+
+
+def client_text(description: str | None) -> str:
+    """Чистый текст объявления для клиента агента: без телефонов, ДКП, обременений, комиссии, ключей, значков,
+    КАПСа и имени агента в конце. Сырой текст агента клиенту не отдаём никогда."""
+    lines, seen = [], set()
+    for raw in strip_phones(description or "").splitlines():
+        if _CLIENT_DROP.search(raw):
+            continue
+        line = _client_case(_client_chars(raw))
+        if not re.search(r"[A-Za-zА-ЯЁа-яё0-9]", line):
+            continue
+        key = line.lower()
+        if key in seen:          # «Заклад обсуждаем» ×2 и т. п.
+            continue
+        seen.add(key)
+        lines.append(line)
+    # имя агента одной строкой в самом конце («➳ Артём»)
+    while lines and re.fullmatch(r"[А-ЯЁA-Z][а-яёa-z]{2,14}", lines[-1]):
+        lines.pop()
+    return "\n".join(lines).strip()
+
+
+def guard_phones(text: str | None) -> str:
+    """Последняя проверка перед выдачей наружу (/api/listings, /api/c/…): номеров в описании быть не должно."""
+    return strip_phones(text) if text and rules.find_phones(text) else (text or "")
 
 
 def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
@@ -175,10 +253,12 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
     settlement = settlement or lines_place.get("settlement")
 
     phones = r.phones or rules.extract_phones(text)
-    if not phones and sender_phone:
-        p = rules.normalize_phone(sender_phone)
-        if p:
-            phones = [p]
+    sender = rules.normalize_phone(sender_phone) if sender_phone else None
+    roles = {p: "text" for p in phones}
+    if sender:
+        roles.setdefault(sender, "sender")   # прислал в чат (если номера нет в тексте — он и есть контакт)
+    if not phones and sender:
+        phones = [sender]
 
     description = strip_phones(_clean_description(fragment))
 
@@ -186,7 +266,7 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
         type=otype, deal=deal, rooms=rooms, area=area, land=land, floor=floor, floors=floors,
         price=price, district=district, complex=complex_rec.name if complex_rec else None,
         settlement=settlement, street=street, house=house,
-        description=description, fragment=fragment.strip(), phones=phones,
+        description=description, fragment=fragment.strip(), phones=phones, phone_roles=roles,
         room_kind=room_kind, article=rules.extract_article(fragment),
     )
 
@@ -240,7 +320,7 @@ def parse(text: str, sender_phone: str | None = None, use_llm: bool | None = Non
             # Номера телефонов в нейросеть не отправляем (DeepSeek — зарубежный сервис, это была бы
             # трансграничная передача персональных данных). Номера достаём сами правилами.
             # Замена построчная — номера строк для ответа нейросети не сдвигаются.
-            res = llm.parse_message(rules._PHONE_RE.sub("[телефон]", text))
+            res = llm.parse_message(rules.mask_phones(text, "[телефон]"))
         except llm.LLMError as e:
             log.warning("Нейросеть недоступна, разбираю правилами: %s", e)
         else:

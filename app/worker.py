@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import time
 
 from . import agent, config, db, feed, geocode, hooks, ingest, llm, mailer, notify, region, wappi
@@ -84,6 +85,15 @@ def tick(conn) -> dict:
     synced = feed.maybe_sync(conn)
     if synced:
         stats["feed"] = synced
+    if not db.get_state(conn, "p0_phones_v1"):   # один раз (ТЗ v2, P0): вырезать номера из описаний, отчёт — в админке
+        from . import p0fix
+        ph = p0fix.phones_report(conn, apply=True, examples=10)
+        pr = p0fix.prices_report(conn, examples=40)
+        db.set_state(conn, "p0_report", json.dumps({"ts": int(time.time()), "phones": ph["with_phone_in_text"],
+                                                    "phone_examples": ph["examples"], "prices": pr["mismatch"],
+                                                    "price_examples": pr["examples"]}, ensure_ascii=False))
+        db.set_state(conn, "p0_phones_v1", "1")
+        stats["p0_phones"] = ph["with_phone_in_text"]
     if not db.get_state(conn, "rent_rule_v1"):   # один раз: новое правило аренды («+ком платежи»)
         stats["rent_rule"] = ingest.fix_rent_rule(conn)
         db.set_state(conn, "rent_rule_v1", "1")
