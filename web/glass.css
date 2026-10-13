@@ -447,3 +447,8 @@ html.embed dialog::backdrop { background: transparent !important; backdrop-filte
 /* палитра цветов событий и статусов (планер, «В работе») */
 .c-gold { --c: #e3cb8f; } .c-teal { --c: #5fd0c0; } .c-sky { --c: #7cc4f5; } .c-violet { --c: #b9a3f5; }
 .c-coral { --c: #f29a7e; } .c-rose { --c: #f08fb6; } .c-lime { --c: #b6db7a; } .c-slate { --c: #9fb3b1; }
+
+/* число объектов справа в списке с галочками; районы и ЖК в фильтрах главной */
+.pk-meta { margin-left: auto; padding-left: 10px; font: 500 12px var(--body); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.f-pick .pk-btn { max-width: 520px; }
+.f-pick .chips { margin-top: 2px; }

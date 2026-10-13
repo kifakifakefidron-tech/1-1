@@ -43,7 +43,7 @@
     const p = getPanel(), r = btn.getBoundingClientRect(), vw = innerWidth, vh = innerHeight;
     if (vw < 640) { p.classList.add("sheet"); p.style.left = p.style.top = p.style.width = ""; return; }
     p.classList.remove("sheet");
-    if (p.classList.contains("wide")) p.style.width = `${Math.max(300, Math.min(r.width, 420))}px`;
+    if (p.classList.contains("wide")) p.style.width = `${p.dataset.w ? Math.min(Number(p.dataset.w), vw - 16) : Math.max(300, Math.min(r.width, 420))}px`;
     const w = p.offsetWidth, h = p.offsetHeight;
     const left = Math.min(Math.max(8, r.left), vw - w - 8);
     let top = r.bottom + 6;
@@ -53,6 +53,7 @@
   }
   function open(btn, wide, bind) {
     const p = getPanel();
+    p.dataset.w = typeof wide === "number" ? String(wide) : "";
     if (owner === btn) { close(); return; }
     if (owner) close();
     owner = btn;
@@ -297,13 +298,13 @@
         // выбранные — сверху, чтобы было видно, что уже отмечено
         rows.sort((a, c) => (c.selected - a.selected));
         return rows.map((o) => `<button type="button" role="option" aria-selected="${o.selected}" class="pk-opt pk-check${o.selected ? " on" : ""}"
-            data-v="${esc(o.value)}"><i class="pk-box">${TICK}</i><span>${esc(optLabel(o))}</span></button>`).join("")
+            data-v="${esc(o.value)}"><i class="pk-box">${TICK}</i><span>${esc(optLabel(o))}</span>${o.dataset.meta ? `<small class="pk-meta">${esc(o.dataset.meta)}</small>` : ""}</button>`).join("")
           || `<p class="pk-empty">Ничего не нашлось</p>`;
       };
       const foot = () => `<button type="button" class="pk-chip" data-clear${count() ? "" : " disabled"}>Сбросить</button>
         <button type="button" class="pk-ok" data-ok>${count() ? `Готово · выбрано ${count()}` : "Готово"}</button>`;
-      open(b, true, (p) => {
-        p.innerHTML = `${all.length > 8 ? `<input class="pk-search" placeholder="Найти…" autocomplete="off" aria-label="Найти">` : ""}
+      open(b, opts.width || true, (p) => {
+        p.innerHTML = `${all.length > 8 ? `<input class="pk-search" placeholder="${esc(opts.searchPlaceholder || "Найти…")}" autocomplete="off" aria-label="Найти">` : ""}
           <div class="pk-opts" role="listbox" aria-multiselectable="true">${list()}</div><div class="pk-foot">${foot()}</div>`;
         const s = p.querySelector(".pk-search");
         if (s) { s.addEventListener("input", () => { q = s.value.trim(); p.querySelector(".pk-opts").innerHTML = list(); }); if (innerWidth >= 640) s.focus(); }

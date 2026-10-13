@@ -145,7 +145,6 @@
       if (n != null) p.set(api, n);
     }
     if (state.notFirst) p.set("not_first", "1");
-    if (state.notLast) p.set("not_last", "1");
     if (state.hot) p.set("hot", "1");   // «🔥 Горячее»
     if (state.fresh === "new1") p.set("new_days", "1");   // «Новое сегодня»: впервые появились за сутки
     else if (state.fresh) p.set("fresh_days", state.fresh);
@@ -227,7 +226,6 @@
     });
     for (const k of ["priceMin", "priceMax", "areaMin", "areaMax", "landMin", "landMax"]) $(k).value = state[k];
     $("notFirst").checked = state.notFirst;
-    $("notLast").checked = state.notLast;
     $("fresh").value = state.fresh;
     $("newTodayBtn").classList.toggle("on", state.fresh === "new1");
     $("newTodayBtn").setAttribute("aria-pressed", state.fresh === "new1");
@@ -241,7 +239,7 @@
     $("filterBadge").hidden = !fc;
     $("filterBadge").textContent = fc;
     // сколько выбрано среди «ещё фильтров» — видно на кнопке, даже когда они свёрнуты
-    const mc = [state.areaMin || state.areaMax, state.landMin || state.landMax, state.notFirst, state.notLast, state.fresh]
+    const mc = [state.areaMin || state.areaMax, state.landMin || state.landMax, state.notFirst, state.fresh]
       .filter(Boolean).length + state.districts.length + state.complexes.length;
     $("moreN").hidden = !mc;
     $("moreN").textContent = mc;
@@ -299,6 +297,10 @@
       `<button type="button" class="chip" data-type="${esc(k)}" aria-pressed="false">${esc(label)}</button>`).join("");
   }
 
+  function renderDistrictChosen() {
+    $("districts").innerHTML = state.districts.map((d) =>
+      `<button type="button" class="chip on x" data-district="${esc(d)}" aria-label="Убрать район ${esc(d)}">${esc(d)}</button>`).join("");
+  }
   function renderComplexChosen() {
     $("complexChosen").innerHTML = state.complexes.map((c) =>
       `<button type="button" class="chip on x" data-complex="${esc(c)}" aria-label="Убрать ЖК ${esc(c)}">${esc(c)}</button>`).join("");
@@ -312,13 +314,12 @@
     const counts = new Map(f.districts.map((d) => [d.name, d.n]));
     districtCounts = counts;
     const names = [...f.districts.map((d) => d.name), ...state.districts.filter((d) => !counts.has(d))];
-    $("districts").innerHTML = names.length
-      ? names.map((n) => {
-          const on = state.districts.includes(n);
-          return `<button type="button" class="chip${on ? " on" : ""}" data-district="${esc(n)}" aria-pressed="${on}">${esc(n)}<span class="n">${counts.get(n) ?? 0}</span></button>`;
-        }).join("")
-      : `<span class="range-label">Пока нет объектов с районом</span>`;
+    // районы и ЖК — список с поиском и галочками (pickers.js); выбранные — ещё и чипами ниже (✕ — убрать)
+    $("fDistricts").innerHTML = names.map((n) => `<option value="${esc(n)}" data-meta="${counts.get(n) ?? 0}"${state.districts.includes(n) ? " selected" : ""}>${esc(n)}</option>`).join("");
     facetComplexes = f.complexes;   // для выпадающего списка ЖК
+    const cx = [...f.complexes, ...state.complexes.filter((c) => !f.complexes.some((x) => x.name === c)).map((c) => ({ name: c, n: 0 }))];
+    $("fComplexes").innerHTML = cx.map((c) => `<option value="${esc(c.name)}" data-meta="${c.n}"${state.complexes.includes(c.name) ? " selected" : ""}>${esc(c.name)}</option>`).join("");
+    renderDistrictChosen();
   }
 
   // ─── сравнение 2–3 объектов ─────────────────────────────────────────────
@@ -1626,14 +1627,6 @@
     if (i >= 0) list.splice(i, 1); else list.push(value);
   }
 
-  function addComplex() {
-    const v = $("complexInput").value.trim();
-    if (!v) return;
-    if (!state.complexes.includes(v)) state.complexes.push(v);
-    $("complexInput").value = "";
-    renderComplexChosen();
-    refresh();
-  }
 
   function bind() {
     $("searchForm").addEventListener("submit", (e) => { e.preventDefault(); state.q = $("q").value; refresh(); });
@@ -1786,16 +1779,22 @@
       $(k).addEventListener("input", () => { state[k] = $(k).value; refresh(500); });
     }
     $("notFirst").addEventListener("change", () => { state.notFirst = $("notFirst").checked; refresh(); });
-    $("notLast").addEventListener("change", () => { state.notLast = $("notLast").checked; refresh(); });
     $("fresh").addEventListener("change", () => { state.fresh = $("fresh").value; refresh(); });
     $("sort").addEventListener("change", () => { state.sort = $("sort").value; refresh(); });
 
-    // ЖК в фильтре — выпадающий список с поиском и числом объектов
-    Combo($("complexInput"), {
-      options: () => facetComplexes.map((c) => ({ value: c.name, meta: `${c.n}` })),
-      onPick: () => addComplex(),
+    // районы и ЖК в фильтре — широкий список с поиском, галочками и числом объектов
+    if (window.Pick) {
+      Pick.multi($("fDistricts"), { placeholder: "Все районы", width: 460, searchPlaceholder: "Найти район: ФМР, Юбилейный…" });
+      Pick.multi($("fComplexes"), { placeholder: "Все ЖК", width: 460, searchPlaceholder: "Найти ЖК по названию" });
+    }
+    $("fDistricts").addEventListener("change", () => {
+      state.districts = [...$("fDistricts").selectedOptions].map((o) => o.value);
+      renderDistrictChosen(); refresh(400);
     });
-    $("complexInput").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addComplex(); } });
+    $("fComplexes").addEventListener("change", () => {
+      state.complexes = [...$("fComplexes").selectedOptions].map((o) => o.value);
+      renderComplexChosen(); refresh(400);
+    });
     // Окно «ЖК и район» (админ)
     Combo($("placeDistrict"), { options: () => meta.districts || [], onPick: () => renderPlaceLearn() });
     Combo($("placeComplex"), { options: () => facetComplexes.map((c) => c.name), onPick: () => renderPlaceLearn() });
@@ -2011,6 +2010,7 @@
 
   async function init() {
     readUrl();
+    state.notLast = false;   // фильтр «не последний этаж» убран (этажность домов в чатах пишут по-разному)
     if (EMBED) {   // только окно объекта: без списка, карты и первого экрана
       try { meta = await getJSON("/api/meta"); } catch { /* */ }
       renderTypes();

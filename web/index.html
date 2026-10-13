@@ -22,7 +22,7 @@
 <link rel="stylesheet" href="/static/style.css?v=25">
 <link rel="stylesheet" href="/static/motion.css?v=34">
 <link rel="stylesheet" href="/static/theme.css?v=14">
-<link rel="stylesheet" href="/static/glass.css?v=14">
+<link rel="stylesheet" href="/static/glass.css?v=16">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -152,7 +152,6 @@
       <div class="field f-floor">
         <span class="range-label">Этаж</span>
         <label class="check"><input type="checkbox" id="notFirst"> Не первый</label>
-        <label class="check"><input type="checkbox" id="notLast"> Не последний</label>
       </div>
       <label class="field">
         <span class="range-label">Присылали</span>
@@ -164,13 +163,14 @@
           <option value="30">за месяц</option>
         </select>
       </label>
-      <div class="field wide">
+      <div class="field wide f-pick">
         <span class="range-label">Районы</span>
-        <div class="chips scroll" id="districts"></div>
+        <select id="fDistricts" multiple data-placeholder="Все районы — нажмите, чтобы выбрать" aria-label="Районы"></select>
+        <div class="chips" id="districts"></div>
       </div>
-      <div class="field wide">
-        <label class="range-label" for="complexInput">ЖК</label>
-        <input id="complexInput" placeholder="Начните вводить название ЖК">
+      <div class="field wide f-pick">
+        <span class="range-label">ЖК</span>
+        <select id="fComplexes" multiple data-placeholder="Все ЖК — нажмите, чтобы найти" aria-label="ЖК"></select>
         <div class="chips" id="complexChosen"></div>
       </div>
     </div>
@@ -389,14 +389,14 @@
 </dialog>
 
 <script src="/static/icons.js?v=4"></script>
-<script src="/static/pickers.js?v=6"></script>
+<script src="/static/pickers.js?v=7"></script>
 <script src="/static/max.js?v=1"></script>
 <script src="/static/rail.js?v=7"></script>
 <script src="/static/combo.js?v=2"></script>
 <script src="/static/yasel.js?v=2"></script>
 <script src="/static/bell.js?v=4"></script>
 <script src="/static/lightbox.js?v=2"></script>
-<script src="/static/app.js?v=83"></script>
+<script src="/static/app.js?v=84"></script>
 <script src="/static/agent.js?v=8"></script>
 </body>
 </html>
