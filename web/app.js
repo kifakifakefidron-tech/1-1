@@ -885,7 +885,8 @@
     const adminPhotos = admin && photos.length ? `<p class="dv-sub-h">Фото — убрать лишнее (не вернётся из фида и чатов)</p>
       <div class="adm-ph">${photos.map((u) => `<span><img src="${esc(u)}" alt="" loading="lazy">
         <button type="button" data-photo-del="${esc(u)}" data-id="${o.id}" aria-label="Удалить фото" title="Удалить фото">${ic("trash")}</button></span>`).join("")}</div>` : "";
-    const adminBody = admin ? `${adminPhotos}<div class="dv-admin">
+    const adminBody = admin ? `${adminPhotos}<div class="dv-edhist"><button type="button" class="chip" data-hist-load="${o.id}">${ic("history")}История правок: что, кем, когда</button>
+        <div class="dv-ed-list" id="dvEd${o.id}"></div></div><div class="dv-admin">
         <button type="button" class="chip" data-place-edit="${o.id}">✎ ЖК, район и цена${o.admin_fixed ? " ✓" : ""}</button>
         <button type="button" class="chip" data-geo-edit="${o.id}">📍 Точка на карте</button>
         <button type="button" class="chip" data-admin-act="deal" data-deal="${o.deal === "rent" ? "sale" : "rent"}" data-id="${o.id}">⇄ ${o.deal === "rent" ? "В продажу" : "В аренду"}</button>
@@ -1893,6 +1894,31 @@
       } else return;
       syncControls();
       refresh();
+    });
+
+    // админ: история правок объекта и откат одной правки
+    const ED_F = { district: "район", extra_districts: "второй район", complex: "ЖК", street: "улица", house: "дом", price: "цена",
+      description: "описание", deal: "сделка", rooms: "комнаты", area: "площадь", floor: "этаж" };
+    const edVal = (v) => (v == null || v === "" ? "—" : Array.isArray(v) ? (v.join(", ") || "—") : String(v).slice(0, 80));
+    async function loadEdits(id) {
+      const box = document.getElementById(`dvEd${id}`);
+      if (!box) return;
+      const r = await call(`/api/admin/edits?listing=${id}`);
+      const items = (r.ok && r.data.items) || [];
+      box.innerHTML = items.length ? items.map((e) => `<div class="dv-ed${e.reverted ? " off" : ""}">
+          <span><b>${esc(ED_F[e.field] || e.field)}</b>: ${esc(edVal(e.old))} → ${esc(edVal(e.new))}</span>
+          <small>${esc(e.who)} · ${esc(new Date(e.ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))}</small>
+          ${e.reverted ? `<em>откачено</em>` : `<button type="button" class="chip" data-edit-revert="${e.id}" data-id="${id}">Откатить</button>`}</div>`).join("")
+        : `<p class="note">Правок пока не было.</p>`;
+    }
+    document.addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-hist-load], [data-edit-revert]");
+      if (!b) return;
+      if (b.dataset.histLoad) { loadEdits(Number(b.dataset.histLoad)); return; }
+      if (!confirm("Откатить эту правку? Вернётся прежнее значение.")) return;
+      const r = await call("/api/admin/edits", { id: Number(b.dataset.editRevert) });
+      toast(r.ok && r.data.ok ? "Откатили" : "Эту правку откатить нельзя");
+      if (r.ok && r.data.ok) { await openDetail(Number(b.dataset.id)); loadEdits(Number(b.dataset.id)); }
     });
 
     // админ: удалить фото у объекта

@@ -2155,13 +2155,42 @@ def api_admin_recheck(request: Request, body: dict | None = None):
     return JSONResponse({"ok": True, **rep})
 
 
+def api_admin_geo_audit(request: Request, body: dict | None = None):
+    """ТЗ «админка-гео» P0.0: GET — отчёт (ничего не меняет); POST {rules: [id], junk: [имя], labels: bool} — применить
+    выбранное админом (каждое изменение объекта — в журнал правок, откат по объекту)."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    from . import geoaudit
+    conn = db.get()
+    if request.method == "POST":
+        body = body or {}
+        res = geoaudit.apply(conn, [int(x) for x in body.get("rules") or [] if str(x).isdigit()],
+                             [str(x) for x in body.get("junk") or []], bool(body.get("labels")))
+        _bump_cache()
+        return JSONResponse({"ok": True, **res})
+    return JSONResponse(geoaudit.report(conn))
+
+
 def api_admin_edits(request: Request, body: dict | None = None):
     _, err = _need_admin(request)
     if err:
         return err
     conn = db.get()
     if request.method == "POST":
-        return JSONResponse({"ok": agent.revert_edit(conn, _num((body or {}).get("id"), int) or 0)})
+        ok = agent.revert_edit(conn, _num((body or {}).get("id"), int) or 0)
+        if ok:
+            _bump_cache()
+        return JSONResponse({"ok": ok})
+    lid = _num(request.query_params.get("listing"), int)
+    if lid:   # история одного объекта: что, кем/чем, когда (ТЗ «админка-гео» P0.3)
+        rows = conn.execute("""SELECT e.*, u.name AS u_name, u.email AS u_email FROM listing_edits e
+                               LEFT JOIN users u ON u.id = e.user_id WHERE e.listing_id = ? ORDER BY e.id DESC LIMIT 200""",
+                            (lid,)).fetchall()
+        return JSONResponse({"items": [{"id": r["id"], "ts": r["ts"], "field": r["field"], "old": json.loads(r["old"] or "null"),
+                                        "new": json.loads(r["new"] or "null"), "reverted": r["reverted"],
+                                        "who": r["src"] or ("сервис" if r["user_id"] == 0 else (r["u_name"] or r["u_email"] or "пользователь"))}
+                                       for r in rows]})
     return JSONResponse({"items": agent.edits_for_admin(conn)})
 
 
@@ -2280,6 +2309,7 @@ routes = [
     Route("/api/admin/listings/{id:int}/geo", threaded(api_admin_geo), methods=["POST"]),
     Route("/api/admin/geo-queue", threaded(api_admin_geo_queue)),
     Route("/api/admin/fix", threaded(api_admin_fix), methods=["GET", "POST"]),
+    Route("/api/admin/geo-audit", threaded(api_admin_geo_audit), methods=["GET", "POST"]),
     Route("/api/admin/dir", threaded(api_admin_dir), methods=["GET", "POST"]),
     Route("/api/admin/reconcile", threaded(api_admin_reconcile), methods=["GET", "POST"]),
     Route("/admin/map", threaded(districts_map_page)),

@@ -149,6 +149,7 @@ def test_recheck_all_moves_district_by_drawn_map_and_rolls_back(conn, add):
 
 def test_recheck_keeps_admin_rules_and_fixes(conn, add):
     from app import learning
+    districtmap.save_polygon(conn, "ФМР", "district", FMR)
     districtmap.save_polygon(conn, "Катюша", "district", KAT)
     a = _lid(add("2-к квартира 50 м², 3/9 эт., ФМР, ЖК Мозаика. 6 млн. 89180000071"))
     _put(conn, a, 45.01, 38.91)
@@ -157,5 +158,10 @@ def test_recheck_keeps_admin_rules_and_fixes(conn, add):
     _put(conn, b, 45.01, 38.91)
     conn.execute("UPDATE listings SET admin_fixed = 1 WHERE id = ?", (b,))
     conn.commit()
+    h = _lid(add("2-к квартира 52 м², 4/9 эт., ФМР, ул. Новаторов 11. 6 млн. 89180000073"))
+    _put(conn, h, 45.01, 38.91)
+    learning.learn(conn, _row(conn, h), None, "ФМР", {"addr": True})   # правило дома — главнее контура
     rep = autolearn.recheck_all(conn)
-    assert rep.get("kept_rule") == 1 and _row(conn, a)["district"] == "ФМР" and _row(conn, b)["district"] == "ФМР"
+    # ТЗ «админка-гео» P0.0.1: контур под точкой дома главнее правила «ЖК → район»; правило дома и правка админа — главнее контура
+    assert _row(conn, a)["district"] == "Катюша" and _row(conn, b)["district"] == "ФМР"
+    assert rep.get("kept_rule") == 1 and _row(conn, h)["district"] == "ФМР"

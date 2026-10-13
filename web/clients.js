@@ -324,8 +324,7 @@
     return `Клиент: ${cur.client.name}
 Этап: ${data.stages[cur.client.stage]}
 Объекты (${cur.items.length}):
-${lines.join("
-")}`;
+${lines.join("\n")}`;
   }
   async function newPick() {
     const matched = cur.items.filter((o) => o.status === "matched").map((o) => o.id);

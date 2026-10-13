@@ -359,16 +359,19 @@ FEED_FAR_KM = 1.0        # метка фида дальше этого от св
 
 
 def _has_rule(rs: dict, row) -> bool:
-    """Район объекта задан вашим правилом (дом / ЖК / улица) — его перепроверка не трогает."""
-    return any(k and (kind, k) in rs for kind, k in (
-        ("addr", learning.addr_key(row["street"], row["house"], row["settlement"])),
-        ("cx_district", learning.cx_key(row["complex"])), ("street", learning.street_key(row["street"], row["settlement"]))))
+    """Район объекта задан вашим правилом ДОМА — его перепроверка не трогает. ТЗ «админка-гео» P0.0.1: правила
+    «ЖК → район» и «улица → район» ниже контура под точкой дома (они решают, только когда точки дома нет)."""
+    k = learning.addr_key(row["street"], row["house"], row["settlement"])
+    return bool(k) and ("addr", k) in rs
+
+
+AUTONOMY_SHARE = 0.02   # перепроверка хочет поменять район больше чем у 2 % объектов — не применяем, а спрашиваем админа
 
 
 def _log(conn, lid: int, field: str, old, new, now: int) -> None:
     import json
-    conn.execute("INSERT INTO listing_edits (listing_id, user_id, ts, field, old, new) VALUES (?,?,?,?,?,?)",
-                 (lid, SERVICE_UID, now, field, json.dumps(old, ensure_ascii=False), json.dumps(new, ensure_ascii=False)))
+    conn.execute("INSERT INTO listing_edits (listing_id, user_id, ts, field, old, new, src) VALUES (?,?,?,?,?,?,?)",
+                 (lid, SERVICE_UID, now, field, json.dumps(old, ensure_ascii=False), json.dumps(new, ensure_ascii=False), "перепроверка"))
 
 
 def recheck_all(conn: sqlite3.Connection) -> dict:
@@ -415,13 +418,13 @@ def recheck_all(conn: sqlite3.Connection) -> dict:
     # что вы откатили — больше не трогаем (иначе каждый час возвращалось бы снова)
     undone = {(r[0], r[1]) for r in conn.execute(
         "SELECT listing_id, field FROM listing_edits WHERE user_id = ? AND reverted = 1", (SERVICE_UID,))}
+    pending: list = []
     for r in conn.execute("""SELECT * FROM listings WHERE is_active = 1 AND lat IS NOT NULL AND admin_fixed = 0
                              AND source NOT IN ('feed', 'own') AND settlement IS NULL
                              AND geo_status IN ('ok', 'manual', 'learned')""").fetchall():
         d = dict(r)
         changed = False
-        hit = districtmap.district_at(conn, r["lat"], r["lon"])
-        new = hit[0] if hit and hit[1] == "district" else None
+        new = learning._house_district(conn, r)   # только точка дома: центр ЖК и середина улицы район не решают
         extra = json.loads(r["extra_districts"] or "[]")
         cur = r["district"]
         if new and new != cur and new not in extra and (r["id"], "district") not in undone                 and (r["id"], "extra_districts") not in undone:
@@ -445,11 +448,8 @@ def recheck_all(conn: sqlite3.Connection) -> dict:
                     changed = True
                 elif out <= NEAR_BORDER_KM:
                     rep["kept_border"] += 1
-                else:
-                    d["district"], d["district_src"] = new, "map"
-                    _log(conn, r["id"], "district", cur, new, now)
-                    rep["districts_changed"] += 1
-                    changed = True
+                else:   # смена района — копим: если таких слишком много, не применяем (порог самостоятельности)
+                    pending.append((r, cur, new))
         if not r["complex"] and r["type"] in ("flat", "new") and r["geo_src"] in HOUSE_SRC + (None, "geocoder")                 and (r["id"], "complex") not in undone:
             cx = districtmap.complex_at(conn, r["lat"], r["lon"])
             rec = geo.resolve_complex(cx) if cx else None
@@ -465,6 +465,32 @@ def recheck_all(conn: sqlite3.Connection) -> dict:
                             search_text = ? WHERE id = ?""", (d["district"], d["district_src"], d["extra_districts"],
                                                              d["complex"], d["title"], d["search_text"], r["id"]))
             _reindex(conn, r["id"], d["search_text"])
+    conn.commit()
+    # смены района: применяем, только если их немного; иначе — в «Спорные» и уведомление админу
+    total = conn.execute("SELECT COUNT(*) FROM listings WHERE is_active = 1").fetchone()[0] or 1
+    if pending and len(pending) > max(AUTONOMY_SHARE * total, 10):   # на крошечной базе 1 объект — не «2 %»
+        for r, cur, new in pending:
+            conn.execute("UPDATE listings SET place_conflict = ? WHERE id = ?",
+                         (f"rule:район «{cur}», а дом на вашей карте — в «{new}» (перепроверка не стала менять сама: слишком много сразу)", r["id"]))
+        rep["districts_held"] = len(pending)
+        try:
+            from . import notices
+            for (uid,) in conn.execute("SELECT id FROM users WHERE is_admin = 1").fetchall():
+                notices.add(conn, uid, "sub", f"Перепроверка хочет поменять район у {len(pending)} объектов — проверьте",
+                            "Больше 2 % объектов сразу — сервис не стал менять сам. Они в «Спорных».", url="/fix?kind=conflict")
+        except Exception:  # noqa: BLE001
+            pass
+    else:
+        for r, cur, new in pending:
+            d = dict(r)
+            d["district"], d["district_src"] = new, "map"
+            d["title"] = make_title(d)
+            d["search_text"] = make_search_text(d)
+            conn.execute("UPDATE listings SET district = ?, district_src = 'map', title = ?, search_text = ? WHERE id = ?",
+                         (new, d["title"], d["search_text"], r["id"]))
+            _reindex(conn, r["id"], d["search_text"])
+            _log(conn, r["id"], "district", cur, new, now)
+            rep["districts_changed"] += 1
     conn.commit()
     out = dict(rep)
     out["ts"] = now
