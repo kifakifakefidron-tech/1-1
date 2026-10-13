@@ -48,8 +48,9 @@
   function renderPlans() {
     $("plans").innerHTML = plans.map((p, i) => `<label class="plan${p === chosen ? " on" : ""}" data-i="${i}">
       <input type="radio" name="plan" ${p === chosen ? "checked" : ""}><span class="plan-dot"></span>
-      <span class="plan-name"><b>${p.days} ${plural(p.days, "день", "дня", "дней")}</b><small>${String(p.per_day).replace(".", ",")} ₽ в день</small></span>
-      <span class="plan-price">${p.price} ₽</span>${p.save ? `<span class="plan-save">−${p.save}%</span>` : ""}</label>`).join("");
+      <span class="plan-name"><b>${p.first ? "Первая неделя" : `${p.days} ${plural(p.days, "день", "дня", "дней")}`}</b>
+        <small>${p.first ? `потом ${p.old_price} ₽ в неделю` : `${String(p.per_day).replace(".", ",")} ₽ в день`}</small></span>
+      <span class="plan-price">${p.old_price ? `<s>${p.old_price} ₽</s>` : ""}${p.price} ₽</span>${p.save ? `<span class="plan-save">−${p.save}%</span>` : ""}</label>`).join("");
     updateCard();
   }
   $("plans").addEventListener("click", (e) => {
@@ -113,10 +114,10 @@
     const [m, p] = await Promise.all([call("/api/me"), call("/api/pay")]);
     me = m.data.me;
     if (me) $("cardName").textContent = (me.name || (me.email || "").split("@")[0] || "Риелтор").slice(0, 22);
-    plans = (p.ok && p.data.plans) || [{ days: 7, price: 49, per_day: 7, save: 0 }];
+    plans = (p.ok && p.data.plans) || [{ days: 7, price: 99, per_day: 14.1, save: 0 }];
     enabled = !!(p.ok && p.data.enabled);
-    chosen = plans.find((x) => x.save) || plans[0];
-    if (plans.length > 2) chosen = plans[1];   // средний тариф — по умолчанию (как обычно и выбирают)
+    // по умолчанию: первая неделя по скидке (если ещё не платил), иначе самый выгодный
+    chosen = plans.find((x) => x.first) || plans.find((x) => x.save) || plans[0];
     renderPlans();
     if (!me) { $("payBtnText").textContent = "Войти и оформить"; $("payNote").textContent = "Сначала войдите по почте — доступ привяжется к аккаунту."; }
     else if (!enabled) $("payNote").textContent = me.is_admin ? "Оплата выключена (нет ключей ЮKassa). Нажмите кнопку — покажем, как будет выглядеть успех." : "Скоро здесь можно будет оплатить картой или СБП.";

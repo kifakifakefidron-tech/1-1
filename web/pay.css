@@ -126,3 +126,5 @@
   .pay-panel { padding: 22px 18px; border-radius: 24px; }
 }
 @media (prefers-reduced-motion: reduce) { .card-in { transition: none; } .pay-btn::after { animation: none; } }
+
+.plan-price s { margin-right: 6px; font-size: .78em; font-weight: 500; color: var(--ink-3); }

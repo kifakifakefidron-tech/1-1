@@ -100,11 +100,14 @@ SITE_URL = os.getenv("SITE_URL", "").strip() or (
 PICK_DOMAIN = os.getenv("PICK_DOMAIN", "").strip().lower()
 PICK_URL = f"https://{PICK_DOMAIN}" if PICK_DOMAIN else SITE_URL
 TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "7"))           # бесплатно после подтверждения номера (раз на номер)
-SUB_PRICE = int(os.getenv("SUB_PRICE", "49"))            # ₽ за период
+SUB_PRICE = int(os.getenv("SUB_PRICE", "99"))            # ₽ за период
 SUB_DAYS = int(os.getenv("SUB_DAYS", "7"))               # период подписки, дней
-# Тарифы на странице оплаты: «дней:цена,дней:цена» (например «7:49,30:179,90:449»); по умолчанию — один SUB_DAYS:SUB_PRICE
+# Цены (решение Артёма 13.10): неделя бесплатно (TRIAL_DAYS) → первая платная неделя 49 ₽ (SUB_FIRST, один раз) →
+# дальше 99 ₽ за неделю или 399 ₽ за 30 дней (SUB_PLANS «дней:цена,дней:цена»)
 SUB_PLANS = [(int(d), int(p)) for d, p in (x.split(":") for x in
-             (os.getenv("SUB_PLANS", "").strip() or f"{SUB_DAYS}:{SUB_PRICE}").split(",") if ":" in x)]
+             (os.getenv("SUB_PLANS", "").strip() or "7:99,30:399").split(",") if ":" in x)]
+_first = os.getenv("SUB_FIRST", "7:49").strip()
+SUB_FIRST = tuple(int(x) for x in _first.split(":")) if ":" in _first else None   # (дней, цена) — только первая оплата
 PHONE_VIEWS_PER_DAY = int(os.getenv("PHONE_VIEWS_PER_DAY", "0"))  # 0 = без лимита (пока выключен)  # защита от выкачивания номеров
 PROMO_LOGIN_DAYS = int(os.getenv("PROMO_LOGIN_DAYS", "30"))  # доступ после входа по коду коллег
 # Пробная неделя при первом входе по почте (раз на адрес) — пока Telegram в России недоступен

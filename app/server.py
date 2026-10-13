@@ -215,13 +215,20 @@ def index(request: Request, body: dict | None = None):
     return Response(html_text, media_type="text/html; charset=utf-8", headers=headers)
 
 
+def _prices_text() -> str:
+    """«первая неделя — 49 ₽, дальше 99 ₽ за 7 дней или 399 ₽ за 30 дней» — для текстов на страницах."""
+    plans = " или ".join(f"{p} ₽ за {d} дней" for d, p in sorted(config.SUB_PLANS))
+    first = f"первая неделя — {config.SUB_FIRST[1]} ₽, дальше " if config.SUB_FIRST else ""
+    return f"{first}{plans}"
+
+
 def _page(name: str) -> Response:
     """Текстовая страница с подстановкой данных оператора и условий подписки."""
     html = (WEB / name).read_text(encoding="utf-8")
     for key, val in {
         "OPERATOR_NAME": config.OPERATOR_NAME, "OPERATOR_INN": config.OPERATOR_INN,
         "CONTACT_EMAIL": config.CONTACT_EMAIL or "почту из раздела «Контакты»", "POLICY_DATE": config.POLICY_DATE,
-        "SITE_URL": config.SITE_URL, "TRIAL_DAYS": config.TRIAL_DAYS, "SUB_PRICE": config.SUB_PRICE,
+        "SITE_URL": config.SITE_URL, "TRIAL_DAYS": config.TRIAL_DAYS, "SUB_PRICE": config.SUB_PRICE, "PRICES": _prices_text(),
         "SUB_DAYS": config.SUB_DAYS, "STALE_DAYS": config.STALE_DAYS,
     }.items():
         html = html.replace("{{" + key + "}}", str(val))
@@ -631,7 +638,7 @@ def api_pay(request: Request, body: dict | None = None):
     if err:
         return err
     if request.method == "GET":
-        return JSONResponse({"plans": payments.plans(), "enabled": payments.available(),
+        return JSONResponse({"plans": payments.plans(db.get(), user["id"] if user else None), "enabled": payments.available(),
                              "last": payments.last_status(db.get(), user["id"]) if request.query_params.get("check") else None})
     if not payments.available():
         return _err("Оплата скоро появится.", 503)

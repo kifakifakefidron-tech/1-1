@@ -41,21 +41,42 @@ def _request(url: str, body: dict | None = None) -> dict:
         return json.loads(resp.read())
 
 
-def plans() -> list[dict]:
-    """Тарифы для страницы оплаты (из SUB_PLANS): дней, цена, цена за день, выгода к самому короткому."""
-    base = min(config.SUB_PLANS, key=lambda x: x[0]) if config.SUB_PLANS else (config.SUB_DAYS, config.SUB_PRICE)
+def first_time(conn: sqlite3.Connection | None, user_id: int | None) -> bool:
+    """Человек ещё ни разу не платил — ему первая неделя по цене SUB_FIRST (49 ₽)."""
+    if not config.SUB_FIRST or conn is None or not user_id:
+        return bool(config.SUB_FIRST) and not user_id
+    return not conn.execute("SELECT 1 FROM payments WHERE user_id = ? AND status = 'succeeded' LIMIT 1", (user_id,)).fetchone()
+
+
+def _price_list(conn: sqlite3.Connection | None, user_id: int | None) -> list[tuple[int, int, str]]:
+    """(дней, цена, ключ тарифа): у тех, кто ещё не платил, неделя — по первой цене."""
+    out = [(d, p, f"{d}") for d, p in sorted(config.SUB_PLANS)]
+    if first_time(conn, user_id):
+        fd, fp = config.SUB_FIRST
+        out = [(d, p, k) for d, p, k in out if d != fd]
+        out.insert(0, (fd, fp, "first"))
+    return out
+
+
+def plans(conn: sqlite3.Connection | None = None, user_id: int | None = None) -> list[dict]:
+    """Тарифы для страницы оплаты: дней, цена, цена за день, выгода к обычной неделе; first — первая неделя со скидкой."""
+    regular = sorted(config.SUB_PLANS) or [(config.SUB_DAYS, config.SUB_PRICE)]
+    base = min(regular, key=lambda x: x[0])
     per_base = base[1] / base[0]
     out = []
-    for days, price in sorted(config.SUB_PLANS):
-        save = round((1 - (price / days) / per_base) * 100) if days != base[0] else 0
-        out.append({"days": days, "price": price, "per_day": round(price / days, 1), "save": max(0, save)})
+    for days, price, key in _price_list(conn, user_id):
+        save = round((1 - (price / days) / per_base) * 100) if (days, price) != base else 0
+        out.append({"days": days, "price": price, "per_day": round(price / days, 1), "save": max(0, save),
+                    "key": key, "first": key == "first",
+                    "old_price": base[1] if key == "first" else None})
     return out
 
 
 def create(conn: sqlite3.Connection, user_id: int, days: int | None = None) -> str:
     """Создать платёж по тарифу (дней); возвращает ссылку на страницу оплаты ЮKassa."""
-    plan = next((p for p in config.SUB_PLANS if p[0] == days), None) or \
-        (config.SUB_PLANS[0] if config.SUB_PLANS else (config.SUB_DAYS, config.SUB_PRICE))
+    # цену считает сервер (первая неделя по 49 ₽ — только тем, кто ещё не платил)
+    options = _price_list(conn, user_id)
+    plan = next(((d, p) for d, p, _ in options if d == days), None) or (options[0][:2] if options else (config.SUB_DAYS, config.SUB_PRICE))
     days, price = plan
     pay = _request(API, {
         "amount": {"value": f"{price}.00", "currency": "RUB"},
