@@ -84,3 +84,20 @@
   .wk-tools { width: 100%; }
   .wk-grid { grid-template-columns: 1fr; }
 }
+
+/* закладки с клиентами (ТЗ v2) */
+.wk-cl { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.wk-c { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 4px 10px 4px 8px; border-radius: 999px;
+  background: rgba(255, 255, 255, .06); color: var(--ink); font-size: 12.5px; text-decoration: none; }
+.wk-c svg { width: 13px; height: 13px; color: var(--gold); flex: none; }
+.wk-c span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wk-c b { font-weight: 500; color: var(--ink-3); }
+.wk-c.p-ok b { color: var(--ok); } .wk-c.p-bad b { color: var(--bad); } .wk-c.p-gold b { color: var(--gold); }
+.wk-c.none { color: var(--ink-3); background: none; padding-left: 0; }
+.wk-c:hover:not(.none) { background: rgba(227, 203, 143, .16); }
+.c-ok { --c: var(--ok); } .c-bad { --c: var(--bad); }
+/* заглушка без фото — компактная полоса, а не пол-экрана */
+.wk-card.nophoto .wk-photo { aspect-ratio: auto; height: 56px; }
+.wk-card.nophoto .wk-photo > span { grid-auto-flow: column; gap: 8px; }
+.wk-card.nophoto .wk-photo > span svg { width: 18px; height: 18px; }
+.wk-tools .pk-btn { min-width: 160px; }

@@ -425,6 +425,20 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   значков, КАПСа, имени агента в конце); /api/c/ отдаёт свой текст агента или client_text, редактор «Текст» стартует с него.
   Просмотры: не считаем вошедших, ?as=agent («Как видит клиент»), роботов-превью; уникальные — кука pv, раз в день
   (collection_views, collections.views_unique). Разовые команды: `python -m app.p0fix phones [--apply]`, `… prices`.
+  P1 (ветка p1-client-flow): clients.PAIR — один статус на пару клиент+объект (matched → sent → opened → liked/rejected →
+  show → talks → deal/lost), clients.set_pair — ЕДИНСТВЕННОЕ место смены статуса (история, этап клиента сам, если не
+  stage_manual; auto=True — только вперёд). Перенос старых: offered → sent/matched, shown → show, notes.status → журнал
+  (db._migrate_pairs, state pairs_v1). У клиента сразу подборка (clients.ensure_pick, при доступе); «Клиенту ▾» —
+  clients.add_to_client (POST /api/clients/{id}/add); подбор — clients.query_for (строгий бюджет + wishes.budget_tol,
+  clients.wishes: типы, площадь, этаж, ЖК, состояние/обременение/ипотека по search_text), без связанных и client_hidden
+  («Не подходит», /hide|/unhide|/hidden), сортировки new/price_asc/market/budget, фильтры photo/not_first. Подборка:
+  picks._sync_client → set_pair(sent), picks.set_status (статус в подборке + запись «Вася: …» в журнал), удаление объекта/
+  подборки → clients.forget_pick (статусы sent/opened/liked/rejected этой подборки, реакции, записи журнала с collection_id).
+  Реакции клиента: POST /api/c/{token}/react (like/no/want_show/question, лимит 60/устройство/сутки) → set_pair, история,
+  уведомление + письмо агенту; открытие подборки → opened + уведомление «открыл». «В работе» — закладки: вкладки
+  Все / У клиентов / Без клиента / Скрытые, чипы клиентов со статусом, фильтр по клиенту (/api/favorites → clients).
+  Главная — «Клиент из поиска» (/clients?new=1&from=JSON). ЖК: app/cxnorm.py (ключ complex_key, «X 1» = «X»), разово
+  (state cx_norm_v1, отчёт cx_norm_report в «Обзоре»), новые — ingest.save_object → cxnorm.canonical.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
@@ -433,7 +447,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 226 тестов
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 229 тестов
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены

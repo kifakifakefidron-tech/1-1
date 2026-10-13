@@ -554,3 +554,30 @@ html.embed dialog::backdrop { background: transparent !important; backdrop-filte
 .dv-tp svg { width: 16px; height: 16px; color: var(--gold); flex: none; margin-top: 1px; }
 .dv-sender { margin: 6px 0 0; color: var(--ink-3); font-size: 12.5px; }
 .dv-sender a { color: var(--ink-2); }
+
+/* «Клиенту ▾» и клиенты по объекту */
+.cm-obj { margin: -4px 0 10px; color: var(--ink-3); font-size: 13px; }
+.cm-search { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; margin-bottom: 8px; border-radius: 12px;
+  border: 1px solid var(--glass-line); background: rgba(0, 0, 0, .14); }
+.cm-search svg { width: 16px; height: 16px; color: var(--ink-3); }
+.cm-search input { flex: 1; min-width: 0; border: 0; background: none; color: var(--ink); font: 14px var(--body); outline: none; }
+.cm-list { max-height: 46vh; overflow-y: auto; display: grid; gap: 4px; }
+.cm-done { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 8px; padding: 10px 12px; border-radius: 12px;
+  background: rgba(120, 220, 170, .1); border: 1px solid rgba(120, 220, 170, .3); font-size: 13.5px; }
+.cm-done > svg { width: 18px; height: 18px; color: var(--ok); }
+.cm-done span { flex: 1; min-width: 160px; }
+.cm-newbox { margin-top: 10px; }
+.cm-newbox summary { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--gold); font-size: 14px; list-style: none; }
+.cm-newbox summary svg { width: 16px; height: 16px; }
+.cm-new-f { display: grid; gap: 6px; margin-top: 8px; }
+.cm-new-f input { height: 40px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--glass-line); background: rgba(0, 0, 0, .14); color: var(--ink); font: 14px var(--body); }
+.cm-nopick { display: flex; align-items: center; gap: 6px; margin-top: 10px; padding: 8px 0; border: 0; background: none; color: var(--ink-3); font: 13.5px var(--body); cursor: pointer; }
+.cm-nopick svg { width: 15px; height: 15px; }
+.cm-nopick:hover { color: var(--ink); }
+.pr-list { display: grid; gap: 6px; margin-bottom: 8px; }
+.pr-it { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; align-items: center; padding: 8px 10px; border-radius: 12px; background: rgba(255, 255, 255, .04); }
+.pr-it a { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); text-decoration: none; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-it a svg { width: 15px; height: 15px; color: var(--gold); flex: none; }
+.pr-it .pk-btn, .pr-it select { height: 32px; min-height: 32px; border-radius: 999px; font-size: 13px; }
+.pr-re { grid-column: 1 / -1; order: 3; color: var(--ok); font-size: 12px; }
+.cli-btn svg { width: 16px; height: 16px; }

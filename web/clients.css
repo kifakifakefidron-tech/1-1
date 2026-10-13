@@ -178,3 +178,31 @@ body.c-dragging .c-col { transition: background .2s, border-color .2s, transform
 .c-wk svg { width: 12px; height: 12px; flex: none; }
 .c-log-wk a { color: var(--ink); }
 .c-log-tag { display: inline-block; margin-left: 4px; padding: 1px 8px; border-radius: 999px; background: rgba(255, 255, 255, .07); font-size: 12px; text-decoration: none; }
+
+/* P1: пожелания, подбор с галочками */
+.c-more-w { border: 1px solid var(--glass-line); border-radius: 14px; padding: 10px 12px; }
+.c-more-w summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--ink); }
+.c-more-w summary small { color: var(--gold); font-weight: 500; }
+.c-more-w .c-grid { margin-top: 10px; }
+.c-mtools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 8px; }
+.c-mtools .pk-btn, .c-mtools select { height: 34px; min-height: 34px; border-radius: 999px; width: auto; }
+.c-mbar { position: sticky; top: 0; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; margin-bottom: 6px;
+  border-radius: 14px; background: rgba(4, 56, 55, .96); border: 1px solid var(--glass-line); }
+.c-mbar b { color: var(--gold); font-size: 13px; margin-right: auto; }
+.c-mbar button:disabled { opacity: .45; }
+.c-chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.c-chk input { width: 18px; height: 18px; accent-color: var(--gold-300); }
+.c-mit { grid-template-columns: 22px 56px minmax(0, 1fr) auto !important; }
+.c-mact { display: flex; gap: 4px; align-items: center; }
+.c-x { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .06); color: var(--ink-3); cursor: pointer; }
+.c-x:hover { background: rgba(255, 140, 130, .18); color: var(--bad); }
+.c-x svg { width: 15px; height: 15px; }
+.c-good { color: var(--ok); }
+.c-react { display: block; font-size: 12px; }
+.c-react.r-like, .c-react.r-want_show { color: var(--ok); } .c-react.r-no { color: var(--bad); } .c-react.r-question { color: var(--gold); }
+@media (max-width: 600px) { .c-mit { grid-template-columns: 22px 48px minmax(0, 1fr) !important; } .c-mact { grid-column: 3; } }
+
+.c-pick { grid-template-columns: 38px minmax(0, 1fr) auto !important; }
+.c-pick-a { display: flex; gap: 6px; align-items: center; }
+.c-pick-a .pill { height: 32px; display: inline-flex; align-items: center; padding: 0 14px; text-decoration: none; }
+.c-pick > span:nth-child(2) { display: grid; min-width: 0; }

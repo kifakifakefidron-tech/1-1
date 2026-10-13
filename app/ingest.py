@@ -84,6 +84,9 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
     # Правки админа (ЖК/район) — до поиска дублей: объявление совпадёт с уже исправленной карточкой
     osmaddr.apply(conn, o)      # опечатка в улице («Командоская») — до правил и дублей: одна улица, а не две
     learning.apply(conn, o)
+    if o.complex:   # тот же ЖК в другом написании («САМОЛЕТ 2») — принятое в базе название
+        from . import cxnorm
+        o.complex = cxnorm.canonical(conn, o.complex)
     fh = dedupe.fragment_hash(o.fragment)
     d = o.to_dict()
     ban = conn.execute("SELECT listing_id FROM banned WHERE kind = 'frag' AND key = ?", (fh,)).fetchone()

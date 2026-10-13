@@ -289,6 +289,16 @@ CREATE TABLE IF NOT EXISTS hidden_listings (   -- агент скрыл объе
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
     reason TEXT, ts INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)
 );
+-- P1 (ТЗ v2): «Не подходит» в подборе клиента — больше не предлагать этот объект этому клиенту
+CREATE TABLE IF NOT EXISTS client_hidden (
+    client_id INTEGER NOT NULL, listing_id INTEGER NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (client_id, listing_id)
+);
+-- Реакции клиента со страницы подборки (без регистрации): нравится / не подходит / хочу посмотреть / вопрос
+CREATE TABLE IF NOT EXISTS pick_reactions (
+    id INTEGER PRIMARY KEY, collection_id INTEGER NOT NULL, listing_id INTEGER NOT NULL, kind TEXT NOT NULL,
+    text TEXT, phone TEXT, device TEXT, ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_pick_reactions ON pick_reactions (collection_id, listing_id);
 -- Честные просмотры подборки: одно устройство — один раз в день (агент, вошедшие и боты-превью не считаются)
 CREATE TABLE IF NOT EXISTS collection_views (
     collection_id INTEGER NOT NULL, day TEXT NOT NULL, device TEXT NOT NULL, ts INTEGER NOT NULL,
@@ -362,7 +372,15 @@ MIGRATIONS = [
     ("clients", "match_seen", "INTEGER"),   # до какого момента новые объекты под пожелания клиента уже показали агенту
     ("collections", "client_id", "INTEGER"),
     ("collections", "color", "TEXT"),
-    ("collections", "views_unique", "INTEGER NOT NULL DEFAULT 0"),   # уникальные открытия клиентом (устройство в день)
+    ("collections", "views_unique", "INTEGER NOT NULL DEFAULT 0"),
+    ("client_items", "pick_id", "INTEGER"),        # в какой подборке отправлен (статусы из подборки уходят вместе с ней)
+    ("client_items", "sent_at", "INTEGER"),
+    ("client_items", "opened_at", "INTEGER"),
+    ("client_items", "reaction", "TEXT"),          # like | no | want_show | question — ответ клиента со страницы подборки
+    ("client_items", "reaction_text", "TEXT"),
+    ("client_items", "updated", "INTEGER"),
+    ("clients", "wishes", "TEXT"),                 # JSON: типы, площадь, этаж, ЖК, состояние, обременение, оплата, срок, допуск
+    ("clients", "stage_manual", "INTEGER NOT NULL DEFAULT 0"),   # этап двигали руками — сервис сам не двигает   # уникальные открытия клиентом (устройство в день)
     ("listings", "phone_roles", "TEXT"),       # {"+7…": "text" | "sender"} — номер в тексте / прислал в чат
     ("listings", "description_ts", "INTEGER"), # когда последний раз обновлялся текст объявления          # цвет подборки в списке (палитра settings.COLORS)
     ("collections", "client_title", "TEXT"),   # заголовок, который видит клиент (название подборки — только агенту)   # подборка сделана для клиента CRM («Всё в подборку»)   # настройки аккаунта (app/settings.py): вид подборок, порядок блоков кабинета   # цвет события в планере (gold, sky, …; пусто — по виду события)   # событие по клиенту (CRM)  # источники спорят: «rule:…» (правило ≠ карта), «votes:…» (карта ≠ соседи)   # откуда район, если его поставил сервис сам: map | vote-house | vote-cx                     # какую ошибочную цену разбор давал (её и не принимаем)   # админ сам поставил продажу/аренду — автоматика не трогает                     # свой текст объявления для клиента (вместо исходного)                              # статус агента по объекту: call | show | think | refuse | deal                   # % к медиане м² по ЖК/району (hooks.update_market_diff)
@@ -380,6 +398,37 @@ PRAGMA temp_store=MEMORY;
 PRAGMA cache_size=-32000;
 PRAGMA mmap_size=268435456;
 """
+
+
+def _migrate_pairs(conn: sqlite3.Connection) -> None:
+    """ТЗ v2, P1 — один статус на пару клиент+объект; статусы «В работе» уходят к клиентам или в журнал объекта.
+    offered → sent (если объект в подборке клиента) или matched; shown → show. notes.status: у объекта ровно один клиент —
+    запись в журнал про этого клиента (показ → статус «Показ», отказ → «Не подходит»); иначе — запись без клиента."""
+    pick_of = """(SELECT k.id FROM collections k JOIN collection_items ci ON ci.collection_id = k.id
+                  WHERE k.client_id = client_items.client_id AND ci.listing_id = client_items.listing_id LIMIT 1)"""
+    conn.execute(f"""UPDATE client_items SET status = 'sent', pick_id = {pick_of}, sent_at = ts
+                     WHERE status = 'offered' AND {pick_of} IS NOT NULL""")
+    conn.execute("UPDATE client_items SET status = 'matched' WHERE status = 'offered'")
+    conn.execute("UPDATE client_items SET status = 'show' WHERE status = 'shown'")
+    conn.execute("UPDATE client_items SET updated = ts WHERE updated IS NULL")
+    one = """(CASE WHEN (SELECT COUNT(*) FROM client_items i JOIN clients c ON c.id = i.client_id
+                        WHERE c.user_id = n.user_id AND i.listing_id = n.listing_id) = 1
+              THEN (SELECT i.client_id FROM client_items i JOIN clients c ON c.id = i.client_id
+                    WHERE c.user_id = n.user_id AND i.listing_id = n.listing_id) END)"""
+    conn.execute(f"""INSERT INTO work_notes (user_id, listing_id, client_id, kind, text, ts)
+                     SELECT n.user_id, n.listing_id, {one},
+                            CASE n.status WHEN 'call' THEN 'call' WHEN 'show' THEN 'show' ELSE 'note' END,
+                            CASE n.status WHEN 'call' THEN 'Звонил' WHEN 'show' THEN 'Показ' WHEN 'think' THEN 'Думает'
+                                          WHEN 'refuse' THEN 'Отказ' ELSE n.status END || ' (статус из «В работе»)', n.ts
+                     FROM notes n WHERE n.status IS NOT NULL AND n.status != ''""")
+    for st, pair in (("show", "show"), ("refuse", "rejected")):
+        conn.execute(f"""UPDATE client_items SET status = ?, updated = CAST(strftime('%s','now') AS INTEGER)
+                         WHERE status IN ('matched', 'sent', 'opened', 'liked') AND EXISTS (
+                             SELECT 1 FROM notes n JOIN clients c ON c.user_id = n.user_id
+                             WHERE c.id = client_items.client_id AND n.listing_id = client_items.listing_id AND n.status = ?
+                               AND (SELECT COUNT(*) FROM client_items i JOIN clients c2 ON c2.id = i.client_id
+                                    WHERE c2.user_id = n.user_id AND i.listing_id = n.listing_id) = 1)""", (pair, st))
+    conn.execute("UPDATE notes SET status = NULL WHERE status IS NOT NULL")
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -407,6 +456,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if not conn.execute("SELECT 1 FROM state WHERE key = 'notes_no_deal'").fetchone():   # статус «Сделка» у объектов убран
         conn.execute("UPDATE notes SET status = NULL WHERE status = 'deal'")
         conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('notes_no_deal', '1')")
+    if not conn.execute("SELECT 1 FROM state WHERE key = 'pairs_v1'").fetchone():
+        _migrate_pairs(conn)
+        conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('pairs_v1', '1')")
     if not conn.execute("SELECT 1 FROM state WHERE key = 'price_hist_v1'").fetchone():
         _backfill_prices(conn)
         conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('price_hist_v1', '1')")

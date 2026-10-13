@@ -411,6 +411,7 @@ def api_listing(request: Request, body: dict | None = None):
     d["status"] = hooks.get_status(conn, user["id"], lid) if user else None
     d["plans"] = planner.for_listing(conn, user["id"], lid) if user else []
     d["work"] = worklog.for_listing(conn, user["id"], lid) if user else []
+    d["pairs"] = clients.for_listing(conn, user["id"], lid) if user else []
     d["work_ctx"] = worklog.context(conn, user["id"], lid) if user else None
     # «Покупатели под объект» — только админу (решение Артёма 11.10)
     d["buyers"] = buyers.for_listing(conn, {**dict(row), "extra_districts": d.get("extra_districts") or []}, access)         if user and user["is_admin"] else []
@@ -610,10 +611,15 @@ def api_favorites(request: Request, body: dict | None = None):
         WHERE f.user_id IS NOT NULL OR n.status IS NOT NULL
         ORDER BY crm_ts DESC""", (user["id"], user["id"])).fetchall()
     items = []
+    pairs: dict[int, list] = {}
+    for p in db.get().execute("""SELECT i.listing_id, c.id, c.name, i.status, i.reaction FROM client_items i
+                                 JOIN clients c ON c.id = i.client_id WHERE c.user_id = ?""", (user["id"],)):
+        pairs.setdefault(p["listing_id"], []).append({"id": p["id"], "name": p["name"], "status": p["status"],
+                                                       "label": clients.PAIR.get(p["status"], ""), "reaction": p["reaction"]})
     for r in rows:
         it = search.row_to_item(r, False)
         it.update(status=r["crm_status"], note=r["crm_note"] or "", favorite=r["fav_at"] is not None,
-                  touched=r["crm_ts"], fav_price=r["fav_price"])
+                  touched=r["crm_ts"], fav_price=r["fav_price"], clients=pairs.get(r["id"], []))
         items.append(it)
     return JSONResponse({"items": items})
 
@@ -780,6 +786,7 @@ def api_admin_overview(request: Request, body: dict | None = None):
         "wappi_enabled": config.WAPPI_ENABLED, "payments": payments.available(),
         "price": config.SUB_PRICE, "period_days": config.SUB_DAYS,
         "p0_report": json.loads(db.get_state(conn, "p0_report") or "null"),
+        "cx_report": json.loads(db.get_state(conn, "cx_norm_report") or "null"),
         "feed_synced": int(db.get_state(conn, "feed_synced") or 0),
     })
 
@@ -1020,6 +1027,8 @@ def api_pick_items(request: Request, body: dict | None = None):
     cid = int(request.path_params["id"])
     if "order" in body:
         res = picks.move(db.get(), user["id"], cid, [int(x) for x in body["order"] if str(x).isdigit()])
+    elif "status" in body:   # статус объекта в подборке клиента (понравился, не подходит, показ…)
+        res = picks.set_status(db.get(), user["id"], cid, int(body.get("listing_id") or 0), str(body["status"]))
     else:
         res = picks.set_item(db.get(), user["id"], cid, int(body.get("listing_id") or 0), bool(body.get("add", True)),
                              body.get("note"), text=body["text"] if "text" in body else None)
@@ -1030,6 +1039,25 @@ def api_pick_items(request: Request, body: dict | None = None):
 _PREVIEW_BOT = re.compile(r"bot\b|bot/|crawl|spider|preview|whatsapp/|telegrambot|facebookexternalhit|vkshare|skypeuripreview|"
                           r"slack|discord|viber|yandex|google|bing|headless|python|curl|wget|okhttp|java/", re.I)
 PV_COOKIE = "pv"
+
+
+def api_pick_react(request: Request, body: dict | None = None):
+    """Ответ клиента со страницы подборки: {listing_id, kind: like|no|want_show|question, text?, phone?}."""
+    if _too_often(request, "react", 120, 3600):
+        return _err("Слишком часто — попробуйте позже.", 429)
+    body = body or {}
+    device = request.cookies.get(PV_COOKIE) or ""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{16,64}", device):
+        device = secrets.token_urlsafe(16)
+    res = picks.react(db.get(), request.path_params["token"], _num(body.get("listing_id"), int) or 0, str(body.get("kind") or ""),
+                      str(body.get("text") or ""), str(body.get("phone") or ""), device)
+    if "error" in res:
+        return _err(res["error"])
+    resp = JSONResponse(res)
+    if request.cookies.get(PV_COOKIE) != device:
+        resp.set_cookie(PV_COOKIE, device, max_age=365 * 86400, httponly=True, samesite="lax",
+                        secure=request.headers.get("x-forwarded-proto", request.url.scheme) == "https")
+    return resp
 
 
 def api_pick_public(request: Request, body: dict | None = None):
@@ -1959,7 +1987,8 @@ def api_clients(request: Request, body: dict | None = None):
         if set(body) == {"id", "stage"}:
             res = clients.set_stage(conn, user["id"], _num(body["id"], int) or 0, str(body["stage"]))
         else:
-            res = clients.save(conn, user["id"], body)
+            # у нового клиента сразу своя подборка (подборки — с доступом)
+            res = clients.save(conn, user["id"], body, user if has_access(request, user) else None)
         return _err(res["error"]) if "error" in res else JSONResponse(res)
     q = request.query_params
     if q.get("id"):
@@ -1985,16 +2014,31 @@ def api_client_action(request: Request, body: dict | None = None):
         d = clients.detail(conn, user["id"], cid)
         if "error" in d:
             return _err(d["error"], 404)
-        p = clients.match_query(d["client"])
-        page = max(1, _num(request.query_params.get("page"), int) or 1)
-        qr = search.Query(deal=p["deal"], rooms=p.get("rooms", []), districts=p.get("district", []),
-                          price_min=p.get("price_min"), price_max=p.get("price_max"), size=60, page=page,
-                          since=_num(request.query_params.get("since"), int), hide_user=user["id"])
+        qp = request.query_params
+        page = max(1, _num(qp.get("page"), int) or 1)
+        sort = qp.get("sort") if qp.get("sort") in ("new", "price_asc", "market", "budget") else "new"
+        c = d["client"]
+        target = c.get("budget_max") or c.get("budget_min")
+        qr = clients.query_for(c, user["id"], size=60, page=page, sort=sort, since=_num(qp.get("since"), int),
+                               with_photo=qp.get("photo") == "1", budget_near=target,
+                               **({"not_first": True} if qp.get("not_first") == "1" else {}))
         res = search.search(conn, qr, int(time.time()), has_access(request, user))
-        linked = {i["id"] for i in d["items"]}
-        # все подходящие (страницами по 60), уже предложенные клиенту — не повторяем
-        return JSONResponse({"items": [x for x in res["items"] if x["id"] not in linked], "total": res.get("total"),
-                             "linked": len(linked), "more": page * 60 < (res.get("total") or 0), "page": page})
+        # уже связанные с клиентом и «не подходит» в подбор не попадают — счётчик честный
+        return JSONResponse({"items": res["items"], "total": res.get("total"), "linked": len(d["items"]),
+                             "hidden": d["hidden"], "more": page * 60 < (res.get("total") or 0), "page": page})
+    if what == "hidden":   # «Не подходит» — список, чтобы вернуть
+        rows = conn.execute("""SELECT l.* , 0 AS verified FROM client_hidden h JOIN listings l ON l.id = h.listing_id
+                               JOIN clients c ON c.id = h.client_id WHERE h.client_id = ? AND c.user_id = ?
+                               ORDER BY h.ts DESC LIMIT 200""", (cid, user["id"])).fetchall()
+        return JSONResponse({"items": [search.row_to_item(r, False) for r in rows]})
+    if what in ("hide", "unhide"):
+        res = clients.hide(conn, user["id"], cid, [int(x) for x in (body.get("ids") or []) if str(x).isdigit()], what == "hide")
+        return _err(res["error"]) if "error" in res else JSONResponse(res)
+    if what == "add":   # «Клиенту ▾»: объект — в активную подборку клиента
+        if not has_access(request, user):
+            return _err("Подборки — по подписке.", 403)
+        res = clients.add_to_client(conn, user, cid, _num(body.get("listing_id"), int) or 0)
+        return _err(res["error"]) if "error" in res else JSONResponse(res)
     if what == "topick":   # «Всё в подборку» — новые под клиента одной кнопкой
         if not has_access(request, user):
             return _err("Подборки — по подписке.", 403)
@@ -2185,6 +2229,7 @@ routes = [
     Route("/api/picks", threaded(api_picks), methods=["GET", "POST", "DELETE"]),
     Route("/api/picks/{id:int}/items", threaded(api_pick_items), methods=["POST"]),
     Route("/api/c/{token}", threaded(api_pick_public)),
+    Route("/api/c/{token}/react", threaded(api_pick_react), methods=["POST"]),
     Route("/planner/{uid:int}-{token}.ics", threaded(planner_feed)),
     Route("/api/planner", threaded(api_planner), methods=["GET", "POST", "DELETE"]),
     Route("/api/planner/notes", threaded(api_planner_note), methods=["POST"]),

@@ -78,15 +78,16 @@ def test_picks_clients_and_worklog_tied(env):
     assert p["client_name"] == "Анна" and p["color"] == "violet"
     c.post(f"/api/picks/{p['id']}/items", json={"listing_id": b, "add": True})
     items = {x["id"]: x["status"] for x in c.get(f"/api/clients?id={cid}").json()["items"]}
-    assert items == {a: "offered", b: "offered"}
+    assert items == {a: "sent", b: "sent"}
     # клиент видит свой заголовок, а не название подборки
     assert c.get(f"/api/c/{p['token']}").json()["title"] == "Квартиры для вас"
     # заметка «показ» по подборке → про клиента Анну, объект у неё «показан»
     r = c.post("/api/worklog", json={"listing_id": a, "text": "Понравилась кухня", "kind": "show", "pick_id": p["id"]}).json()
     assert r["items"][0]["client_name"] == "Анна" and r["items"][0]["pick_title"] == "Анне — 2к ФМР"
     d = c.get(f"/api/clients?id={cid}").json()
-    assert d["work"][0]["text"] == "Понравилась кухня" and d["picks"][0]["id"] == p["id"]
-    assert {x["id"]: x["status"] for x in d["items"]}[a] == "shown"
+    assert d["work"][0]["text"] == "Понравилась кухня" and p["id"] in [x["id"] for x in d["picks"]]
+    assert "Для Анна" in [x["title"] for x in d["picks"]]          # подборка, созданная вместе с клиентом
+    assert {x["id"]: x["status"] for x in d["items"]}[a] == "show"
     assert c.get("/api/picks").json()["items"][0]["notes"][str(a)][0]["kind"] == "show"
     detail = c.get(f"/api/listings/{a}").json()
     assert detail["work"][0]["client_name"] == "Анна" and detail["work_ctx"]["clients"][0]["has"] is True
