@@ -58,6 +58,13 @@ def tick(conn) -> dict:
     reminded = planner.remind(conn, _mail(conn))   # показы и созвоны: напомнить заранее
     if reminded:
         stats["reminders"] = reminded
+    # «Новое под клиента» — раз в 15 минут
+    if time.time() - float(db.get_state(conn, "client_match_at") or 0) > 900:
+        db.set_state(conn, "client_match_at", str(int(time.time())))
+        from . import clients
+        n = clients.new_matches(conn)
+        if n:
+            stats["client_matches"] = n
     # подписки на поиск, избранное (цена, снят с сайта), окончание доступа — на сайте и письмом
     sent = hooks.run(conn, _mail(conn))
     if sent and any(sent.values()):

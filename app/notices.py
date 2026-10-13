@@ -17,7 +17,7 @@ import time
 
 DAY = 86400
 KEEP_DAYS = 60
-ICONS = {"search": "🔔", "price": "₽", "gone": "✕", "sub": "★", "own": "🏠", "plan": "📅"}
+ICONS = {"search": "🔔", "price": "₽", "gone": "✕", "sub": "★", "own": "🏠", "plan": "📅", "client": "👥"}
 
 
 def add(conn: sqlite3.Connection, user_id: int, kind: str, title: str, body: str = "", *,

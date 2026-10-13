@@ -109,3 +109,22 @@ def test_online_presence(client):
     o = client.get("/api/admin/online").json()
     assert o["now"] == 2 and o["users"] == 1 and o["guests"] == 1
     assert o["people"][0]["path"] == "/planner"
+
+
+def test_new_matches_for_client_and_to_pick(client):
+    from app import clients as cl
+    conn = db.get()
+    c = client.post("/api/clients", json={"name": "Анна", "kind": "buyer", "rooms": [2], "budget_max": "8"}).json()
+    cid = c["client"]["id"] if "client" in c else c["id"]
+    assert cl.new_matches(conn) == 0                                        # первый раз — только запомнили момент
+    conn.execute("UPDATE clients SET match_seen = 1 WHERE id = ?", (cid,))   # «прошлая проверка» была давно
+    conn.commit()
+    assert cl.new_matches(conn) == 1
+    n = conn.execute("SELECT title, actions FROM notices WHERE kind = 'client'").fetchone()
+    assert n["title"].startswith("Под Анна: 1 новый объект") and "topick=1" in n["actions"]
+    lid = client.get("/api/listings").json()["items"][0]["id"]
+    r = client.post(f"/api/clients/{cid}/topick", json={"ids": [lid]}).json()
+    assert r["added"] == 1 and "/c/" in r["pick"]["url"]
+    again = client.post(f"/api/clients/{cid}/topick", json={"ids": [lid]}).json()
+    assert again["pick"]["id"] == r["pick"]["id"]                            # та же подборка клиента
+    assert client.get(f"/api/clients/{cid}/match?since=1").json()["items"] == []   # уже предложен — не повторяем

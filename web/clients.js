@@ -297,7 +297,7 @@
     const r = await call(`/api/clients?id=${cur.client.id}`);
     if (r.ok) { cur = r.data; header(); stagesHTML(); itemsHTML(); upgradeItems(); logHTML(); tasksHTML(); }
   }
-  let matchPage = 1;
+  let matchPage = 1, matchSince = 0, freshIds = [];   // matchSince — из уведомления «новое под клиента»
   function matchItem(o) {
     return `<div class="c-it">
         ${o.photos && o.photos[0] ? `<img src="${esc(o.photos[0])}" alt="" loading="lazy">` : `<span class="noimg"></span>`}
@@ -305,18 +305,35 @@
           <small>${esc(o.title)} · ${esc(money(o.price, o.deal))} ₽${o.district ? ` · ${esc(o.district)}` : ""}</small></div>
         <button type="button" class="pill light" data-offer="${o.id}">Предложить</button></div>`;
   }
+  async function toPick() {
+    if (!freshIds.length) return;
+    const r = await call(`/api/clients/${cur.client.id}/topick`, { ids: freshIds });
+    if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
+    const url = r.data.pick.url;
+    try { await navigator.clipboard.writeText(url); } catch { /* */ }
+    toast(`Добавлено в «${r.data.pick.title}»: ${r.data.added}. Ссылка для клиента скопирована`, 4000);
+    await refreshCur();
+    matchSince = 0; match();
+  }
   async function match(more = false) {
     const box = $("dMatchList");
     box.dataset.loaded = "1";
     matchPage = more ? matchPage + 1 : 1;
     if (!more) box.innerHTML = `<p class="g-empty">Ищем все подходящие…</p>`;
-    const r = await call(`/api/clients/${cur.client.id}/match?page=${matchPage}`);
+    const r = await call(`/api/clients/${cur.client.id}/match?page=${matchPage}${matchSince ? `&since=${matchSince}` : ""}`);
     const d = r.ok ? r.data : { items: [], total: 0 };
+    if (matchSince && !more) freshIds = d.items.map((x) => x.id);
     const old = box.querySelector(".c-more");
     if (old) old.remove();
     if (!more) {
       $("dMatchN").textContent = d.total ? `${num(Math.max(0, d.total - (d.linked || 0)))}` : "";
       box.innerHTML = d.items.length ? "" : `<p class="g-empty">${wish(cur.client) ? "Сейчас подходящих нет — уточните пожелания или загляните позже." : "Укажите в карточке комнаты, бюджет или районы — и сервис подберёт объекты."}</p>`;
+    }
+    if (matchSince && !more) {   // новые с прошлой проверки — плашкой сверху, «всё в подборку» одной кнопкой
+      box.insertAdjacentHTML("afterbegin", `<div class="c-fresh">${ic("sparkle")}<span><b>Новые с ${new Date(matchSince * 1000).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}: ${d.items.length}</b>
+        <small>Объекты, появившиеся под пожелания клиента</small></span>
+        ${d.items.length ? `<button type="button" class="pill" data-topick>Всё в подборку</button>` : ""}
+        <button type="button" class="chip" data-all-match>Все подходящие</button></div>`);
     }
     box.insertAdjacentHTML("beforeend", d.items.map(matchItem).join(""));
     if (d.more) box.insertAdjacentHTML("beforeend", `<button type="button" class="pill light c-more" data-match-more>Показать ещё</button>`);
@@ -345,7 +362,9 @@
       if (r.ok) { t.closest(".c-it").remove(); await refreshCur(); load(); toast("Объект добавлен клиенту"); }
       return;
     }
-    if (t.id === "dMatch") { match(); return; }
+    if (t.id === "dMatch") { matchSince = 0; match(); return; }
+    if (t.hasAttribute("data-all-match")) { matchSince = 0; match(); return; }
+    if (t.hasAttribute("data-topick")) { toPick(); return; }
     if (t.hasAttribute("data-match-more")) { t.disabled = true; match(true); return; }
     if (t.id === "dDelete" && cur) {
       if (!confirm(`Удалить клиента «${cur.client.name}» со всей историей?`)) return;
@@ -403,7 +422,14 @@
   (async () => {
     if (!(await load())) return;
     const sp = new URLSearchParams(location.search);
-    if (Number(sp.get("id"))) open(Number(sp.get("id")));
+    if (Number(sp.get("id"))) {
+      matchSince = Number(sp.get("fresh")) || 0;   // из уведомления «новое под клиента»
+      await open(Number(sp.get("id")));
+      if (matchSince) {
+        tab("items");
+        if (sp.has("topick")) { await new Promise((res) => setTimeout(res, 600)); toPick(); }
+      }
+    }
     else if (sp.has("new")) open(null);
     const m = await call("/api/meta");
     districts = (m.ok && m.data.districts) || [];

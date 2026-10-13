@@ -1911,13 +1911,18 @@ def api_client_action(request: Request, body: dict | None = None):
         p = clients.match_query(d["client"])
         page = max(1, _num(request.query_params.get("page"), int) or 1)
         qr = search.Query(deal=p["deal"], rooms=p.get("rooms", []), districts=p.get("district", []),
-                          price_min=p.get("price_min"), price_max=p.get("price_max"), size=60, page=page)
+                          price_min=p.get("price_min"), price_max=p.get("price_max"), size=60, page=page,
+                          since=_num(request.query_params.get("since"), int), hide_user=user["id"])
         res = search.search(conn, qr, int(time.time()), has_access(request, user))
         linked = {i["id"] for i in d["items"]}
         # все подходящие (страницами по 60), уже предложенные клиенту — не повторяем
         return JSONResponse({"items": [x for x in res["items"] if x["id"] not in linked], "total": res.get("total"),
                              "linked": len(linked), "more": page * 60 < (res.get("total") or 0), "page": page})
-    if what == "items":
+    if what == "topick":   # «Всё в подборку» — новые под клиента одной кнопкой
+        if not has_access(request, user):
+            return _err("Подборки — по подписке.", 403)
+        res = clients.to_pick(conn, user, cid, [int(x) for x in (body.get("ids") or []) if str(x).isdigit()])
+    elif what == "items":
         res = clients.set_item(conn, user["id"], cid, _num(body.get("listing_id"), int) or 0, body.get("status"))
     elif what == "note":
         res = clients.add_note(conn, user["id"], cid, body.get("text", ""))

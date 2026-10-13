@@ -230,3 +230,74 @@ def summary(conn: sqlite3.Connection, user_id: int) -> dict:
                                             ORDER BY next_ts LIMIT 5""", (user_id,))]
     return {"stages": [{"key": k, "label": STAGES[k], "n": st[k]} for k in STAGES], "next": nxt,
             "total": sum(st.values())}
+
+
+
+# ─── «Новое под клиента»: объекты, появившиеся после прошлой проверки, — агенту уведомлением ───
+def _plural(n: int, one: str, few: str, many: str) -> str:
+    return one if n % 10 == 1 and n % 100 != 11 else few if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else many
+
+
+def new_matches(conn: sqlite3.Connection, now: int | None = None) -> int:
+    """Раз в 15 минут (worker): у активных клиентов с пожеланиями — новые подходящие объекты → уведомление
+    «Под Анну: 3 новых объекта» с кнопками «Посмотреть» и «Всё в подборку». Первый раз — только запоминаем момент."""
+    from . import notices, search
+    now = int(now or time.time())
+    sent = 0
+    for c in conn.execute("""SELECT * FROM clients WHERE archived = 0 AND stage NOT IN ('deal', 'lost')""").fetchall():
+        c = dict(c)
+        rooms = json.loads(c.get("rooms") or "[]")
+        districts = json.loads(c.get("districts") or "[]")
+        if not (rooms or districts or c.get("budget_max") or c.get("budget_min")):
+            continue
+        since = c.get("match_seen")
+        conn.execute("UPDATE clients SET match_seen = ? WHERE id = ?", (now, c["id"]))
+        if not since:
+            continue
+        p = match_query(c)
+        qr = search.Query(deal=p["deal"], rooms=p.get("rooms", []), districts=p.get("district", []),
+                          price_min=p.get("price_min"), price_max=p.get("price_max"), since=since, size=50,
+                          hide_user=c["user_id"])
+        res = search.search(conn, qr, now, False)
+        linked = {r[0] for r in conn.execute("SELECT listing_id FROM client_items WHERE client_id = ?", (c["id"],))}
+        items = [x for x in res["items"] if x["id"] not in linked]
+        if not items:
+            continue
+        n = len(items)
+        url = f"/clients?id={c['id']}&fresh={since}"
+        notices.add(conn, c["user_id"], "client", f"Под {c['name']}: {n} {_plural(n, 'новый объект', 'новых объекта', 'новых объектов')}",
+                    " · ".join((x.get("complex") and f"ЖК {x['complex']}" or x["title"]) for x in items[:3]),
+                    url=url, dedup_s=0,
+                    actions=[{"label": "Посмотреть", "url": url}, {"label": "Всё в подборку", "url": url + "&topick=1"}])
+        sent += 1
+    conn.commit()
+    return sent
+
+
+def to_pick(conn: sqlite3.Connection, user, cid: int, ids: list[int]) -> dict:
+    """«Всё в подборку»: подборка этого клиента (или новая «Подборка для Анны») + объекты; клиенту — «предложен»."""
+    from . import picks
+    c = _own(conn, user["id"], cid)
+    if c is None:
+        return {"error": "Клиент не найден."}
+    row = conn.execute("SELECT id FROM collections WHERE user_id = ? AND client_id = ? ORDER BY updated DESC LIMIT 1",
+                       (user["id"], cid)).fetchone()
+    if row:
+        pid = row[0]
+    else:
+        made = picks.save(conn, user, {"title": f"Подборка для {c['name']}"})
+        if "error" in made:
+            return made
+        pid = made["id"]
+        conn.execute("UPDATE collections SET client_id = ? WHERE id = ?", (cid, pid))
+    added = 0
+    for lid in ids[:100]:
+        if picks.set_item(conn, user["id"], pid, int(lid), True, commit=False).get("ok", True):
+            added += 1
+        conn.execute("""INSERT OR IGNORE INTO client_items (client_id, listing_id, status, ts) VALUES (?,?,'offered',?)""",
+                     (cid, int(lid), int(time.time())))
+    conn.execute("INSERT INTO client_log (client_id, ts, kind, text) VALUES (?,?,?,?)",
+                 (cid, int(time.time()), "pick", f"В подборку добавлено объектов: {added}"))
+    conn.commit()
+    pick = next((x for x in picks.mine(conn, user["id"]) if x["id"] == pid), None)
+    return {"pick": {"id": pid, "url": pick["url"] if pick else "", "title": pick["title"] if pick else ""}, "added": added}
