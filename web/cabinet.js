@@ -202,6 +202,21 @@
         : `<p class="g-empty">Пока тихо. Нажмите «Следить» у поиска — сообщим о новых объектах и снижении цены.</p>`}`, 6);
   }
 
+  // ─── новости недвижимости: заголовок + первая фраза + ссылка на РБК ─
+  let rbcAll = false;
+  function rbc(n) {
+    if (!n || !n.data.items.length) { put("wRbc", `${head("news", "Новости недвижимости")}<p class="g-empty">Загрузятся через несколько минут.</p>`, 8); return; }
+    const d = n.data, list = rbcAll ? d.items : d.items.slice(0, 4);
+    put("wRbc", `${head("news", "Новости недвижимости", `<a class="g-link" href="${esc(d.source_url)}" target="_blank" rel="noopener">${esc(d.source)} ${ic("external")}</a>`)}
+      ${list.map((x) => `<a class="wr-it" href="${esc(x.url)}" target="_blank" rel="noopener">
+        <span class="wr-meta">${x.tag ? `<i>${esc(x.tag)}</i>` : ""}<small>${ago(x.ts)}</small></span>
+        <b>${esc(x.title)}</b>${x.lead ? `<p>${esc(x.lead)}</p>` : ""}</a>`).join("")}
+      <div class="wr-foot"><small>Источник: ${esc(d.source)}. Читать полностью — на сайте РБК.</small>
+        ${d.items.length > 4 ? `<button type="button" class="chip" id="wrMore">${rbcAll ? "Свернуть" : `Ещё ${d.items.length - 4}`}</button>` : ""}</div>`, 8);
+    const more = $("wrMore");
+    if (more) more.onclick = () => { rbcAll = !rbcAll; rbc(n); };
+  }
+
   // ─── рынок ────────────────────────────────────────────────────────
   function market() {
     const m = dash.market || {}, c = m.city || {};
@@ -374,7 +389,7 @@
     if (!r.ok) { toast("Не получилось загрузить кабинет — обновите страницу"); return; }
     dash = r.data;
     const w = dash.widgets;
-    weather(w.weather); rate(w.keyrate); mortgage(w.mortgage, w.banks); fx(w.currency);
+    weather(w.weather); rate(w.keyrate); mortgage(w.mortgage, w.banks); fx(w.currency); rbc(w.news);
     day(); clientsW(); crm(); news(); market(); calcHtml(); admin();
     layout();
     if (me.is_admin && new URLSearchParams(location.search).has("banks")) { openBanks(); history.replaceState(null, "", "/cabinet"); }

@@ -8,7 +8,10 @@
   * средние ставки по ипотеке в Краснодарском крае — статистика ЦБ (xlsx, раз в месяц, кэш сутки):
     все ипотечные кредиты и кредиты по ДДУ (новостройки); вторичка — расчёт: (ставка·объём всех − ставка·объём ДДУ) /
     (объём всех − объём ДДУ). Это средние по всем выданным кредитам, включая льготные программы;
-  * ставки банков — таблицу ведёт админ (готового бесплатного источника ставок банков нет).
+  * ставки банков — таблицу ведёт админ (готового бесплатного источника ставок банков нет);
+  * новости — официальная RSS-лента «РБК Недвижимость» (rssexport.rbc.ru, РБК сам раздаёт её для сайтов и читалок):
+    берём ТОЛЬКО заголовок, первую фразу анонса (≤ 200 знаков), рубрику и ссылку; полный текст и фото не храним
+    и не показываем, у каждой новости — подпись «РБК Недвижимость» и ссылка на оригинал. 30 мин.
 """
 from __future__ import annotations
 
@@ -280,10 +283,54 @@ def set_banks(conn: sqlite3.Connection, items: list, avg: dict | None = None) ->
     return {**data, "programs": PROGRAMS}
 
 
+RBC_RSS = "https://rssexport.rbc.ru/realty/news/30/full.rss"
+NEWS_MAX = 12
+
+
+def _lead(text: str, limit: int = 200) -> str:
+    """Первая фраза анонса, не длиннее limit — цитата для ознакомления, а не перепечатка."""
+    t = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", text or "")).strip()
+    m = re.match(r"(.{20,}?[.!?])(\s|$)", t)
+    t = m.group(1) if m else t
+    return t if len(t) <= limit else t[:limit].rsplit(" ", 1)[0] + "…"
+
+
+def parse_rbc(raw: bytes) -> list[dict]:
+    import xml.etree.ElementTree as ET
+    ns = "{https://www.rbc.ru}"
+    out = []
+    for it in ET.fromstring(raw).iter("item"):
+        title = (it.findtext("title") or "").strip()
+        link = (it.findtext("link") or "").strip()
+        if not title or not re.match(r"^https://([a-z0-9-]+\.)*rbc\.ru/", link):
+            continue
+        ts = it.findtext(f"{ns}newsDate_timestamp") or ""
+        if not ts.isdigit():
+            try:
+                from email.utils import parsedate_to_datetime
+                ts = str(int(parsedate_to_datetime(it.findtext("pubDate") or "").timestamp()))
+            except (TypeError, ValueError):
+                ts = "0"
+        out.append({"title": title[:200], "url": link, "ts": int(ts),
+                    "lead": _lead(it.findtext(f"{ns}anons") or it.findtext("description") or ""),
+                    "tag": (it.findtext(f"{ns}tag") or it.findtext("category") or "").strip()[:40]})
+    out.sort(key=lambda x: -x["ts"])
+    return out[:NEWS_MAX]
+
+
+def _news_fetch() -> dict | None:
+    items = parse_rbc(_http(RBC_RSS))
+    return {"items": items, "source": "РБК Недвижимость", "source_url": "https://realty.rbc.ru/"} if items else None
+
+
+def news(conn: sqlite3.Connection, force: bool = False) -> dict | None:
+    return _cached(conn, "news", 1800, _news_fetch, force)
+
+
 def all_widgets(conn: sqlite3.Connection) -> dict:
     """Всё для кабинета; каждое — {ts, data} или None (источник ещё ни разу не ответил)."""
     return {"weather": weather(conn), "keyrate": keyrate(conn), "currency": currency(conn),
-            "mortgage": mortgage(conn), "banks": banks(conn)}
+            "mortgage": mortgage(conn), "banks": banks(conn), "news": news(conn)}
 
 
 _online: dict = {"on": False}
@@ -297,5 +344,6 @@ def refresh(conn: sqlite3.Connection) -> None:
         keyrate(conn)
         currency(conn)
         mortgage(conn)
+        news(conn)
     finally:
         _online["on"] = False
