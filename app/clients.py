@@ -449,7 +449,7 @@ def new_matches(conn: sqlite3.Connection, now: int | None = None) -> int:
         notices.add(conn, c["user_id"], "client", f"Под {c['name']}: {n} {_plural(n, 'новый объект', 'новых объекта', 'новых объектов')}",
                     " · ".join((x.get("complex") and f"ЖК {x['complex']}" or x["title"]) for x in items[:3]),
                     url=url, dedup_s=0,
-                    actions=[{"label": "Посмотреть", "url": url}, {"label": "Всё в подборку", "url": url + "&topick=1"}])
+                    actions=[{"label": "Посмотреть", "url": url}, {"label": "Отправить в подборку", "url": url + "&topick=1"}])
         sent += 1
     conn.commit()
     return sent

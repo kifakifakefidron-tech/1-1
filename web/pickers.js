@@ -47,6 +47,19 @@
     const w = p.offsetWidth, h = p.offsetHeight;
     const left = Math.min(Math.max(8, r.left), vw - w - 8);
     let top = r.bottom + 6;
+    if (btn.closest("[data-pk-down]")) {   // поле с подписями выше (форма клиента): только вниз, при нехватке места — прокрутить
+      p.style.maxHeight = "";
+      if (top + h > vh - 8 && !btn.__pkScrolled) {
+        btn.__pkScrolled = true;
+        btn.scrollIntoView({ block: "center" });
+        setTimeout(() => { btn.__pkScrolled = false; }, 400);
+        return place(btn);
+      }
+      p.style.maxHeight = `${Math.max(160, vh - top - 8)}px`;
+      p.style.left = `${left}px`;
+      p.style.top = `${top}px`;
+      return;
+    }
     if (top + h > vh - 8 && r.top - h - 6 > 8) top = r.top - h - 6;
     p.style.left = `${left}px`;
     p.style.top = `${Math.max(8, Math.min(top, vh - h - 8))}px`;
