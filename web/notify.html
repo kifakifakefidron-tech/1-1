@@ -17,56 +17,45 @@
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css?v=25">
 <link rel="stylesheet" href="/static/motion.css?v=34">
-<link rel="stylesheet" href="/static/doc.css?v=2">
-<link rel="stylesheet" href="/static/notify.css?v=2">
 <link rel="stylesheet" href="/static/theme.css?v=14">
-<link rel="stylesheet" href="/static/glass.css?v=19">
+<link rel="stylesheet" href="/static/glass.css?v=21">
+<link rel="stylesheet" href="/static/notify.css?v=3">
 </head>
 <body>
-<header class="nav"><div class="nav-in">
-  <a class="brand" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="40" height="40" style="border-radius:10px">
-    <span class="brand-text"><b class="brand-name">1+1</b><span class="brand-sub">поиск объектов Краснодара</span></span></a>
-  <nav class="nav-links doc-nav"><a class="nav-link" href="/work">В работе</a><a class="nav-link" href="/planner">Планер</a><a class="nav-link" href="/picks">Подборки</a><a class="nav-link" href="/market">Аналитика</a><a class="nav-link" href="/cabinet">Кабинет</a><a class="nav-cta" href="/">← К поиску</a></nav>
-</div></header>
+<main class="nt2">
+  <header class="nt2-head">
+    <div><p class="nt2-eyebrow">Центр уведомлений</p><h1>Уведомления</h1>
+      <p class="nt2-sub" id="ntSub">Новые объекты по поискам, цены в избранном, ваши объекты, планер и клиенты — в одной ленте.</p></div>
+    <button type="button" class="pill light" id="ntReadAll" hidden>Прочитать всё</button>
+  </header>
 
-<main class="doc nt">
-  <h1>Уведомления</h1>
-  <p class="lead">Здесь всё, за чем вы следите: новые объекты по вашим поискам, изменение цены и снятие с продажи
-    объектов из избранного, окончание доступа и актуальность ваших объектов.</p>
+  <div id="ntGuest" hidden class="note-box">Уведомления доступны после входа. <a href="/?login=1">Войти</a></div>
 
-  <div id="ntGuest" hidden class="note-box">
-    Уведомления доступны после входа. <a href="/?login=1">Войти</a>
+  <div class="nt2-wrap" id="ntApp" hidden>
+    <section class="nt2-main">
+      <nav class="nt2-tabs" id="ntFilter" aria-label="Вид уведомлений"></nav>
+      <div id="ntList" class="nt2-feed"></div>
+    </section>
+    <aside class="nt2-side">
+      <section class="nt2-card">
+        <h2>Слежу за поисками</h2>
+        <p class="nt2-hint">Настройте фильтры на поиске и нажмите «Следить» — новые объекты придут сюда<span id="ntMail"></span>.</p>
+        <ul class="nt2-saved" id="ntSaved"></ul>
+        <a class="nt2-more" href="/">Настроить новый поиск</a>
+      </section>
+      <section class="nt2-card">
+        <h2>Что отслеживаю</h2>
+        <div class="nt2-track" id="ntTrack"></div>
+      </section>
+    </aside>
   </div>
-
-  <section id="ntApp" hidden>
-    <div class="nt-head">
-      <div class="chips" id="ntFilter">
-        <button type="button" class="chip on" data-f="">Все</button>
-        <button type="button" class="chip" data-f="search">Поиски</button>
-        <button type="button" class="chip" data-f="price">Цена</button>
-        <button type="button" class="chip" data-f="gone">Сняты</button>
-        <button type="button" class="chip" data-f="own">Мои объекты</button>
-        <button type="button" class="chip" data-f="plan">Планер</button>
-        <button type="button" class="chip" data-f="sub">Подписка</button>
-      </div>
-      <button type="button" class="chip" id="ntReadAll" hidden>Отметить всё прочитанным</button>
-    </div>
-    <ul class="nt-list" id="ntList"></ul>
-
-    <h2>Слежу за поисками</h2>
-    <p class="meta">Настройте фильтры на главной и нажмите «🔔 Следить» — новые объекты будут приходить сюда<span id="ntMail"></span>.</p>
-    <ul class="nt-saved" id="ntSaved"></ul>
-
-    <h2>Отслеживаю</h2>
-    <ul class="nt-track" id="ntTrack"></ul>
-  </section>
 </main>
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
 <script src="/static/icons.js?v=5"></script>
-<script src="/static/pickers.js?v=7"></script>
+<script src="/static/pickers.js?v=8"></script>
 <script src="/static/max.js?v=1"></script>
-<script src="/static/rail.js?v=8"></script>
-<script src="/static/notify.js?v=4"></script>
+<script src="/static/rail.js?v=9"></script>
+<script src="/static/notify.js?v=5"></script>
 <script src="/static/objview.js?v=2"></script>
 <script src="/static/bell.js?v=4"></script>
 </body>
