@@ -40,7 +40,21 @@ def test_pick_flow_and_public_page_has_no_agent_phones(env):
     assert "1112233" not in str(pub).replace("+79001112233", "") and "phones" not in pub["items"][0]   # чужих телефонов нет
     page = c.get(f"/c/{p['token']}")
     assert page.status_code == 200 and 'og:title" content="Подобрали для вас"' in page.text and "Для Ольги" not in page.text
-    assert conn.execute("SELECT views FROM collections").fetchone()[0] == 1
+    views = lambda: tuple(conn.execute("SELECT views, views_unique FROM collections").fetchone())  # noqa: E731
+    assert views() == (0, 0)                      # открыл сам агент (вошёл) — не просмотр клиента
+    from starlette.testclient import TestClient
+    phone_ua = {"user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/604.1"}
+    with TestClient(server.app) as guest:
+        guest.get(f"/api/c/{p['token']}", headers={"user-agent": "WhatsApp/2.23.20.0 A"})          # превью в мессенджере
+        guest.get(f"/api/c/{p['token']}", headers={"user-agent": "TelegramBot (like TwitterBot)"})
+        guest.get(f"/api/c/{p['token']}?as=agent", headers=phone_ua)                                # «Как видит клиент»
+        assert views() == (0, 0)
+        guest.get(f"/api/c/{p['token']}", headers=phone_ua)                                          # клиент открыл
+        guest.get(f"/api/c/{p['token']}", headers=phone_ua)                                          # и ещё раз в тот же день
+        assert views() == (2, 1)
+    with TestClient(server.app) as other_phone:
+        other_phone.get(f"/api/c/{p['token']}", headers=phone_ua)                                    # другое устройство
+    assert views() == (3, 2)
     c.request("DELETE", "/api/picks", json={"id": p["id"]})
     assert c.get(f"/api/c/{p['token']}").status_code == 404
 

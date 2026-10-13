@@ -102,6 +102,7 @@
     return `<span class="pk2-cov c-${esc(p.color)}"><b>${esc(letter)}</b><i>${p.n}</i></span>`;
   }
   function seenBadge(p) {
+    p = { ...p, views: p.views_unique || p.views };   // уникальные открытия клиентом (до 13.10 считались все)
     if (p.views) return `<span class="pk2-st seen"><i></i>Открывал ${p.views} ${plural(p.views, "раз", "раза", "раз")} · ${esc(ago(p.viewed_at))}</span>`;
     return `<span class="pk2-st"><i></i>${p.n ? "Ещё не открывал" : "Пустая"}</span>`;
   }
@@ -199,7 +200,7 @@
         <div class="pk2-link"><span title="${esc(link(p))}">${esc(link(p).replace(/^https?:\/\//, ""))}</span>
           <button type="button" class="pill" data-copy="${p.id}">${ic("link")}Копировать</button></div>
         <button type="button" class="pk2-act" data-share-text="${esc(`${p.title}\n${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
-        <a class="pk2-act" href="${esc(link(p))}" target="_blank" rel="noopener">${ic("eye")}<span>Как видит клиент</span></a>
+        <a class="pk2-act" href="${esc(link(p))}?as=agent" target="_blank" rel="noopener" title="Ваше открытие не засчитается как просмотр клиента">${ic("eye")}<span>Как видит клиент</span></a>
         <button type="button" class="pk2-act" data-dup="${p.id}">${ic("layers")}<span>Дублировать</span></button>
         <button type="button" class="pk2-act danger" data-del="${p.id}">${ic("trash")}<span>Удалить</span></button>
       </div>

@@ -206,7 +206,7 @@ def edit_listing(conn: sqlite3.Connection, user: sqlite3.Row, listing_id: int, d
         elif k == "description":
             v = (str(v).strip()[:3000]) or None
             if v and rules.extract_phones(v):
-                v = re.sub(rules._PHONE_RE, "", v)  # телефоны в описании не публикуем — они берутся из подтверждения
+                v = rules.remove_phones(v)  # телефоны в описании не публикуем — они берутся из подтверждения
         elif k == "district":
             v = str(v).strip()[:80]
             v = (geo.canonical_district(v) or v) if v else None

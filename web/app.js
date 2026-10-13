@@ -847,6 +847,8 @@
             ${address(o) ? `<a class="ya-link" href="https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(yaQuery(o))}" target="_blank" rel="noopener">на карте ↗</a>` : ""}</p>
           <div class="dv-price"><b>${esc(fmtPrice(o.price, o.deal))}</b>
             ${o.price_m2 && o.deal !== "rent" ? `<span>${esc(num(o.price_m2))} ₽/м²</span>` : ""}${marketTag}</div>
+          ${o.text_price ? `<p class="dv-tp">${ic("alert")}<span>Текст объявления от ${esc(new Date(o.text_price.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }))},
+            в нём цена ${esc(fmtPrice(o.text_price.price, o.deal))}. Актуальная цена — <b>${esc(fmtPrice(o.price, o.deal))}</b></span></p>` : ""}
         </div>
         <div class="dv-acts">${actions}</div>
         ${contactHTML(o)}
@@ -1246,7 +1248,7 @@
         return `<div class="dv-phone"><a class="dv-phone-num" href="tel:${esc(p)}">${esc(pretty(p))}</a>
           <a class="dv-ic-btn" href="tel:${esc(p)}" aria-label="Позвонить" title="Позвонить">${ic("phone")}</a>
           <button type="button" class="dv-ic-btn dv-max" data-max="${esc(p)}" aria-label="Написать в MAX" title="Написать в MAX">MAX</button></div>`;
-      }).join("")}${o.url ? `<a class="dv-site${o.source === "feed" ? " strely" : ""}" href="${esc(o.url)}" target="_blank" rel="noopener">${o.source === "feed"
+      }).join("")}${o.sender_phone ? `<p class="dv-sender">Прислал в чат: <a href="tel:${esc(o.sender_phone)}">${esc(pretty(o.sender_phone))}</a></p>` : ""}${o.url ? `<a class="dv-site${o.source === "feed" ? " strely" : ""}" href="${esc(o.url)}" target="_blank" rel="noopener">${o.source === "feed"
         ? `${STRELY}<span>Объект партнёра «СТРЕЛЫ» — смотреть на arrowsrealty.ru</span>${ic("external")}` : `${ic("link")}Объявление на сайте агентства`}</a>` : ""}</div>`;
     }
     if (o.phones_limit) {
