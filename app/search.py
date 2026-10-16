@@ -15,11 +15,11 @@ from . import geo
 from .rules import TYPE_LABELS
 from .textnorm import norm, words
 
-SORTS = {
+SORTS = {   # цена «под вопросом» (pricefix) в сортировках по цене — в самом конце
     "new": "l.last_seen DESC, l.id DESC",
-    "price_asc": "l.price IS NULL, l.price ASC, l.id DESC",
-    "price_desc": "l.price IS NULL, l.price DESC, l.id DESC",
-    "price_m2": "l.price_m2 IS NULL, l.price_m2 ASC, l.id DESC",
+    "price_asc": "l.price IS NULL OR l.price_doubt IS 1, l.price ASC, l.id DESC",
+    "price_desc": "l.price IS NULL OR l.price_doubt IS 1, l.price DESC, l.id DESC",
+    "price_m2": "l.price_m2 IS NULL OR l.price_doubt IS 1, l.price_m2 ASC, l.id DESC",
     "area_desc": "l.area IS NULL, l.area DESC, l.id DESC",
     "market": "l.market_diff IS NULL, l.market_diff ASC, l.id DESC",   # ниже рынка — первыми
 }
@@ -156,8 +156,194 @@ def interpret(q: str) -> tuple[str | None, list[int]]:
 def _fts_query(q: str) -> str | None:
     return interpret(q)[0]
 
+# ─── «Пишите как в чате»: фраза → фильтры (акт приёмки 14.10, Б3) ──────────
+_DEAL_RENT = re.compile(r"\b(?:аренд\w*|сдам|сдаю|сда[её]тся|сдается|снять|сниму|посуточн\w*|в наем|наём|найм\w*)\b")
+_DEAL_SALE = re.compile(r"\b(?:продаж\w*|продам|прода[её]тся|продается|купить|куплю|покупк\w*)\b")
+_TYPE_WORDS = [(r"\b(?:коммерц\w*|офис\w*|помещени\w*|магазин\w*|склад\w*|псн)\b", "commercial"),
+               (r"\b(?:участ(?:ок|ки|ка)\w*|земл[яи]\w*|земельн\w*|ижс)\b", "land"),
+               (r"\b(?:дом|дома|домик\w*|коттедж\w*|таунхаус\w*|дуплекс\w*)\b", "house"),
+               (r"\b(?:комнат[ау]|комнаты|комната)\b(?!\s*\d)", "room"),
+               (r"\b(?:квартир\w*|кв-?р\w*)\b", "flat")]
+_NUM = r"(\d+(?:[.,]\d+)?)"
+_UNIT = r"\s*(млн|миллион\w*|лям\w*|м(?!\s*(?:2|²|кв))|тыс\w*|т\.?р\.?|т|к|р|руб\w*|₽)?\b"
+_AREA_UNIT = r"\s*(?:м2|м²|кв\.?\s*м\w*|квм|метр\w*|кв\b|м\b(?=\s*(?:2|²|кв)))"
+_COND_WORDS = [(r"\b(?:с\s+)?ремонт\w*\b", "repair"), (r"\b(?:с\s+)?мебел\w*|\bмеблир\w*", "furniture"),
+               (r"\bпчо\b|\bпредчистов\w*|\bwhite\s*box\b", "pcho")]
+_ROOM_LABEL = {0: "студия", 1: "1 комн", 2: "2 комн", 3: "3 комн", 4: "4+ комн"}
+_TYPE_LABEL = {"flat": "квартира", "house": "дом", "land": "участок", "room": "комната", "commercial": "коммерция"}
 
-HOT_MARKET = -12   # «Горячее»: на 12 % и больше дешевле медианы м² (отметка «ниже рынка» на карточке — от 7 %)
+
+def _money(num: str, unit: str | None, deal: str) -> int | None:
+    try:
+        v = float(num.replace(",", "."))
+    except ValueError:
+        return None
+    u = (unit or "").lower()
+    if u.startswith(("млн", "миллион", "лям", "м")):
+        v *= 1_000_000
+    elif u.startswith(("тыс", "т", "к")):
+        v *= 1_000
+    elif not u or u.startswith(("р", "₽")):
+        if deal == "rent":
+            v = v * 1000 if v < 1000 else v            # «до 40» в аренде = 40 тыс.
+        else:
+            v = v * 1_000_000 if v < 1000 else v * 1000 if v < 100_000 else v   # «до 7» = 7 млн, «до 7000» = 7 млн
+    return int(v)
+
+
+def _fmt_money(v: int, deal: str) -> str:
+    if v >= 1_000_000:
+        return f"{v / 1_000_000:g}".replace(".", ",") + " млн"
+    return f"{v // 1000} тыс" if v >= 1000 else f"{v} ₽"
+
+
+def _fuzzy_district(tok: str) -> str | None:
+    """Опечатка в названии района: «фрм» → ФМР (перестановка или одна буква в слове от 5 букв)."""
+    from .osmaddr import _typos
+    if len(tok) < 3 or tok.isdigit():
+        return None
+    hits = set()
+    for alias, canon in geo._ALIASES:
+        if " " in alias or abs(len(alias) - len(tok)) > 1 or len(alias) < 3:
+            continue
+        d = _typos(tok, alias)
+        if d == 1 and (len(tok) >= 5 or sorted(tok) == sorted(alias)):   # короткие («фрм») — только перестановка букв
+            hits.add(canon)
+    return hits.pop() if len(hits) == 1 else None
+
+
+def parse_phrase(q: str, deal: str = "sale") -> dict:
+    """«2к фмр до 7 млн», «однушка юмр до 5», «3к не первый этаж», «аренда 1к», «самолет 1» → фильтры.
+    Что не поняли — ищется по тексту объявлений (fts). chips — как поняли (для показа над выдачей)."""
+    w = f" {norm(q)} "
+    out: dict = {"deal": None, "types": [], "rooms": [], "price_min": None, "price_max": None, "area_min": None,
+                 "area_max": None, "districts": [], "complexes": [], "not_first": False, "not_last": False,
+                 "cond": [], "chips": []}
+    chip = lambda label, frag: out["chips"].append({"label": label, "drop": " ".join(frag.split())})  # noqa: E731
+
+    def take(rx, fn):
+        nonlocal w
+        for m in list(re.finditer(rx, w)):
+            if fn(m) is not False:
+                w = w.replace(m.group(0), " ", 1)
+
+    take(_DEAL_RENT, lambda m: (out.update(deal="rent"), chip("аренда", m.group(0))))
+    take(_DEAL_SALE, lambda m: (out.update(deal=out["deal"] or "sale"), chip("продажа", m.group(0))) if not out["deal"] else False)
+    eff = out["deal"] or deal
+    # этаж
+    take(r"\bне\s+(?:на\s+)?(?:перв\w*|1\s*-?\s*(?:й|ом)?)(?:\s+этаж\w*)?\b", lambda m: (out.update(not_first=True), chip("не первый этаж", m.group(0))))
+    take(r"\bне\s+(?:на\s+)?последн\w*(?:\s+этаж\w*)?\b", lambda m: (out.update(not_last=True), chip("не последний этаж", m.group(0))))
+    # площадь: «от 40 м2», «до 60 кв», «40-60 м2»
+    def area(m, key):
+        out[key] = float(m.group(1).replace(",", "."))
+        chip(("от " if key == "area_min" else "до ") + f"{out[key]:g} м²", m.group(0))
+    take(rf"\b(?:от|больше|не меньше)\s*{_NUM}{_AREA_UNIT}", lambda m: area(m, "area_min"))
+    take(rf"\b(?:до|меньше|не больше)\s*{_NUM}{_AREA_UNIT}", lambda m: area(m, "area_max"))
+    # цена: «до 7 млн», «от 5», «5-7 млн», «до 30 тыс»
+    def rng(m):
+        lo, hi = _money(m.group(1), m.group(3), eff), _money(m.group(2), m.group(3), eff)
+        if lo and hi and lo < hi:
+            out.update(price_min=lo, price_max=hi)
+            chip(f"{_fmt_money(lo, eff)} – {_fmt_money(hi, eff)}", m.group(0))
+            return None
+        return False
+    take(rf"\b{_NUM}\s*[-–—]\s*{_NUM}{_UNIT}(?=\s|$)", lambda m: rng(m) if m.group(3) else False)
+    def one(m, key, word):
+        v = _money(m.group(1), m.group(2), eff)
+        if not v:
+            return False
+        out[key] = v
+        chip(f"{word} {_fmt_money(v, eff)}", m.group(0))
+    take(rf"\b(?:до|не дороже|дешевле|макс\w*|max)\s*{_NUM}{_UNIT}", lambda m: one(m, "price_max", "до"))
+    take(rf"\b(?:от|дороже|мин\w*|min)\s*{_NUM}{_UNIT}", lambda m: one(m, "price_min", "от"))
+    # комнаты
+    rooms: list[int] = []
+    for rx, n in _ROOM_WORDS:
+        if re.search(rx, w):
+            rooms.append(n)
+            chip(_ROOM_LABEL[n], re.search(rx, w).group(0))
+            w = re.sub(rx, " ", w)
+    for m in list(re.finditer(r"\bмини\s*-?\s*([1-4])\b", w)):
+        n = int(m.group(1)); rooms += [n - 1, n]; chip(f"мини-{n}", m.group(0))
+    w = re.sub(r"\bмини\s*-?\s*([1-4])\b", " ", w)
+    for m in list(re.finditer(r"\bевро\s*-?\s*([2-6])\b|\b([2-6])\s*-?\s*евро\b", w)):
+        n = int(m.group(1) or m.group(2)); rooms.append(n - 1); chip(f"евро-{n}", m.group(0))
+    w = re.sub(r"\bевро\s*-?\s*([2-6])\b|\b([2-6])\s*-?\s*евро\b", " ", w)
+    for m in list(_ROOM_NUM.finditer(w)):
+        n = int(m.group(1) or m.group(2)); rooms.append(n); chip(_ROOM_LABEL[min(n, 4)], m.group(0))
+    w = _ROOM_NUM.sub(" ", w)
+    out["rooms"] = sorted(set(min(r, 4) for r in rooms))
+    # тип
+    for rx, t in _TYPE_WORDS:
+        m = re.search(rx, w)
+        if m:
+            if t not in out["types"] and not (t == "flat" and out["rooms"]):
+                out["types"].append(t)
+                chip(_TYPE_LABEL[t], m.group(0))
+            w = re.sub(rx, " ", w)
+    # состояние
+    for rx, c in _COND_WORDS:
+        m = re.search(rx, w)
+        if m and not re.search(r"\b(?:без|под)\s+" + rx.lstrip(r"\b"), w):
+            out["cond"].append(c)
+            chip({"repair": "с ремонтом", "furniture": "с мебелью", "pcho": "ПЧО"}[c], m.group(0))
+            w = re.sub(rx, " ", w)
+    # ЖК: «жк X», или название из справочника; номер очереди сразу за названием — часть названия («самолет 1»)
+    toks = w.split()
+    i = 0
+    used: set[int] = set()
+    while i < len(toks):
+        explicit = toks[i] in ("жк", "жилой") and i + 1 < len(toks)
+        start = i + 1 if explicit else i
+        best = None
+        for n in (3, 2, 1):
+            cand = " ".join(toks[start:start + n])
+            if len(cand) < 4 or cand.isdigit() or cand in _STOP or geo.canonical_district(cand):
+                continue
+            rec = geo.resolve_complex(cand)
+            if rec or (explicit and n == 1):
+                best = (n, rec.name if rec else cand.title())
+                break
+        if best:
+            n, name = best
+            j = start + n
+            if j < len(toks) and re.fullmatch(r"\d{1,2}", toks[j]) and 0 < int(toks[j]) < 30:
+                name, j = f"{name} {toks[j]}", j + 1
+            out["complexes"].append(name)
+            chip(f"ЖК {name}", " ".join(toks[i:j]))
+            used.update(range(i, j))
+            i = j
+        else:
+            i += 1
+    toks = [t for k, t in enumerate(toks) if k not in used]
+    # районы: любое написание, в т. ч. из двух слов и с опечаткой
+    w = f" {' '.join(toks)} "
+    for alias, canon in geo._ALIASES:
+        if f" {alias} " in w and canon not in out["districts"]:
+            out["districts"].append(canon)
+            chip(canon, alias)
+            w = w.replace(f" {alias} ", " ")
+    rest = []
+    for t in w.split():
+        d = _fuzzy_district(t) if not t.isdigit() and t not in _STOP else None
+        if d and d not in out["districts"]:
+            out["districts"].append(d)
+            chip(d, t)
+        elif not d:
+            rest.append(t)
+    tokens = [t for t in re.split(r"[^0-9a-zа-я]+", " ".join(rest)) if t]
+    tokens = [t for t in tokens if (len(t) >= 2 or t.isdigit()) and t not in _STOP and t not in _NOISE]
+    out["fts"] = " AND ".join(f'"{_stem(t)}"*' for t in tokens) or None
+    out["text"] = " ".join(tokens)
+    return out
+
+
+_NOISE = {"этаж", "этажа", "этаже", "эт", "млн", "тыс", "руб", "рублей", "до", "от", "не", "с", "без", "под", "за", "по",
+          "м2", "кв", "метров", "цена", "ищу", "нужна", "нужен", "нужно", "срочно", "хочу", "или"}
+
+
+
+HOT_MARKET = -15   # «Горячее»: на 15 % и больше дешевле медианы м² по 15+ сравнимым (hooks.update_market_diff)
 
 
 def _where(qr: Query, now: int) -> tuple[str, list]:
@@ -165,9 +351,18 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
     w = ["l.is_active = 1", "l.deal = ?",
          "(l.district IS NOT NULL OR l.complex IS NOT NULL OR l.street IS NOT NULL OR l.settlement IS NOT NULL)"]
     p: list = [qr.deal]
-    fts, q_rooms = interpret(qr.q) if qr.q else (None, [])
-    if q_rooms and not qr.rooms:  # «2к» в строке поиска = фильтр «2 комнаты»
-        qr = Query(**{**qr.__dict__, "rooms": q_rooms})
+    fts = None
+    if qr.q:   # «2к фмр до 7 млн» — фраза как фильтры; что поставлено фильтрами явно — главнее
+        ph = parse_phrase(qr.q, qr.deal)
+        fts = ph["fts"]
+        upd = {k: ph[k] for k in ("types", "rooms", "districts", "complexes", "cond") if ph[k] and not getattr(qr, k)}
+        upd |= {k: ph[k] for k in ("price_min", "price_max", "area_min", "area_max") if ph[k] is not None and getattr(qr, k) is None}
+        upd |= {k: True for k in ("not_first", "not_last") if ph[k]}
+        if ph["deal"]:
+            upd["deal"] = ph["deal"]
+            p = [ph["deal"]]
+        if upd:
+            qr = Query(**{**qr.__dict__, **upd})
     if qr.types:
         types = list(qr.types) + (["new"] if "flat" in qr.types else [])  # старые записи «новостройка» = квартиры
         w.append(f"l.type IN ({','.join('?' * len(types))})")
@@ -184,6 +379,8 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
             w.append(f"l.{col} >= ?"); p.append(lo)
         if hi is not None:
             w.append(f"l.{col} <= ?"); p.append(hi)
+        if col == "price" and (lo is not None or hi is not None):
+            w.append("l.price_doubt IS NOT 1")   # цена под вопросом — в ценовой фильтр не попадает
     if qr.districts:   # основной район или один из дополнительных (объект на границе районов)
         q = ",".join("?" * len(qr.districts))
         w.append(f"(l.district IN ({q}) OR EXISTS (SELECT 1 FROM json_each(l.extra_districts) j WHERE j.value IN ({q})))")
@@ -216,8 +413,9 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
     if qr.since:
         w.append("l.first_seen > ?"); p.append(qr.since)
     if qr.hot:
-        w.append(f"""((l.prev_price > l.price AND l.price_changed_at >= ?) OR l.market_diff <= {HOT_MARKET}
-                     OR l.search_text LIKE '%срочн%')""")
+        # акт 14.10, С6: «Горячее» — 5–8 % базы: цена снизилась за неделю, заметно ниже рынка или «срочно» и дешевле рынка
+        w.append(f"""l.price_doubt IS NOT 1 AND ((l.prev_price > l.price AND l.prev_price < l.price * 1.5 AND l.price_changed_at >= ?)
+                     OR l.market_diff <= {HOT_MARKET} OR (l.search_text LIKE '%срочн%' AND l.market_diff <= -5))""")
         p.append(now - 7 * 86400)
     if fts:
         w.append("l.id IN (SELECT rowid FROM listings_fts WHERE listings_fts MATCH ?)"); p.append(fts)
@@ -231,11 +429,12 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
 # district — центр района; none — точки нет. На карте: дом — меткой, ЖК — одной меткой ЖК с числом объектов,
 # улица/район — не показываем (в списке «адрес уточняется»). Район по точке решает только house.
 HOUSE_SRCS = ("osm-house", "osm-near", "feed-house", "learned", "geocoder")
-COMPLEX_SRCS = ("map-cx", "feed-cx", "learned-cx", "geocoder-cx")
+COMPLEX_SRCS = ("map-cx", "feed-cx", "learned-cx", "geocoder-cx", "stacked")   # stacked — в точке 3+ разных домов
 DISTRICT_SRCS = ("map-district", "geocoder-district")
 GEO_LEVEL = f"""(CASE WHEN l.lat IS NULL THEN 'none'
-    WHEN l.geo_status IN ('manual', 'feed') THEN 'house'
+    WHEN l.geo_status = 'manual' THEN 'house'
     WHEN l.geo_src IN {COMPLEX_SRCS} THEN 'complex'
+    WHEN l.geo_status = 'feed' THEN 'house'
     WHEN l.geo_src IN {DISTRICT_SRCS} THEN 'district'
     WHEN l.geo_status = 'approx' OR l.geo_src IN ('osm-street', 'geocoder-street', 'geocoder-place') THEN 'street'
     ELSE 'house' END)"""
@@ -245,10 +444,12 @@ def geo_level(lat, status: str | None, src: str | None) -> str:
     """То же, что GEO_LEVEL, — в Python."""
     if lat is None:
         return "none"
-    if status in ("manual", "feed"):
+    if status == "manual":
         return "house"
     if src in COMPLEX_SRCS:
         return "complex"
+    if status == "feed":
+        return "house"
     if src in DISTRICT_SRCS:
         return "district"
     if status == "approx" or src in ("osm-street", "geocoder-street", "geocoder-place"):
@@ -276,6 +477,7 @@ def row_to_item(r: sqlite3.Row, with_contacts: bool) -> dict:
     from .parser import guard_phones
     d["description"] = guard_phones(d["description"])   # номеров в описании не отдаём никому — они в контакте
     keys = r.keys()
+    d["price_doubt"] = bool(r["price_doubt"]) if "price_doubt" in keys else False
     d["geo_level"] = geo_level(r["lat"], r["geo_status"], r["geo_src"]) if "geo_src" in keys and "lat" in keys else None
     d["verified"] = bool(r["verified"]) if "verified" in r.keys() else None
     d["photos"] = json.loads(r["photos"] or "[]")
@@ -317,7 +519,8 @@ def map_points(conn: sqlite3.Connection, qr: Query, now: int) -> dict:
     where, params = _where(qr, now)
     rows = conn.execute(
         f"""SELECT l.id, l.lat, l.lon, l.price, l.title, l.source, l.complex, l.district, l.street,
-                   l.geo_status = 'approx' AS approx, json_extract(l.photos, '$[0]') AS photo, {GEO_LEVEL} AS level
+                   l.geo_status = 'approx' AS approx, json_extract(l.photos, '$[0]') AS photo, {GEO_LEVEL} AS level,
+                   l.price_doubt IS 1 AS doubt
             FROM listings l WHERE {where} AND l.lat IS NOT NULL LIMIT 20000""",
         params,
     ).fetchall()
@@ -333,7 +536,7 @@ def map_points(conn: sqlite3.Connection, qr: Query, now: int) -> dict:
             g = groups.setdefault(k, {"complex": r["complex"], "lat": r["lat"], "lon": r["lon"], "n": 0,
                                       "price_min": None, "photo": None})
             g["n"] += 1
-            if r["price"] and (g["price_min"] is None or r["price"] < g["price_min"]):
+            if r["price"] and not r["doubt"] and (g["price_min"] is None or r["price"] < g["price_min"]):
                 g["price_min"] = r["price"]
             g["photo"] = g["photo"] or r["photo"]
         else:

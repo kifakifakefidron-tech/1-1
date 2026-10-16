@@ -24,7 +24,7 @@ RANK = {"matched": 0, "sent": 1, "opened": 2, "liked": 3, "rejected": 3, "show":
 PICK_STATUSES = ("sent", "opened", "liked", "rejected")   # ставятся подборкой — уходят вместе с ней
 OLD_STATUS = {"offered": "matched", "shown": "show", "refused": "rejected"}
 REACTIONS = {"like": "Нравится", "no": "Не подходит", "want_show": "Хочет посмотреть", "question": "Вопрос"}
-REACTION_STATUS = {"like": "liked", "no": "rejected", "want_show": "liked"}
+REACTION_STATUS = {"like": "liked", "no": "rejected", "want_show": "show"}   # акт 14.10, С5: «хочу посмотреть» = показ
 WISH_TYPES = ("flat", "house", "land", "commercial")
 WISH_COND = {"pcho": "ПЧО / предчистовая", "repair": "С ремонтом", "furniture": "С мебелью"}
 WISH_PAY = {"cash": "Наличные", "mortgage": "Ипотека", "matcap": "Маткапитал", "cert": "Сертификат"}
@@ -397,6 +397,24 @@ def query_for(c: dict, user_id: int, **extra):
               exclude_client=c["id"], hide_user=user_id)
     kw.update(extra)   # фильтры экрана подбора (только с фото, не первый этаж, сортировка) поверх пожеланий
     return search.Query(**kw)
+
+
+def fits_listing(conn: sqlite3.Connection, user_id: int, listing_id: int, now: int | None = None) -> list[dict]:
+    """Ваши клиенты, которым подходит этот объект по пожеланиям (и он им ещё не предложен) — вместо «покупателей
+    из чатов» (акт приёмки 14.10, Б4: там была реклама и чужие продажи)."""
+    import time as _t
+
+    from . import search
+    now = now or int(_t.time())
+    out = []
+    for r in conn.execute("""SELECT * FROM clients WHERE user_id = ? AND archived = 0 AND stage NOT IN ('deal', 'lost')
+                             ORDER BY updated DESC LIMIT 100""", (user_id,)).fetchall():
+        c = dict(r)
+        qr = query_for(c, user_id)
+        where, params = search._where(qr, now)
+        if conn.execute(f"SELECT 1 FROM listings l WHERE {where} AND l.id = ?", params + [listing_id]).fetchone():
+            out.append({"id": c["id"], "name": c["name"], "stage": c["stage"], "stage_label": STAGES.get(c["stage"], "")})
+    return out
 
 
 def for_listing(conn: sqlite3.Connection, user_id: int, listing_id: int) -> list[dict]:

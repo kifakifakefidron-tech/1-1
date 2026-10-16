@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import time
 from collections import Counter
@@ -25,14 +26,28 @@ SHARE_OK = 0.7       # правило верно, если в его район�
 MIN_POINTS = 3       # меньше точек — судить не по чему («мало данных»)
 # Не ЖК: города, страны, общие слова (стоп-лист — ингест тоже не принимает их за ЖК)
 JUNK_CX = {"краснодар", "москва", "россия", "кубань", "жилой квартал", "жилой комплекс", "новостройка", "новостройки",
+           # акт 14.10, С2: районы и общие слова, принятые за ЖК
+           "панорама", "молодежный", "музыкальный", "большой", "знаменский", "прогресс", "победа", "сити", "метальникова",
            "победа", "южный", "центр", "центральный", "город", "дом", "квартал", "мкр", "микрорайон", "сочи", "анапа",
            "краснодарский край", "юг", "север", "восток", "запад"}
 SRC = "чистка правил"
 
 
+_JUNK_KEYS = {x.replace(" ", "") for x in JUNK_CX}
+
+
 def is_junk_complex(name: str | None) -> bool:
+    """Не ЖК: стоп-лист или название района (если такого ЖК нет в справочнике ЖК)."""
     k = geo.complex_key(name)
-    return bool(k) and k in JUNK_CX
+    if not k:
+        return False
+    if k in _JUNK_KEYS:
+        return True
+    w = geo.words(name or "")
+    w = re.sub(r"^(?:жк|ж к)\s+", "", w)
+    # «ФМР», «Микрорайон Красная площадь» — это район, а не ЖК («Аврора», «Немецкая деревня» бывают и ЖК — не трогаем)
+    return bool(geo.canonical_district(w)) and geo.resolve_complex(w) is None and (
+        len(w) <= 4 or bool(re.match(r"(?:микрорайон|мкр|мкрн|район|р н)\s", w)))
 
 
 def _rule_rows(conn: sqlite3.Connection, kind: str):
@@ -100,6 +115,7 @@ def broken_rules(conn: sqlite3.Connection) -> list[dict]:
 
 
 NEAR_M = 300   # выученная точка дома ближе этого к дому из справочника адресов — верна
+CITY_KEYS = "(key LIKE 'addr:|%' OR key LIKE 'addr:краснодар|%')"   # точки домов в Краснодаре (старые — без посёлка)
 
 
 def _addr_parts(key: str) -> tuple[str, str, str]:
@@ -112,7 +128,7 @@ def points_report(conn: sqlite3.Connection) -> list[dict]:
     if not osmaddr.loaded(conn):
         return []
     out = []
-    for r in conn.execute("SELECT key, lat, lon, label, n FROM geo_learned WHERE key LIKE 'addr:|%'").fetchall():
+    for r in conn.execute(f"SELECT key, lat, lon, label, n FROM geo_learned WHERE {CITY_KEYS}").fetchall():
         _place, street, house = _addr_parts(r["key"])
         hit = osmaddr.point(conn, street, house, None)
         if hit and hit[3] == "osm-house":
@@ -181,6 +197,49 @@ def cx_points_report(conn: sqlite3.Connection) -> list[dict]:
     return out
 
 
+def risky_aliases(conn: sqlite3.Connection) -> list[dict]:
+    """Псевдонимы ЖК с риском: «Гарантия» → «Гарантия на Обрывной», когда есть и «Гарантия на Дежнева»;
+    или исходное название — это район («Солнечный»)."""
+    keys = {geo.complex_key(c) for (c,) in conn.execute("SELECT DISTINCT complex FROM listings WHERE complex IS NOT NULL")}
+    keys |= {geo.complex_key(c.name) for _k, c in geo._complexes()}
+    keys.discard(None)
+    out = []
+    for r in conn.execute("SELECT id, key, label FROM learned_rules WHERE kind = 'cx_alias'").fetchall():
+        src = r["key"].removeprefix("cx:").replace(" ", "")
+        longer = sorted(k for k in keys if k != src and k.startswith(src))
+        if len(longer) >= 2:
+            out.append({"id": r["id"], "label": r["label"], "why": f"есть {len(longer)} разных ЖК с таким началом"})
+        elif geo.canonical_district(src):
+            out.append({"id": r["id"], "label": r["label"], "why": "это ещё и название района"})
+    return out
+
+
+def auto_cleanup(conn: sqlite3.Connection) -> dict | None:
+    """Один раз (state geo_cleanup_v1, акт приёмки 14.10, С2–С3): всё, что нашла проверка, применяется само —
+    правила против карты, ЖК-мусор, «улицы»-подписи, испорченные правила, сомнительные точки домов, точки ЖК из одного
+    дома, районы-дубли, псевдонимы ЖК с риском; ключи точек — с населённым пунктом. Каждое изменение объекта — в журнале
+    правок (откат по объекту), итог — в админке «Обзор»."""
+    from . import db
+    if db.get_state(conn, "geo_cleanup_v1"):
+        return None
+    rep = report(conn)
+    res = apply(conn, [r["id"] for r in rep["rules"] if r["status"] == "bad"], [j["name"] for j in rep["junk"]],
+                bool(rep["labels"]), broken=[b["id"] for b in rep["broken"]], points=[p["key"] for p in rep["points"]],
+                cx_points=[c["key"] for c in rep["cx_points"]], dupes=[d["name"] for d in rep["dupes"]])
+    risky = risky_aliases(conn)
+    for a in risky:
+        learning.forget(conn, a["id"])
+    res["aliases"] = len(risky)
+    res["city_keys"] = learning.migrate_city_keys(conn)
+    res["bad_rules"] = [r["label"] for r in rep["rules"] if r["status"] == "bad"][:60]
+    res["junk_names"] = [j["name"] for j in rep["junk"]]
+    res["ts"] = int(time.time())
+    db.set_state(conn, "geo_cleanup_report", json.dumps(res, ensure_ascii=False))
+    db.set_state(conn, "geo_cleanup_v1", "1")
+    conn.commit()
+    return res
+
+
 def district_dupes(conn: sqlite3.Connection) -> list[dict]:
     """Район записан не тем именем, под которым он в справочнике («Молодёжный» при «Молодежный/Витаминкомбинат»)."""
     learning.sync_districts(conn)
@@ -208,7 +267,7 @@ def report(conn: sqlite3.Connection) -> dict:
     return {"rules": rr, "bad": sum(1 for r in rr if r["status"] == "bad"), "junk": junk_report(conn),
             "labels": label_streets(conn), "broken": broken_rules(conn),
             "points": [p for p in pts if p["status"] in ("far", "nostreet")],
-            "points_total": conn.execute("SELECT COUNT(*) FROM geo_learned WHERE key LIKE 'addr:|%'").fetchone()[0],
+            "points_total": conn.execute(f"SELECT COUNT(*) FROM geo_learned WHERE {CITY_KEYS}").fetchone()[0],
             "points_ok": sum(1 for p in pts if p["status"] == "ok"),
             "points_unknown": sum(1 for p in pts if p["status"] == "nohouse"),
             "cx_points": cx_points_report(conn), "osm_loaded": bool(osmaddr.loaded(conn)),

@@ -28,6 +28,7 @@ CX_SPREAD_KM = 1.5      # точки фида одного ЖК дальше э�
 CX_FAR_KM = 2.0         # ответ геокодера дальше этого от точки ЖК — ошибка геокодера
 OUT_OF_DISTRICT_KM = 1.0  # точка дальше этого за контуром района из объявления — ошибка
 GENERIC_CX = {"жилой квартал", "жилой комплекс", "жилой дом", "квартал", "парк", "центр"}   # слово, а не название: точку не ставим
+_GENERIC_KEYS = {x.replace(" ", "") for x in GENERIC_CX}   # ключ ЖК (geo.complex_key) — без пробелов
 GEO_SRC = {"feed-house": "тот же дом в фиде СТРЕЛ", "feed-cx": "ЖК по объектам фида СТРЕЛ",
            "map-cx": "центр ЖК на карте районов", "map-district": "центр района на карте (примерно)",
            "osm-house": "дом в справочнике адресов OSM", "osm-near": "соседний дом той же улицы (OSM)",
@@ -101,7 +102,8 @@ class Known:
         self.district_poly: dict[str, list] = {}
         cx_pts: dict[str, list] = defaultdict(list)
         for r in conn.execute("""SELECT street, house, settlement, complex, lat, lon FROM listings
-                                 WHERE source = 'feed' AND geo_status = 'feed' AND lat IS NOT NULL"""):
+                                 WHERE source = 'feed' AND geo_status = 'feed' AND lat IS NOT NULL
+                                 AND COALESCE(geo_src, '') != 'stacked'"""):   # одна точка на весь ЖК — не точка дома
             p = (r["lat"], r["lon"])
             k = learning.addr_key(r["street"], r["house"], r["settlement"])
             if k:
@@ -130,7 +132,7 @@ class Known:
                     self.cx[k] = (mid, "feed-cx")
                 else:
                     del self.cx[k]
-        for k in [k for k in self.cx if k.removeprefix("cx:") in GENERIC_CX]:
+        for k in [k for k in self.cx if k.removeprefix("cx:") in _GENERIC_KEYS]:
             del self.cx[k]
         # «Самолёт 2» / «Самолёт 3» → точка ЖК «Самолёт»: контур или середина объектов фида всех очередей
         self.cx_base: dict[str, tuple[tuple[float, float], str]] = {}
@@ -413,6 +415,32 @@ def mark_levels(conn: sqlite3.Connection) -> int:
     return n
 
 
+STACK_MIN = 3   # акт 14.10, С4: в одной «точной» точке 3 и больше разных домов — это центр ЖК, а не дом
+
+
+def unstack_points(conn: sqlite3.Connection) -> int:
+    """Точки уровня «дом», в которых стоят разные дома (Самолёт 1–6, Дарград, Свобода в одной точке), — помечаем как
+    центр ЖК (geo_src 'stacked'), а объектам с домом ищем точку дома заново (geocode.run: дом раньше ЖК). Ручные не трогаем."""
+    from .search import geo_level
+    groups: dict = defaultdict(list)
+    for r in conn.execute("""SELECT id, lat, lon, street, house, settlement, geo_status, geo_src FROM listings
+                             WHERE is_active = 1 AND lat IS NOT NULL AND geo_status != 'manual'""").fetchall():
+        if geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house":
+            groups[(round(r["lat"], 5), round(r["lon"], 5))].append(r)
+    n = 0
+    for rows in groups.values():
+        keys = {learning.addr_key(r["street"], r["house"], r["settlement"]) for r in rows} - {None}
+        if len(keys) < STACK_MIN:
+            continue
+        for r in rows:
+            redo = r["geo_status"] != "feed" and r["street"] and r["house"]
+            conn.execute("UPDATE listings SET geo_src = 'stacked', geo_status = ? WHERE id = ?",
+                         ("pending" if redo else r["geo_status"], r["id"]))
+            n += 1
+    conn.commit()
+    return n
+
+
 def mark_multi(conn: sqlite3.Connection) -> int:
     """Один раз (state multi_v1): «этажи 2 и 6» у уже собранных — пометка «2 кв. в посте» в заголовке."""
     if conn.execute("SELECT 1 FROM state WHERE key = 'multi_v1'").fetchone():
@@ -450,8 +478,11 @@ def recheck_all(conn: sqlite3.Connection) -> dict:
     from .ingest import _reindex, make_search_text, make_title
     mark_levels(conn)
     mark_multi(conn)
+    stacked = unstack_points(conn)
     known = Known(conn)
     rep: Counter = Counter()
+    if stacked:
+        rep["stacked"] = stacked
     now = int(time.time())
     # 1) точки
     for r in conn.execute("""SELECT * FROM listings WHERE is_active = 1 AND geo_status NOT IN ('manual', 'learned', 'feed')
@@ -517,7 +548,7 @@ def recheck_all(conn: sqlite3.Connection) -> dict:
         if not r["complex"] and r["type"] in ("flat", "new") and r["geo_src"] in HOUSE_SRC + (None, "geocoder")                 and (r["id"], "complex") not in undone:
             cx = districtmap.complex_at(conn, r["lat"], r["lon"])
             rec = geo.resolve_complex(cx) if cx else None
-            if rec and learning.cx_key(rec.name).removeprefix("cx:") not in GENERIC_CX:
+            if rec and learning.cx_key(rec.name).removeprefix("cx:") not in _GENERIC_KEYS:
                 d["complex"] = rec.name
                 _log(conn, r["id"], "complex", None, rec.name, now)
                 rep["complexes"] += 1

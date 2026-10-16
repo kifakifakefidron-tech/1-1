@@ -391,7 +391,9 @@ MIGRATIONS = [
     ("clients", "wishes", "TEXT"),                 # JSON: типы, площадь, этаж, ЖК, состояние, обременение, оплата, срок, допуск
     ("clients", "stage_manual", "INTEGER NOT NULL DEFAULT 0"),   # этап двигали руками — сервис сам не двигает   # уникальные открытия клиентом (устройство в день)
     ("listings", "phone_roles", "TEXT"),       # {"+7…": "text" | "sender"} — номер в тексте / прислал в чат
-    ("listings", "multi_units", "INTEGER"),    # «этажи 2 и 6» — в посте несколько квартир (ТЗ «админка-гео» P4.0.2)
+    ("listings", "multi_units", "INTEGER"),
+    ("listings", "price_doubt", "INTEGER"),
+    ("client_items", "question", "TEXT"),     # последний вопрос клиента из подборки (ответ «нравится» не трогает)    # цена «под вопросом» (pricefix): вне сортировок/фильтров по цене    # «этажи 2 и 6» — в посте несколько квартир (ТЗ «админка-гео» P4.0.2)
     ("listings", "description_ts", "INTEGER"), # когда последний раз обновлялся текст объявления          # цвет подборки в списке (палитра settings.COLORS)
     ("collections", "client_title", "TEXT"),   # заголовок, который видит клиент (название подборки — только агенту)   # подборка сделана для клиента CRM («Всё в подборку»)   # настройки аккаунта (app/settings.py): вид подборок, порядок блоков кабинета   # цвет события в планере (gold, sky, …; пусто — по виду события)   # событие по клиенту (CRM)  # источники спорят: «rule:…» (правило ≠ карта), «votes:…» (карта ≠ соседи)   # откуда район, если его поставил сервис сам: map | vote-house | vote-cx                     # какую ошибочную цену разбор давал (её и не принимаем)   # админ сам поставил продажу/аренду — автоматика не трогает                     # свой текст объявления для клиента (вместо исходного)                              # статус агента по объекту: call | show | think | refuse | deal                   # % к медиане м² по ЖК/району (hooks.update_market_diff)
 ]
@@ -473,13 +475,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
         _backfill_prices(conn)
         conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('price_hist_v1', '1')")
     # Сняли с сайта (любым путём) — запомнить когда и почему; вернули — забыть
-    conn.execute("""CREATE TRIGGER IF NOT EXISTS trg_removed AFTER UPDATE OF is_active ON listings
+    conn.execute("DROP TRIGGER IF EXISTS trg_removed")   # v2: причина «под задатком»
+    conn.execute("""CREATE TRIGGER IF NOT EXISTS trg_removed_v2 AFTER UPDATE OF is_active ON listings
                     WHEN OLD.is_active != NEW.is_active
                     BEGIN UPDATE listings SET
                         removed_at = CASE WHEN NEW.is_active = 0 THEN CAST(strftime('%s','now') AS INTEGER) END,
                         removed_reason = CASE WHEN NEW.is_active = 1 THEN NULL
                             WHEN NEW.sold_at IS NOT NULL THEN 'sold'
                             WHEN NEW.hidden_reason = 'chat' THEN 'chat'
+                            WHEN NEW.hidden_reason = 'deposit' THEN 'deposit'
                             WHEN NEW.source = 'feed' THEN 'feed'
                             WHEN NEW.source = 'own' THEN 'expired'
                             WHEN NEW.last_seen < CAST(strftime('%s','now') AS INTEGER) - 15 * 86400 THEN 'stale'

@@ -44,7 +44,7 @@ def test_client_flow(env):
     ev = c.post("/api/planner", json={"kind": "show", "ts": int(time.time()) + 3600, "listing_id": a, "client_id": cid}).json()
     assert ev["event"]["client_id"] == cid
     d = c.get(f"/api/clients?id={cid}").json()
-    assert d["items"][0]["status"] == "liked" and len(d["events"]) == 1
+    assert d["items"][0]["status"] == "show" and len(d["events"]) == 1   # показ в планере → статус «Показ» (акт 14.10, С5)
     texts = " | ".join(x["text"] for x in d["log"])
     assert "Понравился" in texts and "Показы" in texts and "высокий этаж" in texts and "Показ" in texts
     assert c.get(f"/api/clients/{cid}/match").json()["items"] == []          # уже у клиента — не предлагаем снова
@@ -104,3 +104,14 @@ def test_picks_clients_and_worklog_tied(env):
                                       "contact_name": "Анна", "contact_phone": "+79180001122"}).json()
     row = conn.execute("SELECT contact_name, contact_phone FROM planner_events WHERE client_id = ?", (cid,)).fetchone()
     assert tuple(row) == ("", "")
+
+
+def test_object_shows_fitting_clients_not_chat_buyers(env):
+    """Акт 14.10, Б4: в окне объекта — ваши клиенты, которым он подходит (не «запросы из чатов»)."""
+    c, conn, other = env
+    a = add(conn, "2-к квартира 58 м², 7/16 эт., ФМР, ул. Ставропольская 12. 7,5 млн руб. 89181112299")
+    b = add(conn, "1-к квартира 40 м², 3/9 эт., ЦМР, ул. Красная 7. 5 млн. 89184445599")
+    c.post("/api/clients", json={"name": "Ирина", "kind": "buyer", "rooms": [2], "districts": ["фмр"], "budget_max": "8"})
+    d = c.get(f"/api/listings/{a}").json()
+    assert [x["name"] for x in d["fit_clients"]] == ["Ирина"] and "buyers" not in d
+    assert c.get(f"/api/listings/{b}").json()["fit_clients"] == []

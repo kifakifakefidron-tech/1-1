@@ -88,11 +88,14 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
     learning.apply(conn, o)
     if o.complex:   # «Краснодар», «Жилой квартал»… — не ЖК; тот же ЖК в другом написании — принятое в базе название
         from . import cxnorm, geoaudit
+        o.complex = cxnorm.with_number(o.complex, o.fragment)   # «Самолёт» + в тексте «Самолёт-1» → «Самолёт 1»
         o.complex = None if geoaudit.is_junk_complex(o.complex) else cxnorm.canonical(conn, o.complex)
     fh = dedupe.fragment_hash(o.fragment)
     d = o.to_dict()
     from .rules import multi_units
-    d["multi_units"] = multi_units(o.fragment) or None   # склейку повторов это не меняет (P3): этаж остаётся как разобран
+    d["multi_units"] = multi_units(o.fragment) or None
+    from .pricefix import check as price_check   # «Цена 5400» = 5,4 млн; 1,6 млрд за двушку — цена «под вопросом»
+    d["price"], d["price_doubt"] = price_check(d["price"], d["deal"], d["type"], d["area"])   # склейку повторов это не меняет (P3): этаж остаётся как разобран
     ban = conn.execute("SELECT listing_id FROM banned WHERE kind = 'frag' AND key = ?", (fh,)).fetchone()
     if ban is not None:   # этот текст админ удалил навсегда
         return ban[0] or 0, "banned"
@@ -128,8 +131,9 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
              json.dumps(d.get("phone_roles") or {}, ensure_ascii=False), ts),
         )
         lid = cur.lastrowid
-        if d.get("multi_units"):
-            conn.execute("UPDATE listings SET multi_units = ? WHERE id = ?", (d["multi_units"], lid))
+        if d.get("multi_units") or d.get("price_doubt"):
+            conn.execute("UPDATE listings SET multi_units = ?, price_doubt = ? WHERE id = ?",
+                         (d.get("multi_units"), 1 if d.get("price_doubt") else None, lid))
         why = "new"
     else:
         lid = match["id"]
@@ -144,7 +148,14 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         # Карточкой управляет агент (кабинет): его цену меняет только более свежий пост, описание не трогаем
         owned = bool(cur_d.get("owner_user_id"))
         new_price = False
-        if ts >= cur_d["last_seen"] and d["price"] and ts > (cur_d.get("owner_edited_at") or 0):
+        # Акт 14.10, Б2: повтор другого типа/комнатности, с ценой «под вопросом» или дальше 25 % от прежней —
+        # цену карточки не перебивает (обычно это чужой объект, склеенный по похожему тексту)
+        other = ((d.get("type") and cur_d.get("type") and d["type"] != cur_d["type"] and {d["type"], cur_d["type"]} != {"flat", "new"})
+                 or (d.get("rooms") is not None and cur_d.get("rooms") is not None and d["rooms"] != cur_d["rooms"]))
+        jump = bool(d["price"] and cur_d["price"] and not cur_d.get("price_doubt")
+                    and abs(d["price"] - cur_d["price"]) / cur_d["price"] > 0.25)
+        if ts >= cur_d["last_seen"] and d["price"] and ts > (cur_d.get("owner_edited_at") or 0) \
+                and not other and not jump and not (d.get("price_doubt") and not cur_d.get("price_doubt")):
             if not cur_d.get("price_fixed") or d["price"] not in (cur_d.get("price_wrong"), cur_d["price"]):
                 new_price = d["price"] != cur_d["price"]
                 merged["price"] = d["price"]   # исправленную админом цену меняет только действительно новая цена
@@ -180,7 +191,8 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
                    last_seen=MAX(last_seen, ?), first_seen=MIN(first_seen, ?), seen_count=seen_count+1,
                    is_active=?, sold_at=CASE WHEN ? THEN NULL ELSE sold_at END, search_text=?, geo_status=CASE WHEN ? AND geo_status NOT IN ('manual', 'feed') THEN 'pending' ELSE geo_status END,
                    room_kind=?, rooms_mask=?, article=?, extra_districts=?, phone_roles=?,
-                   description_ts=CASE WHEN ? THEN ? ELSE description_ts END
+                   description_ts=CASE WHEN ? THEN ? ELSE description_ts END,
+                   price_doubt=CASE WHEN ? THEN ? ELSE price_doubt END
                WHERE id=?""",
             (merged["rooms"], merged["area"], merged["land"], merged["floor"], merged["floors"], merged["price"],
              _price_m2(merged["price"], merged["area"]), merged["district"], merged["complex"], merged["settlement"],
@@ -189,15 +201,35 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
              merged.get("room_kind"), rooms_mask(merged.get("room_kind"), merged["rooms"]), merged.get("article"),
              json.dumps(list(dict.fromkeys(json.loads(cur_d.get("extra_districts") or "[]") + (d.get("extra_districts") or []))),
                         ensure_ascii=False), json.dumps(roles, ensure_ascii=False),
-             merged["description"] != cur_d["description"], ts, lid),
+             merged["description"] != cur_d["description"], ts,
+             merged["price"] != cur_d["price"], 1 if d.get("price_doubt") else None, lid),
         )
         d["search_text"] = merged["search_text"]
     _reindex(conn, lid, d["search_text"])
+    # «Под задатком», «забронирована» — с продажи снят сразу; новый пост без задатка возвращает объект
+    from .rules import under_deposit
+    if under_deposit(o.fragment):
+        conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'deposit' WHERE id = ? AND source NOT IN ('own', 'feed')", (lid,))
+    else:
+        conn.execute("UPDATE listings SET hidden_reason = NULL WHERE id = ? AND hidden_reason = 'deposit'", (lid,))
     conn.execute(
         "INSERT INTO listing_events (listing_id, message_id, ts, price, phones, fragment_hash, match) VALUES (?,?,?,?,?,?,?)",
         (lid, message_id, ts, d["price"], json.dumps(d["phones"]), fh, why),
     )
     return lid, why
+
+
+def hide_deposits(conn: sqlite3.Connection) -> int:
+    """Один раз (state deposit_v1): уже собранные объекты «под задатком» — снять с сайта."""
+    from .rules import under_deposit
+    n = 0
+    for r in conn.execute("""SELECT id, fragment, description FROM listings WHERE is_active = 1
+                             AND source NOT IN ('own', 'feed')""").fetchall():
+        if under_deposit(r["fragment"] or r["description"]):
+            conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'deposit' WHERE id = ?", (r["id"],))
+            n += 1
+    conn.commit()
+    return n
 
 
 def add_message(conn: sqlite3.Connection, *, source: str, text: str, ts: int | None = None,
@@ -242,7 +274,7 @@ def process_message(conn: sqlite3.Connection, message_id: int, use_llm: bool | N
         for lid in listing_ids:
             conn.execute(
                 "UPDATE listings SET last_seen = MAX(last_seen, ?), seen_count = seen_count + 1, "
-                "is_active = CASE WHEN hidden_reason = 'admin' THEN 0 ELSE 1 END WHERE id = ?",
+                "is_active = CASE WHEN hidden_reason IN ('admin', 'deposit') THEN 0 ELSE 1 END WHERE id = ?",
                 (m["ts"], lid))
             conn.execute(
                 "INSERT INTO listing_events (listing_id, message_id, ts, match) VALUES (?,?,?, 'repost')",

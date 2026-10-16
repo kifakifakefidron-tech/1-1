@@ -429,6 +429,8 @@
       [c.plan_today, "calendar", `дел сегодня: ${c.plan_today}`, "/planner", ""],
       [c.work, "heart", `объектов в работе: ${c.work}`, "/work", ""],
       [me.unread, "bell", `новых уведомлений: ${me.unread}`, "/notifications", ""],
+      // акт 14.10: путь к отметке «Проверенный агент» — подтвердить свой номер
+      [!me.phone_confirmed, "check", "Подтвердите свой номер — отметка «Проверенный агент» у ваших объявлений", "/my", ""],
     ].filter(([n]) => n);
     $("dToday").innerHTML = chips.length
       ? chips.map(([, icon, text, href, hot]) => `<a class="d-att${hot ? " hot" : ""}" href="${href}">${ic(icon)}${text}</a>`).join("")

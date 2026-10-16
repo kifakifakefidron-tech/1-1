@@ -58,7 +58,7 @@
     box.classList.remove("out");
     requestAnimationFrame(() => box.classList.add("in"));
     const close = () => { box.classList.add("out"); box.classList.remove("in"); };
-    let t = setTimeout(close, 15000);
+    let t = setTimeout(close, innerWidth < 768 ? 6000 : 15000);   // на телефоне — коротко, не закрывает ленту (акт 14.10)
     box.onmouseenter = () => clearTimeout(t);
     box.onmouseleave = () => { t = setTimeout(close, 6000); };
     box.querySelector(".bell-pop-x").onclick = close;

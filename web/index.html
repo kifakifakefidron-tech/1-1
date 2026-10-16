@@ -6,6 +6,15 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <title>1+1 · поиск объектов</title>
+<meta name="description" content="Вся база риелторских чатов Краснодара в одном поиске: квартиры, дома, участки и коммерция — продажа и аренда, без повторов, на карте районов, с ценой за метр.">
+<!--og--><link rel="canonical" href="{{SITE_URL}}/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="1+1 · поиск объектов">
+<meta property="og:title" content="1+1 — вся база риелторских чатов Краснодара">
+<meta property="og:description" content="Квартиры, дома, участки и коммерция из десятков риелторских чатов: без повторов, на карте районов, с ценой за метр.">
+<meta property="og:url" content="{{SITE_URL}}/">
+<meta property="og:image" content="{{SITE_URL}}/static/icon-192.png"><!--/og-->
+<link rel="icon" href="/favicon.ico" sizes="any">
 <meta name="theme-color" content="#035352">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="/static/manifest.webmanifest">
@@ -22,7 +31,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=35">
+<link rel="stylesheet" href="/static/glass.css?v=42">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -46,17 +55,6 @@
       <button type="button" class="nav-link on" data-tab="list">Объекты</button>
       <button type="button" class="nav-link" data-tab="map">Карта</button>
       <button type="button" class="nav-link" data-tab="fav" id="favBtn">Избранное</button>
-      <a class="nav-link" href="/planner" id="plannerLink" hidden>Планер</a>
-      <details class="nav-more"><summary class="nav-link">Ещё</summary>
-        <div class="nav-menu">
-          <a class="nm-narrow" href="/planner" id="plannerMore" hidden>📅 Планер</a>
-          <a class="nm-narrow" href="/admin" id="adminMore" hidden>⚙ Админка</a>
-          <a href="/market">📊 Аналитика рынка</a>
-          <a href="/clients">👥 Клиенты (CRM)</a>
-          <a href="/picks">📁 Подборки для клиентов</a>
-          <a href="/how">❓ Как это работает</a>
-        </div></details>
-      <a class="nav-link" href="/admin" id="adminLink" hidden>Админка</a>
       <button type="button" class="nav-cta" id="accountBtn">Войти</button>
     </nav>
   </div>
@@ -93,7 +91,7 @@
     <div class="q-wrap">
       <svg class="q-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="q" name="q" type="search" autocomplete="off" enterkeyhint="search"
-             placeholder="ЖК, улица, район или «2к фмр»">
+             placeholder="Как в чате: «2к фмр до 7 млн», ЖК, улица">
     </div>
     <button type="button" class="filter-btn" id="filterBtn" aria-label="Фильтры">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
@@ -179,7 +177,7 @@
   <div class="sheet-overlay" id="sheetOverlay" data-sheet-close></div>
 
   <div class="saved-row" id="savedRow" hidden>
-    <span class="saved-label">🔔 Мои поиски</span>
+    <span class="saved-label" title="Поиски, на которые вы подписались: новые объекты приходят уведомлением">🔔 Мои сохранённые поиски</span>
     <div class="saved-chips" id="savedChips"></div>
     <button type="button" class="saved-toggle" id="savedToggle">Скрыть</button>
   </div>
@@ -392,12 +390,12 @@
 <script src="/static/icons.js?v=6"></script>
 <script src="/static/pickers.js?v=10"></script>
 <script src="/static/max.js?v=2"></script>
-<script src="/static/rail.js?v=12"></script>
+<script src="/static/rail.js?v=13"></script>
 <script src="/static/combo.js?v=3"></script>
 <script src="/static/yasel.js?v=3"></script>
-<script src="/static/bell.js?v=5"></script>
+<script src="/static/bell.js?v=6"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/app.js?v=100"></script>
+<script src="/static/app.js?v=108"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>

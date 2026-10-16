@@ -14,18 +14,14 @@ import time
 from collections import defaultdict
 
 from . import geo
+from .textnorm import words
 
 _FIRST = re.compile(r"\s+1$")
 
 
 def _key(name: str | None, known: set[str] | None = None) -> str | None:
-    k = geo.complex_key(name)
-    if not k:
-        return None
-    base = _FIRST.sub("", k)
-    if base != k and (known is None or base in known):   # «X 1» → «X», если такой ЖК есть
-        return base
-    return k
+    # акт 14.10, С1: «Самолёт 1» — отдельный ЖК (раньше «X 1» склеивался с «X» и номер очереди терялся)
+    return geo.complex_key(name)
 
 
 def _pick(variants: dict[str, tuple[int, int]]) -> str:
@@ -63,6 +59,57 @@ def run(conn: sqlite3.Connection, apply: bool = False) -> dict:
             "examples": merged[:40], "applied": apply}
 
 
+_UNIT_AFTER = re.compile(r"^(?:к|ком\w*|кв\w*|эт\w*|м|м2|мин\w*|млн|тыс|т|р|руб\w*|год\w*|г|сот\w*|сек\w*|лит\w*|корп\w*|дом\w*|х|я|й)$")
+
+
+def with_number(name: str | None, text: str | None) -> str | None:
+    """«Самолёт» + в тексте «ЖК Самолёт-1» / «Самолет 1» → «Самолёт 1» (номер очереди не теряем; акт 14.10, С1).
+    Номер — только если он идёт сразу за названием и это не «2 комн», «5 эт», «3 млн»; разных номеров — не гадаем."""
+    if not name or not text or re.search(r"\d\s*$", name):
+        return name
+    base = words(re.sub(r"\([^()]*\)", " ", name))
+    if not base:
+        return name
+    toks = words(text).split()
+    bt = base.split()
+    found = set()
+    for i in range(len(toks) - len(bt)):
+        if toks[i:i + len(bt)] != bt:
+            continue
+        j = i + len(bt)
+        if j < len(toks) and re.fullmatch(r"\d{1,2}", toks[j]) and 0 < int(toks[j]) < 30:
+            nxt = toks[j + 1] if j + 1 < len(toks) else ""
+            if not _UNIT_AFTER.match(nxt) and not nxt.isdigit():   # «Достояние 15/22 этаж» — это этаж
+                found.add(int(toks[j]))
+    return f"{name} {found.pop()}" if len(found) == 1 else name
+
+
+def restore_numbers(conn: sqlite3.Connection, examples: int = 20) -> dict:
+    """Один раз: ЖК, у которых номер очереди потерялся («Самолёт 1» → «Самолет»), — по тексту объявления (журнал, откат)."""
+    now = int(time.time())
+    n, shown = 0, []
+    from .ingest import _reindex, make_search_text, make_title
+    for r in conn.execute("""SELECT * FROM listings WHERE complex IS NOT NULL AND admin_fixed = 0
+                             AND source NOT IN ('own', 'feed')""").fetchall():
+        new = with_number(r["complex"], r["fragment"] or r["description"])
+        if new == r["complex"]:
+            continue
+        d = {**dict(r), "complex": new}
+        d["title"] = make_title(d)
+        d["search_text"] = make_search_text(d)
+        conn.execute("UPDATE listings SET complex = ?, title = ?, search_text = ? WHERE id = ?",
+                     (new, d["title"], d["search_text"], r["id"]))
+        _reindex(conn, r["id"], d["search_text"])
+        conn.execute("INSERT INTO listing_edits (listing_id, user_id, ts, field, old, new, src) VALUES (?,?,?,?,?,?,?)",
+                     (r["id"], 0, now, "complex", json.dumps(r["complex"], ensure_ascii=False),
+                      json.dumps(new, ensure_ascii=False), "ЖК: номер очереди"))
+        n += 1
+        if len(shown) < examples:
+            shown.append({"id": r["id"], "before": r["complex"], "after": new})
+    conn.commit()
+    return {"listings": n, "examples": shown}
+
+
 def canonical(conn: sqlite3.Connection, name: str | None) -> str | None:
     """Новое объявление: если такой ЖК уже есть в базе под другим написанием — берём принятое."""
     if not name:
@@ -96,12 +143,15 @@ def _rekey(conn: sqlite3.Connection) -> int:
 
 
 def maybe_run(conn: sqlite3.Connection) -> dict | None:
-    if conn.execute("SELECT 1 FROM state WHERE key = 'cx_norm_v2'").fetchone():
+    if conn.execute("SELECT 1 FROM state WHERE key = 'cx_norm_v3'").fetchone():
         return None
+    # v3 (акт 14.10): ключ без пробелов и латиницы, «Самолёт 1» ≠ «Самолёт» — сначала вернуть потерянные номера очередей
+    numbers = restore_numbers(conn)
     res = run(conn, apply=True)
     res["rekeyed"] = _rekey(conn)
+    res["numbers"] = numbers
     conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('cx_norm_report', ?)",
                  (json.dumps({**res, "ts": int(time.time())}, ensure_ascii=False),))
-    conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('cx_norm_v2', '1')")
+    conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('cx_norm_v3', '1')")
     conn.commit()
     return res

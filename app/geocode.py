@@ -106,8 +106,8 @@ def learn_keys(row) -> list[tuple[str, str]]:
     keys = []
     street, house = _street_key(row["street"]), words(row["house"] or "").replace(" ", "")
     if street and house:
-        place = words(row["settlement"] or "")
-        keys.append((f"addr:{place}|{street}|{house}", f"{row['street']}, {row['house']}"))
+        from .learning import place_key
+        keys.append((f"addr:{place_key(row['settlement'])}|{street}|{house}", f"{row['street']}, {row['house']}"))
     if row["complex"]:
         k = geo.complex_key(row["complex"])
         if k:

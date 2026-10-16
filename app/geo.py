@@ -331,16 +331,31 @@ def set_custom_districts(items: list[tuple[str, list[str]]], renames: dict[str, 
         _streets.cache_clear()
 
 
+_LAT = dict(zip("abcdefghiklmnopqrstuvwyz", "абкдефгхиклмнопкрстуввиз")) | {"j": "дж", "x": "кс"}
+
+
+def _cx_words(name: str) -> str:
+    """Название ЖК → слова для ключа: разрядка, адрес и пояснение в скобках («Альфа (Кино)», «URAL (Урал)»; «(на Обрывной)»
+    оставляем), слитное «СказкаГрад», латиница → кириллица («URAL» = «Урал»), «3 очередь» = «3»."""
+    s = _ADDR_PAREN.sub(" ", unspace(name))
+    s = re.sub(r"\((?!\s*на\s)[^()]*\)", " ", s)
+    s = re.sub(r"([а-яё])([А-ЯЁ])", r"\1 \2", s)
+    w = re.sub(rf"^{_JK_MARKER}\s+", "", words(s))
+    w = "".join(_LAT.get(ch, ch) for ch in w)
+    w = re.sub(r"\b(\d+)\s*(?:я|й)?\s+(?:очередь|оч)\b", r"\1", w)
+    return " ".join(re.sub(r"\b(?:очередь|оч)\s+(\d+)\b", r"\1", w).split())
+
+
 def complex_key(name: str | None) -> str | None:
-    """Ключ ЖК для фильтра: «ЖК Самолёт-2», «самолет 2» и «Самолет 2» — один и тот же ЖК."""
+    """Ключ ЖК для фильтра и склейки написаний — без пробелов: «ЖК Самолёт-2» = «самолет 2» = «Самолет2»;
+    «Акварели 2» = «Акварели2»; «Новый Город» = «Новыйгород»; «URAL (Урал)» = «Урал (Ural)». «Самолёт 1» ≠ «Самолёт»."""
     if not name:
         return None
-    w = re.sub(rf"^{_JK_MARKER}\s+", "", words(_ADDR_PAREN.sub(" ", unspace(name))))
-    # «Самолёт 3 очередь», «3-я очередь», «очередь 3», «3 оч» → «самолет 3»
-    w = re.sub(r"\b(\d+)\s*(?:я|й)?\s+(?:очередь|оч)\b", r"\1", w)
-    w = " ".join(re.sub(r"\b(?:очередь|оч)\s+(\d+)\b", r"\1", w).split())
+    w = _cx_words(name)
     rec = resolve_complex(w)
-    return words(rec.name) if rec else w
+    if rec:
+        w = _cx_words(rec.name)
+    return w.replace(" ", "") or None
 
 
 # ─── адрес отдельной строкой (без «ул.» и «ЖК») ─────────────────────────────

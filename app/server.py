@@ -188,13 +188,13 @@ def index(request: Request, body: dict | None = None):
     headers = {"Cache-Control": "no-cache"}
     oid = _num(request.query_params.get("open"), int)
     ref = re.sub(r"[^\w-]", "", request.query_params.get("ref", ""))[:20]
+    html_text = (WEB / "index.html").read_text(encoding="utf-8").replace("{{SITE_URL}}", config.SITE_URL)
     if not oid:
-        resp = FileResponse(WEB / "index.html", headers=headers)
+        resp = Response(html_text, media_type="text/html; charset=utf-8", headers=headers)
         if ref:   # «Приведи коллегу»: запомнить, кто пригласил, до входа
             resp.set_cookie("ref", ref, max_age=30 * 86400, httponly=True, samesite="lax")
         return resp
     # Ссылка на объект («Поделиться»): превью в WhatsApp/Telegram — название, цена, место, фото. Без телефонов.
-    html_text = (WEB / "index.html").read_text(encoding="utf-8")
     r = db.get().execute("SELECT * FROM listings WHERE id = ?", (oid,)).fetchone()
     if r is not None:
         place = " · ".join(x for x in (f"ЖК {r['complex']}" if r["complex"] else None, r["district"],
@@ -205,14 +205,36 @@ def index(request: Request, body: dict | None = None):
         if img.startswith("/"):
             img = config.SITE_URL + img
         esc = lambda v: html.escape(str(v), quote=True)  # noqa: E731
-        meta = (f'<meta property="og:type" content="website">'
+        url = f"{config.SITE_URL}/?open={oid}"
+        desc = " ".join(parser.client_text(r["description"]).split())[:200] or place or "Объект на 1+1"
+        meta = (f'<link rel="canonical" href="{esc(url)}">'
+                f'<meta property="og:type" content="website">'
                 f'<meta property="og:title" content="{esc(title)}">'
-                f'<meta property="og:description" content="{esc(place or "Объект на 1+1")}">'
+                f'<meta property="og:description" content="{esc(place or desc)}">'
                 f'<meta property="og:image" content="{esc(img)}">'
-                f'<meta property="og:url" content="{esc(config.SITE_URL)}/?open={oid}">'
+                f'<meta property="og:url" content="{esc(url)}">'
                 f'<meta property="og:site_name" content="1+1 · поиск объектов">')
-        html_text = html_text.replace("<title>1+1 · поиск объектов</title>",
-                                      f"<title>{esc(title)} · 1+1</title>{meta}", 1)
+        # Schema.org: предложение (цена, адрес) — для поиска Яндекса и Google; без телефонов
+        ld = {"@context": "https://schema.org", "@type": "Offer", "name": r["title"], "url": url,
+              "description": desc, "priceCurrency": "RUB", "image": img,
+              "availability": "https://schema.org/InStock" if r["is_active"] else "https://schema.org/SoldOut",
+              "itemOffered": {"@type": "Accommodation" if r["type"] in ("flat", "new", "room", "house") else "Place",
+                              "name": r["title"],
+                              **({"floorSize": {"@type": "QuantitativeValue", "value": r["area"], "unitCode": "MTK"}} if r["area"] else {}),
+                              **({"numberOfRooms": r["rooms"]} if r["rooms"] is not None else {}),
+                              "address": {"@type": "PostalAddress", "addressLocality": r["settlement"] or "Краснодар",
+                                          "addressRegion": "Краснодарский край", "addressCountry": "RU",
+                                          **({"streetAddress": r["street"]} if r["street"] else {})},
+                              **({"geo": {"@type": "GeoCoordinates", "latitude": r["lat"], "longitude": r["lon"]}}
+                                 if r["lat"] is not None else {})}}
+        if r["price"] and not r["price_doubt"]:
+            ld["price"] = r["price"]
+        meta += ('<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace("</", "<\\/")
+                 + "</script>")
+        html_text = re.sub(r"<!--og-->.*?<!--/og-->", lambda _m: meta, html_text, count=1, flags=re.S)
+        html_text = html_text.replace("<title>1+1 · поиск объектов</title>", f"<title>{esc(title)} · 1+1</title>", 1)
+        html_text = re.sub(r'<meta name="description" content="[^"]*">',
+                           lambda _m: f'<meta name="description" content="{esc(desc)}">', html_text, count=1)
     return Response(html_text, media_type="text/html; charset=utf-8", headers=headers)
 
 
@@ -345,6 +367,9 @@ def api_listings(request: Request, body: dict | None = None):
         qr.hide_user = hider
         res = search.search(db.get(), qr, now, False)
         hooks.annotate(db.get(), res["items"])   # «ниже рынка на N %»
+        if qr.q:   # как поняли фразу из строки поиска — чипами над выдачей
+            ph = search.parse_phrase(qr.q, qr.deal)
+            res["understood"] = {"chips": ph["chips"], "text": ph["text"], "deal": ph["deal"]}
         res["now"] = now  # от этого момента страница считает «новые объекты»
         return res
     if request.query_params.get("since") or hider:
@@ -399,13 +424,14 @@ def api_listing(request: Request, body: dict | None = None):
         roles = json.loads(row["phone_roles"] or "{}")
         d["sender_phone"] = next((p for p, role in roles.items() if role == "sender" and p not in d["phones"]), None)
     # текст объявления старее цены (цена обновилась позже текста) — честно говорим об этом в карточке
-    if row["description_ts"] and row["price_changed_at"] and row["price_changed_at"] > row["description_ts"]:
+    # акт 14.10, Б2: в тексте другая цена — плашка всегда (не только когда цена обновилась позже текста)
+    if not row["price_fixed"]:
         from .p0fix import price_gap
         tp = price_gap(row["price"], row["description"], row["deal"])
         if tp:
-            d["text_price"] = {"price": tp, "ts": row["description_ts"]}
+            d["text_price"] = {"price": tp, "ts": row["description_ts"] or row["last_seen"]}
     d["can_edit"] = bool(user) and agent.can_edit(conn, user, row)[0]
-    d["market"] = hooks.market_for(conn, d)
+    d["market"] = hooks.market_for(conn, d) if not row["price_doubt"] else None
     d["same"] = hooks.same_elsewhere(conn, row)
     d["note"] = hooks.get_note(conn, user["id"], lid) if user else None
     d["status"] = hooks.get_status(conn, user["id"], lid) if user else None
@@ -414,7 +440,8 @@ def api_listing(request: Request, body: dict | None = None):
     d["pairs"] = clients.for_listing(conn, user["id"], lid) if user else []
     d["work_ctx"] = worklog.context(conn, user["id"], lid) if user else None
     # «Покупатели под объект» — только админу (решение Артёма 11.10)
-    d["buyers"] = buyers.for_listing(conn, {**dict(row), "extra_districts": d.get("extra_districts") or []}, access)         if user and user["is_admin"] else []
+    # акт 14.10, Б4: «покупатели из чатов» подходили ко всему (реклама, чужие продажи) — теперь ваши клиенты из CRM
+    d["fit_clients"] = clients.fits_listing(conn, user["id"], lid) if user else []
     d["favorite"] = bool(user and conn.execute(
         "SELECT 1 FROM favorites WHERE user_id = ? AND listing_id = ?", (user["id"], lid)).fetchone())
     return JSONResponse(d)
@@ -787,6 +814,8 @@ def api_admin_overview(request: Request, body: dict | None = None):
         "price": config.SUB_PRICE, "period_days": config.SUB_DAYS,
         "p0_report": json.loads(db.get_state(conn, "p0_report") or "null"),
         "cx_report": json.loads(db.get_state(conn, "cx_norm_report") or "null"),
+        "price_report": json.loads(db.get_state(conn, "price_fix_report") or "null"),
+        "geo_cleanup": json.loads(db.get_state(conn, "geo_cleanup_report") or "null"),
         "feed_synced": int(db.get_state(conn, "feed_synced") or 0),
     })
 
@@ -2245,6 +2274,56 @@ def api_add_message(request: Request, body: dict | None = None):
     return JSONResponse(ingest.process_message(conn, mid))
 
 
+
+def robots_txt(request: Request, body: dict | None = None):
+    """Поисковикам: главная, объекты и открытые страницы — можно; кабинеты, админка, API и подборки клиентов — нет."""
+    lines = ["User-agent: *", "Allow: /", "Disallow: /api/", "Disallow: /admin", "Disallow: /fix", "Disallow: /learn",
+             "Disallow: /c/", "Disallow: /cabinet", "Disallow: /clients", "Disallow: /picks", "Disallow: /planner",
+             "Disallow: /work", "Disallow: /my", "Disallow: /settings", "Disallow: /notifications", "Disallow: /pay",
+             "Disallow: /*?ref=", "", f"Sitemap: {config.SITE_URL}/sitemap.xml"]
+    return Response("\n".join(lines) + "\n", media_type="text/plain; charset=utf-8")
+
+
+def sitemap_xml(request: Request, body: dict | None = None):
+    """Карта сайта: открытые страницы и все объекты на сайте (до 45 000)."""
+    from xml.sax.saxutils import escape
+    base = config.SITE_URL
+    urls = [(f"{base}/", None), (f"{base}/how", None), (f"{base}/market", None), (f"{base}/privacy", None), (f"{base}/terms", None)]
+    for deal in ("sale", "rent"):
+        w, p = search._where(search.Query(deal=deal), int(time.time()))
+        urls += [(f"{base}/?open={i}", ts) for i, ts in db.get().execute(
+            f"SELECT l.id, l.last_seen FROM listings l WHERE {w} ORDER BY l.last_seen DESC LIMIT 22500", p)]
+    body_xml = "".join(f"<url><loc>{escape(u)}</loc>"
+                       + (f"<lastmod>{time.strftime('%Y-%m-%d', time.gmtime(ts))}</lastmod>" if ts else "") + "</url>"
+                       for u, ts in urls)
+    return Response('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+                    + body_xml + "</urlset>", media_type="application/xml; charset=utf-8",
+                    headers={"Cache-Control": "public, max-age=3600"})
+
+
+def favicon_ico(request: Request, body: dict | None = None):
+    """Старые браузеры и Яндекс просят /favicon.ico — отдаём значок 1+1 (PNG подходит)."""
+    return FileResponse(WEB / "icon-192.png", media_type="image/png", headers={"Cache-Control": "public, max-age=604800"})
+
+
+_NOT_FOUND_HTML = """<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Страница не найдена · 1+1</title>
+<meta name="robots" content="noindex"><link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#03302f;color:#f3e8bc;
+font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;text-align:center;padding:16px}
+a{color:#035352;background:#f3e8bc;border-radius:999px;padding:10px 20px;text-decoration:none;font-weight:600;display:inline-block;margin:6px}
+a.l{background:transparent;color:#f3e8bc;border:1px solid rgba(243,232,188,.4)}b{font-size:56px;display:block;line-height:1}</style></head>
+<body><main><b>404</b><h1>Такой страницы нет</h1><p>Возможно, ссылка устарела или объект уже снят с продажи.</p>
+<a href="/">К поиску объектов</a><a class="l" href="/how">Как это работает</a></main></body></html>"""
+
+
+async def _not_found(request: Request, exc: Exception):
+    """404: для страниц — понятная страница с шапкой и ссылкой на поиск; для API — как раньше, JSON."""
+    if request.url.path.startswith(("/api/", "/static/", "/photos/")):
+        return JSONResponse({"detail": "не найдено"}, status_code=404)
+    return Response(_NOT_FOUND_HTML, status_code=404, media_type="text/html; charset=utf-8")
+
+
 routes = [
     Route("/", threaded(index)),
     Route("/admin", threaded(admin_page)),
@@ -2349,6 +2428,9 @@ routes = [
     Route("/api/admin/phones", threaded(api_admin_phones)),
     Route("/api/admin/listings/{id:int}/place", threaded(api_admin_place), methods=["POST"]),
     Route("/api/admin/place-queue", threaded(api_admin_place_queue), methods=["GET", "POST"]),
+    Route("/robots.txt", threaded(robots_txt)),
+    Route("/sitemap.xml", threaded(sitemap_xml)),
+    Route("/favicon.ico", threaded(favicon_ico)),
     Mount("/static", StaticFiles(directory=WEB), name="static"),
     Route("/photos/{id:int}/{name}", threaded(photo_file)),
 ]
@@ -2362,4 +2444,4 @@ async def _server_error(request: Request, exc: Exception):
                 f"пришлите скриншот.", 500)
 
 
-app = Starlette(routes=routes, exception_handlers={Exception: _server_error})
+app = Starlette(routes=routes, exception_handlers={404: _not_found, Exception: _server_error})

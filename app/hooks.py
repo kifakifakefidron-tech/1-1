@@ -31,6 +31,8 @@ SEND_EVERY_S = 3 * 3600   # не чаще одного письма по под�
 _market: dict = {"t": 0.0, "data": {}}
 _market_lock = threading.Lock()
 FLAT = ("flat", "new")
+HOT_MIN_N = 15     # акт 14.10, С6: «ниже рынка» — только если сравнимых объектов не меньше 15
+HOT_MIN_DIFF = -15  # …и дешевле медианы хотя бы на 15 %
 
 
 def _group(t: str | None) -> str:
@@ -46,7 +48,8 @@ def market(conn: sqlite3.Connection) -> dict:
             return _market["data"]
         buckets: dict[tuple, list[int]] = {}
         for r in conn.execute("""SELECT deal, type, complex, district, price_m2 FROM listings
-                                 WHERE is_active = 1 AND price_m2 IS NOT NULL AND type IN ('flat', 'new')"""):
+                                 WHERE is_active = 1 AND price_m2 IS NOT NULL AND type IN ('flat', 'new')
+                                 AND price_doubt IS NOT 1"""):
             if r["complex"]:
                 buckets.setdefault((r["deal"], "cx", geo.complex_key(r["complex"])), []).append(r["price_m2"])
             if r["district"]:
@@ -83,9 +86,10 @@ def market_for(conn: sqlite3.Connection, o: dict) -> dict | None:
 def update_market_diff(conn: sqlite3.Connection) -> int:
     """Записать в listings.market_diff разницу с рынком (для фильтра «🔥 Горячее»). Меняем только изменившееся."""
     changed = []
-    for r in conn.execute("SELECT id, type, deal, complex, district, price_m2, market_diff FROM listings WHERE is_active = 1"):
-        mk = market_for(conn, dict(r))
-        diff = mk["diff"] if mk else None
+    for r in conn.execute("""SELECT id, type, deal, complex, district, price_m2, market_diff, price_doubt FROM listings
+                             WHERE is_active = 1"""):
+        mk = market_for(conn, dict(r)) if not r["price_doubt"] else None
+        diff = mk["diff"] if mk and mk["n"] >= HOT_MIN_N else None   # мало сравнимых — «ниже рынка» не считаем
         if diff != r["market_diff"]:
             changed.append((diff, r["id"]))
     conn.executemany("UPDATE listings SET market_diff = ? WHERE id = ?", changed)
@@ -96,8 +100,10 @@ def update_market_diff(conn: sqlite3.Connection) -> int:
 def annotate(conn: sqlite3.Connection, items: list[dict]) -> list[dict]:
     """Для карточек в списке: «ниже рынка на N %» (только заметная разница)."""
     for it in items:
-        mk = market_for(conn, it)
-        it["market_diff"] = mk["diff"] if mk and mk["diff"] <= -7 else None
+        mk = market_for(conn, it) if not it.get("price_doubt") else None
+        ok = mk and mk["diff"] <= HOT_MIN_DIFF and mk["n"] >= HOT_MIN_N
+        it["market_diff"] = mk["diff"] if ok else None
+        it["market_n"] = mk["n"] if ok else None   # «ниже рынка на 18 % · по 23 объектам»
     return items
 
 
@@ -290,6 +296,11 @@ def list_saved(conn: sqlite3.Connection, user_id: int) -> list[dict]:
                              WHERE user_id = ? AND active = 1 ORDER BY id DESC""", (user_id,)):
         d = dict(r)
         d["url"] = search_url(r)
+        try:   # акт 14.10: у сохранённого поиска — сколько новых за сутки
+            now = int(time.time())
+            d["new_24h"] = _new_since(conn, d, now - DAY, now, size=1)["total"]
+        except Exception:  # noqa: BLE001
+            d["new_24h"] = 0
         out.append(d)
     return out
 

@@ -216,3 +216,11 @@ body.c-dragging .c-col { transition: background .2s, border-color .2s, transform
 .c-rep-copy { margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; }
 .c-rep-copy svg { width: 14px; height: 14px; }
 @media (max-width: 480px) { .c-rep { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* Карточка клиента на телефоне — свободнее (акт 14.10) */
+@media (max-width: 480px) {
+  .c-dlg { width: 100vw; max-width: 100vw; max-height: 100dvh; border-radius: 22px 22px 0 0; }
+  .c-dlg-in { padding: 16px 12px 20px; }
+  .c-dlg .chips, .c-dlg .c-row, .c-dlg .c-acts { flex-wrap: wrap; }
+  .c-dlg input, .c-dlg select, .c-dlg textarea { font-size: 16px; }   /* без автоувеличения в iPhone */
+}

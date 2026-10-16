@@ -144,5 +144,6 @@ def test_price_history_and_hot_filter(conn, add):
     import time as _t
     hot = s.search(conn, s.Query(hot=True), int(_t.time()), False)
     assert lid in [i["id"] for i in hot["items"]]   # цена снизилась за неделю
+    # акт 14.10, С6: одно слово «срочно» не делает объект «горячим» — нужно ещё и дешевле рынка
     add("СРОЧНО! 1-к квартира 38 м², 2/5 эт., ул. Ставропольская 10. 4 млн. 89184445566")
-    assert hot["total"] + 1 == s.search(conn, s.Query(hot=True), int(_t.time()), False)["total"]
+    assert hot["total"] == s.search(conn, s.Query(hot=True), int(_t.time()), False)["total"]

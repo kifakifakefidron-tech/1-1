@@ -404,7 +404,8 @@
     if (o.prev_price && o.price && o.prev_price > o.price && o.price_changed_at > now - 14 * 86400) {
       b.push(`<span class="mark down">Цена ↓ ${esc(fmtShortPrice(o.prev_price - o.price, o.deal))}</span>`);
     }
-    if (o.market_diff != null) b.push(`<span class="mark good">ниже рынка на ${Math.abs(o.market_diff)}%</span>`);
+    if (o.market_diff != null) b.push(`<span class="mark good" title="${o.market_n ? `сравнили с ${o.market_n} похожими объектами` : ""}">ниже рынка на ${Math.abs(o.market_diff)}%</span>`);
+    if (o.price_doubt) b.push(`<span class="mark doubt" title="Цена в объявлении записана неоднозначно — уточните у агента">цена под вопросом</span>`);
     return b.length ? `<div class="marks">${b.join("")}</div>` : "";
   }
 
@@ -496,7 +497,7 @@
     const m2 = o.price_m2 && o.deal !== "rent" ? `<div class="price-m2">${num(o.price_m2)} ₽/м²</div>` : "";
     const n = (o.photos || []).length;
     const photo = n
-      ? `<div class="item-photo" data-ph="0"><img src="${esc(o.photos[0])}" alt="" loading="lazy">${n > 1 ? `
+      ? `<div class="item-photo" data-ph="0"><img src="${esc(thumb(o.photos[0]))}" data-full="${esc(o.photos[0])}" alt="${esc(o.title)}" loading="lazy" decoding="async">${n > 1 ? `
           <button type="button" class="ph-nav prev" data-ph-step="-1" aria-label="Предыдущее фото">${ic("chevron-left")}</button>
           <button type="button" class="ph-nav next" data-ph-step="1" aria-label="Следующее фото">${ic("chevron")}</button>
           <span class="ph-count">1 / ${n}</span>` : ""}</div>`
@@ -525,6 +526,33 @@
     return Array.from({ length: n }, () => `<li class="item skel" aria-hidden="true"><i></i><i></i><i></i><i></i></li>`).join("");
   }
 
+  // Миниатюра для ленты (акт 14.10): у фото с сайта СТРЕЛ (Тильда) есть готовые уменьшенные копии — 480 px вместо 250–320 КБ.
+  // Не загрузилась миниатюра — подставляем исходное фото (слушатель ошибок ниже).
+  function thumb(u) {
+    const m = /^https:\/\/static\.tildacdn\.com\/([^/]+)\/([^/?#]+)$/.exec(u || "");
+    return m ? `https://optim.tildacdn.com/${m[1]}/-/resize/480x/${m[2]}` : u;
+  }
+  document.addEventListener("error", (e) => {
+    const img = e.target;
+    if (img.tagName === "IMG" && img.dataset.full && img.src !== img.dataset.full) img.src = img.dataset.full;
+  }, true);
+  // «Пишите как в чате»: как сервис понял фразу из строки поиска — чипами; ✕ убирает эту часть из запроса
+  function understoodHTML(u) {
+    if (!u || (!u.chips.length && !u.text)) return "";
+    return `<span class="understood"><span class="u-lbl">Поняли так:</span>${u.chips.map((c) =>
+      `<button type="button" class="chip u-chip" data-u-drop="${esc(c.drop)}" title="Убрать из запроса">${esc(c.label)} <i>✕</i></button>`).join("")}
+      ${u.text ? `<span class="u-text">и в тексте: «${esc(u.text)}»</span>` : ""}</span>`;
+  }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-u-drop]");
+    if (!b) return;
+    const drop = b.dataset.uDrop.toLowerCase().replace(/ё/g, "е");
+    const q = state.q.toLowerCase().replace(/ё/g, "е");
+    const at = q.indexOf(drop);
+    state.q = (at >= 0 ? state.q.slice(0, at) + state.q.slice(at + drop.length) : state.q).replace(/\s+/g, " ").trim();
+    $("q").value = state.q;
+    refresh();
+  });
   async function loadList(append = false, keepFav = false) {
     const seq = append ? reqSeq : ++reqSeq;
     if (!append) {
@@ -557,7 +585,12 @@
     $("count").innerHTML = favMode
       ? `Избранное и в работе: ${num(data.total)} <button type="button" class="link-btn" id="favExit">← ко всем объектам</button>
         <a class="link-btn" href="/picks">📁 Подборки для клиентов</a> <a class="link-btn" href="/planner">📅 Планер</a>${crmChips()}`
-      : esc(data.total ? `${num(data.total)} ${plural(data.total, "объект", "объекта", "объектов")}` : "Ничего не нашлось");
+      : esc(data.total ? `${num(data.total)} ${plural(data.total, "объект", "объекта", "объектов")}` : "Ничего не нашлось")
+        + understoodHTML(data.understood);
+    if (!append && data.understood && data.understood.deal && data.understood.deal !== state.deal) {   // «аренда 1к» — переключатель тоже на аренду
+      state.deal = data.understood.deal;
+      syncControls();
+    }
     // Карточки появляются волной: у каждой своя небольшая задержка
     data.items.forEach((o) => known.set(o.id, o));
     const html = data.items.map((o, i) => itemHTML(o).replace('<li class="item', `<li style="--d:${Math.min(i, 12) * 35}ms" class="item`)).join("");
@@ -694,7 +727,7 @@
   function popupHTML(p, extra) {
     const head = p.complex ? `ЖК ${p.complex}` : (p.district || (p.street ? `ул. ${p.street}` : ""));
     return `<div class="map-card" data-pid="${p.id}">
-      ${p.photo ? `<img src="${esc(p.photo)}" alt="" loading="lazy">` : ""}
+      ${p.photo ? `<img src="${esc(thumb(p.photo))}" data-full="${esc(p.photo)}" alt="${esc(p.title)}" loading="lazy">` : ""}
       <div class="mc-body">
         ${head ? `<div class="mc-head">${esc(head)}</div>` : ""}
         <div class="mc-price">${esc(fmtPrice(p.price, state.deal))}</div>
@@ -770,7 +803,11 @@
     if (cluster.addLayers) cluster.addLayers(markers); else markers.forEach((m) => cluster.addLayer(m));
     const chosen = districtShapes.filter((sh) => state.districts.includes(sh.zoneName));
     const all = pts.map((p) => [p.lat, p.lon]).concat(cxs.map((c) => [c.lat, c.lon]));
-    if (all.length) map.flyToBounds(L.latLngBounds(all).pad(0.1), { maxZoom: 15, duration: 0.6 });
+    if (all.length) map.flyToBounds(coreBounds(all).pad(0.1), { maxZoom: 15, duration: 0.6 });
+    if (mapScrollPending) {
+      mapScrollPending = false;
+      requestAnimationFrame(() => { $("mapBox").scrollIntoView({ block: "start" }); map.invalidateSize(); });
+    }
     else if (chosen.length) map.flyToBounds(chosen.reduce((b, sh) => b.extend(sh.getBounds()), L.latLngBounds([])).pad(0.1), { maxZoom: 15, duration: 0.6 });   // объектов нет — к району
     setTimeout(() => map.invalidateSize(), 0);
   }
@@ -781,6 +818,19 @@
     if (!isMap) $("mapNote").hidden = true;
     $("results").hidden = isMap;
     if (isMap) $("loadMore").hidden = true;
+    // акт 14.10: карта — отдельный экран: на всю высоту, без приветствия, сразу на виду
+    const was = document.body.classList.contains("map-mode");
+    document.body.classList.toggle("map-mode", isMap);
+    if (isMap && !was) mapScrollPending = true;   // прокрутим к карте, когда она нарисуется (loadMap)
+  }
+  let mapScrollPending = false;
+  // Масштаб карты — по основной массе точек: одна далёкая точка (Тимашевск, Выселки) не уводит карту за город
+  function coreBounds(ll) {
+    if (ll.length < 20) return L.latLngBounds(ll);
+    const med = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
+    const c = [med(ll.map((p) => p[0])), med(ll.map((p) => p[1]))];
+    const near = ll.map((p) => [Math.hypot(p[0] - c[0], (p[1] - c[1]) * 0.7), p]).sort((a, b) => a[0] - b[0]);
+    return L.latLngBounds(near.slice(0, Math.ceil(near.length * 0.95)).map((x) => x[1]));
   }
 
   // ─── всё вместе ─────────────────────────────────────────────────────────
@@ -844,7 +894,7 @@
     ].filter(([, v]) => v != null && v !== "").map(([k, v]) => `<div${String(v).length > 13 ? ' class="wide"' : ""}><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("");
     const photos = o.photos || [];
     const gallery = photos.length
-      ? `<div class="dv-gal-wrap"><div class="dv-gal${photos.length === 1 ? " one" : ""}" data-lb="obj">${photos.map((u, i) => `<a href="${esc(u)}" aria-label="Открыть фото ${i + 1}"><img src="${esc(u)}" alt="" ${i ? 'loading="lazy"' : ""}></a>`).join("")}</div>
+      ? `<div class="dv-gal-wrap"><div class="dv-gal${photos.length === 1 ? " one" : ""}" data-lb="obj">${photos.map((u, i) => `<a href="${esc(u)}" aria-label="Открыть фото ${i + 1}"><img src="${esc(u)}" alt="${esc(o.title)} — фото ${i + 1}" ${i ? 'loading="lazy"' : ""}></a>`).join("")}</div>
         ${photos.length > 1 ? `<button type="button" class="ph-nav prev" data-gal-step="-1" aria-label="Назад">${ic("chevron-left")}</button>
           <button type="button" class="ph-nav next" data-gal-step="1" aria-label="Вперёд">${ic("chevron")}</button>` : ""}</div>`
       : "";
@@ -887,11 +937,10 @@
     const plans = (o.plans || []);
     const plansBody = plans.length ? `<ul class="dv-list">${plans.map((p) => `<li><a href="/planner?event=${p.id}">${PLAN_KINDS[p.kind] || ""} · ${esc(when(p.ts))}</a>${p.done ? " ✓" : ""}
       <small>${esc(p.title)}</small></li>`).join("")}</ul>` : "";
-    const buyers = o.buyers || [];
-    const buyersBody = buyers.length ? `<ul class="dv-list">${buyers.map((r) => `<li><p>${esc(r.text.length > 220 ? r.text.slice(0, 220) + "…" : r.text)}</p>
-        <small>${esc(fmtAgo(r.last_seen))}</small>${r.phones && r.phones.length ? r.phones.map((p) => `<a class="pill" href="tel:${esc(p)}">${esc(p)}</a>`).join("")
-          : r.phones_count ? `<small>· номер — по подписке</small>` : ""}</li>`).join("")}</ul>
-      <a class="dv-more" href="/requests">Все запросы покупателей →</a>` : "";
+    const fit = o.fit_clients || [];   // ваши клиенты, которым объект подходит по пожеланиям и ещё не предложен
+    const fitBody = fit.length ? `<ul class="dv-list">${fit.map((c) => `<li><a href="/clients?id=${c.id}" target="_top">${esc(c.name)}</a>
+        <small>${esc(c.stage_label)}</small>
+        <button type="button" class="pill light" data-fit-add="${c.id}" data-fit-for="${o.id}">В подборку клиента</button></li>`).join("")}</ul>` : "";
     const same = o.same || [];
     const sameBody = same.length ? `<p class="note">Тот же или очень похожий объект у других агентов — сверьте детали.</p>
       <ul class="dv-list">${same.map((s) => `<li><button type="button" class="link" data-open-id="${s.id}">${esc(fmtPrice(s.price, o.deal))}</button>
@@ -928,8 +977,10 @@
             ${address(o) ? `<a class="ya-link" href="https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(yaQuery(o))}" target="_blank" rel="noopener">на карте ↗</a>` : ""}</p>
           <div class="dv-price"><b>${esc(fmtPrice(o.price, o.deal))}</b>
             ${o.price_m2 && o.deal !== "rent" ? `<span>${esc(num(o.price_m2))} ₽/м²</span>` : ""}${marketTag}</div>
-          ${o.text_price ? `<p class="dv-tp">${ic("alert")}<span>Текст объявления от ${esc(new Date(o.text_price.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }))},
-            в нём цена ${esc(fmtPrice(o.text_price.price, o.deal))}. Актуальная цена — <b>${esc(fmtPrice(o.price, o.deal))}</b></span></p>` : ""}
+          ${o.text_price ? `<p class="dv-tp">${ic("alert")}<span>В тексте объявления (от ${esc(new Date(o.text_price.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }))})
+            другая цена — ${esc(fmtPrice(o.text_price.price, o.deal))}. В карточке — <b>${esc(fmtPrice(o.price, o.deal))}</b> (из более свежего сообщения). Уточните у агента.</span></p>` : ""}
+          ${o.price_doubt ? `<p class="dv-tp">${ic("alert")}<span>Цена записана в объявлении неоднозначно (например, «5400» без «тыс.» или «млн»). Уточните у агента —
+            в сортировках по цене и фильтрах этот объект не участвует.</span></p>` : ""}
         </div>
         <div class="dv-acts">${actions}</div>
         ${contactHTML(o)}
@@ -943,7 +994,7 @@
           ${acc("📈", "Цена и рынок", priceHint, priceBody)}
           ${acc("📝", "Работа с объектом", [(o.pairs || []).length ? `клиентов: ${o.pairs.length}` : "", (o.work || []).length ? `записей: ${o.work.length}` : o.note ? "есть заметка" : ""].filter(Boolean).join(" · "), notesBody)}
           ${acc("📅", "В планере", plans.length ? `${plans.length}` : "", plansBody)}
-          ${acc("🙋", "Покупатели под объект", `${buyers.length >= 30 ? "30+" : buyers.length}`, buyersBody, { cls: "good" })}
+          ${fit.length ? acc("🙋", "Подходит вашим клиентам", `${fit.length}`, fitBody, { cls: "good" }) : ""}
           ${acc("👥", "Похожие у других агентов", `${same.length}`, sameBody)}
           ${acc("🕓", "История", hist ? `${o.history.length}` : "", histBody)}
           ${o.can_edit ? `<a class="dv-acc-btn" href="/my/edit?id=${o.id}" target="_top"><span class="dv-acc-ic">✎</span>Изменить моё объявление</a>` : ""}
@@ -1286,7 +1337,7 @@
     $("savedToggle").textContent = savedHidden ? `Показать · ${savedList.length}` : "Скрыть";
     $("savedChips").innerHTML = savedList.map((s) =>
       `<span class="saved-chip${s.id === activeSaved ? " on" : ""}">
-        <button type="button" class="saved-open" data-saved="${s.id}" title="${esc(s.title)}">${esc(s.title)}</button>
+        <button type="button" class="saved-open" data-saved="${s.id}" title="${esc(s.title)}${s.new_24h ? ` — новых за сутки: ${s.new_24h}` : ""}">${esc(s.title)}${s.new_24h ? ` <b class="saved-new">+${s.new_24h}</b>` : ""}</button>
         <button type="button" class="saved-x" data-unsave-chip="${s.id}" aria-label="Удалить поиск «${esc(s.title)}»" title="Удалить поиск">×</button>
       </span>`).join("");
   }
@@ -1541,11 +1592,8 @@
     $("tabAccount").textContent = u ? "Кабинет" : "Войти";
     const n = u ? u.favorites.length : 0;
     $("favBtn").innerHTML = `Избранное${n ? `<i class="nav-badge">${n}</i>` : ""}`;
-    $("adminLink").hidden = !(u && u.is_admin);
-    $("plannerLink").hidden = !u;
     $("toClientBtn").hidden = !u;
-    $("plannerMore").hidden = !u;   // на узком экране — в «Ещё ▾»
-    $("adminMore").hidden = !(u && u.is_admin);
+    if (u && $("hero")) $("hero").hidden = true;   // акт 14.10: вошедшему агенту приветствие не занимает первый экран
     if ($("heroLogin")) { $("heroLogin").hidden = !!u; $("heroCabinet").hidden = !u; }
     if (window.yaSelect) window.yaSelect(!!(u && u.is_admin));   // выделил адрес → «В Яндекс Картах»
     const unread = u ? u.unread || 0 : 0;
@@ -1820,6 +1868,13 @@
       }
       if (t.dataset.clientOpen) { openClientMenu(Number(t.dataset.clientOpen)); return; }
       if (t.dataset.clientAdd) { cmAdd(Number(t.dataset.clientAdd)); return; }
+      if (t.dataset.fitAdd) {   // «Подходит вашим клиентам» → объект в подборку клиента
+        call(`/api/clients/${t.dataset.fitAdd}/add`, { listing_id: Number(t.dataset.fitFor) }).then((r) => {
+          if (!r.ok) { toast(r.data.detail || "Не получилось", 3500); return; }
+          t.replaceWith(Object.assign(document.createElement("small"), { textContent: "добавлено в подборку" }));
+        });
+        return;
+      }
       if (t.dataset.copyUrl !== undefined) {
         navigator.clipboard.writeText(t.dataset.copyUrl).then(() => toast("Ссылка на подборку скопирована"), () => prompt("Скопируйте ссылку:", t.dataset.copyUrl));
         return;
@@ -2172,7 +2227,8 @@
         box.dataset.ph = i;
         const img = box.querySelector("img");
         img.classList.remove("loaded");
-        img.src = list[i];
+        img.dataset.full = list[i];
+        img.src = thumb(list[i]);
         box.querySelector(".ph-count").textContent = `${i + 1} / ${list.length}`;
         return;
       }

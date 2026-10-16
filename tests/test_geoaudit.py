@@ -50,7 +50,7 @@ def test_bad_street_rule_found_and_disabled_with_journal(env):
     ids = [add(conn, f"2-к квартира 5{i} м², {i + 1}/9 эт., ул. Тестовая {10 + i}. 6 млн. 8918000010{i}", 45.03, 38.92) for i in range(4)]
     # ошибочное правило: «Тестовая → ФМР», хотя все дома по карте в ЦМР
     conn.execute("""INSERT INTO learned_rules (kind, key, value, label, n, ts) VALUES ('street', ?, ?, 'ул. Тестовая → ФМР', 3, 0)""",
-                 ("street:|тестовая", json.dumps({"district": "ФМР"})))
+                 ("street:краснодар|тестовая", json.dumps({"district": "ФМР"})))
     conn.execute("UPDATE listings SET district = 'ФМР'")
     conn.commit()
     rep = c.get("/api/admin/geo-audit").json()
@@ -97,19 +97,19 @@ def test_learned_points_checked_by_address_book(env):
     osmaddr._index.clear()
     osmaddr.load(conn, "\n".join(["45.0520\t38.9790\tКрасная улица\t10\t", "45.0600\t38.9900\tЗеленая улица\t5\t"]
                                  + [f"45.01\t38.91\tТестовая улица\t{i}\t" for i in range(1000)]))
-    for key, lat, lon in (("addr:|красная|10", 45.0521, 38.9791), ("addr:|зеленая|5", 45.10, 39.10),
-                          ("addr:|первомайская|36к6", 45.20, 39.20)):
+    for key, lat, lon in (("addr:краснодар|красная|10", 45.0521, 38.9791), ("addr:краснодар|зеленая|5", 45.10, 39.10),
+                          ("addr:краснодар|первомайская|36к6", 45.20, 39.20)):
         conn.execute("INSERT INTO geo_learned (key, lat, lon, n, ts, label) VALUES (?,?,?,1,0,?)", (key, lat, lon, key))
     lid = add(conn, "2-к квартира 50 м², 3/9 эт., ул. Первомайская 36к6. 6 млн. 89180000201", 45.20, 39.20)
     conn.execute("UPDATE listings SET geo_status = 'learned', geo_src = 'learned' WHERE id = ?", (lid,))
     conn.commit()
     rep = c.get("/api/admin/geo-audit").json()
     st = {p["key"]: p["status"] for p in rep["points"]}
-    assert st == {"addr:|зеленая|5": "far", "addr:|первомайская|36к6": "nostreet"} and rep["points_ok"] == 1
-    res = c.post("/api/admin/geo-audit", json={"points": ["addr:|первомайская|36к6"]}).json()
+    assert st == {"addr:краснодар|зеленая|5": "far", "addr:краснодар|первомайская|36к6": "nostreet"} and rep["points_ok"] == 1
+    res = c.post("/api/admin/geo-audit", json={"points": ["addr:краснодар|первомайская|36к6"]}).json()
     assert res["points"] == 1 and res["to_queue"] == 1
     assert conn.execute("SELECT place_conflict FROM listings WHERE id = ?", (lid,)).fetchone()[0].startswith("point:")
-    assert not conn.execute("SELECT 1 FROM geo_learned WHERE key = 'addr:|первомайская|36к6'").fetchone()
+    assert not conn.execute("SELECT 1 FROM geo_learned WHERE key = 'addr:краснодар|первомайская|36к6'").fetchone()
     osmaddr._index.clear()
 
 
@@ -121,7 +121,7 @@ def test_complex_point_from_one_house_recomputed_and_reverted(env):
     h2 = add(conn, "1-к квартира 40 м², 4/9 эт., ЖК Облака, ул. Корнилова 12. 5 млн. 89180000212", 45.0520, 38.9820)
     flat = add(conn, "Студия 25 м², 2/9 эт., ЖК Облака. 3 млн. 89180000213", 45.0500, 38.9800)
     conn.execute("UPDATE listings SET geo_status = 'learned', geo_src = 'learned' WHERE id = ?", (flat,))
-    conn.execute("INSERT INTO geo_learned (key, lat, lon, n, ts, label) VALUES ('addr:|корнилова|10', 45.05, 38.98, 1, 0, 'Корнилова, 10')")
+    conn.execute("INSERT INTO geo_learned (key, lat, lon, n, ts, label) VALUES ('addr:краснодар|корнилова|10', 45.05, 38.98, 1, 0, 'Корнилова, 10')")
     conn.execute("INSERT INTO geo_learned (key, lat, lon, n, ts, label) VALUES ('cx:облака', 45.05, 38.98, 1, 0, 'ЖК Облака')")
     conn.commit()
     cx = c.get("/api/admin/geo-audit").json()["cx_points"]
@@ -137,7 +137,7 @@ def test_complex_point_from_one_house_recomputed_and_reverted(env):
     # новая ручная точка дома больше не становится «центром ЖК»
     conn.execute("DELETE FROM geo_learned")
     geocode.learn(conn, conn.execute("SELECT * FROM listings WHERE id = ?", (h2,)).fetchone(), 45.052, 38.982)
-    assert [k for (k,) in conn.execute("SELECT key FROM geo_learned")] == ["addr:|корнилова|12"]
+    assert [k for (k,) in conn.execute("SELECT key FROM geo_learned")] == ["addr:краснодар|корнилова|12"]
 
 
 def test_complex_key_normalizes_audit_variants():
@@ -209,3 +209,14 @@ def test_post_with_two_flats_is_marked():
     lid = ingest.process_message(conn, mid, use_llm=False)["results"][0]["listing_id"]
     r = conn.execute("SELECT title, multi_units FROM listings WHERE id = ?", (lid,)).fetchone()
     assert r["multi_units"] == 2 and "2 кв. в посте" in r["title"] and "эт." not in r["title"]
+
+
+def test_one_point_with_many_houses_is_not_house_level(env):
+    """Акт 14.10, С4: в «точной» точке 3+ разных дома — это центр ЖК; точку дома ищем заново."""
+    from app import autolearn, search
+    c, conn = env
+    ids = [add(conn, f"Студия 2{i} м², {i + 2}/9 эт., ЖК Самолет, ул. Западный обход {40 + i}. 3 млн. 8918000090{i}", 45.07, 38.94)
+           for i in range(3)]
+    assert autolearn.unstack_points(conn) == 3
+    r = conn.execute("SELECT geo_src, geo_status FROM listings WHERE id = ?", (ids[0],)).fetchone()
+    assert (r[0], r[1]) == ("stacked", "pending") and search.geo_level(45.07, "pending", "stacked") == "complex"
