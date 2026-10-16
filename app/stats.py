@@ -10,7 +10,7 @@ from . import config, db
 
 TZ = 3 * 3600
 REASONS = {"stale": "не присылали 20 дней", "sold": "агент отметил «продано»", "feed": "снято с сайта СТРЕЛ",
-           "chat": "чат отключён", "expired": "кончился срок своего объявления", "other": "другое (жалоба, копия СТРЕЛ, чужой город)"}
+           "chat": "чат отключён", "deposit": "под задатком / забронирован", "expired": "кончился срок своего объявления", "other": "другое (жалоба, копия СТРЕЛ, чужой город)"}
 TYPES = {"flat": "Квартиры", "new": "Квартиры", "room": "Комнаты", "house": "Дома", "land": "Участки", "commercial": "Коммерция"}
 VISIBLE = "is_active = 1 AND (district IS NOT NULL OR complex IS NOT NULL OR street IS NOT NULL OR settlement IS NOT NULL)"
 

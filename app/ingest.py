@@ -206,11 +206,30 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         )
         d["search_text"] = merged["search_text"]
     _reindex(conn, lid, d["search_text"])
+    # «Под задатком», «забронирована» — с продажи снят сразу; новый пост без задатка возвращает объект
+    from .rules import under_deposit
+    if under_deposit(o.fragment):
+        conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'deposit' WHERE id = ? AND source NOT IN ('own', 'feed')", (lid,))
+    else:
+        conn.execute("UPDATE listings SET hidden_reason = NULL WHERE id = ? AND hidden_reason = 'deposit'", (lid,))
     conn.execute(
         "INSERT INTO listing_events (listing_id, message_id, ts, price, phones, fragment_hash, match) VALUES (?,?,?,?,?,?,?)",
         (lid, message_id, ts, d["price"], json.dumps(d["phones"]), fh, why),
     )
     return lid, why
+
+
+def hide_deposits(conn: sqlite3.Connection) -> int:
+    """Один раз (state deposit_v1): уже собранные объекты «под задатком» — снять с сайта."""
+    from .rules import under_deposit
+    n = 0
+    for r in conn.execute("""SELECT id, fragment, description FROM listings WHERE is_active = 1
+                             AND source NOT IN ('own', 'feed')""").fetchall():
+        if under_deposit(r["fragment"] or r["description"]):
+            conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'deposit' WHERE id = ?", (r["id"],))
+            n += 1
+    conn.commit()
+    return n
 
 
 def add_message(conn: sqlite3.Connection, *, source: str, text: str, ts: int | None = None,
@@ -255,7 +274,7 @@ def process_message(conn: sqlite3.Connection, message_id: int, use_llm: bool | N
         for lid in listing_ids:
             conn.execute(
                 "UPDATE listings SET last_seen = MAX(last_seen, ?), seen_count = seen_count + 1, "
-                "is_active = CASE WHEN hidden_reason = 'admin' THEN 0 ELSE 1 END WHERE id = ?",
+                "is_active = CASE WHEN hidden_reason IN ('admin', 'deposit') THEN 0 ELSE 1 END WHERE id = ?",
                 (m["ts"], lid))
             conn.execute(
                 "INSERT INTO listing_events (listing_id, message_id, ts, match) VALUES (?,?,?, 'repost')",

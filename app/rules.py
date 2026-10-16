@@ -127,8 +127,11 @@ def extract_price(text: str, deal: str = "sale", strict: bool = False) -> int | 
         after_bag = bool(re.match(r"[ \t]*(?:т\.?[ \t]?р\.?[ \t]*)?💰", text[end: end + 8]))  # та же строка
         if neg > pos and not after_bag:
             continue
+        after = text[end: end + 30]
+        # «6 млн. Задаток обсуждаем» — «задаток» уже в следующем предложении: цена остаётся ценой
         if re.match(r"[ \t]*(?:т\.?[ \t]?р\.?|тыс\.?|млн\.?|₽|руб\w*)?[ \t,]*(?:в\s+дкп|в\s+договор|обрем|разбивк|задат)",
-                    text[end: end + 30], re.IGNORECASE):
+                    after, re.IGNORECASE) and not (re.match(r"[ \t]*(?:т\.?[ \t]?р|тыс|млн|руб\w*)?\.[ \t]+[А-ЯЁ]", after)
+                                                   or (text[end - 1] == "." and re.match(r"[ \t]+[А-ЯЁ]", after))):
             continue
         labelled = pos > neg or after_bag
         if unit.startswith(("млн", "миллион", "лям", "лимон", "🍋")):
@@ -311,6 +314,18 @@ def multi_units(text: str) -> int:
         return 0
     nums = re.findall(r"\d{1,2}", m.group(0))
     return len(set(nums)) if len(set(nums)) > 1 else 0
+
+
+# Объект уже под задатком / забронирован — с продажи снят (акт 14.10). «Задаток обсуждаем», «задаток от 50 т.р.» —
+# это условия сделки, не снятие.
+_DEPOSIT = re.compile(
+    r"\b(?:под\s+задат\w*|на\s+задат\w*|в\s+задатк\w*|задат\w*\s+(?:уже\s+)?(?:внес[её]н\w*|внесли|получ\w*|взят\w*|есть)"
+    r"|(?:внес[её]н\w*|внесли|взяли|взят\w*|получ\w*|есть)\s+задат\w*|забронирован\w*|в\s+брони|на\s+брони|бронь\s+(?:до|внес)\w*)",
+    re.IGNORECASE)
+
+
+def under_deposit(text: str | None) -> bool:
+    return bool(_DEPOSIT.search(text or ""))
 
 
 def extract_floor(text: str) -> tuple[int | None, int | None]:

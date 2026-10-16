@@ -79,3 +79,15 @@ def test_phrase_search_equals_filters():
     ph = search.parse_phrase("3к не первый этаж")
     assert ph["rooms"] == [3] and ph["not_first"] and not ph["fts"]
     assert search.parse_phrase("самолет 1")["complexes"] == ["Самолет 1"]
+
+
+def test_deposit_hides_listing_and_new_post_returns_it():
+    """Акт 14.10: «под задатком» — с сайта сразу; «задаток обсуждаем» — нет; новый пост без задатка возвращает объект."""
+    conn = db.connect(":memory:")
+    now = int(time.time())
+    a = _add(conn, "2-к квартира 50 м², 3/9 эт., ЖК Мозаика. 6 млн. Задаток обсуждаем. 89180000951", "d1", now - 100)
+    assert conn.execute("SELECT is_active FROM listings WHERE id = ?", (a,)).fetchone()[0] == 1
+    b = _add(conn, "2-к квартира 50 м², 3/9 эт., ЖК Мозаика. 6 млн. ПОД ЗАДАТКОМ. 89180000951", "d2", now)
+    assert b == a and conn.execute("SELECT is_active, hidden_reason FROM listings WHERE id = ?", (a,)).fetchone()[:] == (0, "deposit")
+    _add(conn, "2-к квартира 50 м², 3/9 эт., ЖК Мозаика. 5,9 млн. Снова в продаже. 89180000951", "d3", now + 100)
+    assert conn.execute("SELECT is_active, hidden_reason FROM listings WHERE id = ?", (a,)).fetchone()[:] == (1, None)

@@ -475,13 +475,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
         _backfill_prices(conn)
         conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('price_hist_v1', '1')")
     # Сняли с сайта (любым путём) — запомнить когда и почему; вернули — забыть
-    conn.execute("""CREATE TRIGGER IF NOT EXISTS trg_removed AFTER UPDATE OF is_active ON listings
+    conn.execute("DROP TRIGGER IF EXISTS trg_removed")   # v2: причина «под задатком»
+    conn.execute("""CREATE TRIGGER IF NOT EXISTS trg_removed_v2 AFTER UPDATE OF is_active ON listings
                     WHEN OLD.is_active != NEW.is_active
                     BEGIN UPDATE listings SET
                         removed_at = CASE WHEN NEW.is_active = 0 THEN CAST(strftime('%s','now') AS INTEGER) END,
                         removed_reason = CASE WHEN NEW.is_active = 1 THEN NULL
                             WHEN NEW.sold_at IS NOT NULL THEN 'sold'
                             WHEN NEW.hidden_reason = 'chat' THEN 'chat'
+                            WHEN NEW.hidden_reason = 'deposit' THEN 'deposit'
                             WHEN NEW.source = 'feed' THEN 'feed'
                             WHEN NEW.source = 'own' THEN 'expired'
                             WHEN NEW.last_seen < CAST(strftime('%s','now') AS INTEGER) - 15 * 86400 THEN 'stale'

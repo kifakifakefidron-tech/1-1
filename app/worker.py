@@ -85,6 +85,8 @@ def tick(conn) -> dict:
     synced = feed.maybe_sync(conn)
     if synced:
         stats["feed"] = synced
+    if not db.get_state(conn, "deposit_v1"):   # один раз (акт 14.10): «под задатком» — с сайта сразу
+        db.set_state(conn, "deposit_v1", str(ingest.hide_deposits(conn)))
     from . import pricefix
     pf = pricefix.maybe_run(conn)   # один раз (акт 14.10, Б1–Б2): цены в тысячах и перебитые склейкой — отчёт в «Обзоре»
     if pf:
