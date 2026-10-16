@@ -102,7 +102,8 @@ class Known:
         self.district_poly: dict[str, list] = {}
         cx_pts: dict[str, list] = defaultdict(list)
         for r in conn.execute("""SELECT street, house, settlement, complex, lat, lon FROM listings
-                                 WHERE source = 'feed' AND geo_status = 'feed' AND lat IS NOT NULL"""):
+                                 WHERE source = 'feed' AND geo_status = 'feed' AND lat IS NOT NULL
+                                 AND COALESCE(geo_src, '') != 'stacked'"""):   # одна точка на весь ЖК — не точка дома
             p = (r["lat"], r["lon"])
             k = learning.addr_key(r["street"], r["house"], r["settlement"])
             if k:
@@ -414,6 +415,32 @@ def mark_levels(conn: sqlite3.Connection) -> int:
     return n
 
 
+STACK_MIN = 3   # акт 14.10, С4: в одной «точной» точке 3 и больше разных домов — это центр ЖК, а не дом
+
+
+def unstack_points(conn: sqlite3.Connection) -> int:
+    """Точки уровня «дом», в которых стоят разные дома (Самолёт 1–6, Дарград, Свобода в одной точке), — помечаем как
+    центр ЖК (geo_src 'stacked'), а объектам с домом ищем точку дома заново (geocode.run: дом раньше ЖК). Ручные не трогаем."""
+    from .search import geo_level
+    groups: dict = defaultdict(list)
+    for r in conn.execute("""SELECT id, lat, lon, street, house, settlement, geo_status, geo_src FROM listings
+                             WHERE is_active = 1 AND lat IS NOT NULL AND geo_status != 'manual'""").fetchall():
+        if geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house":
+            groups[(round(r["lat"], 5), round(r["lon"], 5))].append(r)
+    n = 0
+    for rows in groups.values():
+        keys = {learning.addr_key(r["street"], r["house"], r["settlement"]) for r in rows} - {None}
+        if len(keys) < STACK_MIN:
+            continue
+        for r in rows:
+            redo = r["geo_status"] != "feed" and r["street"] and r["house"]
+            conn.execute("UPDATE listings SET geo_src = 'stacked', geo_status = ? WHERE id = ?",
+                         ("pending" if redo else r["geo_status"], r["id"]))
+            n += 1
+    conn.commit()
+    return n
+
+
 def mark_multi(conn: sqlite3.Connection) -> int:
     """Один раз (state multi_v1): «этажи 2 и 6» у уже собранных — пометка «2 кв. в посте» в заголовке."""
     if conn.execute("SELECT 1 FROM state WHERE key = 'multi_v1'").fetchone():
@@ -451,8 +478,11 @@ def recheck_all(conn: sqlite3.Connection) -> dict:
     from .ingest import _reindex, make_search_text, make_title
     mark_levels(conn)
     mark_multi(conn)
+    stacked = unstack_points(conn)
     known = Known(conn)
     rep: Counter = Counter()
+    if stacked:
+        rep["stacked"] = stacked
     now = int(time.time())
     # 1) точки
     for r in conn.execute("""SELECT * FROM listings WHERE is_active = 1 AND geo_status NOT IN ('manual', 'learned', 'feed')

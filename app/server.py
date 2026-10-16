@@ -418,7 +418,8 @@ def api_listing(request: Request, body: dict | None = None):
     d["pairs"] = clients.for_listing(conn, user["id"], lid) if user else []
     d["work_ctx"] = worklog.context(conn, user["id"], lid) if user else None
     # «Покупатели под объект» — только админу (решение Артёма 11.10)
-    d["buyers"] = buyers.for_listing(conn, {**dict(row), "extra_districts": d.get("extra_districts") or []}, access)         if user and user["is_admin"] else []
+    # акт 14.10, Б4: «покупатели из чатов» подходили ко всему (реклама, чужие продажи) — теперь ваши клиенты из CRM
+    d["fit_clients"] = clients.fits_listing(conn, user["id"], lid) if user else []
     d["favorite"] = bool(user and conn.execute(
         "SELECT 1 FROM favorites WHERE user_id = ? AND listing_id = ?", (user["id"], lid)).fetchone())
     return JSONResponse(d)

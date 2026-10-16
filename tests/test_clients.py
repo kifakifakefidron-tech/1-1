@@ -104,3 +104,14 @@ def test_picks_clients_and_worklog_tied(env):
                                       "contact_name": "Анна", "contact_phone": "+79180001122"}).json()
     row = conn.execute("SELECT contact_name, contact_phone FROM planner_events WHERE client_id = ?", (cid,)).fetchone()
     assert tuple(row) == ("", "")
+
+
+def test_object_shows_fitting_clients_not_chat_buyers(env):
+    """Акт 14.10, Б4: в окне объекта — ваши клиенты, которым он подходит (не «запросы из чатов»)."""
+    c, conn, other = env
+    a = add(conn, "2-к квартира 58 м², 7/16 эт., ФМР, ул. Ставропольская 12. 7,5 млн руб. 89181112299")
+    b = add(conn, "1-к квартира 40 м², 3/9 эт., ЦМР, ул. Красная 7. 5 млн. 89184445599")
+    c.post("/api/clients", json={"name": "Ирина", "kind": "buyer", "rooms": [2], "districts": ["фмр"], "budget_max": "8"})
+    d = c.get(f"/api/listings/{a}").json()
+    assert [x["name"] for x in d["fit_clients"]] == ["Ирина"] and "buyers" not in d
+    assert c.get(f"/api/listings/{b}").json()["fit_clients"] == []

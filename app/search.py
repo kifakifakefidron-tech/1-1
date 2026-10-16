@@ -429,11 +429,12 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
 # district — центр района; none — точки нет. На карте: дом — меткой, ЖК — одной меткой ЖК с числом объектов,
 # улица/район — не показываем (в списке «адрес уточняется»). Район по точке решает только house.
 HOUSE_SRCS = ("osm-house", "osm-near", "feed-house", "learned", "geocoder")
-COMPLEX_SRCS = ("map-cx", "feed-cx", "learned-cx", "geocoder-cx")
+COMPLEX_SRCS = ("map-cx", "feed-cx", "learned-cx", "geocoder-cx", "stacked")   # stacked — в точке 3+ разных домов
 DISTRICT_SRCS = ("map-district", "geocoder-district")
 GEO_LEVEL = f"""(CASE WHEN l.lat IS NULL THEN 'none'
-    WHEN l.geo_status IN ('manual', 'feed') THEN 'house'
+    WHEN l.geo_status = 'manual' THEN 'house'
     WHEN l.geo_src IN {COMPLEX_SRCS} THEN 'complex'
+    WHEN l.geo_status = 'feed' THEN 'house'
     WHEN l.geo_src IN {DISTRICT_SRCS} THEN 'district'
     WHEN l.geo_status = 'approx' OR l.geo_src IN ('osm-street', 'geocoder-street', 'geocoder-place') THEN 'street'
     ELSE 'house' END)"""
@@ -443,10 +444,12 @@ def geo_level(lat, status: str | None, src: str | None) -> str:
     """То же, что GEO_LEVEL, — в Python."""
     if lat is None:
         return "none"
-    if status in ("manual", "feed"):
+    if status == "manual":
         return "house"
     if src in COMPLEX_SRCS:
         return "complex"
+    if status == "feed":
+        return "house"
     if src in DISTRICT_SRCS:
         return "district"
     if status == "approx" or src in ("osm-street", "geocoder-street", "geocoder-place"):

@@ -399,6 +399,24 @@ def query_for(c: dict, user_id: int, **extra):
     return search.Query(**kw)
 
 
+def fits_listing(conn: sqlite3.Connection, user_id: int, listing_id: int, now: int | None = None) -> list[dict]:
+    """Ваши клиенты, которым подходит этот объект по пожеланиям (и он им ещё не предложен) — вместо «покупателей
+    из чатов» (акт приёмки 14.10, Б4: там была реклама и чужие продажи)."""
+    import time as _t
+
+    from . import search
+    now = now or int(_t.time())
+    out = []
+    for r in conn.execute("""SELECT * FROM clients WHERE user_id = ? AND archived = 0 AND stage NOT IN ('deal', 'lost')
+                             ORDER BY updated DESC LIMIT 100""", (user_id,)).fetchall():
+        c = dict(r)
+        qr = query_for(c, user_id)
+        where, params = search._where(qr, now)
+        if conn.execute(f"SELECT 1 FROM listings l WHERE {where} AND l.id = ?", params + [listing_id]).fetchone():
+            out.append({"id": c["id"], "name": c["name"], "stage": c["stage"], "stage_label": STAGES.get(c["stage"], "")})
+    return out
+
+
 def for_listing(conn: sqlite3.Connection, user_id: int, listing_id: int) -> list[dict]:
     """Кому из клиентов уже предложен объект (для окна объекта)."""
     return [dict(r) | {"label": PAIR.get(r["status"], r["status"])} for r in conn.execute(

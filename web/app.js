@@ -910,11 +910,10 @@
     const plans = (o.plans || []);
     const plansBody = plans.length ? `<ul class="dv-list">${plans.map((p) => `<li><a href="/planner?event=${p.id}">${PLAN_KINDS[p.kind] || ""} · ${esc(when(p.ts))}</a>${p.done ? " ✓" : ""}
       <small>${esc(p.title)}</small></li>`).join("")}</ul>` : "";
-    const buyers = o.buyers || [];
-    const buyersBody = buyers.length ? `<ul class="dv-list">${buyers.map((r) => `<li><p>${esc(r.text.length > 220 ? r.text.slice(0, 220) + "…" : r.text)}</p>
-        <small>${esc(fmtAgo(r.last_seen))}</small>${r.phones && r.phones.length ? r.phones.map((p) => `<a class="pill" href="tel:${esc(p)}">${esc(p)}</a>`).join("")
-          : r.phones_count ? `<small>· номер — по подписке</small>` : ""}</li>`).join("")}</ul>
-      <a class="dv-more" href="/requests">Все запросы покупателей →</a>` : "";
+    const fit = o.fit_clients || [];   // ваши клиенты, которым объект подходит по пожеланиям и ещё не предложен
+    const fitBody = fit.length ? `<ul class="dv-list">${fit.map((c) => `<li><a href="/clients?id=${c.id}" target="_top">${esc(c.name)}</a>
+        <small>${esc(c.stage_label)}</small>
+        <button type="button" class="pill light" data-fit-add="${c.id}" data-fit-for="${o.id}">В подборку клиента</button></li>`).join("")}</ul>` : "";
     const same = o.same || [];
     const sameBody = same.length ? `<p class="note">Тот же или очень похожий объект у других агентов — сверьте детали.</p>
       <ul class="dv-list">${same.map((s) => `<li><button type="button" class="link" data-open-id="${s.id}">${esc(fmtPrice(s.price, o.deal))}</button>
@@ -968,7 +967,7 @@
           ${acc("📈", "Цена и рынок", priceHint, priceBody)}
           ${acc("📝", "Работа с объектом", [(o.pairs || []).length ? `клиентов: ${o.pairs.length}` : "", (o.work || []).length ? `записей: ${o.work.length}` : o.note ? "есть заметка" : ""].filter(Boolean).join(" · "), notesBody)}
           ${acc("📅", "В планере", plans.length ? `${plans.length}` : "", plansBody)}
-          ${acc("🙋", "Покупатели под объект", `${buyers.length >= 30 ? "30+" : buyers.length}`, buyersBody, { cls: "good" })}
+          ${fit.length ? acc("🙋", "Подходит вашим клиентам", `${fit.length}`, fitBody, { cls: "good" }) : ""}
           ${acc("👥", "Похожие у других агентов", `${same.length}`, sameBody)}
           ${acc("🕓", "История", hist ? `${o.history.length}` : "", histBody)}
           ${o.can_edit ? `<a class="dv-acc-btn" href="/my/edit?id=${o.id}" target="_top"><span class="dv-acc-ic">✎</span>Изменить моё объявление</a>` : ""}
@@ -1845,6 +1844,13 @@
       }
       if (t.dataset.clientOpen) { openClientMenu(Number(t.dataset.clientOpen)); return; }
       if (t.dataset.clientAdd) { cmAdd(Number(t.dataset.clientAdd)); return; }
+      if (t.dataset.fitAdd) {   // «Подходит вашим клиентам» → объект в подборку клиента
+        call(`/api/clients/${t.dataset.fitAdd}/add`, { listing_id: Number(t.dataset.fitFor) }).then((r) => {
+          if (!r.ok) { toast(r.data.detail || "Не получилось", 3500); return; }
+          t.replaceWith(Object.assign(document.createElement("small"), { textContent: "добавлено в подборку" }));
+        });
+        return;
+      }
       if (t.dataset.copyUrl !== undefined) {
         navigator.clipboard.writeText(t.dataset.copyUrl).then(() => toast("Ссылка на подборку скопирована"), () => prompt("Скопируйте ссылку:", t.dataset.copyUrl));
         return;

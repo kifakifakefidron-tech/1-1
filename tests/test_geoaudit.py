@@ -209,3 +209,14 @@ def test_post_with_two_flats_is_marked():
     lid = ingest.process_message(conn, mid, use_llm=False)["results"][0]["listing_id"]
     r = conn.execute("SELECT title, multi_units FROM listings WHERE id = ?", (lid,)).fetchone()
     assert r["multi_units"] == 2 and "2 кв. в посте" in r["title"] and "эт." not in r["title"]
+
+
+def test_one_point_with_many_houses_is_not_house_level(env):
+    """Акт 14.10, С4: в «точной» точке 3+ разных дома — это центр ЖК; точку дома ищем заново."""
+    from app import autolearn, search
+    c, conn = env
+    ids = [add(conn, f"Студия 2{i} м², {i + 2}/9 эт., ЖК Самолет, ул. Западный обход {40 + i}. 3 млн. 8918000090{i}", 45.07, 38.94)
+           for i in range(3)]
+    assert autolearn.unstack_points(conn) == 3
+    r = conn.execute("SELECT geo_src, geo_status FROM listings WHERE id = ?", (ids[0],)).fetchone()
+    assert (r[0], r[1]) == ("stacked", "pending") and search.geo_level(45.07, "pending", "stacked") == "complex"
