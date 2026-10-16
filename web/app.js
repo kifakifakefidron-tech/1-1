@@ -497,7 +497,7 @@
     const m2 = o.price_m2 && o.deal !== "rent" ? `<div class="price-m2">${num(o.price_m2)} ₽/м²</div>` : "";
     const n = (o.photos || []).length;
     const photo = n
-      ? `<div class="item-photo" data-ph="0"><img src="${esc(o.photos[0])}" alt="" loading="lazy">${n > 1 ? `
+      ? `<div class="item-photo" data-ph="0"><img src="${esc(thumb(o.photos[0]))}" data-full="${esc(o.photos[0])}" alt="${esc(o.title)}" loading="lazy" decoding="async">${n > 1 ? `
           <button type="button" class="ph-nav prev" data-ph-step="-1" aria-label="Предыдущее фото">${ic("chevron-left")}</button>
           <button type="button" class="ph-nav next" data-ph-step="1" aria-label="Следующее фото">${ic("chevron")}</button>
           <span class="ph-count">1 / ${n}</span>` : ""}</div>`
@@ -526,6 +526,16 @@
     return Array.from({ length: n }, () => `<li class="item skel" aria-hidden="true"><i></i><i></i><i></i><i></i></li>`).join("");
   }
 
+  // Миниатюра для ленты (акт 14.10): у фото с сайта СТРЕЛ (Тильда) есть готовые уменьшенные копии — 480 px вместо 250–320 КБ.
+  // Не загрузилась миниатюра — подставляем исходное фото (слушатель ошибок ниже).
+  function thumb(u) {
+    const m = /^https:\/\/static\.tildacdn\.com\/([^/]+)\/([^/?#]+)$/.exec(u || "");
+    return m ? `https://optim.tildacdn.com/${m[1]}/-/resize/480x/${m[2]}` : u;
+  }
+  document.addEventListener("error", (e) => {
+    const img = e.target;
+    if (img.tagName === "IMG" && img.dataset.full && img.src !== img.dataset.full) img.src = img.dataset.full;
+  }, true);
   // «Пишите как в чате»: как сервис понял фразу из строки поиска — чипами; ✕ убирает эту часть из запроса
   function understoodHTML(u) {
     if (!u || (!u.chips.length && !u.text)) return "";
@@ -717,7 +727,7 @@
   function popupHTML(p, extra) {
     const head = p.complex ? `ЖК ${p.complex}` : (p.district || (p.street ? `ул. ${p.street}` : ""));
     return `<div class="map-card" data-pid="${p.id}">
-      ${p.photo ? `<img src="${esc(p.photo)}" alt="" loading="lazy">` : ""}
+      ${p.photo ? `<img src="${esc(thumb(p.photo))}" data-full="${esc(p.photo)}" alt="${esc(p.title)}" loading="lazy">` : ""}
       <div class="mc-body">
         ${head ? `<div class="mc-head">${esc(head)}</div>` : ""}
         <div class="mc-price">${esc(fmtPrice(p.price, state.deal))}</div>
@@ -867,7 +877,7 @@
     ].filter(([, v]) => v != null && v !== "").map(([k, v]) => `<div${String(v).length > 13 ? ' class="wide"' : ""}><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("");
     const photos = o.photos || [];
     const gallery = photos.length
-      ? `<div class="dv-gal-wrap"><div class="dv-gal${photos.length === 1 ? " one" : ""}" data-lb="obj">${photos.map((u, i) => `<a href="${esc(u)}" aria-label="Открыть фото ${i + 1}"><img src="${esc(u)}" alt="" ${i ? 'loading="lazy"' : ""}></a>`).join("")}</div>
+      ? `<div class="dv-gal-wrap"><div class="dv-gal${photos.length === 1 ? " one" : ""}" data-lb="obj">${photos.map((u, i) => `<a href="${esc(u)}" aria-label="Открыть фото ${i + 1}"><img src="${esc(u)}" alt="${esc(o.title)} — фото ${i + 1}" ${i ? 'loading="lazy"' : ""}></a>`).join("")}</div>
         ${photos.length > 1 ? `<button type="button" class="ph-nav prev" data-gal-step="-1" aria-label="Назад">${ic("chevron-left")}</button>
           <button type="button" class="ph-nav next" data-gal-step="1" aria-label="Вперёд">${ic("chevron")}</button>` : ""}</div>`
       : "";
@@ -2203,7 +2213,8 @@
         box.dataset.ph = i;
         const img = box.querySelector("img");
         img.classList.remove("loaded");
-        img.src = list[i];
+        img.dataset.full = list[i];
+        img.src = thumb(list[i]);
         box.querySelector(".ph-count").textContent = `${i + 1} / ${list.length}`;
         return;
       }
