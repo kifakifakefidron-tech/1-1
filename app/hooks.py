@@ -296,6 +296,11 @@ def list_saved(conn: sqlite3.Connection, user_id: int) -> list[dict]:
                              WHERE user_id = ? AND active = 1 ORDER BY id DESC""", (user_id,)):
         d = dict(r)
         d["url"] = search_url(r)
+        try:   # акт 14.10: у сохранённого поиска — сколько новых за сутки
+            now = int(time.time())
+            d["new_24h"] = _new_since(conn, d, now - DAY, now, size=1)["total"]
+        except Exception:  # noqa: BLE001
+            d["new_24h"] = 0
         out.append(d)
     return out
 

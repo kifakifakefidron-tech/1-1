@@ -803,7 +803,11 @@
     if (cluster.addLayers) cluster.addLayers(markers); else markers.forEach((m) => cluster.addLayer(m));
     const chosen = districtShapes.filter((sh) => state.districts.includes(sh.zoneName));
     const all = pts.map((p) => [p.lat, p.lon]).concat(cxs.map((c) => [c.lat, c.lon]));
-    if (all.length) map.flyToBounds(L.latLngBounds(all).pad(0.1), { maxZoom: 15, duration: 0.6 });
+    if (all.length) map.flyToBounds(coreBounds(all).pad(0.1), { maxZoom: 15, duration: 0.6 });
+    if (mapScrollPending) {
+      mapScrollPending = false;
+      requestAnimationFrame(() => { $("mapBox").scrollIntoView({ block: "start" }); map.invalidateSize(); });
+    }
     else if (chosen.length) map.flyToBounds(chosen.reduce((b, sh) => b.extend(sh.getBounds()), L.latLngBounds([])).pad(0.1), { maxZoom: 15, duration: 0.6 });   // объектов нет — к району
     setTimeout(() => map.invalidateSize(), 0);
   }
@@ -814,6 +818,19 @@
     if (!isMap) $("mapNote").hidden = true;
     $("results").hidden = isMap;
     if (isMap) $("loadMore").hidden = true;
+    // акт 14.10: карта — отдельный экран: на всю высоту, без приветствия, сразу на виду
+    const was = document.body.classList.contains("map-mode");
+    document.body.classList.toggle("map-mode", isMap);
+    if (isMap && !was) mapScrollPending = true;   // прокрутим к карте, когда она нарисуется (loadMap)
+  }
+  let mapScrollPending = false;
+  // Масштаб карты — по основной массе точек: одна далёкая точка (Тимашевск, Выселки) не уводит карту за город
+  function coreBounds(ll) {
+    if (ll.length < 20) return L.latLngBounds(ll);
+    const med = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
+    const c = [med(ll.map((p) => p[0])), med(ll.map((p) => p[1]))];
+    const near = ll.map((p) => [Math.hypot(p[0] - c[0], (p[1] - c[1]) * 0.7), p]).sort((a, b) => a[0] - b[0]);
+    return L.latLngBounds(near.slice(0, Math.ceil(near.length * 0.95)).map((x) => x[1]));
   }
 
   // ─── всё вместе ─────────────────────────────────────────────────────────
@@ -1320,7 +1337,7 @@
     $("savedToggle").textContent = savedHidden ? `Показать · ${savedList.length}` : "Скрыть";
     $("savedChips").innerHTML = savedList.map((s) =>
       `<span class="saved-chip${s.id === activeSaved ? " on" : ""}">
-        <button type="button" class="saved-open" data-saved="${s.id}" title="${esc(s.title)}">${esc(s.title)}</button>
+        <button type="button" class="saved-open" data-saved="${s.id}" title="${esc(s.title)}${s.new_24h ? ` — новых за сутки: ${s.new_24h}` : ""}">${esc(s.title)}${s.new_24h ? ` <b class="saved-new">+${s.new_24h}</b>` : ""}</button>
         <button type="button" class="saved-x" data-unsave-chip="${s.id}" aria-label="Удалить поиск «${esc(s.title)}»" title="Удалить поиск">×</button>
       </span>`).join("");
   }
@@ -1575,11 +1592,8 @@
     $("tabAccount").textContent = u ? "Кабинет" : "Войти";
     const n = u ? u.favorites.length : 0;
     $("favBtn").innerHTML = `Избранное${n ? `<i class="nav-badge">${n}</i>` : ""}`;
-    $("adminLink").hidden = !(u && u.is_admin);
-    $("plannerLink").hidden = !u;
     $("toClientBtn").hidden = !u;
-    $("plannerMore").hidden = !u;   // на узком экране — в «Ещё ▾»
-    $("adminMore").hidden = !(u && u.is_admin);
+    if (u && $("hero")) $("hero").hidden = true;   // акт 14.10: вошедшему агенту приветствие не занимает первый экран
     if ($("heroLogin")) { $("heroLogin").hidden = !!u; $("heroCabinet").hidden = !u; }
     if (window.yaSelect) window.yaSelect(!!(u && u.is_admin));   // выделил адрес → «В Яндекс Картах»
     const unread = u ? u.unread || 0 : 0;

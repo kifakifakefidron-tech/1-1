@@ -28,15 +28,15 @@
   const ITEMS = [
     { href: "/", icon: "search", tip: "Поиск объектов", short: "Поиск", desc: "Все объекты из чатов: фильтры, карта, районы", main: true,
       on: () => path === "/" && !params.has("fav") && !params.has("agent") },
-    { href: "/cabinet", icon: "grid", tip: "Кабинет", desc: "Ваш день: дела, ставки, курсы и биржа, новости", main: true, user: true },
+    { href: "/cabinet", icon: "grid", tip: "Кабинет", desc: "Ваш день: дела, ставки, курсы и биржа, новости", user: true },
     { href: "/my", icon: "home", tip: "Мои объекты", desc: "Свои объявления: добавить, изменить, снять", user: true, also: ["/my/edit"] },
     { href: "/clients", icon: "users", tip: "Клиенты", desc: "Клиенты по этапам, их подборки и журнал: что кому показали", main: true, user: true },
-    { href: "/work", icon: "heart", tip: "В работе", desc: "Закладки и каким клиентам объекты отправлены", main: true, user: true,
+    { href: "/work", icon: "heart", tip: "В работе", desc: "Закладки и каким клиентам объекты отправлены", user: true,
       count: (c) => c.work, countTip: (n) => `в работе: ${n}` },
     { href: "/planner", icon: "calendar", tip: "Планер", desc: "Показы, звонки и встречи с напоминаниями", main: true, user: true,
       count: (c) => c.plan_today + c.plan_overdue, countTip: (n) => `дел на сегодня и просроченных: ${n}`, hot: (c) => c.plan_overdue > 0 },
     { href: "/picks", icon: "folder", tip: "Подборки", desc: "Ссылка с объектами для клиента — только ваш контакт", user: true },
-    { href: "/market", icon: "chart", tip: "Аналитика рынка", desc: "Цена за метр по районам и ЖК, динамика" },
+    { href: "/market", icon: "chart", tip: "Аналитика рынка", short: "Аналитика", desc: "Цена за метр по районам и ЖК, динамика", main: true },
     { href: "/notifications", icon: "bell", tip: "Уведомления", desc: "Новые объекты по поискам, снижение цен", user: true, bell: true },
     { sep: true },
     { href: "/pay", icon: "card", tip: "Подписка", desc: "Доступ к номерам агентов и тарифы" },
@@ -64,11 +64,12 @@
     };
     const who = me ? (me.name || me.email || "").replace(/[<>"]/g, "") : "";
     rail.innerHTML = `<a class="rail-logo" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="38" height="38"></a>`
-      + items.map((it) => it.sep ? `<span class="rail-sep"></span>`
+      // акт 14.10: в меню — только главное (Поиск, Клиенты, Планер, Аналитика, Профиль); остальное — в «Ещё»
+      + items.filter((it) => it.main).map((it) => it.sep ? `<span class="rail-sep"></span>`
         : `<a class="rail-a${isOn(it) ? " on" : ""}${it.main ? " main" : ""}" href="${it.href}" aria-label="${it.tip}">${ic(it.icon)}<span class="rail-lbl">${it.short || it.tip}</span>${it.bell ? `<b class="rail-n" hidden></b>` : badge(it)}${tipHTML(it.tip, badge(it) ? `${it.desc} · ${it.countTip(it.count(counts))}` : it.desc)}</a>`).join("")
       + `<span class="rail-gap"></span>`
-      + `<button type="button" class="rail-a main rail-more" aria-label="Все разделы" aria-expanded="false">${ic("grid")}<span class="rail-lbl">Ещё</span></button>`
-      + (me ? `<a class="rail-ava" href="/cabinet" aria-label="Кабинет">${((me.name || me.email || "1").trim()[0] || "1").toUpperCase()}${tipHTML("Кабинет", who)}</a>`
+      + `<button type="button" class="rail-a main rail-more${items.some((it) => !it.main && !it.sep && isOn(it)) ? " on" : ""}" aria-label="Все разделы" aria-expanded="false">${ic("grid")}<span class="rail-lbl">Ещё</span><b class="rail-n" hidden></b>${tipHTML("Ещё", "Кабинет, в работе, подборки, мои объекты, уведомления, настройки")}</button>`
+      + (me ? `<a class="rail-ava" href="/cabinet" aria-label="Профиль">${((me.name || me.email || "1").trim()[0] || "1").toUpperCase()}${tipHTML("Профиль и кабинет", who)}</a>`
         : `<a class="rail-a main" href="/?login=1" aria-label="Войти">${ic("user")}${tipHTML("Войти", "Неделя бесплатно — без карты")}</a>`);
     document.body.prepend(rail);
     document.body.classList.add("has-rail");
@@ -79,8 +80,8 @@
     const sheet = document.createElement("div");
     sheet.className = "rail-sheet";
     sheet.setAttribute("popover", "auto");
-    sheet.innerHTML = `<div class="rs-in"><span class="rs-grab"></span><b class="rs-h">Разделы</b>`
-      + items.filter((it) => !it.sep).map((it) => `<a class="rs-a${isOn(it) ? " on" : ""}" href="${it.href}">${ic(it.icon)}<span><b>${it.tip}</b><small>${it.desc || ""}</small></span>${badge(it)}</a>`).join("")
+    sheet.innerHTML = `<div class="rs-in"><span class="rs-grab"></span><b class="rs-h">Все разделы</b>`
+      + items.filter((it) => !it.sep && !it.main).map((it) => `<a class="rs-a${isOn(it) ? " on" : ""}" href="${it.href}">${ic(it.icon)}<span><b>${it.tip}</b><small>${it.desc || ""}</small></span>${badge(it)}</a>`).join("")
       + `</div>`;
     document.body.appendChild(sheet);
     const more = rail.querySelector(".rail-more");
