@@ -149,6 +149,9 @@ def client_text(description: str | None) -> str:
         line = _client_case(_client_chars(raw))
         if not re.search(r"[A-Za-zА-ЯЁа-яё0-9]", line):
             continue
+        # строка — только число / цена («5100», «7550 💰», «Цена 5 100 000») — цена клиенту видна в карточке (акт 14.10, С5)
+        if re.fullmatch(r"(?i)\s*(?:цена|стоимость)?\s*[:\-–—]?\s*[\d\s.,]+\s*(?:млн|тыс|т\.?р\.?|р\.?|руб\w*|₽)?\.?\s*", line):
+            continue
         key = line.lower()
         if key in seen:          # «Заклад обсуждаем» ×2 и т. п.
             continue

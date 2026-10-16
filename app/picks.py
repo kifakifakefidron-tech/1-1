@@ -281,18 +281,25 @@ def react(conn: sqlite3.Connection, token: str, listing_id: int, kind: str, text
         if kind in clients.REACTION_STATUS:
             clients.set_pair(conn, c["user_id"], c["client_id"], listing_id, clients.REACTION_STATUS[kind], pick_id=c["id"],
                              auto=True, reaction=kind, reaction_text=text or None, commit=False)
-        else:
-            conn.execute("UPDATE client_items SET reaction = ?, reaction_text = ?, updated = ? WHERE client_id = ? AND listing_id = ?",
-                         (kind, text, now, c["client_id"], listing_id))
+        else:   # вопрос не перезаписывает ответ клиента («нравится» остаётся) — он в истории и в уведомлении
+            conn.execute("UPDATE client_items SET question = ?, updated = ? WHERE client_id = ? AND listing_id = ?",
+                         (text, now, c["client_id"], listing_id))
         conn.execute("INSERT INTO client_log (client_id, ts, kind, text) VALUES (?,?,?,?)",
                      (c["client_id"], now, "reaction", f"Ответ клиента — {label}: {name}" + (f". «{text}»" if text else "")
                       + (f" · тел. {phone}" if phone else "")))
     conn.execute("""INSERT INTO work_notes (user_id, listing_id, client_id, collection_id, kind, text, ts)
                     VALUES (?,?,?,?,?,?,?)""", (c["user_id"], listing_id, c["client_id"], c["id"], "note",
                                                 f"{who}: {label.lower()}" + (f" — «{text}»" if text else ""), now))
+    # уведомление ведёт в карточку клиента, с кнопками (акт 14.10, С5)
+    card = f"/clients?id={c['client_id']}" if c["client_id"] else f"/picks?open={c['id']}"
+    acts = [{"label": "Открыть клиента" if c["client_id"] else "Открыть подборку", "url": card},
+            {"label": "Объект", "url": f"/?open={listing_id}"}]
+    if kind == "want_show":
+        acts.insert(1, {"label": "Запланировать показ", "url": f"/planner?add=show&listing={listing_id}"
+                        + (f"&client={c['client_id']}" if c["client_id"] else "")})
     notices.add(conn, c["user_id"], "client", f"{who}: «{label}» — {name}"[:200],
                 (f"«{text}»" if text else "") + (f" · тел. {phone}" if phone else ""),
-                url=f"/picks?open={c['id']}", listing_id=listing_id, dedup_s=60)
+                url=card, listing_id=listing_id, dedup_s=60, actions=acts)
     conn.commit()
     _mail_agent(conn, c["user_id"], f"{who}: «{label}» — {name}", f"{text}\n{phone}".strip())
     return {"ok": True, "kind": kind}
@@ -365,7 +372,8 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
     hide = bool(c["hide_address"])
     # ответ этого устройства по каждому объекту (последний) — клиент видит, что уже ответил
     mine_r = {r[0]: r[1] for r in conn.execute(
-        """SELECT listing_id, kind FROM pick_reactions WHERE collection_id = ? AND device = ? ORDER BY ts""",
+        """SELECT listing_id, kind FROM pick_reactions WHERE collection_id = ? AND device = ? AND kind != 'question'
+           ORDER BY ts""",
         (c["id"], device or "-"))} if device else {}
     for r in conn.execute("""SELECT l.*, i.note AS item_note, i.text AS item_text FROM collection_items i JOIN listings l ON l.id = i.listing_id
                              WHERE i.collection_id = ? ORDER BY i.pos, i.added""", (c["id"],)):

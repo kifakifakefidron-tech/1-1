@@ -177,6 +177,9 @@ def save_event(conn: sqlite3.Connection, user_id: int, body: dict) -> dict:
             when = datetime.fromtimestamp(ts, MSK).strftime("%d.%m %H:%M")
             conn.execute("INSERT INTO client_log (client_id, ts, kind, text) VALUES (?,?,?,?)",
                          (client_id, now, "event", f"{KINDS[kind].split(' ', 1)[1]} {when}: {title}"))
+            if kind == "show" and listing_id:   # акт 14.10, С5: показ в планере → статус «Показ» и этап клиента
+                from . import clients
+                clients.set_pair(conn, user_id, client_id, listing_id, "show", auto=True, commit=False)
     conn.commit()
     r = conn.execute(f"{_SELECT} WHERE e.id = ?", (int(eid),)).fetchone()
     return _event_row(r)

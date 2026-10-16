@@ -44,7 +44,7 @@ def test_client_flow(env):
     ev = c.post("/api/planner", json={"kind": "show", "ts": int(time.time()) + 3600, "listing_id": a, "client_id": cid}).json()
     assert ev["event"]["client_id"] == cid
     d = c.get(f"/api/clients?id={cid}").json()
-    assert d["items"][0]["status"] == "liked" and len(d["events"]) == 1
+    assert d["items"][0]["status"] == "show" and len(d["events"]) == 1   # показ в планере → статус «Показ» (акт 14.10, С5)
     texts = " | ".join(x["text"] for x in d["log"])
     assert "Понравился" in texts and "Показы" in texts and "высокий этаж" in texts and "Показ" in texts
     assert c.get(f"/api/clients/{cid}/match").json()["items"] == []          # уже у клиента — не предлагаем снова

@@ -24,7 +24,7 @@ RANK = {"matched": 0, "sent": 1, "opened": 2, "liked": 3, "rejected": 3, "show":
 PICK_STATUSES = ("sent", "opened", "liked", "rejected")   # ставятся подборкой — уходят вместе с ней
 OLD_STATUS = {"offered": "matched", "shown": "show", "refused": "rejected"}
 REACTIONS = {"like": "Нравится", "no": "Не подходит", "want_show": "Хочет посмотреть", "question": "Вопрос"}
-REACTION_STATUS = {"like": "liked", "no": "rejected", "want_show": "liked"}
+REACTION_STATUS = {"like": "liked", "no": "rejected", "want_show": "show"}   # акт 14.10, С5: «хочу посмотреть» = показ
 WISH_TYPES = ("flat", "house", "land", "commercial")
 WISH_COND = {"pcho": "ПЧО / предчистовая", "repair": "С ремонтом", "furniture": "С мебелью"}
 WISH_PAY = {"cash": "Наличные", "mortgage": "Ипотека", "matcap": "Маткапитал", "cert": "Сертификат"}
