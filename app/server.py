@@ -345,6 +345,9 @@ def api_listings(request: Request, body: dict | None = None):
         qr.hide_user = hider
         res = search.search(db.get(), qr, now, False)
         hooks.annotate(db.get(), res["items"])   # «ниже рынка на N %»
+        if qr.q:   # как поняли фразу из строки поиска — чипами над выдачей
+            ph = search.parse_phrase(qr.q, qr.deal)
+            res["understood"] = {"chips": ph["chips"], "text": ph["text"], "deal": ph["deal"]}
         res["now"] = now  # от этого момента страница считает «новые объекты»
         return res
     if request.query_params.get("since") or hider:

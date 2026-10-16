@@ -526,6 +526,23 @@
     return Array.from({ length: n }, () => `<li class="item skel" aria-hidden="true"><i></i><i></i><i></i><i></i></li>`).join("");
   }
 
+  // «Пишите как в чате»: как сервис понял фразу из строки поиска — чипами; ✕ убирает эту часть из запроса
+  function understoodHTML(u) {
+    if (!u || (!u.chips.length && !u.text)) return "";
+    return `<span class="understood"><span class="u-lbl">Поняли так:</span>${u.chips.map((c) =>
+      `<button type="button" class="chip u-chip" data-u-drop="${esc(c.drop)}" title="Убрать из запроса">${esc(c.label)} <i>✕</i></button>`).join("")}
+      ${u.text ? `<span class="u-text">и в тексте: «${esc(u.text)}»</span>` : ""}</span>`;
+  }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-u-drop]");
+    if (!b) return;
+    const drop = b.dataset.uDrop.toLowerCase().replace(/ё/g, "е");
+    const q = state.q.toLowerCase().replace(/ё/g, "е");
+    const at = q.indexOf(drop);
+    state.q = (at >= 0 ? state.q.slice(0, at) + state.q.slice(at + drop.length) : state.q).replace(/\s+/g, " ").trim();
+    $("q").value = state.q;
+    refresh();
+  });
   async function loadList(append = false, keepFav = false) {
     const seq = append ? reqSeq : ++reqSeq;
     if (!append) {
@@ -558,7 +575,12 @@
     $("count").innerHTML = favMode
       ? `Избранное и в работе: ${num(data.total)} <button type="button" class="link-btn" id="favExit">← ко всем объектам</button>
         <a class="link-btn" href="/picks">📁 Подборки для клиентов</a> <a class="link-btn" href="/planner">📅 Планер</a>${crmChips()}`
-      : esc(data.total ? `${num(data.total)} ${plural(data.total, "объект", "объекта", "объектов")}` : "Ничего не нашлось");
+      : esc(data.total ? `${num(data.total)} ${plural(data.total, "объект", "объекта", "объектов")}` : "Ничего не нашлось")
+        + understoodHTML(data.understood);
+    if (!append && data.understood && data.understood.deal && data.understood.deal !== state.deal) {   // «аренда 1к» — переключатель тоже на аренду
+      state.deal = data.understood.deal;
+      syncControls();
+    }
     // Карточки появляются волной: у каждой своя небольшая задержка
     data.items.forEach((o) => known.set(o.id, o));
     const html = data.items.map((o, i) => itemHTML(o).replace('<li class="item', `<li style="--d:${Math.min(i, 12) * 35}ms" class="item`)).join("");

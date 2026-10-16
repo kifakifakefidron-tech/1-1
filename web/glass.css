@@ -618,3 +618,9 @@ html.embed dialog::backdrop { background: transparent !important; backdrop-filte
 
 /* Цена «под вопросом» (акт 14.10, Б1) */
 .mark.doubt { color: var(--bad); border-color: currentColor; }
+
+/* «Поняли так» — фраза из строки поиска, разобранная в фильтры (акт 14.10, Б3) */
+.understood { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; font-size: 13px; }
+.understood .u-lbl, .understood .u-text { color: var(--ink-3); }
+.understood .u-chip { padding: 3px 10px; font-size: 13px; }
+.understood .u-chip i { font-style: normal; opacity: .6; margin-left: 2px; }

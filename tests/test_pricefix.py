@@ -62,3 +62,20 @@ def test_complex_numbers_variants_and_junk():
         assert geoaudit.is_junk_complex(junk), junk
     for real in ("Самолет", "Мозаика", "Любимово", "Аврора", "Губернский"):
         assert not geoaudit.is_junk_complex(real), real
+
+
+def test_phrase_search_equals_filters():
+    """Акт 14.10, Б3: фраза из строки поиска = те же фильтры."""
+    conn = db.connect(":memory:")
+    now = int(time.time())
+    _add(conn, "2-к квартира 50 м², 3/9 эт., ФМР, ул. Тургенева 10. 6,5 млн. 89180000801", "s1", now)
+    _add(conn, "2-к квартира 52 м², 4/9 эт., ФМР, ул. Тургенева 12. 12 млн. 89180000802", "s2", now)
+    _add(conn, "1-к квартира 38 м², 1/9 эт., ЮМР, ул. Ставропольская 5. 4,5 млн. 89180000803", "s3", now)
+    _add(conn, "Сдам 1-к квартиру 40 м², 3/9 эт., ЮМР, ул. Ставропольская 7. 30 тыс + ком платежи. 89180000804", "s4", now)
+    total = lambda **kw: search.search(conn, search.Query(**kw), now, False)["total"]  # noqa: E731
+    assert total(q="2к фмр до 7 млн") == total(rooms=[2], districts=["ФМР"], price_max=7_000_000) == 1
+    assert total(q="однушка юмр до 5") == 1
+    assert total(q="аренда 1к") == 1 and total(q="фрм 2к") == 2
+    ph = search.parse_phrase("3к не первый этаж")
+    assert ph["rooms"] == [3] and ph["not_first"] and not ph["fts"]
+    assert search.parse_phrase("самолет 1")["complexes"] == ["Самолет 1"]
