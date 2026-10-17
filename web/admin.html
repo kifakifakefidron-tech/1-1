@@ -20,7 +20,7 @@
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/admin.css?v=16">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=42">
+<link rel="stylesheet" href="/static/glass.css?v=43">
 </head>
 <body>
 <header class="top">
@@ -55,7 +55,12 @@
       <button class="seg" data-tab="banned">Удалённые</button>
     </nav>
 
-    <section data-pane="overview"><div class="adm-cards" id="overview"></div><div class="st" id="stats"></div></section>
+    <section data-pane="overview"><div class="adm-cards" id="overview"></div>
+      <form class="adm-mail" id="mailTest"><b>Проверить почту</b>
+        <span class="note">Коды не доходят на Gmail/Mail.ru? Отправьте тестовое письмо на нужный адрес — здесь будет ответ почтового сервера.</span>
+        <input type="email" id="mailTo" placeholder="адрес, например имя@gmail.com" required>
+        <button type="submit" class="pill">Отправить тест</button><span class="note" id="mailRes"></span></form>
+      <div class="st" id="stats"></div></section>
 
     <section data-pane="users" hidden>
       <form class="inline-form adm-search" id="userSearch">
@@ -151,8 +156,8 @@
 <script src="/static/icons.js?v=6"></script>
 <script src="/static/pickers.js?v=10"></script>
 <script src="/static/max.js?v=2"></script>
-<script src="/static/rail.js?v=13"></script>
+<script src="/static/rail.js?v=15"></script>
 <script src="/static/combo.js?v=3"></script>
-<script src="/static/admin.js?v=33"></script>
+<script src="/static/admin.js?v=34"></script>
 </body>
 </html>

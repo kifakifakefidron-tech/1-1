@@ -88,7 +88,7 @@
 .my-prev { padding: 14px; border-radius: 22px; border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .04); }
 .my-prev-l { margin: 0 0 10px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
 .my-prev-card { border-radius: 18px; overflow: hidden; background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .07); }
-.my-prev-ph { aspect-ratio: 4 / 3; background: rgba(0, 0, 0, .2); display: grid; place-items: center; }
+.my-prev-ph { position: relative; aspect-ratio: 4 / 3; background: rgba(0, 0, 0, .2); display: grid; place-items: center; }
 .my-prev-ph img { width: 100%; height: 100%; object-fit: cover; }
 .my-prev-ph span { display: grid; justify-items: center; gap: 6px; color: var(--ink-3); font-size: 12px; }
 .my-prev-ph svg { width: 26px; height: 26px; }

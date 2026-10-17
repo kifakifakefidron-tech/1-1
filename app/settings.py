@@ -16,7 +16,7 @@ from pathlib import Path
 from . import config
 
 COLORS = ("gold", "teal", "sky", "violet", "coral", "rose", "lime", "slate")
-DEFAULTS = {"pick_color": "gold", "pick_cover": "", "pick_brand": "", "pick_name": "", "pick_phone": "", "cabinet_order": [],
+DEFAULTS = {"pick_color": "gold", "pick_cover": "", "pick_photo": "", "pick_brand": "", "pick_name": "", "pick_phone": "", "cabinet_order": [],
             "blocks": []}
 # Свои блоки кабинета — только безопасные виды и только данные (никакой разметки и скриптов от пользователя)
 BLOCK_TYPES = ("note", "todo", "links", "search", "goal", "countdown", "stock")
@@ -89,9 +89,10 @@ def save(conn: sqlite3.Connection, user_id: int, patch: dict) -> dict:
     if "pick_color" in patch:
         c = str(patch["pick_color"] or "")
         cur["pick_color"] = c if c in COLORS or re.fullmatch(r"#[0-9a-fA-F]{6}", c) else "gold"
-    if "pick_cover" in patch:   # только своё загруженное фото (или пусто — без обложки)
-        u = str(patch["pick_cover"] or "")
-        cur["pick_cover"] = u if re.fullmatch(rf"/photos/{COVER_DIR}/[0-9a-f]{{16}}\.(?:jpg|png|webp)", u) else ""
+    for key in ("pick_cover", "pick_photo"):   # только своё загруженное фото (или пусто — без обложки / без фото)
+        if key in patch:
+            u = str(patch[key] or "")
+            cur[key] = u if re.fullmatch(rf"/photos/{COVER_DIR}/[0-9a-f]{{16}}\.(?:jpg|png|webp)", u) else ""
     for k, n in (("pick_brand", 60), ("pick_name", 80)):
         if k in patch:
             cur[k] = str(patch[k] or "").strip()[:n]
@@ -127,4 +128,4 @@ def save_cover(data_url: str) -> tuple[str | None, str]:
 def public_pick_style(conn: sqlite3.Connection, user_id: int) -> dict:
     """Что из настроек видит клиент в подборке."""
     s = get(conn, user_id)
-    return {"color": s["pick_color"], "cover": s["pick_cover"], "brand": s["pick_brand"]}
+    return {"color": s["pick_color"], "cover": s["pick_cover"], "brand": s["pick_brand"], "photo": s.get("pick_photo") or ""}

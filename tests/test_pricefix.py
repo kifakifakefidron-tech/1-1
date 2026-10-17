@@ -91,3 +91,17 @@ def test_deposit_hides_listing_and_new_post_returns_it():
     assert b == a and conn.execute("SELECT is_active, hidden_reason FROM listings WHERE id = ?", (a,)).fetchone()[:] == (0, "deposit")
     _add(conn, "2-к квартира 50 м², 3/9 эт., ЖК Мозаика. 5,9 млн. Снова в продаже. 89180000951", "d3", now + 100)
     assert conn.execute("SELECT is_active, hidden_reason FROM listings WHERE id = ?", (a,)).fetchone()[:] == (1, None)
+
+
+def test_delete_phone_objects_but_keep_accepting_new():
+    """17.10: «Удалить все объекты от номера» — старые скрыты, новые с номера принимаются; «Никогда» — не принимаются."""
+    conn = db.connect(":memory:")
+    now = int(time.time())
+    a = _add(conn, "2-к квартира 50 м², 3/9 эт., ЖК Мозаика. 6 млн. 89180000961", "b1", now)
+    assert ingest.ban_phone(conn, "89180000961", block=False)["listings"] == 1
+    assert conn.execute("SELECT is_active FROM listings WHERE id = ?", (a,)).fetchone()[0] == 0
+    b = _add(conn, "1-к квартира 38 м², 2/9 эт., ЖК Облака. 4 млн. 89180000961", "b2", now + 10)
+    assert conn.execute("SELECT is_active FROM listings WHERE id = ?", (b,)).fetchone()[0] == 1
+    ingest.ban_phone(conn, "89180000961")
+    m = ingest.add_message(conn, source="wa", text="Студия 25 м², 2/9 эт., ЖК Облака. 3 млн. 89180000961", chat_id="c", msg_id="b3", ts=now + 20)
+    assert all(r["match"] == "banned" for r in ingest.process_message(conn, m, use_llm=False)["results"])

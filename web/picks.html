@@ -18,8 +18,8 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=42">
-<link rel="stylesheet" href="/static/picks.css?v=13">
+<link rel="stylesheet" href="/static/glass.css?v=43">
+<link rel="stylesheet" href="/static/picks.css?v=16">
 </head>
 <body>
 <main class="pk2">
@@ -28,7 +28,6 @@
       <p class="pk2-lead">Одна красивая ссылка: фото, цены, карта и только ваш контакт. Видно, когда клиент открыл.</p></div>
     <form class="pk2-new" id="pksNew" autocomplete="off">
       <input name="title" maxlength="120" placeholder="Новая подборка, напр. «2к ФМР до 8 млн»" aria-label="Название новой подборки">
-      <span class="pk2-new-cl"><select name="client" id="pkNewClient" aria-label="Для какого клиента"><option value="">Без клиента</option></select></span>
       <button type="submit" class="pill"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Создать</button></form>
   </header>
   <div id="pksMsg" class="note-box" hidden></div>
@@ -39,7 +38,6 @@
         <div class="pk2-tools">
           <label class="pk2-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
             <input id="pkQ" type="search" placeholder="Найти подборку или клиента" aria-label="Найти подборку"></label>
-          <select id="pkCl" aria-label="Клиент" hidden></select>
           <div class="pk2-seg" id="pkSeg" role="tablist">
             <button type="button" data-f="all" class="on">Все</button><button type="button" data-f="seen">Открывали</button><button type="button" data-f="unseen">Не открывали</button></div>
         </div>
@@ -72,6 +70,16 @@
   </form>
 </dialog>
 
+<dialog class="pk2-dlg" id="pkDupDlg">
+  <form method="dialog" class="pk2-dlg-in" id="pkDupForm">
+    <h2>Копия подборки</h2>
+    <p class="pk2-hint">Те же объекты, тексты и оформление — но своя ссылка и свой клиент. Удобно, когда похожий запрос у другого человека.</p>
+    <label class="agent-field"><span>Для кого копия</span><select id="pkDupClient"></select></label>
+    <div class="pk2-dlg-acts"><span></span><button type="submit" class="chip" value="cancel">Отмена</button>
+      <button type="button" class="pill" id="pkDupSave">Создать копию</button></div>
+  </form>
+</dialog>
+
 <dialog class="pk2-dlg" id="pkClientDlg">
   <form method="dialog" class="pk2-dlg-in" id="pkClientForm">
     <h2>Новый клиент</h2>
@@ -86,8 +94,8 @@
 <script src="/static/icons.js?v=6"></script>
 <script src="/static/pickers.js?v=10"></script>
 <script src="/static/max.js?v=2"></script>
-<script src="/static/rail.js?v=13"></script>
-<script src="/static/picks.js?v=12"></script>
+<script src="/static/rail.js?v=15"></script>
+<script src="/static/picks.js?v=14"></script>
 <script src="/static/objview.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 </body>

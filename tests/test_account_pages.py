@@ -67,7 +67,7 @@ def test_pick_page_neutral_and_pick_domain(client, monkeypatch):
     page = client.get(f"/c/{p['token']}").text
     assert "1+1" not in page and "Для Анны" not in page   # название подборки — только агенту
     pub = client.get(f"/api/c/{p['token']}").json()
-    assert pub["style"] == {"color": "sky", "cover": "", "brand": "Моё агентство"}
+    assert pub["style"] == {"color": "sky", "cover": "", "brand": "Моё агентство", "photo": ""}
     # нейтральный адрес: с основного — переадресация, ссылка в управлении — на него
     monkeypatch.setattr(config, "PICK_DOMAIN", "podborka.example")
     monkeypatch.setattr(config, "PICK_URL", "https://podborka.example")

@@ -336,3 +336,25 @@
 .pk2-simit small { color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pk2-simit a { color: var(--gold); font-size: 12px; }
 @media (max-width: 600px) { .pk2-obj .pk2-sim { grid-column: 1 / -1; } }
+
+/* 17.10: «убрать из подборки» — крестик в левом верхнем углу карточки, как в привычных сервисах */
+.pk2-obj { position: relative; }
+.pk2-rm { position: absolute; z-index: 3; top: 8px; left: 8px; width: 30px; height: 30px; display: grid; place-items: center; border: 0;
+  border-radius: 50%; background: rgba(3, 40, 39, .72); color: #fff; cursor: pointer; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.pk2-rm:hover { background: var(--bad); }
+.pk2-rm svg { width: 16px; height: 16px; }
+.pk2-obj .pk2-num { left: auto; right: 8px; }
+/* текст для клиента — прямо в карточке */
+.pk2-ptext { display: grid; gap: 4px; margin: 8px 0 6px; }
+.pk2-ptext > span { font-size: 12px; color: var(--ink-2); font-weight: 600; }
+.pk2-ptext > span small { font-weight: 400; color: var(--ink-3); }
+.pk2-ptext textarea { width: 100%; min-height: 96px; resize: vertical; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--glass-line);
+  background: rgba(0, 0, 0, .14); color: var(--ink); font: 13.5px/1.45 var(--body); }
+.pk2-ptext textarea:focus { outline: none; border-color: var(--gold); }
+.pk2-ptext-reset { justify-self: start; padding: 0; border: 0; background: none; color: var(--gold); font-size: 12.5px; cursor: pointer; }
+.pk2-client b { font-weight: 600; }
+.pk2-ob { min-width: 0; }
+.pk2-ptext, .pk2-ptext > span { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.pk2-ptext textarea, .pk2-com { box-sizing: border-box; max-width: 100%; width: 100%; }
+.pk2-ptext small { display: block; white-space: normal; }
+.pk2-client { flex-wrap: wrap; min-width: 0; }

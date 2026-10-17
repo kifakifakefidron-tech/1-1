@@ -70,3 +70,10 @@
 .st-how div { display: grid; gap: 4px; padding: 12px 14px; border-radius: 16px; background: rgba(255, 255, 255, .05); border: 1px solid var(--glass-line); }
 .st-how b { font-size: 14px; }
 .st-how span { font-size: 13px; color: var(--ink-3); line-height: 1.45; }
+
+.st-photo-row { align-items: center; }
+.st-ava, .sp-ava { width: 56px; height: 56px; border-radius: 50%; flex: none; background: rgba(255, 255, 255, .08) center / cover no-repeat;
+  border: 2px solid var(--glass-line); }
+.st-ava.has, .sp-ava.has { border-color: var(--gold); }
+.sp-ava { width: 34px; height: 34px; }
+.sp-ava:not(.has) { display: none; }

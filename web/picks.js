@@ -78,7 +78,8 @@
       `<option value="${c.id}"${c.id === sel ? " selected" : ""}>${esc(c.name)}</option>`).join("")}<option value="new">+ Новый клиент…</option>`;
   }
   function fillNewClient(sel) {
-    const s = $("pkNewClient");
+    const s = $("pkDupClient");   // выбор клиента — только для копии подборки (17.10)
+    if (!s) return;
     s.innerHTML = clientOptions(sel != null ? sel : Number(s.value) || null);
     if (window.Pick) Pick.select(s, { searchPlaceholder: "Найти клиента" });
   }
@@ -143,15 +144,19 @@
   }
   function objCard(p, it, i) {
     return `<article class="pk2-obj${it.is_active ? "" : " gone"}" draggable="true" data-lid="${it.listing_id}" data-pid="${p.id}" style="--i:${i}">
-      <a class="pk2-ph" href="/?open=${it.listing_id}">${it.photo ? `<img src="${esc(it.photo)}" alt="" loading="lazy">` : `<span>${ic("home")}Фото у агента</span>`}
+      <button type="button" class="pk2-rm" data-rm="${it.listing_id}" data-pid="${p.id}" aria-label="Убрать из подборки" title="Убрать из подборки">${ic("x")}</button>
+      <a class="pk2-ph" href="/?open=${it.listing_id}">${it.photo ? `<img src="${esc(it.photo)}" alt="" loading="lazy">` : `<span class="ph-none"><img src="/static/favicon.svg" alt=""><small>Фото у агента</small></span>`}
         <span class="pk2-num">${i + 1}</span>${it.is_active ? "" : `<span class="pk2-gone">Снят с сайта</span>`}</a>
       ${it.is_active ? "" : `<button type="button" class="pk2-sim" data-sim="${it.listing_id}" data-pid="${p.id}">${ic("repeat")}Снят — показать похожие</button>`}
       <div class="pk2-ob">
         <b class="pk2-price">${esc(money(it.price, it.deal))}</b>
         <a class="pk2-ot" href="/?open=${it.listing_id}">${esc(it.title)}</a>
         <small>${esc(sub(it))}</small>
+        <label class="pk2-ptext"><span>Текст для клиента <small>— можно исправить прямо здесь, сохранится сам</small></span>
+          <textarea data-ptext="${it.listing_id}" data-pid="${p.id}" rows="4" maxlength="5000">${esc(it.text || it.orig || "")}</textarea>
+          ${it.text ? `<button type="button" class="pk2-ptext-reset" data-ptext-reset="${it.listing_id}" data-pid="${p.id}">Вернуть исходный текст</button>` : ""}</label>
         <input class="pk2-com" data-com="${it.listing_id}" data-pid="${p.id}" maxlength="1000" value="${esc(it.note || "")}"
-          placeholder="Комментарий для клиента" aria-label="Комментарий для клиента">
+          placeholder="Комментарий от вас — клиент увидит над текстом" aria-label="Комментарий для клиента">
         ${it.reaction ? `<span class="pk2-re r-${REACT[it.reaction][1]}">Ответ клиента: ${REACT[it.reaction][0]}${it.reaction_text ? ` — «${esc(it.reaction_text)}»` : ""}</span>` : ""}
         ${p.client_id ? `<label class="pk2-pst"><span>Статус для ${esc(p.client_name || "клиента")}</span><select data-pst="${it.listing_id}" data-pid="${p.id}" aria-label="Статус">
           ${Object.entries(PAIR).map(([k, v]) => `<option value="${k}"${(it.status || "sent") === k ? " selected" : ""}>${v}</option>`).join("")}</select></label>` : ""}
@@ -159,9 +164,7 @@
         <div class="pk2-oacts">
           <button type="button" class="pk2-ib" data-move="-1" data-i="${i}" data-pid="${p.id}" ${i ? "" : "disabled"} aria-label="Выше" title="Выше">${ic("arrow-up")}</button>
           <button type="button" class="pk2-ib" data-move="1" data-i="${i}" data-pid="${p.id}" ${i < p.items.length - 1 ? "" : "disabled"} aria-label="Ниже" title="Ниже">${ic("arrow-down")}</button>
-          <button type="button" class="pk2-tb${it.text ? " on" : ""}" data-text="${it.listing_id}" data-pid="${p.id}" title="Текст объявления для клиента">${ic("edit")}${it.text ? "Свой текст" : "Текст"}</button>
           <button type="button" class="pk2-tb" data-wnote="${it.listing_id}" data-pid="${p.id}" title="Записать: звонок, показ, заметка">${ic("note")}Запись</button>
-          <button type="button" class="pk2-ib danger" data-rm="${it.listing_id}" data-pid="${p.id}" aria-label="Убрать из подборки" title="Убрать">${ic("x")}</button>
         </div></div></article>`;
   }
   // журнал по объекту в этой подборке (и про её клиента) — видит только агент
@@ -210,9 +213,8 @@
           <p class="pk2-eyebrow">Подборка · обновлена ${esc(ago(p.updated))}</p>
           <h2>${esc(p.title)}</h2>
           <p class="pk2-hero-m"><span>${p.n} ${plural(p.n, "объект", "объекта", "объектов")}</span>${seenBadge(p)}</p>
-          <div class="pk2-client">${ic("user")}<span>Клиент</span>
-            <select data-pk-client="${p.id}" aria-label="Клиент подборки">${clientOptions(p.client_id)}</select>
-            ${p.client_id ? `<a href="/clients?id=${p.client_id}" title="Карточка клиента: пожелания, история, все объекты">Карточка ${ic("chevron")}</a>` : ""}</div>
+          ${p.client_id ? `<div class="pk2-client">${ic("user")}<span>Для клиента</span><b>${esc(p.client_name || "")}</b>
+            <a href="/clients?id=${p.client_id}" title="Карточка клиента: пожелания, история, все объекты">Карточка ${ic("chevron")}</a></div>` : ""}
         </div>
       </header>
       <div class="pk2-share">
@@ -220,7 +222,7 @@
           <button type="button" class="pill" data-copy="${p.id}">${ic("link")}Копировать</button></div>
         <button type="button" class="pk2-act" data-share-text="${esc(`${p.title}\n${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
         <a class="pk2-act" href="${esc(link(p))}?as=agent" target="_blank" rel="noopener" title="Ваше открытие не засчитается как просмотр клиента">${ic("eye")}<span>Как видит клиент</span></a>
-        <button type="button" class="pk2-act" data-dup="${p.id}">${ic("layers")}<span>Дублировать</span></button>
+        <button type="button" class="pk2-act" data-dup="${p.id}">${ic("layers")}<span>Копия для другого клиента</span></button>
         <button type="button" class="pk2-act danger" data-del="${p.id}">${ic("trash")}<span>Удалить</span></button>
       </div>
       ${p.contact_phone && p.contact_name && p.contact_name !== "Коллега (по коду)" ? "" : `<form class="pk2-me" data-me="${p.id}" autocomplete="off">
@@ -235,12 +237,6 @@
         ${p.items.length ? `<p class="pk2-hint">Порядок — как увидит клиент. ${isPhone() ? "Стрелки меняют порядок." : "Перетащите карточку, чтобы поменять порядок."}</p>
           <div class="pk2-grid" id="pkGrid">${p.items.map((it, i) => objCard(p, it, i)).join("")}</div>`
           : `<div class="pk2-noitems">${ic("home")}<b>В подборке пока нет объектов</b><span>Добавьте из избранного ниже или кнопкой «В подборку» в окне объекта.</span></div>`}
-        <section class="pk2-add">
-          <div class="pk2-add-h"><h3>${ic("search")}Найти на 1+1 и добавить</h3>
-            <label class="pk2-search sm wide"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-              <input id="pkBaseQ" type="search" value="${esc(baseQ)}" placeholder="«2к фмр», ЖК, улица" aria-label="Найти объект на 1+1"></label></div>
-          <div id="pkBase">${baseStrip(p)}</div>
-        </section>
         <section class="pk2-add">
           <div class="pk2-add-h"><h3>${ic("heart")}Из избранного</h3>
             <label class="pk2-search sm"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -333,12 +329,10 @@
       [ids[i], ids[j]] = [ids[j], ids[i]];
       await setOrder(pid, ids); return;
     }
-    if (t.dataset.dup) {
-      const p = list.find((x) => x.id === Number(t.dataset.dup));
-      const r = await call("/api/picks", { title: `${p.title} (копия)`.slice(0, 120), note: p.note || "", contact_name: p.contact_name || "",
-        contact_phone: p.contact_phone || "", copy_of: p.id });
-      if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
-      open = r.data.pick.id; tab = "setup"; toast("Копия готова — у неё своя ссылка"); await reload(); return;
+    if (t.dataset.dup) { dupFor = Number(t.dataset.dup); fillNewClient(null); $("pkDupDlg").showModal(); return; }
+    if (t.dataset.ptextReset) {
+      const r = await call(`/api/picks/${t.dataset.pid}/items`, { listing_id: Number(t.dataset.ptextReset), add: true, text: "" });
+      toast(r.ok ? "Вернули исходный текст" : (r.data.detail || "Не получилось")); if (r.ok) await reload(); return;
     }
     if (t.dataset.del) {
       if (!confirm("Удалить подборку? Ссылка у клиента перестанет открываться.")) return;
@@ -346,11 +340,36 @@
       open = 0; toast("Подборка удалена"); await reload(); return;
     }
   });
-  // клиент подборки: выбрали — сохраняем сразу; «+ Новый клиент…» — окно создания
-  let clientFor = null;   // {pid} — для какой подборки создаём клиента; null — для формы «Создать»
+  // копия подборки для другого клиента (17.10: внутри подборки клиента не выбирают — она для своего клиента)
+  let dupFor = 0;
+  $("pkDupSave").onclick = async () => {
+    const p = list.find((x) => x.id === dupFor);
+    if (!p) return;
+    const cl = Number($("pkDupClient").value) || null;
+    const cName = cl && (clientsList.find((c) => c.id === cl) || {}).name;
+    const r = await call("/api/picks", { title: (cName ? `Для ${cName}` : `${p.title} (копия)`).slice(0, 120), note: p.note || "",
+      contact_name: p.contact_name || "", contact_phone: p.contact_phone || "", copy_of: p.id, ...(cl ? { client_id: cl } : {}) });
+    if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
+    $("pkDupDlg").close();
+    open = r.data.pick.id; tab = "items"; toast("Копия готова — у неё своя ссылка"); await reload();
+  };
+  // текст для клиента — правится прямо в карточке объекта, сохраняется сам
+  const textTimers = {};
+  document.addEventListener("input", (e) => {
+    const ta = e.target;
+    if (!ta.dataset || !ta.dataset.ptext) return;
+    clearTimeout(textTimers[ta.dataset.ptext]);
+    textTimers[ta.dataset.ptext] = setTimeout(async () => {
+      const r = await call(`/api/picks/${ta.dataset.pid}/items`, { listing_id: Number(ta.dataset.ptext), add: true, text: ta.value });
+      toast(r.ok ? "Текст для клиента сохранён" : (r.data.detail || "Не сохранилось"), 1600);
+      const it = (list.find((x) => x.id === Number(ta.dataset.pid)) || { items: [] }).items.find((x) => x.listing_id === Number(ta.dataset.ptext));
+      if (r.ok && it) it.text = ta.value;
+    }, 900);
+  });
+  let clientFor = null;   // для формы нового клиента (окно «+ Новый клиент…» в выборе клиента копии)
   document.addEventListener("change", async (e) => {
     const s = e.target;
-    if (s.id === "pkNewClient" && s.value === "new") { clientFor = null; openClient(); return; }
+    if (s.id === "pkDupClient" && s.value === "new") { clientFor = null; openClient(); return; }
     if (!s.dataset || !s.dataset.pkClient) return;
     const pid = Number(s.dataset.pkClient);
     if (s.value === "new") { clientFor = { pid }; openClient(); return; }
@@ -370,7 +389,7 @@
   }
   $("pkClientDlg").addEventListener("close", () => {   // отменили — вернуть выбор как был
     const p = clientFor && list.find((x) => x.id === clientFor.pid);
-    if (clientFor && p) renderDetail(); else if (!clientFor && $("pkNewClient").value === "new") fillNewClient(null);
+    if (clientFor && p) renderDetail(); else if (!clientFor && $("pkDupClient").value === "new") fillNewClient(null);
   });
   $("pkClientSave").onclick = async () => {
     const f = $("pkClientForm");
@@ -459,7 +478,8 @@
             <a href="/?open=${f.id}">Открыть</a></span>
           <button type="button" class="pill" data-swap="${pid}:${lid}:${f.id}">Заменить</button></div>`).join("")}</div>`
         : `<p class="pk2-hint">Похожих сейчас нет на сайте.</p>`}
-      <div class="pk2-dlg-acts"><span></span><button type="button" class="chip" onclick="this.closest('dialog').close()">Закрыть</button></div></div>`;
+      <div class="pk2-dlg-acts"><span></span><button type="button" class="chip" data-pk-close>Закрыть</button></div></div>`;
+    d.querySelector("[data-pk-close]").addEventListener("click", () => d.close());   // без onclick — так требует CSP
     d.showModal();
   });
 
@@ -480,7 +500,7 @@
     sel.innerHTML = `<option value="">Все клиенты</option>` + used.map(([id, n]) => `<option value="${id}"${id === clientFilter ? " selected" : ""}>${esc(n || "Клиент")}</option>`).join("");
     if (window.Pick && used.length) Pick.select(sel, { searchPlaceholder: "Найти клиента" });
   }
-  $("pkCl").addEventListener("change", (e) => { clientFilter = Number(e.target.value) || 0; renderList(); });
+
   // статус объекта в подборке
   document.addEventListener("change", async (e) => {
     const sel = e.target;
@@ -514,11 +534,9 @@
     const f = e.target;
     if (f.id === "pksNew") {
       e.preventDefault();
-      const cl = Number($("pkNewClient").value) || null;
-      const cName = cl && (clientsList.find((c) => c.id === cl) || {}).name;
-      const r = await call("/api/picks", { title: f.title.value.trim() || (cName ? `Для ${cName}` : ""), ...(cl ? { client_id: cl } : {}) });
+      const r = await call("/api/picks", { title: f.title.value.trim() });
       if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
-      f.title.value = ""; fillNewClient(null); open = r.data.pick.id; tab = "items"; await reload(); loadSide(); return;
+      f.title.value = ""; open = r.data.pick.id; tab = "items"; await reload(); loadSide(); return;
     }
     if (f.dataset.edit) {
       e.preventDefault();

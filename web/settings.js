@@ -40,6 +40,11 @@
     $("spCover").style.backgroundImage = s.pick_cover ? `url("${s.pick_cover}")` : "";
     $("spHead").classList.toggle("has-cover", !!s.pick_cover);
     $("stCoverDel").hidden = !s.pick_cover;
+    $("stPhotoDel").hidden = !s.pick_photo;
+    for (const id of ["stPhotoPrev", "spAva"]) {
+      $(id).style.backgroundImage = s.pick_photo ? `url("${s.pick_photo}")` : "";
+      $(id).classList.toggle("has", !!s.pick_photo);
+    }
     $("stColors").innerHTML = Object.entries(PALETTE).map(([k, hex]) => `<button type="button" role="radio" aria-checked="${k === s.pick_color}"
       class="st-color${k === s.pick_color ? " on" : ""}" style="--c:${hex}" data-color="${k}" title="${NAMES[k]}" aria-label="${NAMES[k]}">${ic("check")}</button>`).join("");
   }
@@ -94,6 +99,7 @@
     if (!t) return;
     if (t.dataset.color) { save({ pick_color: t.dataset.color }); return; }
     if (t.id === "stCoverDel") { save({ pick_cover: "" }); return; }
+    if (t.id === "stPhotoDel") { save({ pick_photo: "" }); return; }
     if (t.id === "stResetLayout") { save({ cabinet_order: [] }); toast("Порядок блоков кабинета — как было"); return; }
     if (t.id === "stLogoutAll") {
       if (!confirm("Выйти на всех других устройствах? На этом вы останетесь.")) return;
@@ -113,6 +119,18 @@
       const r = await call("/api/settings", { cover: data });
       if (!r.ok) { toast(r.data.detail || "Не получилось загрузить"); return; }
       st = r.data; preview(); toast("Обложка загружена");
+    } catch { toast("Это не похоже на фото"); }
+    e.target.value = "";
+  });
+  $("stPhotoFile").addEventListener("change", async (e) => {   // фото агента — клиент видит его в подборке
+    const f = e.target.files[0];
+    if (!f) return;
+    toast("Загружаем фото…", 6000);
+    try {
+      const data = await shrink(f);
+      const r = await call("/api/settings", { photo: data });
+      if (!r.ok) { toast(r.data.detail || "Не получилось загрузить"); return; }
+      st = r.data; preview(); toast("Фото загружено");
     } catch { toast("Это не похоже на фото"); }
     e.target.value = "";
   });

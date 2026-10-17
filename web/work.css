@@ -35,7 +35,7 @@
 .wk-card:hover { box-shadow: var(--glass-hi), 0 16px 34px rgba(0, 14, 14, .25); }
 .wk-card.bye { opacity: 0; transform: scale(.96); }
 .wk-card.gone .wk-photo img { filter: grayscale(.8); opacity: .6; }
-.wk-photo { position: relative; display: block; background: rgba(0, 0, 0, .18); aspect-ratio: 16 / 10; }
+.wk-photo { position: relative; display: block; background: rgba(0, 0, 0, .18); aspect-ratio: 1 / 1; }
 .wk-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .wk-photo > span { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 6px; color: var(--ink-3); font-size: 11px; }
 .wk-photo > span svg { width: 26px; height: 26px; }
@@ -97,7 +97,17 @@
 .wk-c:hover:not(.none) { background: rgba(227, 203, 143, .16); }
 .c-ok { --c: var(--ok); } .c-bad { --c: var(--bad); }
 /* заглушка без фото — компактная полоса, а не пол-экрана */
-.wk-card.nophoto .wk-photo { aspect-ratio: auto; height: 56px; }
+/* без фото — та же высота, что с фото: ряды ровные (решение Артёма 17.10) */
 .wk-card.nophoto .wk-photo > span { grid-auto-flow: column; gap: 8px; }
 .wk-card.nophoto .wk-photo > span svg { width: 18px; height: 18px; }
 .wk-tools .pk-btn { min-width: 160px; }
+/* телефон: вкладки помещаются целиком — без скрытых за краем */
+@media (max-width: 480px) {
+  .wk-tabs { width: 100%; }
+  .wk-tab { flex: 1 1 auto; justify-content: center; padding: 8px 9px; font-size: 12.5px; gap: 4px; }
+}
+@media (max-width: 480px) {
+  .wk-tabs { flex-wrap: wrap; border-radius: 18px; overflow: visible; }
+  .wk-ind { display: none; }
+  .wk-tab.on { background: linear-gradient(160deg, #f3e8bc, #e3cb8f); color: #0f2f2e; }
+}

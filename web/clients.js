@@ -11,6 +11,7 @@
   const ROOMS = [[0, "Студия"], [1, "1"], [2, "2"], [3, "3"], [4, "4+"]];
   let data = { items: [], stages: {}, kinds: {}, item_status: {} }, view = "board", kindFilter = "", districts = [];
   let cur = null;   // открытая карточка: {client, items, log, events} или null (новый)
+  let mStage = "";  // телефон: какой этап показан под плашками этапов
   let form = { kind: "buyer", rooms: [], districts: [], wishes: {} };
   // расширенные пожелания (все участвуют в подборе)
   const W_TYPES = [["flat", "Квартира"], ["house", "Дом"], ["land", "Участок"], ["commercial", "Коммерция"]];
@@ -69,7 +70,15 @@
     $("cEmpty").hidden = !!data.items.length;
     $("cBoard").hidden = view !== "board" || !data.items.length;
     $("cList").hidden = view !== "list" || !data.items.length;
-    $("cBoard").innerHTML = Object.entries(data.stages).map(([k, t]) => {
+    // телефон: все этапы видны сразу — плашками с числами; ниже — клиенты выбранного этапа (17.10)
+    const narrow = innerWidth < 700;
+    const stageKeys = Object.keys(data.stages);
+    if (narrow && !stageKeys.includes(mStage)) mStage = stageKeys.find((k) => vis.some((c) => c.stage === k)) || stageKeys[0];
+    $("cStageBar").hidden = !narrow || view !== "board" || !data.items.length;
+    $("cStageBar").innerHTML = stageKeys.map((k) => `<button type="button" class="${k === mStage ? "on" : ""}" data-mstage="${k}" style="--c:${STAGE_C[k]}">
+      <i></i>${esc(data.stages[k])}<b>${vis.filter((c) => c.stage === k).length}</b></button>`).join("");
+    $("cBoard").classList.toggle("one", narrow);
+    $("cBoard").innerHTML = Object.entries(data.stages).filter(([k]) => !narrow || k === mStage).map(([k, t]) => {
       const list = vis.filter((c) => c.stage === k);
       return `<section class="c-col" data-stage="${k}" style="--c:${STAGE_C[k]}">
         <div class="c-col-h"><span><i></i>${esc(t)}</span><b>${list.length}</b></div>
@@ -81,6 +90,8 @@
         <span class="c-stage-pill" style="--c:${STAGE_C[c.stage]}">${esc(data.stages[c.stage])}</span>
         <small>${esc(wish(c))}</small><span>${nextHTML(c)}</span><small>${c.n_items ? `объектов: ${c.n_items}` : ""}</small></div>`).join("");
   }
+  let rz = 0;   // ширина окна поменялась (поворот телефона) — доска перестраивается: колонки или плашки этапов
+  addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (data.items.length) render(); }, 200); });
   async function load() {
     const q = $("cQ").value.trim();
     const r = await call(`/api/clients${q ? `?q=${encodeURIComponent(q)}` : ""}`);
@@ -187,7 +198,65 @@
   document.addEventListener("click", (e) => { if (justDragged && e.target.closest(".c-card")) { e.stopPropagation(); e.preventDefault(); } }, true);
 
   // ─── карточка клиента ──────────────────────────────────────────────
+  // ─── обзор клиента: всё главное на одном экране, правка — кнопкой «Изменить» (17.10) ───
+  function infoHTML() {
+    if (!cur) { $("dInfo").innerHTML = ""; return; }
+    const c = cur.client, w = c.wishes || {};
+    const when = (ts) => new Date(ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    const lbl = (list, keys) => (keys || []).map((k) => (list.find(([x]) => x === k) || [k, k])[1]);
+    const wishes = [
+      ["Что ищет", lbl(W_TYPES, w.types).join(", ")],
+      ["Комнаты", roomsTxt(c.rooms)],
+      ["Бюджет", budget(c)],
+      ["Районы", (c.districts || []).join(", ")],
+      ["ЖК", (w.complexes || []).join(", ")],
+      ["Площадь", w.area_min || w.area_max ? `${w.area_min ? `от ${w.area_min}` : ""} ${w.area_max ? `до ${w.area_max}` : ""} м²`.trim() : ""],
+      ["Этаж", [w.not_first && "не первый", w.not_last && "не последний"].filter(Boolean).join(", ")],
+      ["Состояние", lbl(W_COND, w.cond).join(", ")],
+      ["Оплата", lbl(W_PAY, w.pay).join(", ")],
+      ["Обременение", w.no_encumbrance ? "только без обременения" : ""],
+      ["Срок", w.buy_by || ""],
+    ].filter(([, v]) => v);
+    const items = cur.items || [], liked = items.filter((o) => ["liked", "show", "talks", "deal"].includes(o.status)).length;
+    const shows = items.filter((o) => ["show", "talks", "deal"].includes(o.status)).length;
+    const now = Date.now();
+    const upcoming = (cur.events || []).filter((e) => !e.done && e.ts * 1000 >= now - 3600e3).sort((a, b) => a.ts - b.ts).slice(0, 3);
+    const recent = (cur.log || []).slice().sort((a, b) => b.ts - a.ts).slice(0, 4);
+    const over = c.next_ts && c.next_ts * 1000 < now;
+    $("dInfo").innerHTML = `
+      <div class="ci-stats">
+        <button type="button" data-tab="items"><b>${items.length}</b><span>объектов</span></button>
+        <button type="button" data-tab="items"><b>${liked}</b><span>понравилось</span></button>
+        <button type="button" data-tab="items"><b>${shows}</b><span>показов</span></button>
+        <button type="button" data-tab="items"><b>${(cur.picks || []).length}</b><span>подборок</span></button>
+      </div>
+      <div class="ci-grid">
+        <section class="ci-box ci-next${over ? " over" : ""}"><h4>${ic("clock")}Следующий шаг</h4>
+          ${c.next_ts || c.next_text ? `<p><b>${esc(c.next_text || "Связаться")}</b>${c.next_ts ? `<small>${esc(when(c.next_ts))}${over ? " · просрочено" : ""}</small>` : ""}</p>`
+            : `<p class="ci-empty">Не задан — нажмите «Изменить» и укажите, что и когда сделать.</p>`}
+          <div class="ci-acts"><a class="chip" href="/planner?add=show&client=${c.id}">${ic("home")}Показ</a>
+            <a class="chip" href="/planner?add=call&client=${c.id}">${ic("phone")}Созвон</a></div></section>
+        <section class="ci-box"><h4>${ic("search")}Что ищет</h4>
+          ${wishes.length ? `<dl class="ci-dl">${wishes.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`
+            : `<p class="ci-empty">Пожелания не заполнены — без них сервис не подберёт объекты.</p>`}
+          <div class="ci-acts"><button type="button" class="chip" data-tab="items">${ic("sparkle")}Подходящие объекты</button></div></section>
+        ${c.note ? `<section class="ci-box"><h4>${ic("note")}Заметка</h4><p class="ci-note">${esc(c.note)}</p></section>` : ""}
+        <section class="ci-box"><h4>${ic("calendar")}Ближайшие дела</h4>
+          ${upcoming.length ? `<ul class="ci-list">${upcoming.map((e) => `<li><a href="/planner?event=${e.id}">${esc(e.title)}</a><small>${esc(when(e.ts))}</small></li>`).join("")}</ul>`
+            : `<p class="ci-empty">Дел нет.</p>`}</section>
+        <section class="ci-box"><h4>${ic("layers")}Последнее</h4>
+          ${recent.length ? `<ul class="ci-list">${recent.map((x) => `<li><span>${esc(x.text)}</span><small>${esc(when(x.ts))}</small></li>`).join("")}</ul>
+            <div class="ci-acts"><button type="button" class="chip" data-tab="log">Вся история</button></div>` : `<p class="ci-empty">Истории пока нет.</p>`}</section>
+        <section class="ci-box ci-meta"><h4>${ic("user")}О клиенте</h4><dl class="ci-dl">
+          <dt>Кто</dt><dd>${esc(data.kinds[c.kind] || "")}</dd>
+          ${c.phone ? `<dt>Телефон</dt><dd><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></dd>` : ""}
+          ${c.source ? `<dt>Откуда</dt><dd>${esc(c.source)}</dd>` : ""}
+          ${c.created ? `<dt>Добавлен</dt><dd>${esc(new Date(c.created * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }))}</dd>` : ""}</dl></section>
+      </div>`;
+  }
   function tab(name) {
+    $("dEdit").hidden = !cur || name === "card";
+    $("dBackInfo").hidden = !cur || name !== "card";
     document.querySelectorAll(".c-tabs [data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
     document.querySelectorAll("#cDlg [data-pane]").forEach((p) => { p.hidden = p.dataset.pane !== name; });
     if (name === "items" && cur && !$("dMatchList").dataset.loaded) match();
@@ -211,7 +280,8 @@
     if (!ind || !b) return;
     if (!animate) ind.style.transition = "none";
     ind.style.width = `${b.offsetWidth}px`;
-    ind.style.transform = `translateX(${b.offsetLeft}px)`;
+    ind.style.height = `${b.offsetHeight}px`;
+    ind.style.transform = `translate(${b.offsetLeft}px, ${b.offsetTop}px)`;   // этапы в два ряда — плашка едет и вниз
     ind.style.background = STAGE_C[stage];
     if (!animate) { void ind.offsetWidth; ind.style.transition = ""; }
     const keys = Object.keys(data.stages), at = keys.indexOf(stage);
@@ -369,13 +439,13 @@ ${lines.join("\n")}`;
       cur = r.data;
       itemsHTML(); upgradeItems(); logHTML(); tasksHTML(); picksHTML(); reportHTML();
     } else cur = null;
-    header(); stagesHTML(); fillForm(); tab("card");
+    header(); stagesHTML(); fillForm(); infoHTML(); tab(cur ? "info" : "card");   // клиент — сначала обзор; новый — форма
     if (!$("cDlg").open) $("cDlg").showModal();
     history.replaceState(null, "", id ? `/clients?id=${id}` : "/clients");
   }
   async function refreshCur() {
     const r = await call(`/api/clients?id=${cur.client.id}`);
-    if (r.ok) { cur = r.data; header(); stagesHTML(); itemsHTML(); upgradeItems(); logHTML(); tasksHTML(); picksHTML(); reportHTML(); }
+    if (r.ok) { cur = r.data; header(); stagesHTML(); itemsHTML(); upgradeItems(); logHTML(); tasksHTML(); picksHTML(); reportHTML(); infoHTML(); }
   }
   let matchPage = 1, matchSince = 0, freshIds = [];   // matchSince — из уведомления «новое под клиента»
   let mSort = "new", mPhoto = false, mNotFirst = false, showHidden = false;
@@ -462,6 +532,9 @@ ${lines.join("\n")}`;
     if (t.dataset.kind !== undefined && !t.closest("dialog")) { kindFilter = t.dataset.kind; render(); return; }
     if (t.dataset.view) { view = t.dataset.view; document.querySelectorAll("[data-view]").forEach((b) => b.classList.toggle("on", b === t)); render(); return; }
     if (t.dataset.tab) { tab(t.dataset.tab); return; }
+    if (t.id === "dEdit") { tab("card"); return; }
+    if (t.id === "dBackInfo") { tab("info"); return; }
+    if (t.dataset.mstage) { mStage = t.dataset.mstage; render(); return; }
     if (t.dataset.stage && t.closest("#dStages") && cur) {
       slideStage(t.dataset.stage);   // сразу, не дожидаясь сервера
       const r = await call("/api/clients", { id: cur.client.id, stage: t.dataset.stage });
@@ -541,10 +614,10 @@ ${lines.join("\n")}`;
     if (!r.ok) { $("fErr").textContent = r.data.detail || "Не получилось сохранить"; $("fErr").hidden = false; return; }
     const isNew = !cur;
     cur = r.data;
-    header(); stagesHTML(); itemsHTML(); upgradeItems(); logHTML(); tasksHTML();
+    header(); stagesHTML(); itemsHTML(); upgradeItems(); logHTML(); tasksHTML(); infoHTML();
     load();
     toast(isNew ? "Клиент добавлен — подберите объекты" : "Сохранено");
-    if (isNew) { history.replaceState(null, "", `/clients?id=${cur.client.id}`); tab("items"); }
+    if (isNew) { history.replaceState(null, "", `/clients?id=${cur.client.id}`); tab("items"); } else tab("info");
   });
   $("dNote").addEventListener("submit", async (e) => {
     e.preventDefault();

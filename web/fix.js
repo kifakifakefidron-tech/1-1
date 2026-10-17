@@ -139,7 +139,8 @@
       <button type="button" class="fx-phone-num" data-phone-base="${esc(p)}" title="Все объекты этого номера">${esc(p)}</button></span>`).join("")
       + `<details class="fx-more"><summary title="Удалить объект или всё от номера">⋯</summary><div class="fx-more-m">
         <button type="button" class="chip danger fx-del-one" data-del-one="${it.id}">🗑 Удалить только этот объект</button>
-        ${(it.phones || []).map((p) => `<button type="button" class="chip danger" data-ban-phone="${esc(p)}">🚫 Всё от номера ${esc(p)}</button>`).join("")}</div></details>`;
+        ${(it.phones || []).map((p) => `<button type="button" class="chip danger" data-del-phone="${esc(p)}">🗑 Удалить все объекты от ${esc(p)}<small>новые объявления с этого номера будут появляться</small></button>
+          <button type="button" class="chip danger" data-ban-phone="${esc(p)}">🚫 Никогда не добавлять на сайт объявления от ${esc(p)}<small>удалит всё от номера и не будет принимать новое</small></button>`).join("")}</div></details>`;
     const rent = it.deal === "rent";
     $("fxPriceLabel").textContent = rent ? "Цена, тыс. ₽/мес" : "Цена, млн ₽";
     $("fxPrice").value = it.price ? String(+(it.price / (rent ? 1000 : 1e6)).toFixed(rent ? 0 : 3)).replace(".", ",") : "";
@@ -407,11 +408,14 @@
     toast(`📍 Точка сохранена${r.data.applied ? ` · поправлено ещё ${r.data.applied}` : ""}`);
   }
   // Удалить всё от номера: объекты, запросы, сообщения; новые не принимать
-  async function banPhone(phone) {
-    if (!confirm(`Удалить всё от номера ${phone}?\nВсе его объекты и запросы скроются, сообщения удалятся, новые не будут приниматься.\nВернуть — админка → «Удалённые».`)) return;
-    const r = await call("/api/admin/phones/ban", { phone });
+  // onlyExisting — удалить уже собранные объекты номера, но новые объявления с него принимать
+  async function banPhone(phone, onlyExisting) {
+    if (!confirm(onlyExisting
+      ? `Удалить все объекты от номера ${phone}?\nНовые объявления с этого номера будут появляться на сайте.`
+      : `Никогда не добавлять объявления от ${phone}?\nВсе его объекты и запросы скроются, сообщения удалятся, новые не будут приниматься.\nВернуть — админка → «Удалённые».`)) return;
+    const r = await call("/api/admin/phones/ban", { phone, action: onlyExisting ? "delete" : "ban" });
     if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
-    toast(`🚫 Номер удалён: объектов ${r.data.listings}, сообщений ${r.data.messages}`, 4000);
+    toast(onlyExisting ? `Удалено объектов: ${r.data.listings}` : `🚫 Номер больше не принимается: объектов ${r.data.listings}, сообщений ${r.data.messages}`, 4000);
     if (item) { ss.done.push(item.id); save(); }
     next();
   }
@@ -490,6 +494,7 @@
     else if (b.id === "fxHide") submit({ hide: true });
     else if (b.id === "fxGeoSave") saveGeoOnly();
     else if (b.dataset.banPhone) banPhone(b.dataset.banPhone);
+    else if (b.dataset.delPhone) banPhone(b.dataset.delPhone, true);
     else if (b.dataset.phoneBase) phoneBase(b.dataset.phoneBase);
     else if (b.dataset.delOne) delOne(Number(b.dataset.delOne));
     else if (b.dataset.pbDel) pbAction(Number(b.dataset.pbDel), "delete", b);
