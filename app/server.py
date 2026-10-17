@@ -191,7 +191,7 @@ def index(request: Request, body: dict | None = None):
     html_text = (WEB / "index.html").read_text(encoding="utf-8").replace("{{SITE_URL}}", config.SITE_URL)
     if not oid:
         resp = Response(html_text, media_type="text/html; charset=utf-8", headers=headers)
-        if ref:   # «Приведи коллегу»: запомнить, кто пригласил, до входа
+        if ref and request.cookies.get("ck") == "all":   # «Приведи коллегу» — только с согласием на необязательные cookie
             resp.set_cookie("ref", ref, max_age=30 * 86400, httponly=True, samesite="lax")
         return resp
     # Ссылка на объект («Поделиться»): превью в WhatsApp/Telegram — название, цена, место, фото. Без телефонов.
@@ -1118,8 +1118,12 @@ def api_pick_items(request: Request, body: dict | None = None):
     elif "status" in body:   # статус объекта в подборке клиента (понравился, не подходит, показ…)
         res = picks.set_status(db.get(), user["id"], cid, int(body.get("listing_id") or 0), str(body["status"]))
     else:
+        price = None
+        if "price" in body:   # своя цена для клиента: число в рублях, 0 / пусто — как в объявлении
+            price = _num(body.get("price"), int) or 0
         res = picks.set_item(db.get(), user["id"], cid, int(body.get("listing_id") or 0), bool(body.get("add", True)),
-                             body.get("note"), text=body["text"] if "text" in body else None)
+                             body.get("note"), text=body["text"] if "text" in body else None,
+                             price=price, hide_price=bool(body["hide_price"]) if "hide_price" in body else None)
     return _err(res["error"]) if "error" in res else JSONResponse(res)
 
 
@@ -1143,17 +1147,51 @@ def api_pick_react(request: Request, body: dict | None = None):
     if _too_often(request, "react", 120, 3600):
         return _err("Слишком часто — попробуйте позже.", 429)
     body = body or {}
-    device = request.cookies.get(PV_COOKIE) or ""
-    if not re.fullmatch(r"[A-Za-z0-9_-]{16,64}", device):
-        device = secrets.token_urlsafe(16)
+    device, _ = _device(request)
     res = picks.react(db.get(), request.path_params["token"], _num(body.get("listing_id"), int) or 0, str(body.get("kind") or ""),
                       str(body.get("text") or ""), str(body.get("phone") or ""), device)
     if "error" in res:
         return _err(res["error"])
     resp = JSONResponse(res)
-    if request.cookies.get(PV_COOKIE) != device:
+    if request.cookies.get(PV_COOKIE) != device and request.cookies.get("ck") == "all":
         resp.set_cookie(PV_COOKIE, device, max_age=365 * 86400, httponly=True, samesite="lax",
                         secure=request.headers.get("x-forwarded-proto", request.url.scheme) == "https")
+    return resp
+
+
+def _device(request: Request) -> tuple[str, bool]:
+    """Метка устройства клиента подборки: с согласием на cookie — кука pv (надолго); без согласия — ничего не храним
+    в браузере, метка считается из браузера и адреса (только для «уже ответил» и уникальных просмотров)."""
+    d = request.cookies.get(PV_COOKIE) or ""
+    if re.fullmatch(r"[A-Za-z0-9_-]{16,64}", d):
+        return d, False
+    if request.cookies.get("ck") == "all":
+        return secrets.token_urlsafe(16), True
+    import hashlib
+    raw = "|".join((request.headers.get("user-agent", ""), request.headers.get("accept-language", ""),
+                    request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "")))
+    return "h" + hashlib.sha256((config.SECRET_KEY + raw).encode()).hexdigest()[:22], False
+
+
+def api_cookie_consent(request: Request, body: dict | None = None):
+    """17.10: согласие на cookie (web/cookies.js). all — можно необязательные (статистика, приглашение коллеги);
+    need — только необходимые: необязательные удаляем. Выбор пишем в журнал (когда, что, кто) — подтверждение согласия."""
+    body = body or {}
+    choice = "all" if body.get("choice") == "all" else "need"
+    u = current_user(request)
+    conn = db.get()
+    conn.execute("INSERT INTO cookie_consents (ts, choice, user_id) VALUES (?,?,?)", (int(time.time()), choice, u["id"] if u else None))
+    conn.commit()
+    resp = JSONResponse({"ok": True, "choice": choice})
+    secure = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
+    resp.set_cookie("ck", choice, max_age=365 * 86400, samesite="lax", secure=secure)   # читает и cookies.js
+    if choice == "all":
+        ref = re.sub(r"[^\w-]", "", str(body.get("ref") or ""))[:20]
+        if ref:
+            resp.set_cookie("ref", ref, max_age=30 * 86400, httponly=True, samesite="lax", secure=secure)
+    else:
+        resp.delete_cookie("ref")
+        resp.delete_cookie(PV_COOKIE)
     return resp
 
 
@@ -1163,10 +1201,8 @@ def api_pick_public(request: Request, body: dict | None = None):
     ua = request.headers.get("user-agent", "")
     count = (current_user(request) is None and request.query_params.get("as") != "agent"
              and bool(ua) and not _PREVIEW_BOT.search(ua))
-    device = request.cookies.get(PV_COOKIE) or ""
-    new_device = count and not re.fullmatch(r"[A-Za-z0-9_-]{16,64}", device)
-    if new_device:
-        device = secrets.token_urlsafe(16)
+    device, new_device = _device(request)
+    new_device = new_device and count
     d = picks.public(db.get(), request.path_params["token"], count_view=count, device=device)
     if not d:
         return _err("Подборка не найдена или удалена.", 404)
@@ -2454,6 +2490,7 @@ routes = [
     Route("/api/picks", threaded(api_picks), methods=["GET", "POST", "DELETE"]),
     Route("/api/picks/{id:int}/items", threaded(api_pick_items), methods=["POST"]),
     Route("/api/picks/{id:int}/similar", threaded(api_pick_similar)),
+    Route("/api/c/consent", threaded(api_cookie_consent), methods=["POST"]),
     Route("/api/c/{token}", threaded(api_pick_public)),
     Route("/api/c/{token}/react", threaded(api_pick_react), methods=["POST"]),
     Route("/planner/{uid:int}-{token}.ics", threaded(planner_feed)),

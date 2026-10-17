@@ -22,7 +22,7 @@
   const state = {
     q: "", deal: "sale", types: [], rooms: [],
     priceMin: "", priceMax: "", areaMin: "", areaMax: "", landMin: "", landMax: "",
-    notFirst: false, notLast: false, fresh: "", hot: false, districts: [], complexes: [],
+    notFirst: false, notLast: false, fresh: "", hot: false, districts: [], complexes: [], repair: "",
     sort: "new", view: "list",
   };
   const DEFAULTS = JSON.parse(JSON.stringify(state));
@@ -101,7 +101,7 @@
   // ─── адрес страницы ↔ фильтры ────────────────────────────────────────────
   const URL_KEYS = {
     q: "q", deal: "deal", types: "type", rooms: "rooms", priceMin: "pmin", priceMax: "pmax",
-    areaMin: "amin", areaMax: "amax", landMin: "lmin", landMax: "lmax", notFirst: "nf",
+    areaMin: "amin", areaMax: "amax", landMin: "lmin", landMax: "lmax", notFirst: "nf", repair: "rep",
     notLast: "nl", fresh: "fresh", hot: "hot", districts: "district", complexes: "complex", sort: "sort", view: "view",
   };
   function readUrl() {
@@ -145,6 +145,7 @@
       if (n != null) p.set(api, n);
     }
     if (state.notFirst) p.set("not_first", "1");
+    if (state.repair === "yes" || state.repair === "no") p.set("cond", state.repair === "yes" ? "repair" : "norepair");
     if (state.hot) p.set("hot", "1");   // «🔥 Горячее»
     if (state.fresh === "new1") p.set("new_days", "1");   // «Новое сегодня»: впервые появились за сутки
     else if (state.fresh) p.set("fresh_days", state.fresh);
@@ -226,6 +227,7 @@
     });
     for (const k of ["priceMin", "priceMax", "areaMin", "areaMax", "landMin", "landMax"]) $(k).value = state[k];
     $("notFirst").checked = state.notFirst;
+    $("repair").value = state.repair;
     $("fresh").value = state.fresh;
     $("newTodayBtn").classList.toggle("on", state.fresh === "new1");
     $("newTodayBtn").setAttribute("aria-pressed", state.fresh === "new1");
@@ -239,7 +241,7 @@
     $("filterBadge").hidden = !fc;
     $("filterBadge").textContent = fc;
     // сколько выбрано среди «ещё фильтров» — видно на кнопке, даже когда они свёрнуты
-    const mc = [state.areaMin || state.areaMax, state.landMin || state.landMax, state.notFirst, state.fresh]
+    const mc = [state.areaMin || state.areaMax, state.landMin || state.landMax, state.notFirst, state.fresh, state.repair]
       .filter(Boolean).length + state.districts.length + state.complexes.length;
     $("moreN").hidden = !mc;
     $("moreN").textContent = mc;
@@ -463,9 +465,11 @@
     const has = new Map(cmData.items.map((x) => [x.id, x.status]));
     const list = cmData.clients.filter((c) => !q || c.name.toLowerCase().includes(q))
       .sort((a, b) => (has.has(b.id) ? 1 : 0) - (has.has(a.id) ? 1 : 0));
-    box.innerHTML = list.length ? list.map((c) => `<button type="button" class="cm-it${has.has(c.id) ? " on" : ""}" data-client-add="${c.id}">
-        <span class="cm-ava">${esc((c.name || "К")[0].toUpperCase())}</span><span class="cm-name">${esc(c.name)}</span>
-        <small>${has.has(c.id) ? esc(PAIR_L[has.get(c.id)] || has.get(c.id)) : "в подборку"}</small></button>`).join("")
+    // 17.10 (Артём): отправленному клиенту — золотая галочка и плашка статуса, только что добавленный — вспышкой
+    box.innerHTML = list.length ? list.map((c) => `<button type="button" class="cm-it${has.has(c.id) ? " on" : ""}${cmDone && cmDone.id === c.id ? " just" : ""}" data-client-add="${c.id}">
+        <span class="cm-ava">${has.has(c.id) ? ic("check") : esc((c.name || "К")[0].toUpperCase())}</span><span class="cm-name">${esc(c.name)}</span>
+        ${has.has(c.id) ? `<span class="sent-badge">${esc((PAIR_L[has.get(c.id)] || has.get(c.id)).replace(/^./, (x) => x.toUpperCase()))}</span>`
+          : `<small class="cm-add">${ic("plus")}в подборку</small>`}</button>`).join("")
       : `<p class="note">${cmData.clients.length ? "Никого не нашли." : "Клиентов пока нет — создайте ниже."}</p>`;
     const done = $("cmDone");
     done.hidden = !cmDone;
@@ -476,7 +480,7 @@
     const r = await call(`/api/clients/${cid}/add`, { listing_id: cmFor });
     if (!r.ok) { toast(r.data.detail || "Не получилось", 3500); return; }
     const c = cmData.clients.find((x) => x.id === cid) || { name: "" };
-    cmDone = { name: c.name, pick: r.data.pick || {} };
+    cmDone = { id: cid, name: c.name, pick: r.data.pick || {} };
     const rr = await call(`/api/clients?listing=${cmFor}`);
     if (rr.ok) cmData = rr.data;
     cmRender();
@@ -918,11 +922,11 @@
     const admin = u && u.is_admin;
     const st = o.status || myStatus(o.id);
     const inCmp = cmp.includes(o.id);
-    const actions = [
-      `<button type="button" class="dv-act${inCmp ? " on" : ""}" data-cmp="${o.id}"><i>⚖</i><span>${inCmp ? "В сравнении" : "Сравнить"}</span></button>`,
-      u ? `<a class="dv-act" href="/planner?add=show&listing=${o.id}"><i>📅</i><span>Запланировать</span></a>` : "",
-      u ? `<button type="button" class="dv-act" data-client-open="${o.id}"><i>${ic("users")}</i><span>Клиенту ▾</span></button>` : "",
-      `<button type="button" class="dv-act" data-share="${o.id}"><i>${ic("share")}</i><span>Поделиться</span></button>`,
+    const actions = [   // 17.10 (Артём): «Клиенту» — первой и главной, «Сравнить» — на её прежнем месте
+      u ? `<button type="button" class="dv-act main" data-client-open="${o.id}"><i>${ic("users")}</i><span>Клиенту</span></button>` : "",
+      u ? `<a class="dv-act" href="/planner?add=show&listing=${o.id}"><i>${ic("calendar")}</i><span data-s="В планер">Запланировать</span></a>` : "",
+      `<button type="button" class="dv-act${inCmp ? " on" : ""}" data-cmp="${o.id}"><i>${ic("scale")}</i><span>${inCmp ? "В сравнении" : "Сравнить"}</span></button>`,
+      `<button type="button" class="dv-act" data-share="${o.id}"><i>${ic("share")}</i><span data-s="Ссылка">Поделиться</span></button>`,
       u ? `<button type="button" class="dv-act" data-hide-open="${o.id}"><i>${ic("eye")}</i><span>Скрыть</span></button>` : "",
     ].join("");
 
@@ -935,13 +939,20 @@
       + chart;
     const priceHint = [days != null ? `${days < 1 ? "новое" : days + " дн."}` : "", chart ? "график" : ""].filter(Boolean).join(" · ");
     const pairs = o.pairs || [];
+    // 17.10: «Подходит вашим клиентам» — теперь внутри «Клиенты и заметки» (один блок вместо двух с клиентами)
+    const fit = o.fit_clients || [];   // ваши клиенты, которым объект подходит по пожеланиям и ещё не предложен
+    const fitInline = fit.length ? `<p class="wk-sh wk-sh2">${ic("sparkle")}Подходит по пожеланиям — ещё не отправлен</p>
+      <div class="pr-list">${fit.map((c) => `<div class="pr-it fit"><a href="/clients?id=${c.id}" target="_top">${ic("user")}${esc(c.name)}</a>
+        <small class="pr-st">${esc(c.stage_label)}</small>
+        <button type="button" class="pill light pr-add" data-fit-add="${c.id}" data-fit-for="${o.id}">${ic("plus")}В подборку</button></div>`).join("")}</div>` : "";
     const notesBody = u && !o.loading ? `<div class="wk-sec"><p class="wk-sh">Клиенты по объекту</p>
       ${pairs.length ? `<div class="pr-list">${pairs.map((p) => `<div class="pr-it"><a href="/clients?id=${p.id}" target="_top">${ic("user")}${esc(p.name)}</a>
         ${p.reaction ? `<span class="pr-re">ответ: ${esc({ like: "нравится", no: "не подходит", want_show: "хочет посмотреть", question: "вопрос" }[p.reaction] || "")}</span>` : ""}
         <select data-pair-set="${p.id}:${o.id}" aria-label="Статус для ${esc(p.name)}">${Object.entries(PAIR_L).map(([k, v]) =>
           `<option value="${k}"${p.status === k ? " selected" : ""}>${v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></div>`).join("")}</div>`
         : `<p class="wk-empty">Объект ещё не отправлен ни одному клиенту.</p>`}
-      <button type="button" class="wk-open" data-client-open="${o.id}">${ic("users")}Клиенту ▾ <small>в подборку клиента</small></button></div>
+      ${fitInline}
+      <button type="button" class="wk-open" data-client-open="${o.id}">${ic("users")}Отправить клиенту <small>в его подборку</small></button></div>
       <div class="wk-sec"><p class="wk-sh">Журнал — что, кому и когда</p><div class="wk" data-wk="${o.id}">${journalHTML(o)}</div></div>
       <div class="wk-sec"><p class="wk-sh">Личная заметка <small>видите только вы</small></p>
       <textarea class="d-note-text wk-note" data-note="${o.id}" rows="2" maxlength="2000" placeholder="Например: торг 100 т.р., собственник один">${esc(o.note || "")}</textarea>
@@ -950,17 +961,19 @@
     const plans = (o.plans || []);
     const plansBody = plans.length ? `<ul class="dv-list">${plans.map((p) => `<li><a href="/planner?event=${p.id}">${PLAN_KINDS[p.kind] || ""} · ${esc(when(p.ts))}</a>${p.done ? " ✓" : ""}
       <small>${esc(p.title)}</small></li>`).join("")}</ul>` : "";
-    const fit = o.fit_clients || [];   // ваши клиенты, которым объект подходит по пожеланиям и ещё не предложен
-    const fitBody = fit.length ? `<ul class="dv-list">${fit.map((c) => `<li><a href="/clients?id=${c.id}" target="_top">${esc(c.name)}</a>
-        <small>${esc(c.stage_label)}</small>
-        <button type="button" class="pill light" data-fit-add="${c.id}" data-fit-for="${o.id}">В подборку клиента</button></li>`).join("")}</ul>` : "";
     const same = o.same || [];
     const sameBody = same.length ? `<p class="note">Тот же или очень похожий объект у других агентов — сверьте детали.</p>
       <ul class="dv-list">${same.map((s) => `<li><button type="button" class="link" data-open-id="${s.id}">${esc(fmtPrice(s.price, o.deal))}</button>
         <small>${esc(s.title)} · ${esc(fmtAgo(s.last_seen))}</small></li>`).join("")}</ul>` : "";
-    const hist = (o.history || []).map((h) => {
+    const H = o.history || [];
+    const hist = H.map((h, i) => {
       const who = meta.access ? [h.chat, h.sender].filter(Boolean).join(" · ") : "";
-      return `<li><span>${esc(fmtDate(h.ts))}${h.price ? " — " + esc(fmtPrice(h.price, o.deal)) : ""}</span><small>${esc(who || MATCH[h.match] || "")}</small></li>`;
+      const prev = i ? H[i - 1].price : null;
+      const moved = prev && h.price && prev !== h.price;
+      const tag = i === 0 ? `<em class="hs-tag first">Впервые заметили</em>` : i === H.length - 1 ? `<em class="hs-tag last">Последнее сообщение</em>` : "";
+      const gap = i === 1 && (o.history_total || 0) > H.length ? `<li class="hs-gap">… ещё ${o.history_total - H.length} ${plural(o.history_total - H.length, "сообщение", "сообщения", "сообщений")} между ними</li>` : "";
+      return `${gap}<li class="${i === 0 ? "hs-first" : i === H.length - 1 ? "hs-last" : ""}">${tag}<span>${esc(fmtDate(h.ts))}${h.price ? ` — <b class="${moved ? (h.price < prev ? "down" : "up") : ""}">${esc(fmtPrice(h.price, o.deal))}</b>` : ""}</span>
+        <small>${esc(who || MATCH[h.match] || "")}</small></li>`;
     }).join("");
     const chats = (o.seen_count > 1 ? `Присылали ${o.seen_count} ${plural(o.seen_count, "раз", "раза", "раз")}` : "")
       + (o.chats > 1 ? ` в ${o.chats} ${plural(o.chats, "чат", "чата", "чатов")}` : "");
@@ -1012,11 +1025,11 @@
         ${o.description ? `<div class="dv-desc clamp"><p>${esc(o.description)}</p><button type="button" class="dv-desc-more" data-desc-more>Читать полностью</button></div>` : ""}
         <div class="dv-accs">
           ${acc("📈", "Цена и рынок", priceHint, priceBody)}
-          ${acc("📝", "Работа с объектом", [(o.pairs || []).length ? `клиентов: ${o.pairs.length}` : "", (o.work || []).length ? `записей: ${o.work.length}` : o.note ? "есть заметка" : ""].filter(Boolean).join(" · "), notesBody)}
+          ${acc(ic("users"), "Клиенты и заметки", [pairs.length ? `у клиентов: ${pairs.length}` : "", fit.length ? `подходит: ${fit.length}` : "",
+            (o.work || []).length ? `записей: ${o.work.length}` : o.note ? "есть заметка" : ""].filter(Boolean).join(" · "), notesBody, { cls: fit.length ? "good" : "" })}
           ${acc("📅", "В планере", plans.length ? `${plans.length}` : "", plansBody)}
-          ${fit.length ? acc("🙋", "Подходит вашим клиентам", `${fit.length}`, fitBody, { cls: "good" }) : ""}
           ${acc("👥", "Похожие у других агентов", `${same.length}`, sameBody)}
-          ${acc("🕓", "История", hist ? `${o.history.length}` : "", histBody)}
+          ${acc("🕓", "История", hist ? `${o.history_total || H.length} ${plural(o.history_total || H.length, "сообщение", "сообщения", "сообщений")}` : "", histBody)}
           ${o.can_edit ? `<a class="dv-acc-btn" href="/my/edit?id=${o.id}" target="_top"><span class="dv-acc-ic">✎</span>Изменить моё объявление</a>` : ""}
           ${acc("⚙", "Админ", "", adminBody, { cls: "admin" })}
           ${reportHTML(o)}
@@ -1039,7 +1052,12 @@
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(detailMap);
     L.control.attribution({ prefix: false }).addAttribution("© OpenStreetMap").addTo(detailMap);   // без флажка и «Leaflet»; подпись OSM обязательна по их правилам
     if (o.geo_approx) {
-      L.circle([o.lat, o.lon], { radius: 350, color: "#e3cb8f", weight: 2, dashArray: "6 6", fillColor: "#e3cb8f", fillOpacity: .12 }).addTo(detailMap);
+      // 17.10 (Артём): область примерного места заметнее — тёмная обводка под золотой, плотнее заливка, подпись в центре
+      L.circle([o.lat, o.lon], { radius: 350, color: "#0f2f2e", weight: 6, opacity: .55, fill: false, interactive: false }).addTo(detailMap);
+      L.circle([o.lat, o.lon], { radius: 350, color: "#f3d27a", weight: 3, dashArray: "8 6", fillColor: "#e3cb8f", fillOpacity: .3,
+        className: "dv-approx", interactive: false }).addTo(detailMap);
+      L.marker([o.lat, o.lon], { interactive: false, icon: L.divIcon({ className: "dv-approx-lbl-wrap", html: '<span class="dv-approx-lbl">где-то здесь</span>',
+        iconSize: null }) }).addTo(detailMap);
     } else {
       L.marker([o.lat, o.lon], { icon: L.divIcon({ className: "dv-pin-wrap", html: '<span class="dv-pin"></span>', iconSize: [28, 28], iconAnchor: [14, 28] }) }).addTo(detailMap);
     }
@@ -1567,7 +1585,7 @@
   })();
   function filtersCount() {
     return state.types.length + state.rooms.length + state.districts.length + state.complexes.length
-      + ["priceMin", "priceMax", "areaMin", "areaMax", "landMin", "landMax", "fresh"].filter((k) => state[k]).length
+      + ["priceMin", "priceMax", "areaMin", "areaMax", "landMin", "landMax", "fresh", "repair"].filter((k) => state[k]).length
       + (state.notFirst ? 1 : 0) + (state.notLast ? 1 : 0) + (state.hot ? 1 : 0) + (state.deal === "rent" ? 1 : 0);
   }
 
@@ -1920,7 +1938,12 @@
       if (t.dataset.fitAdd) {   // «Подходит вашим клиентам» → объект в подборку клиента
         call(`/api/clients/${t.dataset.fitAdd}/add`, { listing_id: Number(t.dataset.fitFor) }).then((r) => {
           if (!r.ok) { toast(r.data.detail || "Не получилось", 3500); return; }
-          t.replaceWith(Object.assign(document.createElement("small"), { textContent: "добавлено в подборку" }));
+          const row = t.closest(".pr-it");
+          if (row) row.classList.add("sent", "just");
+          const b = document.createElement("span");
+          b.className = "sent-badge"; b.innerHTML = `${ic("check")}В подборке`;
+          t.replaceWith(b);
+          toast("Объект в подборке клиента", 2200);
         });
         return;
       }
@@ -2176,6 +2199,7 @@
     }
     $("notFirst").addEventListener("change", () => { state.notFirst = $("notFirst").checked; refresh(); });
     $("fresh").addEventListener("change", () => { state.fresh = $("fresh").value; refresh(); });
+    $("repair").addEventListener("change", () => { state.repair = $("repair").value; refresh(); });
     $("sort").addEventListener("change", () => { state.sort = $("sort").value; refresh(); });
 
     // районы и ЖК в фильтре — широкий список с поиском, галочками и числом объектов
@@ -2204,7 +2228,7 @@
     $("resetBtn").addEventListener("click", () => {
       Object.assign(state, {
         types: [], rooms: [], priceMin: "", priceMax: "", areaMin: "", areaMax: "", landMin: "", landMax: "",
-        notFirst: false, notLast: false, fresh: "", districts: [], complexes: [], q: "",
+        notFirst: false, notLast: false, fresh: "", districts: [], complexes: [], q: "", repair: "",
       });
       $("q").value = "";
       syncControls();
@@ -2221,13 +2245,7 @@
       }, { rootMargin: "900px 0px" }).observe(document.querySelector(".more-results"));  // контейнер виден всегда, кнопка — нет
     }
     $("filterBtn").addEventListener("click", openSheet);
-    // Уведомление о cookie — один раз, запоминаем в браузере
-    try { if (!EMBED && !localStorage.getItem("cookieOk")) $("cookieBar").hidden = false; } catch { /* приватный режим */ }
-    $("cookieOk").addEventListener("click", () => {
-      try { localStorage.setItem("cookieOk", "1"); } catch { /* приватный режим */ }
-      $("cookieBar").classList.add("bye");
-      setTimeout(() => { $("cookieBar").hidden = true; }, 400);
-    });
+    // согласие на cookie — web/cookies.js (на всех страницах)
     const onScroll = () => $("nav").classList.toggle("scrolled", window.scrollY > 8);
     window.addEventListener("scroll", onScroll, { passive: true });
     onScroll();
@@ -2428,7 +2446,7 @@
     renderTypes();
     renderAccount();
     if (state.areaMin || state.areaMax || state.landMin || state.landMax || state.notFirst || state.notLast
-        || state.fresh || state.districts.length || state.complexes.length) {
+        || state.fresh || state.repair || state.districts.length || state.complexes.length) {
       $("more").hidden = false;
       $("moreBtn").setAttribute("aria-expanded", "true");
       $("moreBtn").querySelector("span").textContent = "Скрыть фильтры";

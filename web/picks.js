@@ -9,6 +9,14 @@
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const money = (p, deal) => (!p ? "цена не указана" : deal === "rent" ? `${Math.round(p / 1000).toLocaleString("ru-RU")} тыс. ₽/мес`
     : `${(p / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} млн ₽`);
+  // цена в поле: продажа — в млн («6,5»), аренда — в тыс. («35»)
+  const priceIn = (p, deal) => (!p ? "" : deal === "rent" ? String(Math.round(p / 1000)) : (p / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 3 }));
+  const priceOut = (v, deal) => {
+    const n = Number(String(v).replace(/\s/g, "").replace(",", "."));
+    if (!n || n < 0) return 0;
+    if (deal === "rent") return Math.round(n < 1000 ? n * 1000 : n);
+    return Math.round(n < 1000 ? n * 1e6 : n < 100000 ? n * 1000 : n);   // 6,5 → млн; 6500 → тыс.; 6500000 → рубли
+  };
   const plural = (n, a, b, c) => (n % 10 === 1 && n % 100 !== 11 ? a : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? b : c);
   const ago = (ts) => {
     if (!ts) return "";
@@ -149,7 +157,15 @@
         <span class="pk2-num">${i + 1}</span>${it.is_active ? "" : `<span class="pk2-gone">Снят с сайта</span>`}</a>
       ${it.is_active ? "" : `<button type="button" class="pk2-sim" data-sim="${it.listing_id}" data-pid="${p.id}">${ic("repeat")}Снят — показать похожие</button>`}
       <div class="pk2-ob">
-        <b class="pk2-price">${esc(money(it.price, it.deal))}</b>
+        <b class="pk2-price${it.hide_price ? " off" : ""}">${it.hide_price ? "Цена скрыта от клиента" : esc(money(it.my_price || it.price, it.deal))}</b>
+        <div class="pk2-prow">
+          <label class="pk2-pin"><span>Цена для клиента</span>
+            <input data-pprice="${it.listing_id}" data-pid="${p.id}" data-deal="${it.deal}" inputmode="decimal" autocomplete="off"
+              value="${it.my_price ? esc(priceIn(it.my_price, it.deal)) : ""}" placeholder="${esc(priceIn(it.price, it.deal) || "впишите")}"
+              aria-label="Цена для клиента"${it.hide_price ? " disabled" : ""}><em>${it.deal === "rent" ? "тыс. ₽/мес" : "млн ₽"}</em></label>
+          <label class="pk2-phide"><input type="checkbox" data-phide="${it.listing_id}" data-pid="${p.id}"${it.hide_price ? " checked" : ""}>Скрыть цену</label>
+        </div>
+        <small class="pk2-phint">В объявлении: <b>${esc(money(it.price, it.deal))}</b>${it.my_price && !it.hide_price ? " · клиент видит вашу цену" : ""}${it.hide_price ? " · клиент видит «Цена по запросу»" : ""}</small>
         <a class="pk2-ot" href="/?open=${it.listing_id}">${esc(it.title)}</a>
         <small>${esc(sub(it))}</small>
         <label class="pk2-ptext"><span>Текст для клиента <small>— можно исправить прямо здесь, сохранится сам</small></span>
@@ -560,6 +576,18 @@
       if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
       toast("Сохранено"); await reload();
     }
+  });
+  // 17.10 (Артём): своя цена для клиента / «Скрыть цену» — сохраняем сразу
+  document.addEventListener("change", async (e) => {
+    const inp = e.target;
+    if (!inp.dataset || !(inp.dataset.pprice || inp.dataset.phide)) return;
+    const pid = Number(inp.dataset.pid), lid = Number(inp.dataset.pprice || inp.dataset.phide);
+    const body = inp.dataset.pprice ? { price: priceOut(inp.value, inp.dataset.deal) } : { hide_price: inp.checked };
+    const r = await call(`/api/picks/${pid}/items`, { listing_id: lid, add: true, ...body });
+    if (!r.ok) { toast(r.data.detail || "Не сохранилось"); return; }
+    toast(inp.dataset.phide ? (inp.checked ? "Цена скрыта — клиент увидит «Цена по запросу»" : "Цена снова видна клиенту")
+      : body.price ? "Цена для клиента сохранена" : "Цена — как в объявлении", 2000);
+    await reload();
   });
   // комментарий к объекту — сохраняем, когда поле теряет фокус
   document.addEventListener("change", async (e) => {

@@ -439,3 +439,4 @@ body.d-arranging .g:not(.lifting) { opacity: .85; }
 @media (hover: none) { .g-grip { top: 10px; right: 10px; width: 26px; height: 26px; } }
 .d-promo input { flex: 1 1 auto; min-width: 0; }
 .d-promo button { flex: none; }
+.wq-presets .pk-btn, .wq-presets select { width: 100%; }

@@ -207,7 +207,9 @@ def test_referral_bonus_after_phone_confirmed(env, monkeypatch):
     code = c.get("/api/me").json()["me"]["ref"]["code"]
     before = accounts.get_user(conn, inviter["id"])["paid_until"]
     c.cookies.clear()
-    c.get(f"/?ref={code}")                       # пришёл по ссылке — запомнили
+    c.get(f"/?ref={code}")                       # пришёл по ссылке, но cookie не разрешил — не запоминаем
+    assert c.cookies.get("ref") is None
+    c.post("/api/c/consent", json={"choice": "all", "ref": code})   # «Принять все» — приглашение запомнили
     assert c.cookies.get("ref") == code
     monkeypatch.setattr(accounts, "check_email_code", lambda *a: (True, ""))   # вход по почте без письма
     c.post("/api/auth/email/verify", json={"consent": True, "email": "new@example.ru", "code": "1"})

@@ -252,6 +252,8 @@ CREATE TABLE IF NOT EXISTS planner_events (
 );
 CREATE INDEX IF NOT EXISTS ix_planner_user ON planner_events(user_id, ts);
 CREATE INDEX IF NOT EXISTS ix_planner_remind ON planner_events(reminded, done, ts);
+-- 17.10: согласия на cookie (web/cookies.js): когда, что выбрали (all | need), кто (если вошёл)
+CREATE TABLE IF NOT EXISTS cookie_consents (ts INTEGER NOT NULL, choice TEXT NOT NULL, user_id INTEGER);
 CREATE TABLE IF NOT EXISTS planner_notes (
     id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, text TEXT NOT NULL,
     pinned INTEGER NOT NULL DEFAULT 0, color TEXT, created INTEGER NOT NULL, updated INTEGER NOT NULL
@@ -363,6 +365,9 @@ MIGRATIONS = [
     ("listings", "market_diff", "INTEGER"),
     ("notes", "status", "TEXT"),
     ("collection_items", "text", "TEXT"),
+    # 17.10 (Артём): своя цена для клиента в подборке (NULL — как в объявлении) и «скрыть цену»
+    ("collection_items", "price", "INTEGER"),
+    ("collection_items", "hide_price", "INTEGER NOT NULL DEFAULT 0"),
     # «Приведи коллегу»: свой код, кто пригласил, начислили ли бонус пригласившему
     ("users", "ref_code", "TEXT"),
     ("users", "referred_by", "INTEGER"),

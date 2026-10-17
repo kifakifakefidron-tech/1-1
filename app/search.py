@@ -25,7 +25,13 @@ SORTS = {   # цена «под вопросом» (pricefix) в сортиро�
 }
 # состояние — по тексту объявления (search_text: нижний регистр, ё → е)
 COND_SQL = {"pcho": "(l.search_text LIKE '%пчо%' OR l.search_text LIKE '%предчистов%' OR l.search_text LIKE '%white box%')",
-            "repair": "(l.search_text LIKE '%ремонт%' AND l.search_text NOT LIKE '%без ремонт%' AND l.search_text NOT LIKE '%под ремонт%')",
+            "repair": "(l.search_text LIKE '%ремонт%' AND l.search_text NOT LIKE '%без ремонт%' AND l.search_text NOT LIKE '%под ремонт%'"
+                      " AND l.search_text NOT LIKE '%требует ремонт%' AND l.search_text NOT LIKE '%нужен ремонт%'"
+                      " AND l.search_text NOT LIKE '%требуется ремонт%')",
+            # 17.10 (Артём): фильтр «без ремонта» — так пишут в объявлениях: без ремонта, под ремонт, черновая, требует ремонта
+            "norepair": "(l.search_text LIKE '%без ремонт%' OR l.search_text LIKE '%под ремонт%' OR l.search_text LIKE '%требует ремонт%'"
+                        " OR l.search_text LIKE '%нужен ремонт%' OR l.search_text LIKE '%требуется ремонт%' OR l.search_text LIKE '%чернов%'"
+                        " OR l.search_text LIKE '%под отделк%' OR l.search_text LIKE '%без отделк%')",
             "furniture": "(l.search_text LIKE '%мебел%' OR l.search_text LIKE '%меблир%')"}
 
 
@@ -93,6 +99,7 @@ def query_from_params(qp) -> Query:
         land_min=num_param(qp.get("land_min")), land_max=num_param(qp.get("land_max")),
         districts=_list(qp, "district"), complexes=_list(qp, "complex"),
         not_first=qp.get("not_first") == "1", not_last=qp.get("not_last") == "1",
+        cond=[c for c in _list(qp, "cond") if c in COND_SQL],
         fresh_days=num_param(qp.get("fresh_days"), int), new_days=num_param(qp.get("new_days"), int),
         since=num_param(qp.get("since"), int), hl=num_param(qp.get("hl"), int), hot=qp.get("hot") == "1",
         sort=qp.get("sort", "new"),
@@ -167,7 +174,8 @@ _TYPE_WORDS = [(r"\b(?:коммерц\w*|офис\w*|помещени\w*|маг�
 _NUM = r"(\d+(?:[.,]\d+)?)"
 _UNIT = r"\s*(млн|миллион\w*|лям\w*|м(?!\s*(?:2|²|кв))|тыс\w*|т\.?р\.?|т|к|р|руб\w*|₽)?\b"
 _AREA_UNIT = r"\s*(?:м2|м²|кв\.?\s*м\w*|квм|метр\w*|кв\b|м\b(?=\s*(?:2|²|кв)))"
-_COND_WORDS = [(r"\b(?:с\s+)?ремонт\w*\b", "repair"), (r"\b(?:с\s+)?мебел\w*|\bмеблир\w*", "furniture"),
+_COND_WORDS = [(r"\b(?:без|под)\s+ремонт\w*|\bтребу\w*\s+ремонт\w*|\bчернов\w*(?:\s+отделк\w*)?", "norepair"),
+               (r"\b(?:с\s+)?ремонт\w*\b", "repair"), (r"\b(?:с\s+)?мебел\w*|\bмеблир\w*", "furniture"),
                (r"\bпчо\b|\bпредчистов\w*|\bwhite\s*box\b", "pcho")]
 _ROOM_LABEL = {0: "студия", 1: "1 комн", 2: "2 комн", 3: "3 комн", 4: "4+ комн"}
 _TYPE_LABEL = {"flat": "квартира", "house": "дом", "land": "участок", "room": "комната", "commercial": "коммерция"}
@@ -284,9 +292,9 @@ def parse_phrase(q: str, deal: str = "sale") -> dict:
     # состояние
     for rx, c in _COND_WORDS:
         m = re.search(rx, w)
-        if m and not re.search(r"\b(?:без|под)\s+" + rx.lstrip(r"\b"), w):
+        if m and (c == "norepair" or not re.search(r"\b(?:без|под)\s+(?:" + rx + ")", w)):   # «без мебели» ≠ «с мебелью»
             out["cond"].append(c)
-            chip({"repair": "с ремонтом", "furniture": "с мебелью", "pcho": "ПЧО"}[c], m.group(0))
+            chip({"repair": "с ремонтом", "norepair": "без ремонта", "furniture": "с мебелью", "pcho": "ПЧО"}[c], m.group(0))
             w = re.sub(rx, " ", w)
     # ЖК: «жк X», или название из справочника; номер очереди сразу за названием — часть названия («самолет 1»)
     toks = w.split()
@@ -576,16 +584,19 @@ def listing_detail(conn: sqlite3.Connection, listing_id: int, with_contacts: boo
     if r is None:
         return None
     d = row_to_item(r, with_contacts)
-    ev = conn.execute(
-        """SELECT e.ts, e.price, e.match, m.chat_name, m.sender_name, m.source
-           FROM listing_events e LEFT JOIN messages m ON m.id = e.message_id
-           WHERE e.listing_id = ? ORDER BY e.ts DESC LIMIT 50""", (listing_id,)).fetchall()
-    # Кто и в какой чат присылал — видит только администратор
-    history = []
-    for e in ev if is_admin else []:
-        history.append({"ts": e["ts"], "price": e["price"], "match": e["match"],
-                        "chat": e["chat_name"], "sender": e["sender_name"], "source": e["source"]})
+    # 17.10 (Артём): история — всегда с ПЕРВЫМ сообщением (раньше брали 50 последних, и первое терялось) и последним;
+    # по порядку времени, всего сообщений — отдельно
+    sel = """SELECT e.rowid AS rid, e.ts, e.price, e.match, m.chat_name, m.sender_name, m.source
+             FROM listing_events e LEFT JOIN messages m ON m.id = e.message_id WHERE e.listing_id = ?"""
+    ev = []
+    if is_admin:
+        first = conn.execute(sel + " ORDER BY e.ts, e.rowid LIMIT 1", (listing_id,)).fetchone()
+        last = conn.execute(sel + " ORDER BY e.ts DESC, e.rowid DESC LIMIT 49", (listing_id,)).fetchall()
+        ev = sorted({x["rid"]: x for x in ([first] if first else []) + list(last)}.values(), key=lambda x: (x["ts"], x["rid"]))
+    history = [{"ts": e["ts"], "price": e["price"], "match": e["match"],
+                "chat": e["chat_name"], "sender": e["sender_name"], "source": e["source"]} for e in ev]
     d["history"] = history
+    d["history_total"] = conn.execute("SELECT COUNT(*) FROM listing_events WHERE listing_id = ?", (listing_id,)).fetchone()[0]         if is_admin else None
     d["price_history"] = [{"ts": h[0], "price": h[1]} for h in conn.execute(
         "SELECT ts, price FROM price_history WHERE listing_id = ? ORDER BY ts, rowid LIMIT 100", (listing_id,))]
     d["seen_count"] = r["seen_count"] if is_admin else None
