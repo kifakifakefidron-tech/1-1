@@ -48,7 +48,7 @@ def mine(conn: sqlite3.Connection, user_id: int) -> list[dict]:
         d["color"] = r["color"] if r["color"] in settings.COLORS else settings.COLORS[r["id"] % len(settings.COLORS)]
         d["notes"] = {str(k): v[:5] for k, v in worklog.for_pick(conn, user_id, r["id"], r["client_id"]).items()}
         d["items"] = [dict(x) for x in conn.execute(
-            """SELECT i.listing_id, i.note, i.text, i.pos, l.title, l.price, l.deal, l.is_active, l.photos,
+            """SELECT i.listing_id, i.note, i.text, i.pos, i.price AS my_price, i.hide_price, l.title, l.price, l.deal, l.is_active, l.photos,
                       l.description AS orig, l.type, l.rooms, l.area, l.land, l.floor, l.floors, l.complex, l.district,
                       l.street, l.house
                FROM collection_items i JOIN listings l ON l.id = i.listing_id
@@ -167,7 +167,8 @@ def set_status(conn: sqlite3.Connection, user_id: int, cid: int, listing_id: int
 
 
 def set_item(conn: sqlite3.Connection, user_id: int, cid: int, listing_id: int, add: bool,
-             note: str | None = None, commit: bool = True, text: str | None = None) -> dict:
+             note: str | None = None, commit: bool = True, text: str | None = None,
+             price: int | None = None, hide_price: bool | None = None) -> dict:
     """text — свой текст объявления для клиента ('' — вернуть исходный); телефоны из него убираем:
     клиент видит только контакт агента, сделавшего подборку."""
     if not conn.execute("SELECT 1 FROM collections WHERE id = ? AND user_id = ?", (cid, user_id)).fetchone():
@@ -183,6 +184,12 @@ def set_item(conn: sqlite3.Connection, user_id: int, cid: int, listing_id: int, 
                         ON CONFLICT(collection_id, listing_id) DO UPDATE SET note = COALESCE(excluded.note, note)""",
                      (cid, listing_id, n, (note or "").strip()[:1000] if note is not None else None, int(time.time())))
         _sync_client(conn, cid, listing_id)
+        if price is not None:   # 0 — вернуть цену из объявления
+            conn.execute("UPDATE collection_items SET price = ? WHERE collection_id = ? AND listing_id = ?",
+                         (price if 0 < price < 10_000_000_000 else None, cid, listing_id))
+        if hide_price is not None:
+            conn.execute("UPDATE collection_items SET hide_price = ? WHERE collection_id = ? AND listing_id = ?",
+                         (1 if hide_price else 0, cid, listing_id))
         if text is not None:
             clean = parser.strip_phones(str(text)).strip()[:5000]
             conn.execute("UPDATE collection_items SET text = ? WHERE collection_id = ? AND listing_id = ?",
@@ -375,11 +382,16 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
         """SELECT listing_id, kind FROM pick_reactions WHERE collection_id = ? AND device = ? AND kind != 'question'
            ORDER BY ts""",
         (c["id"], device or "-"))} if device else {}
-    for r in conn.execute("""SELECT l.*, i.note AS item_note, i.text AS item_text FROM collection_items i JOIN listings l ON l.id = i.listing_id
+    for r in conn.execute("""SELECT l.*, i.note AS item_note, i.text AS item_text, i.price AS my_price, i.hide_price
+                             FROM collection_items i JOIN listings l ON l.id = i.listing_id
                              WHERE i.collection_id = ? ORDER BY i.pos, i.added""", (c["id"],)):
         items.append({
-            "id": r["id"], "title": r["title"], "type": r["type"], "deal": r["deal"], "price": r["price"],
-            "price_m2": r["price_m2"], "rooms": r["rooms"], "room_kind": r["room_kind"], "area": r["area"], "land": r["land"],
+            "id": r["id"], "title": r["title"], "type": r["type"], "deal": r["deal"],
+            # цена: своя цена агента для клиента, иначе из объявления; «скрыть цену» — клиент видит «цена по запросу»
+            "price": None if r["hide_price"] else (r["my_price"] or r["price"]),
+            "price_m2": None if r["hide_price"] else (round(r["my_price"] / r["area"]) if r["my_price"] and r["area"] else
+                                                     None if r["my_price"] else r["price_m2"]),
+            "price_hidden": bool(r["hide_price"]), "rooms": r["rooms"], "room_kind": r["room_kind"], "area": r["area"], "land": r["land"],
             "floor": r["floor"], "floors": r["floors"], "district": r["district"], "complex": r["complex"],
             "settlement": r["settlement"], "street": r["street"], "house": None if hide else r["house"],
             "lat": _coarse(r["lat"], hide) if search.geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house" else None,

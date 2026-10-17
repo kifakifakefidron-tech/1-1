@@ -4,7 +4,13 @@
    window.ic("calendar") — иконка для шаблонов. */
 (() => {
   "use strict";
-  const SPRITE = "/static/icons.svg?v=4";
+  const SPRITE = "/static/icons.svg?v=5";
+  // согласие на cookie — на всех страницах (icons.js подключён везде первым), см. cookies.js
+  if (!document.querySelector('script[src*="cookies.js"]')) {
+    const ck = document.createElement("script");
+    ck.src = "/static/cookies.js?v=3"; ck.defer = true;
+    document.head.appendChild(ck);
+  }
   const MAP = {
     "📅": "calendar", "🗓": "calendar", "🔔": "bell", "📁": "folder", "📂": "folder", "📍": "pin", "🗑": "trash",
     "🔥": "flame", "⚖": "scale", "📞": "phone", "☎": "phone", "✅": "check-circle", "❌": "x-circle", "♡": "heart",

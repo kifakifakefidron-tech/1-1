@@ -53,7 +53,7 @@ def test_pick_flow_and_public_page_has_no_agent_phones(env):
         guest.get(f"/api/c/{p['token']}", headers=phone_ua)                                          # и ещё раз в тот же день
         assert views() == (2, 1)
     with TestClient(server.app) as other_phone:
-        other_phone.get(f"/api/c/{p['token']}", headers=phone_ua)                                    # другое устройство
+        other_phone.get(f"/api/c/{p['token']}", headers={"user-agent": "Mozilla/5.0 (Linux; Android 14) Chrome/120 Mobile"})   # другое устройство
     assert views() == (3, 2)
     c.request("DELETE", "/api/picks", json={"id": p["id"]})
     assert c.get(f"/api/c/{p['token']}").status_code == 404
@@ -74,3 +74,50 @@ def test_pick_custom_text_without_phones(env):
     assert pub["items"][0]["description"].startswith("Отличная двушка") and "918" not in pub["items"][0]["description"]
     c.post(f"/api/picks/{p['id']}/items", json={"listing_id": lid, "text": ""})   # вернуть исходный
     assert "ЖК Мозаика" in c.get(f"/api/c/{p['token']}").json()["items"][0]["description"]
+
+
+def test_cookie_consent_sets_and_revokes(tmp_path, monkeypatch):
+    """17.10: без согласия необязательные cookie не ставятся; «Принять все» — ставятся; «Только необходимые» — удаляются."""
+    from starlette.testclient import TestClient
+    from app import config, db, server
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "t.db"))
+    monkeypatch.setattr(db._local, "conn", None, raising=False)
+    with TestClient(server.app) as c:
+        c.get("/?ref=abc")
+        assert c.cookies.get("ref") is None
+        r = c.post("/api/c/consent", json={"choice": "all", "ref": "abc"})
+        assert r.json()["choice"] == "all" and c.cookies.get("ck") == "all" and c.cookies.get("ref") == "abc"
+        c.post("/api/c/consent", json={"choice": "need"})
+        assert c.cookies.get("ck") == "need" and c.cookies.get("ref") is None
+        assert db.get().execute("SELECT COUNT(*) FROM cookie_consents").fetchone()[0] == 2
+    db._local.conn = None
+
+
+def test_pick_own_price_and_hidden_price(env):
+    """17.10: своя цена для клиента (в объявлении — другая) и «Скрыть цену» — клиент видит «по запросу»."""
+    c, conn, lid = env
+    _login(c, conn)
+    p = c.post("/api/picks", json={"title": "Цена", "listing_id": lid, "contact_phone": "8 900 111 22 33"}).json()["pick"]
+    orig = conn.execute("SELECT price FROM listings WHERE id = ?", (lid,)).fetchone()[0]
+    c.post(f"/api/picks/{p['id']}/items", json={"listing_id": lid, "add": True, "price": 7_250_000})
+    it = c.get(f"/api/c/{p['token']}?as=agent").json()["items"][0]
+    assert it["price"] == 7_250_000 and not it["price_hidden"]
+    mine = [x for x in c.get("/api/picks").json()["items"] if x["id"] == p["id"]][0]["items"][0]
+    assert mine["my_price"] == 7_250_000 and mine["price"] == orig        # агент видит и свою, и цену из объявления
+    c.post(f"/api/picks/{p['id']}/items", json={"listing_id": lid, "add": True, "hide_price": True})
+    it = c.get(f"/api/c/{p['token']}?as=agent").json()["items"][0]
+    assert it["price"] is None and it["price_m2"] is None and it["price_hidden"]
+    c.post(f"/api/picks/{p['id']}/items", json={"listing_id": lid, "add": True, "hide_price": False, "price": 0})
+    assert c.get(f"/api/c/{p['token']}?as=agent").json()["items"][0]["price"] == orig
+
+
+def test_repair_filter():
+    from app import db, ingest, search
+    conn = db.connect(":memory:")
+    for i, t in enumerate(["2-к квартира 50 м², 3/9 эт., ФМР, ул. Красная 10. Евроремонт. 6 млн. 89180000001",
+                           "2-к квартира 52 м², 4/9 эт., ФМР, ул. Красная 12. Без ремонта. 5 млн. 89180000002",
+                           "2-к квартира 51 м², 5/9 эт., ФМР, ул. Красная 14. Черновая отделка. 4,5 млн. 89180000003"]):
+        ingest.process_message(conn, ingest.add_message(conn, source="manual", text=t, msg_id=str(i)), use_llm=False)
+    prices = lambda cond: sorted(x["price"] for x in search.search(conn, search.Query(cond=[cond]), 0, True)["items"])  # noqa: E731
+    assert prices("repair") == [6_000_000]
+    assert prices("norepair") == [4_500_000, 5_000_000]

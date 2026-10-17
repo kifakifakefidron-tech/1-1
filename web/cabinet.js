@@ -104,16 +104,15 @@
     const d = m ? m.data : null;
     const edit = me.is_admin ? `<button type="button" class="wm-edit" id="banksEdit">${b.length ? "Изменить ставки банков" : "+ Внести ставки банков"}</button>` : "";
     const ma = banks && banks.avg;
-    mortRates = { best: b.length ? b[0].secondary : null, avg: ma && ma.secondary != null ? ma.secondary : null, cb: d && d.secondary != null ? d.secondary : null };
+    mortRates = { best: b.length ? b[0].secondary : null, avg: ma && ma.secondary != null ? ma.secondary : null, cb: d && d.secondary != null ? d.secondary : null,
+      banks: b.map((x) => ({ bank: x.bank, rate: x.secondary })) };
     // средняя по рынку: из таблицы ДОМ.РФ, которую вставил админ; если её нет — средняя ЦБ по краю
     const avg = mortRates.avg != null
       ? `<p class="g-sub wm-avg">Средневзвешенная по рынку на ${new Date(ma.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}: ${pct(ma.secondary)}</p>`
-      : mortRates.cb != null ? `<p class="g-sub wm-avg">В среднем по краю за ${esc((d.month || "").toLowerCase())} (ЦБ): ${pct(d.secondary)}</p>` : "";
+      : "";   // 17.10 (Артём): строку «В среднем по краю … (ЦБ)» не показываем вообще
     if (!b.length) {   // ставок банков ещё нет — средняя ЦБ по краю
       put("wMort", `${head("percent", "Ипотека · вторичка")}
-        ${mortRates.cb != null ? `<div class="wm-rows"><div class="wm-row main"><span>В среднем по краю</span><b>${pct(d.secondary)}</b></div></div>
-          <p class="g-sub">Средняя ставка по выданным кредитам на вторичное жильё за ${esc((d.month || "").toLowerCase())} (ЦБ). Ставки банков появятся, когда их внесут.</p>`
-          : `<p class="g-empty">Данные загрузятся позже.</p>`}${edit}`, 2);
+        <p class="g-empty">Ставки банков на вторичку появятся, когда их внесут.</p>${edit}`, 2);
       return;
     }
     const upd = banks.ts ? new Date(banks.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "short" }) : "";
@@ -262,13 +261,18 @@
   function calcHtml() {
     // по умолчанию — лучшая рыночная ставка банков на вторичку (средняя ЦБ включает льготные программы и занижает платёж)
     if (!rateSet && mortRates.best != null) { calc.rate = mortRates.best; rateSet = true; }
-    const presets = [["best", "Лучшая банков"], ["avg", "Средняя по рынку"], ["cb", "Средняя ЦБ"]].filter(([k]) => mortRates[k] != null)
-      .map(([k, t]) => `<button type="button" data-rate="${mortRates[k]}">${t} ${pct(mortRates[k])}</button>`).join("");
+    // 17.10 (Артём): ставка — из списка банков (раскрывающийся список), без «средней ЦБ»
+    const banks = mortRates.banks || [];
+    const opts = banks.map((x, i) => `<option value="b${i}" data-rate="${x.rate}">${esc(x.bank)} — ${pct(x.rate)}</option>`).join("")
+      + (mortRates.avg != null ? `<option value="avg" data-rate="${mortRates.avg}">Средняя по рынку — ${pct(mortRates.avg)}</option>` : "")
+      + `<option value="own">Своя ставка — ползунком</option>`;
+    const presets = banks.length || mortRates.avg != null
+      ? `<select id="qBank" aria-label="Ставка банка" data-placeholder="Выберите банк">${opts}</select>` : "";
     put("wCalc", `${head("calc", "Ипотечный калькулятор")}
       <div class="wq-grid"><div class="wq-in">
         <div class="wq-f"><label>Цена объекта <b id="qPriceV"></b></label><input type="range" id="qPrice" min="1" max="40" step="0.1" value="${calc.price}"></div>
         <div class="wq-f"><label>Первый взнос <b id="qDownV"></b></label><input type="range" id="qDown" min="0" max="90" step="1" value="${calc.down}"></div>
-        <div class="wq-f"><label>Ставка <b id="qRateV"></b></label><input type="range" id="qRate" min="1" max="30" step="0.1" value="${calc.rate}">
+        <div class="wq-f"><label>Ставка <b id="qRateV"></b></label><input type="range" id="qRate" min="1" max="30" step="0.01" value="${calc.rate}">
           <div class="wq-presets" id="qPresets">${presets}</div></div>
         <div class="wq-f"><label>Срок <b id="qYearsV"></b></label><input type="range" id="qYears" min="1" max="30" step="1" value="${calc.years}"></div>
       </div>
@@ -291,7 +295,12 @@
     $("qLoan").textContent = money(loan);
     $("qOver").textContent = money(Math.max(0, pay * n - loan));
     $("qIncome").textContent = `${num(Math.round(pay * 2 / 1000))} тыс ₽/мес`;
-    document.querySelectorAll("#qPresets button").forEach((b) => b.classList.toggle("on", Number(b.dataset.rate) === calc.rate));
+    const qb = $("qBank");
+    if (qb) {   // выбранный банк — если ставка совпадает, иначе «своя»
+      const hit = [...qb.options].find((o) => o.dataset.rate && Math.abs(Number(o.dataset.rate) - calc.rate) < 0.006);
+      const val = hit ? hit.value : "own";
+      if (qb.value !== val) qb.value = val;
+    }
     document.querySelectorAll("#wCalc input[type=range]").forEach((r) => {   // золотая заливка до бегунка
       r.style.setProperty("--p", `${(r.value - r.min) / (r.max - r.min) * 100}%`);
     });
@@ -719,6 +728,11 @@
 
   // ─── события ─────────────────────────────────────────────────────
   document.addEventListener("input", (e) => { if (e.target.closest("#wCalc input[type=range]")) recalc(); });
+  document.addEventListener("change", (e) => {   // банк из списка → его ставка в калькулятор
+    if (e.target.id !== "qBank") return;
+    const opt = e.target.selectedOptions[0];
+    if (opt && opt.dataset.rate) { $("qRate").value = opt.dataset.rate; recalc(); }
+  });
   document.addEventListener("click", async (e) => {
     const b = e.target.closest("button");
     if (!b) return;

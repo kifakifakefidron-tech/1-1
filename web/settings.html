@@ -18,7 +18,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=57">
+<link rel="stylesheet" href="/static/glass.css?v=60">
 <link rel="stylesheet" href="/static/settings.css?v=4">
 </head>
 <body>
@@ -86,7 +86,7 @@
     </section>
 
     <section class="st-card">
-      <div class="st-card-h"><span class="st-ic"><i data-ic="grid"></i></span><div><h2>Кабинет</h2>
+      <div class="st-card-h"><span class="st-ic"><i data-ic="dashboard"></i></span><div><h2>Кабинет</h2>
         <p>Блоки кабинета можно перетаскивать за заголовок — порядок сохранится в аккаунте.</p></div></div>
       <div class="st-acts"><a class="pill light" href="/cabinet">Открыть кабинет</a><button type="button" class="chip" id="stResetLayout">Вернуть порядок блоков как было</button></div>
     </section>
@@ -96,14 +96,20 @@
       <div class="st-acts"><button type="button" class="chip" id="stLogoutAll">Выйти на всех других устройствах</button>
         <button type="button" class="chip danger" id="stLogout">Выйти</button></div>
     </section>
+
+    <section class="st-card">
+      <div class="st-card-h"><span class="st-ic"><i data-ic="shield"></i></span><div><h2>Cookie</h2>
+        <p>Необходимые работают всегда. Статистику посещений и приглашение коллеги можно разрешить или отозвать в любой момент.</p></div></div>
+      <div class="st-acts"><button type="button" class="chip" data-cookie-settings>Изменить согласие на cookie</button></div>
+    </section>
   </div>
   <p class="st-saved" id="stSaved" aria-live="polite"></p>
 </main>
 
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
-<script src="/static/icons.js?v=6"></script>
+<script src="/static/icons.js?v=9"></script>
 <script src="/static/pickers.js?v=12"></script>
-<script src="/static/rail.js?v=18"></script>
+<script src="/static/rail.js?v=19"></script>
 <script src="/static/settings.js?v=4"></script>
 <script src="/static/bell.js?v=6"></script>
 </body>

@@ -31,7 +31,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=57">
+<link rel="stylesheet" href="/static/glass.css?v=60">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -150,6 +150,14 @@
         <label class="check"><input type="checkbox" id="notFirst"> Не первый</label>
       </div>
       <label class="field">
+        <span class="range-label">Ремонт</span>
+        <select id="repair" aria-label="Ремонт">
+          <option value="">любой</option>
+          <option value="yes">с ремонтом</option>
+          <option value="no">без ремонта</option>
+        </select>
+      </label>
+      <label class="field">
         <span class="range-label">Присылали</span>
         <select id="fresh">
           <option value="">за всё время</option>
@@ -229,6 +237,7 @@
   <a href="/market">Аналитика рынка</a>
   <a href="/how">Как это работает</a>
   <a href="/privacy">Политика конфиденциальности</a>
+  <a href="#" data-cookie-settings>Настройки cookie</a>
   <a href="/terms">Пользовательское соглашение</a>
   <a href="/offer">Оферта</a>
   <a href="/consent">Согласие на обработку данных</a>
@@ -311,11 +320,6 @@
   </div>
 </dialog>
 
-<div class="cookie" id="cookieBar" hidden>
-  <p>Мы используем только необходимые cookie — чтобы вы оставались в аккаунте. Рекламных и аналитических нет.
-    <a href="/privacy#cookie">Подробнее</a></p>
-  <button type="button" class="pill" id="cookieOk">Понятно</button>
-</div>
 
 <dialog id="cabinetDlg" class="small-dlg" aria-labelledby="cabTitle">
   <span class="grab" aria-hidden="true"></span>
@@ -375,15 +379,15 @@
   <div class="dlg-body" id="agentBody"></div>
 </dialog>
 
-<script src="/static/icons.js?v=6"></script>
+<script src="/static/icons.js?v=9"></script>
 <script src="/static/pickers.js?v=12"></script>
 <script src="/static/max.js?v=2"></script>
-<script src="/static/rail.js?v=18"></script>
+<script src="/static/rail.js?v=19"></script>
 <script src="/static/combo.js?v=3"></script>
 <script src="/static/yasel.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/app.js?v=114"></script>
+<script src="/static/app.js?v=116"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>
