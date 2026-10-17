@@ -474,8 +474,10 @@ def mask_phone(p: str) -> str:
 
 def row_to_item(r: sqlite3.Row, with_contacts: bool) -> dict:
     d = {k: r[k] for k in PUBLIC_FIELDS}
-    from .parser import guard_phones
+    from .parser import guard_phones, public_text
     d["description"] = guard_phones(d["description"])   # номеров в описании не отдаём никому — они в контакте
+    if not with_contacts:   # списки и все без доступа: без имён агентов, комиссии и «номеров с опечатками» (152-ФЗ)
+        d["description"] = public_text(d["description"])
     keys = r.keys()
     d["price_doubt"] = bool(r["price_doubt"]) if "price_doubt" in keys else False
     d["geo_level"] = geo_level(r["lat"], r["geo_status"], r["geo_src"]) if "geo_src" in keys and "lat" in keys else None

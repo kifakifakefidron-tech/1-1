@@ -201,13 +201,14 @@ def index(request: Request, body: dict | None = None):
                                        f"ул. {r['street']}" if r["street"] else None) if x)
         title = f"{r['title']} — {_price_text(r['price'], r['deal'])}"
         photos = json.loads(r["photos"] or "[]")
-        img = photos[0] if photos else "/static/favicon.svg"
+        # фото из чатов — чужие произведения: в превью ссылки только фото партнёра (фид СТРЕЛ), иначе значок 1+1
+        img = photos[0] if photos and r["source"] == "feed" else "/static/icon-192.png"
         if img.startswith("/"):
             img = config.SITE_URL + img
         esc = lambda v: html.escape(str(v), quote=True)  # noqa: E731
         url = f"{config.SITE_URL}/?open={oid}"
-        desc = " ".join(parser.client_text(r["description"]).split())[:200] or place or "Объект на 1+1"
-        meta = (f'<link rel="canonical" href="{esc(url)}">'
+        desc = " ".join(parser.public_text(r["description"]).split())[:200] or place or "Объект на 1+1"
+        meta = (f'<link rel="canonical" href="{esc(url)}"><meta name="robots" content="noindex, follow">'   # карточки — не в поиск
                 f'<meta property="og:type" content="website">'
                 f'<meta property="og:title" content="{esc(title)}">'
                 f'<meta property="og:description" content="{esc(place or desc)}">'
@@ -229,8 +230,9 @@ def index(request: Request, body: dict | None = None):
                                  if r["lat"] is not None else {})}}
         if r["price"] and not r["price_doubt"]:
             ld["price"] = r["price"]
-        meta += ('<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace("</", "<\\/")
-                 + "</script>")
+        if r["source"] == "feed":   # разметка для поисковиков — только у объектов партнёра (у чатов карточки закрыты от индекса)
+            meta += ('<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace("</", "<\\/")
+                     + "</script>")
         html_text = re.sub(r"<!--og-->.*?<!--/og-->", lambda _m: meta, html_text, count=1, flags=re.S)
         html_text = html_text.replace("<title>1+1 · поиск объектов</title>", f"<title>{esc(title)} · 1+1</title>", 1)
         html_text = re.sub(r'<meta name="description" content="[^"]*">',
@@ -2333,7 +2335,7 @@ def robots_txt(request: Request, body: dict | None = None):
     lines = ["User-agent: *", "Allow: /", "Disallow: /api/", "Disallow: /admin", "Disallow: /fix", "Disallow: /learn",
              "Disallow: /c/", "Disallow: /cabinet", "Disallow: /clients", "Disallow: /picks", "Disallow: /planner",
              "Disallow: /work", "Disallow: /my", "Disallow: /settings", "Disallow: /notifications", "Disallow: /pay",
-             "Disallow: /*?ref=", "", f"Sitemap: {config.SITE_URL}/sitemap.xml"]
+             "Disallow: /*?ref=", "Disallow: /*?open=", "Disallow: /*&open=", "", f"Sitemap: {config.SITE_URL}/sitemap.xml"]
     return Response("\n".join(lines) + "\n", media_type="text/plain; charset=utf-8")
 
 
@@ -2343,10 +2345,7 @@ def sitemap_xml(request: Request, body: dict | None = None):
     base = config.SITE_URL
     urls = [(f"{base}/", None), (f"{base}/how", None), (f"{base}/market", None), (f"{base}/privacy", None), (f"{base}/terms", None),
             (f"{base}/offer", None), (f"{base}/consent", None), (f"{base}/contacts", None)]
-    for deal in ("sale", "rent"):
-        w, p = search._where(search.Query(deal=deal), int(time.time()))
-        urls += [(f"{base}/?open={i}", ts) for i, ts in db.get().execute(
-            f"SELECT l.id, l.last_seen FROM listings l WHERE {w} ORDER BY l.last_seen DESC LIMIT 22500", p)]
+    # карточки объектов в карту сайта не входят: в них данные агентов из чатов — в поиск только открытые страницы
     body_xml = "".join(f"<url><loc>{escape(u)}</loc>"
                        + (f"<lastmod>{time.strftime('%Y-%m-%d', time.gmtime(ts))}</lastmod>" if ts else "") + "</url>"
                        for u, ts in urls)
