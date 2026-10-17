@@ -257,7 +257,10 @@
 
   // ─── ипотечный калькулятор ───────────────────────────────────────
   const calc = { price: 6, down: 20, rate: 11, years: 20 };
+  let rateSet = false;
   function calcHtml() {
+    // по умолчанию — лучшая рыночная ставка банков на вторичку (средняя ЦБ включает льготные программы и занижает платёж)
+    if (!rateSet && mortRates.best != null) { calc.rate = mortRates.best; rateSet = true; }
     const presets = [["best", "Лучшая банков"], ["avg", "Средняя по рынку"], ["cb", "Средняя ЦБ"]].filter(([k]) => mortRates[k] != null)
       .map(([k, t]) => `<button type="button" data-rate="${mortRates[k]}">${t} ${pct(mortRates[k])}</button>`).join("");
     put("wCalc", `${head("calc", "Ипотечный калькулятор")}
