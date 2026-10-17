@@ -135,6 +135,77 @@ def upsert_phone_user(conn: sqlite3.Connection, phone: str) -> sqlite3.Row:
     return get_user(conn, uid)
 
 
+# ─── 18.10: один человек — один аккаунт. Почта и телефон связываются; если человек доказал, что второй аккаунт тоже
+# его (код из письма на ту почту / звонок с того номера) — аккаунты объединяются: всё переносится в старший ───
+_USER_TABLES = ("sessions", "trials", "favorites", "phone_views", "promo_uses", "complaints", "payments", "agent_phones",
+                "phone_codes", "listing_edits", "saved_searches", "notes", "notices", "planner_events", "planner_notes",
+                "collections", "clients", "hidden_listings", "presence", "work_notes", "cookie_consents")
+
+
+def merge_users(conn: sqlite3.Connection, a: int, b: int) -> int:
+    """Объединить два аккаунта одного человека. Остаётся старший (меньший id), второй удаляется.
+    Возвращает id оставшегося. Доступ — самый поздний из двух, админ — если был у любого."""
+    if a == b:
+        return a
+    keep, drop = min(a, b), max(a, b)
+    k, d = get_user(conn, keep), get_user(conn, drop)
+    if k is None or d is None:
+        return keep if k is not None else drop
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
+    for t in _USER_TABLES:
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (t,)).fetchone():
+            conn.execute(f"UPDATE OR IGNORE {t} SET user_id = ? WHERE user_id = ?", (keep, drop))
+            conn.execute(f"DELETE FROM {t} WHERE user_id = ?", (drop,))   # дубли (то же избранное / заметка) — остаётся у старшего
+    conn.execute("UPDATE listings SET owner_user_id = ? WHERE owner_user_id = ?", (keep, drop))
+    conn.execute("UPDATE tg_tokens SET user_id = ? WHERE user_id = ?", (keep, drop))
+    conn.execute("UPDATE tg_tokens SET result_user = ? WHERE result_user = ?", (keep, drop))
+    conn.execute("UPDATE users SET referred_by = ? WHERE referred_by = ?", (keep, drop))
+    pick = lambda c: k[c] if k[c] not in (None, "") else d[c]  # noqa: E731 — пустое у старшего — берём у второго
+    email, tg_id, tg_user = pick("email"), pick("tg_id"), pick("tg_username")
+    conn.execute("UPDATE users SET email = NULL, tg_id = NULL WHERE id = ?", (drop,))   # уникальные — освобождаем
+    sets = {"email": email, "tg_id": tg_id, "tg_username": tg_user, "phone": pick("phone"), "name": pick("name"),
+            "trial_until": max(k["trial_until"] or 0, d["trial_until"] or 0), "paid_until": max(k["paid_until"] or 0, d["paid_until"] or 0),
+            "is_admin": max(k["is_admin"] or 0, d["is_admin"] or 0)}
+    for c in ("settings", "ref_code", "consent_at", "consent_ver", "referred_by"):
+        if c in cols:
+            sets[c] = pick(c)
+    if "ref_rewarded" in cols:
+        sets["ref_rewarded"] = max(k["ref_rewarded"] or 0, d["ref_rewarded"] or 0)
+    if "blocked" in cols:
+        sets["blocked"] = max(k["blocked"] or 0, d["blocked"] or 0)
+    if sets.get("referred_by") == keep:
+        sets["referred_by"] = None
+    conn.execute(f"UPDATE users SET {', '.join(f'{c} = ?' for c in sets)} WHERE id = ?", (*sets.values(), keep))
+    conn.execute("DELETE FROM users WHERE id = ?", (drop,))
+    conn.commit()
+    return keep
+
+
+def link_email(conn: sqlite3.Connection, user_id: int, email: str) -> tuple[int, bool]:
+    """Привязать почту (код из письма уже проверен). Почта у другого аккаунта — объединяем. → (id аккаунта, объединили?)"""
+    email = email.strip().lower()
+    other = conn.execute("SELECT id FROM users WHERE email = ? AND id != ?", (email, user_id)).fetchone()
+    if other:
+        return merge_users(conn, user_id, other[0]), True
+    conn.execute("UPDATE users SET email = ?, is_admin = MAX(is_admin, ?) WHERE id = ?",
+                 (email, 1 if _is_admin_identity(email=email) else 0, user_id))
+    conn.commit()
+    return user_id, False
+
+
+def claim_phone(conn: sqlite3.Connection, user_id: int, phone: str) -> tuple[int, bool]:
+    """Номер подтверждён звонком / кодом с этого номера. Уже подтверждён другим аккаунтом — это тот же человек:
+    объединяем. → (id аккаунта, объединили?)"""
+    merged = False
+    owner = conn.execute("SELECT user_id FROM agent_phones WHERE phone = ?", (phone,)).fetchone()
+    if owner and owner[0] != user_id:
+        user_id, merged = merge_users(conn, user_id, owner[0]), True
+    conn.execute("INSERT OR IGNORE INTO agent_phones (phone, user_id, verified_at) VALUES (?,?,?)", (phone, user_id, int(time.time())))
+    conn.execute("UPDATE users SET phone = COALESCE(phone, ?) WHERE id = ?", (phone, user_id))
+    conn.commit()
+    return user_id, merged
+
+
 def create_promo_user(conn: sqlite3.Connection) -> sqlite3.Row:
     """Вход по коду коллег (временно): обычный аккаунт с доступом на PROMO_LOGIN_DAYS дней."""
     now = int(time.time())
@@ -251,6 +322,7 @@ def me(conn: sqlite3.Connection, user: sqlite3.Row | None) -> dict | None:
     return {
         "id": user["id"], "name": user["name"], "tg_username": user["tg_username"], "email": user["email"],
         "phone_confirmed": bool(user["phone"]), "is_admin": bool(user["is_admin"]),
+        "phones": [r[0] for r in conn.execute("SELECT phone FROM agent_phones WHERE user_id = ? ORDER BY verified_at", (user["id"],))],
         "access": has_access(user, now), "access_until": access_until(user),
         "trial_until": user["trial_until"], "paid_until": user["paid_until"], "trial_used": used_trial,
         "favorites": fav, "views_today": views_today(conn, user["id"]),
