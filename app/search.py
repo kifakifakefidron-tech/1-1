@@ -25,13 +25,10 @@ SORTS = {   # цена «под вопросом» (pricefix) в сортиро�
 }
 # состояние — по тексту объявления (search_text: нижний регистр, ё → е)
 COND_SQL = {"pcho": "(l.search_text LIKE '%пчо%' OR l.search_text LIKE '%предчистов%' OR l.search_text LIKE '%white box%')",
-            "repair": "(l.search_text LIKE '%ремонт%' AND l.search_text NOT LIKE '%без ремонт%' AND l.search_text NOT LIKE '%под ремонт%'"
-                      " AND l.search_text NOT LIKE '%требует ремонт%' AND l.search_text NOT LIKE '%нужен ремонт%'"
-                      " AND l.search_text NOT LIKE '%требуется ремонт%')",
-            # 17.10 (Артём): фильтр «без ремонта» — так пишут в объявлениях: без ремонта, под ремонт, черновая, требует ремонта
-            "norepair": "(l.search_text LIKE '%без ремонт%' OR l.search_text LIKE '%под ремонт%' OR l.search_text LIKE '%требует ремонт%'"
-                        " OR l.search_text LIKE '%нужен ремонт%' OR l.search_text LIKE '%требуется ремонт%' OR l.search_text LIKE '%чернов%'"
-                        " OR l.search_text LIKE '%под отделк%' OR l.search_text LIKE '%без отделк%')",
+            # 17.10 (Артём): состояние разбирает rules.detect_repair (listings.repair): «без ремонта» — ПЧО, предчистовая, white box,
+            # черновая, без отделки, под ремонт, требует ремонта, старый/бабушкин ремонт; «с ремонтом» — остальное с «ремонт», «отделка»…
+            "repair": "l.repair = 'yes'",
+            "norepair": "l.repair = 'no'",
             "furniture": "(l.search_text LIKE '%мебел%' OR l.search_text LIKE '%меблир%')"}
 
 

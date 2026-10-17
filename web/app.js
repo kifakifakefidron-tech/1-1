@@ -344,6 +344,7 @@
     $("cmpBar").hidden = !cmp.length;
     $("cmpText").textContent = `⚖ К сравнению: ${cmp.length} из ${CMP_MAX}`;
     $("cmpOpen").disabled = cmp.length < 2;
+    document.body.classList.toggle("has-cmp", cmp.length > 0);   // уведомления — выше плашки сравнения
   }
   async function openCompare() {
     const dlg = $("cmpDlg");
@@ -1965,7 +1966,7 @@
       if (t.dataset.pickOpen) { openPicks(Number(t.dataset.pickOpen)); return; }
       if (t.dataset.copyRef) { share(t.dataset.copyRef, "1+1 — поиск объектов Краснодара"); return; }
       if (t.dataset.cmpDel) { toggleCompare(Number(t.dataset.cmpDel)); if (cmp.length >= 2) openCompare(); else closeDlg($("cmpDlg")); return; }
-      if (t.id === "cmpOpen") { openCompare(); return; }
+      if (t.id === "cmpOpen") { location.href = "/compare"; return; }   // 17.10: сравнение — отдельная страница
       if (t.id === "cmpClear") { const ids = cmp; cmp = []; cmpSave(); ids.forEach((id) => document.querySelectorAll(`[data-cmp="${id}"]`).forEach((b) => b.classList.remove("on"))); renderCmpBar(); return; }
       if (t.dataset.crmFilter !== undefined) { favStatus = t.dataset.crmFilter; loadList(false, true); return; }
       if (t.hasAttribute("data-login")) { openLogin(); return; }

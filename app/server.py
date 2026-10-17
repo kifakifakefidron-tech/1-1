@@ -854,6 +854,9 @@ def api_admin_overview(request: Request, body: dict | None = None):
     now = int(time.time())
     return JSONResponse({
         "listings": one(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE}"),
+        # 17.10: фильтр «Ремонт» — сколько объектов разобрано (квартиры и дома на сайте)
+        "repair": {k: one(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE} AND l.type IN ('flat','new','house','room') AND {cond}")
+                   for k, cond in (("yes", "l.repair = 'yes'"), ("no", "l.repair = 'no'"), ("none", "l.repair IS NULL"))},
         "listings_no_place": one("""SELECT COUNT(*) FROM listings WHERE is_active=1 AND district IS NULL AND complex IS NULL
                                     AND street IS NULL AND settlement IS NULL"""),
         "listings_no_district": one(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE} AND l.district IS NULL"),
@@ -1115,6 +1118,9 @@ def api_pick_items(request: Request, body: dict | None = None):
         res = picks.move(db.get(), user["id"], cid, [int(x) for x in body["order"] if str(x).isdigit()])
     elif "replace" in body:   # снятый объект → похожий на то же место
         res = picks.replace(db.get(), user["id"], cid, _num(body.get("replace"), int) or 0, _num(body.get("listing_id"), int) or 0)
+    elif "photo" in body or "photo_del" in body:   # свои фото к объекту в подборке
+        res = picks.item_photo(db.get(), user["id"], cid, int(body.get("listing_id") or 0),
+                               data_url=body.get("photo"), remove=body.get("photo_del"))
     elif "status" in body:   # статус объекта в подборке клиента (понравился, не подходит, показ…)
         res = picks.set_status(db.get(), user["id"], cid, int(body.get("listing_id") or 0), str(body["status"]))
     else:
@@ -1244,6 +1250,10 @@ def picks_page(request: Request, body: dict | None = None):
 
 def work_page(request: Request, body: dict | None = None):
     return _page("work.html")
+
+
+def compare_page(request: Request, body: dict | None = None):
+    return _page("compare.html")
 
 
 def settings_page(request: Request, body: dict | None = None):
@@ -2480,6 +2490,7 @@ routes = [
     Route("/api/requests", threaded(api_requests)),
     Route("/picks", threaded(picks_page)),
     Route("/work", threaded(work_page)),
+    Route("/compare", threaded(compare_page)),
     Route("/settings", threaded(settings_page)),
     Route("/sw.js", threaded(service_worker)),
     Route("/my", threaded(my_page)),

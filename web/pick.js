@@ -36,6 +36,21 @@
         <button type="button" class="pill light" data-max="${esc(d.contact_phone)}">Написать в MAX</button>` : ""}`;
   }
 
+  // 17.10: «Как видит клиент» — сверху полоса «← Назад к подборке» (видит только агент, клиенту её нет)
+  (() => {
+    const sp = new URLSearchParams(location.search);
+    if (sp.get("as") !== "agent") return;
+    const back = sp.get("back") || "";
+    const ok = /^https?:\/\/[^/]+\/picks(\?open=\d+)?$/.test(back);
+    const bar = document.createElement("div");
+    bar.className = "pk-agentbar";
+    bar.innerHTML = `<a href="${ok ? back.replace(/"/g, "") : "#"}" class="pk-back">← Назад к подборке</a><span>Так подборку видит клиент</span>`;
+    bar.querySelector("a").addEventListener("click", (e) => {
+      if (history.length > 1) { e.preventDefault(); history.back(); }
+      else if (!ok) { e.preventDefault(); window.close(); }
+    });
+    document.body.prepend(bar);
+  })();
   async function load() {
     let d;
     try {

@@ -418,6 +418,9 @@
   function dress(d) {
     if (d.__dressed) return;
     d.__dressed = true;
+    // 17.10: на телефоне окно при открытии не ставит фокус на первую кнопку/поле (золотая рамка вокруг «Изменить»,
+    // клавиатура и приближение) — фокус на самом окне
+    if (innerWidth <= 820 && !d.querySelector("[autofocus]")) { d.setAttribute("autofocus", ""); d.setAttribute("tabindex", "-1"); }
     if (!d.matches(OWN)) {
       d.addEventListener("cancel", (e) => { e.preventDefault(); close(); softClose(d); });   // Esc — тоже плавно
     }
@@ -480,13 +483,22 @@
     hint.style.top = `${r.top - h - 8 > 8 ? r.top - h - 8 : r.bottom + 8}px`;
   }
   const checkHint = (el) => {
-    if (el.value || !el.placeholder || !TEXTY.test(el.type || "") || el.tagName !== "INPUT" || !overflows(el)) { if (hintFor === el) hideHint(); return; }
+    if (el.value || !el.placeholder || !TEXTY.test(el.type || "") || el.tagName !== "INPUT" || el.type === "search"
+        || el.hasAttribute("data-no-hint") || !overflows(el)) { if (hintFor === el) hideHint(); return; }
     showHint(el);
   };
   document.addEventListener("focusin", (e) => { if (e.target instanceof HTMLInputElement) checkHint(e.target); });
   document.addEventListener("input", (e) => { if (e.target === hintFor) checkHint(e.target); });
   document.addEventListener("focusout", (e) => { if (e.target === hintFor) hideHint(); });
   document.addEventListener("scroll", () => { if (hintFor) showHint(hintFor); }, true);
+
+  // 17.10: в строке поиска подсказка не всплывает — на узком экране она просто короче (data-ph-short)
+  const shortPh = () => document.querySelectorAll("input[data-ph-short]").forEach((el) => {
+    el.dataset.phLong = el.dataset.phLong || el.placeholder;
+    el.placeholder = innerWidth <= 640 ? el.dataset.phShort : el.dataset.phLong;
+  });
+  window.addEventListener("resize", shortPh);
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", shortPh); else shortPh();
 
   // поле текста [data-grow] растёт под весь текст — без внутренней прокрутки (подборки: текст для клиента)
   const grow = (t) => { if (!t.getClientRects().length) return; t.style.height = "auto"; t.style.height = `${t.scrollHeight + 2}px`; };

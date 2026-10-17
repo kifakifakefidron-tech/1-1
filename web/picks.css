@@ -377,3 +377,39 @@
 .pk2-phint { display: block; font-size: 11.5px; color: var(--ink-3); margin-bottom: 4px; }
 .pk2-phint b { color: var(--ink-2); font-weight: 600; }
 .pk2-ob small.pk2-phint { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; display: block; }
+
+/* 17.10: окно «Ссылку пока нельзя отправить» — без имени и телефона агента */
+.pk2-need { width: min(460px, calc(100vw - 24px)); }
+.pk2-need-in { padding: 22px; display: grid; gap: 10px; }
+.pk2-need-ic { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: rgba(242, 154, 126, .15); color: #f6b8a4; }
+.pk2-need-ic svg { width: 22px; height: 22px; }
+.pk2-need h2 { margin: 0; font: 600 20px var(--display); }
+.pk2-need p { margin: 0; color: var(--ink-2); font-size: 14px; line-height: 1.45; }
+.pk2-need p b { color: var(--gold); }
+.pk2-need form { display: grid; gap: 10px; margin-top: 4px; }
+.pk2-need form label:not(.pk2-me-all) { display: grid; gap: 4px; font-size: 12.5px; color: var(--ink-2); font-weight: 600; }
+.pk2-need form input:not([type=checkbox]) { padding: 10px 12px; border-radius: 12px; border: 1px solid var(--glass-line); background: rgba(0, 0, 0, .18);
+  color: var(--ink); font: 15px var(--body); }
+.pk2-need form input:focus { outline: none; border-color: var(--gold); }
+.pk2-need-acts { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+
+/* 17.10: свои фото агента к объекту в подборке */
+.pk2-own { display: grid; gap: 6px; margin: 8px 0 4px; }
+.pk2-own-h { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.pk2-own-h small { font-weight: 400; color: var(--ink-3); }
+.pk2-own-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.pk2-own-ph { position: relative; width: 64px; height: 64px; border-radius: 10px; overflow: hidden; background: rgba(0, 0, 0, .2); transition: opacity .2s, transform .2s; }
+.pk2-own-ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pk2-own-ph button { position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%; border: 0; display: grid; place-items: center;
+  background: rgba(4, 40, 39, .8); color: var(--ink); cursor: pointer; padding: 0; }
+.pk2-own-ph button svg { width: 11px; height: 11px; }
+.pk2-own-add { width: 64px; height: 64px; border-radius: 10px; border: 1.5px dashed rgba(227, 203, 143, .45); display: grid; place-content: center;
+  justify-items: center; gap: 2px; color: var(--gold); font-size: 11.5px; cursor: pointer; transition: background .2s; }
+.pk2-own-add:hover { background: rgba(227, 203, 143, .08); }
+.pk2-own-add svg { width: 18px; height: 18px; }
+.pk2-own.busy { opacity: .6; pointer-events: none; }
+.pk2-own-ph.bye { opacity: 0; transform: scale(.9); }
+/* 17.10: фото в ленте «Из избранного» — квадрат 1:1, как в поиске; без фото — «Фото у агента» */
+.pk2-fph { position: relative; aspect-ratio: 1 / 1 !important; }
+.pk2-fph .ph-none small { font-size: 11px; }
+.pk2-fph .ph-none > img { width: 44% !important; }

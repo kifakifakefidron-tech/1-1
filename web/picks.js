@@ -165,6 +165,11 @@
               aria-label="Цена для клиента"${it.hide_price ? " disabled" : ""}><em>${it.deal === "rent" ? "тыс. ₽/мес" : "млн ₽"}</em></label>
           <label class="pk2-phide"><input type="checkbox" data-phide="${it.listing_id}" data-pid="${p.id}"${it.hide_price ? " checked" : ""}>Скрыть цену</label>
         </div>
+        <div class="pk2-own"><span class="pk2-own-h">Ваши фото для клиента <small>— покажутся первыми</small></span>
+          <div class="pk2-own-list">${(it.my_photos || []).map((u) => `<span class="pk2-own-ph"><img src="${esc(u)}" alt="" loading="lazy">
+            <button type="button" data-ph-del="${esc(u)}" data-lid="${it.listing_id}" data-pid="${p.id}" aria-label="Убрать фото">${ic("x")}</button></span>`).join("")}
+            ${(it.my_photos || []).length < 10 ? `<label class="pk2-own-add" title="Добавить свои фото">${ic("plus")}<span>Фото</span>
+              <input type="file" accept="image/*" multiple data-ph-add="${it.listing_id}" data-pid="${p.id}" hidden></label>` : ""}</div></div>
         <small class="pk2-phint">В объявлении: <b>${esc(money(it.price, it.deal))}</b>${it.my_price && !it.hide_price ? " · клиент видит вашу цену" : ""}${it.hide_price ? " · клиент видит «Цена по запросу»" : ""}</small>
         <a class="pk2-ot" href="/?open=${it.listing_id}">${esc(it.title)}</a>
         <small>${esc(sub(it))}</small>
@@ -193,7 +198,8 @@
   }
   function favCard(f, p) {
     return `<div class="pk2-fav">
-        <span class="pk2-fph">${f.photos && f.photos[0] ? `<img src="${esc(f.photos[0])}" alt="" loading="lazy">` : ic("home")}</span>
+        <span class="pk2-fph">${f.photos && f.photos[0] ? `<img src="${esc(f.photos[0])}" alt="" loading="lazy">`
+          : `<span class="ph-none"><img src="/static/favicon.svg" alt=""><small>Фото у агента</small></span>`}</span>
         <b>${esc(money(f.price, f.deal))}</b><small>${esc(f.complex ? `ЖК ${f.complex} · ${f.title}` : f.title)}</small>
         ${f.description ? `<p class="pk2-fdesc">${esc(f.description.slice(0, 220))}</p>` : ""}
         <a class="pk2-fopen" href="/?open=${f.id}">Открыть объект</a>
@@ -237,7 +243,7 @@
         <div class="pk2-link"><span title="${esc(link(p))}">${esc(link(p).replace(/^https?:\/\//, ""))}</span>
           <button type="button" class="pill" data-copy="${p.id}">${ic("link")}Копировать</button></div>
         <button type="button" class="pk2-act" data-need-me="${p.id}" data-share-text="${esc(`${p.title}\n${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
-        <a class="pk2-act" href="${esc(link(p))}?as=agent" target="_blank" rel="noopener" title="Ваше открытие не засчитается как просмотр клиента">${ic("eye")}<span>Как видит клиент</span></a>
+        <a class="pk2-act" href="${esc(link(p))}?as=agent&back=${encodeURIComponent(`${location.origin}/picks?open=${p.id}`)}" title="Ваше открытие не засчитается как просмотр клиента">${ic("eye")}<span>Как видит клиент</span></a>
         <button type="button" class="pk2-act" data-dup="${p.id}">${ic("layers")}<span>Копия для другого клиента</span></button>
         <button type="button" class="pk2-act danger" data-del="${p.id}">${ic("trash")}<span>Удалить</span></button>
       </div>
@@ -308,12 +314,27 @@
 
   // 17.10: без имени и телефона клиент видит подборку «ни от кого» — сначала заполнить «Как вас показать клиенту»
   const noMe = (p) => !p || !p.contact_name || !p.contact_phone || p.contact_name === "Коллега (по коду)";
-  function needMe(p) {
+  // 17.10 (Артём): «Копировать» без имени и телефона — понятное окно с объяснением и полями; после «Сохранить» ссылка копируется сама
+  function needMe(p, then = "copy") {
     if (!noMe(p)) return false;
-    toast("Сначала укажите имя и телефон — клиент увидит, от кого подборка", 3200);
-    const f = document.querySelector(`.pk2-me[data-me="${p ? p.id : 0}"]`) || document.querySelector(".pk2-me");
-    if (f) { f.scrollIntoView({ block: "center", behavior: "smooth" }); f.classList.add("pk2-me-hl"); setTimeout(() => f.classList.remove("pk2-me-hl"), 1600);
-      (f.name.value ? f.phone : f.name)?.focus({ preventScroll: true }); }
+    let d = $("pkNeedMe");
+    if (!d) { d = document.createElement("dialog"); d.id = "pkNeedMe"; d.className = "pk2-dlg pk2-need"; document.body.appendChild(d); }
+    const nm = p && p.contact_name && p.contact_name !== "Коллега (по коду)" ? p.contact_name : "";
+    d.innerHTML = `<div class="pk2-need-in">
+      <div class="pk2-need-ic">${ic("alert")}</div>
+      <h2>Ссылку пока нельзя отправить</h2>
+      <p>Клиент увидит в подборке только ваш контакт — без него непонятно, от кого объекты и кому звонить.
+        Впишите <b>${!nm && !(p && p.contact_phone) ? "имя и телефон" : !nm ? "имя" : "телефон"}</b> — один раз, дальше подставится само.</p>
+      <form class="pk2-me" data-me="${p ? p.id : 0}" data-then="${then}" autocomplete="off">
+        <label><span>Ваше имя</span><input name="name" maxlength="80" placeholder="Например: Артём" value="${esc(nm)}" required></label>
+        <label><span>Телефон для клиента</span><input name="phone" maxlength="30" inputmode="tel" placeholder="+7 900 000-00-00" value="${esc((p && p.contact_phone) || "")}" required></label>
+        <label class="pk2-me-all"><input type="checkbox" name="all" checked>Для всех подборок</label>
+        <div class="pk2-need-acts"><button type="button" class="ghost" data-need-cancel>Позже</button>
+          <button type="submit" class="pill">Сохранить и скопировать ссылку</button></div>
+      </form></div>`;
+    d.querySelector("[data-need-cancel]").onclick = () => (window.softClose ? softClose(d) : d.close());
+    d.showModal();
+    setTimeout(() => { const f = d.querySelector("form"); (f.name.value ? f.phone : f.name).focus(); }, 60);
     return true;
   }
   window.addEventListener("click", (e) => {   // «Поделиться» ловит max.js (document, capture) — window срабатывает раньше
@@ -477,6 +498,12 @@
     if (f.all.checked) await call("/api/settings", { pick_name: name, pick_phone: phone });
     toast(f.all.checked ? "Сохранено — так вы будете в новых подборках" : "Сохранено");
     await reload();
+    if (f.dataset.then) {   // из окна «Ссылку пока нельзя отправить» — сразу копируем
+      const d = $("pkNeedMe"); if (d && d.open) d.close();
+      const p = list.find((x) => x.id === Number(f.dataset.me));
+      if (p) { try { await navigator.clipboard.writeText(link(p)); toast("Сохранено. Ссылка скопирована — отправьте её клиенту", 3000); }
+        catch { prompt("Скопируйте ссылку:", link(p)); } }
+    }
   });
   document.addEventListener("change", async (e) => {
     const c = e.target;
@@ -576,6 +603,49 @@
       if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
       toast("Сохранено"); await reload();
     }
+  });
+  // 17.10 (Артём): свои фото к объекту — браузер уменьшает до 1600 px, сервер кладёт в /photos/pk/
+  function shrink(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+        const c = document.createElement("canvas");
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(img.src);
+        resolve(c.toDataURL("image/jpeg", 0.85));
+      };
+      img.onerror = () => reject(new Error("bad image"));
+      img.src = URL.createObjectURL(file);
+    });
+  }
+  document.addEventListener("change", async (e) => {
+    const inp = e.target;
+    if (!inp.dataset || !inp.dataset.phAdd) return;
+    const files = [...inp.files].slice(0, 10);
+    if (!files.length) return;
+    const box = inp.closest(".pk2-own");
+    box.classList.add("busy");
+    toast(`Загружаем ${files.length} фото…`, 4000);
+    let ok = 0;
+    for (const f of files) {
+      try {
+        const r = await call(`/api/picks/${inp.dataset.pid}/items`, { listing_id: Number(inp.dataset.phAdd), photo: await shrink(f) });
+        if (r.ok) ok += 1; else { toast(r.data.detail || "Фото не загрузилось", 3000); break; }
+      } catch { toast("Не получилось прочитать фото — нужен JPEG или PNG", 3000); }
+    }
+    box.classList.remove("busy");
+    if (ok) toast(`Добавлено фото: ${ok} — клиент увидит их первыми`, 2600);
+    await reload();
+  });
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-ph-del]");
+    if (!b) return;
+    b.closest(".pk2-own-ph").classList.add("bye");
+    const r = await call(`/api/picks/${b.dataset.pid}/items`, { listing_id: Number(b.dataset.lid), photo_del: b.dataset.phDel });
+    toast(r.ok ? "Фото убрано" : r.data.detail || "Не получилось");
+    await reload();
   });
   // 17.10 (Артём): своя цена для клиента / «Скрыть цену» — сохраняем сразу
   document.addEventListener("change", async (e) => {

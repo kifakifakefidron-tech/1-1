@@ -48,7 +48,7 @@ def mine(conn: sqlite3.Connection, user_id: int) -> list[dict]:
         d["color"] = r["color"] if r["color"] in settings.COLORS else settings.COLORS[r["id"] % len(settings.COLORS)]
         d["notes"] = {str(k): v[:5] for k, v in worklog.for_pick(conn, user_id, r["id"], r["client_id"]).items()}
         d["items"] = [dict(x) for x in conn.execute(
-            """SELECT i.listing_id, i.note, i.text, i.pos, i.price AS my_price, i.hide_price, l.title, l.price, l.deal, l.is_active, l.photos,
+            """SELECT i.listing_id, i.note, i.text, i.pos, i.price AS my_price, i.hide_price, i.photos AS my_photos, l.title, l.price, l.deal, l.is_active, l.photos,
                       l.description AS orig, l.type, l.rooms, l.area, l.land, l.floor, l.floors, l.complex, l.district,
                       l.street, l.house
                FROM collection_items i JOIN listings l ON l.id = i.listing_id
@@ -58,7 +58,8 @@ def mine(conn: sqlite3.Connection, user_id: int) -> list[dict]:
             if r["client_id"] else {}
         for it in d["items"]:
             photos = json.loads(it.pop("photos") or "[]")
-            it["photo"] = photos[0] if photos else None
+            it["my_photos"] = json.loads(it["my_photos"] or "[]")
+            it["photo"] = (it["my_photos"] or photos or [None])[0]
             it["orig"] = parser.client_text(it["orig"])   # стартовый текст для клиента — уже очищенный
             pr = pairs.get(it["listing_id"]) or {}
             it["status"], it["reaction"], it["reaction_text"] = pr.get("status"), pr.get("reaction"), pr.get("reaction_text")
@@ -202,6 +203,35 @@ def set_item(conn: sqlite3.Connection, user_id: int, cid: int, listing_id: int, 
     if commit:
         conn.commit()
     return {"ok": True}
+
+
+MAX_OWN_PHOTOS = 10
+
+
+def item_photo(conn: sqlite3.Connection, user_id: int, cid: int, listing_id: int, data_url: str | None = None,
+               remove: str | None = None) -> dict:
+    """17.10 (Артём): свои фото агента к объекту в подборке — клиент видит их первыми, перед фото из объявления."""
+    if not conn.execute("SELECT 1 FROM collections WHERE id = ? AND user_id = ?", (cid, user_id)).fetchone():
+        return {"error": "Подборка не найдена."}
+    row = conn.execute("SELECT photos FROM collection_items WHERE collection_id = ? AND listing_id = ?", (cid, listing_id)).fetchone()
+    if row is None:
+        return {"error": "Объекта нет в подборке."}
+    photos = json.loads(row["photos"] or "[]")
+    if remove:
+        photos = [x for x in photos if x != remove]
+    elif data_url:
+        if len(photos) >= MAX_OWN_PHOTOS:
+            return {"error": f"Не больше {MAX_OWN_PHOTOS} своих фото к объекту."}
+        url, msg = settings.save_cover(data_url, "pk")
+        if not url:
+            return {"error": msg}
+        if url not in photos:
+            photos.append(url)
+    conn.execute("UPDATE collection_items SET photos = ? WHERE collection_id = ? AND listing_id = ?",
+                 (json.dumps(photos) if photos else None, cid, listing_id))
+    conn.execute("UPDATE collections SET updated = ? WHERE id = ?", (int(time.time()), cid))
+    conn.commit()
+    return {"ok": True, "photos": photos}
 
 
 def move(conn: sqlite3.Connection, user_id: int, cid: int, order: list[int]) -> dict:
@@ -382,7 +412,7 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
         """SELECT listing_id, kind FROM pick_reactions WHERE collection_id = ? AND device = ? AND kind != 'question'
            ORDER BY ts""",
         (c["id"], device or "-"))} if device else {}
-    for r in conn.execute("""SELECT l.*, i.note AS item_note, i.text AS item_text, i.price AS my_price, i.hide_price
+    for r in conn.execute("""SELECT l.*, i.note AS item_note, i.text AS item_text, i.price AS my_price, i.hide_price, i.photos AS my_photos
                              FROM collection_items i JOIN listings l ON l.id = i.listing_id
                              WHERE i.collection_id = ? ORDER BY i.pos, i.added""", (c["id"],)):
         items.append({
@@ -397,7 +427,7 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
             "lat": _coarse(r["lat"], hide) if search.geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house" else None,
             "lon": _coarse(r["lon"], hide) if search.geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house" else None,
             "approx": hide,
-            "photos": json.loads(r["photos"] or "[]"),
+            "photos": json.loads(r["my_photos"] or "[]") + json.loads(r["photos"] or "[]"),   # свои фото агента — первыми
             "description": "" if not r["is_active"] else
                            parser.guard_phones(r["item_text"] or parser.client_text(r["description"]))[:5000],
             "note": r["item_note"] or "", "is_active": r["is_active"],

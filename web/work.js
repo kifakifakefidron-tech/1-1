@@ -69,7 +69,7 @@
       data-tab="${k}" aria-pressed="${k === tab}">${TABS[k]}<b>${n(k)}</b></button>`).join("");
     requestAnimationFrame(slide);
     $("wkHelp").textContent = tab === "hidden" ? "Объекты, которые вы скрыли для себя: в поиске и на карте их не видно. «Вернуть» — снова показывать."
-      : "Избранное — объекты, отмеченные сердечком. Статусы ставятся клиентам: в окне объекта «Клиенту ▾» или в подборке клиента.";
+      : "Избранное — объекты, отмеченные сердечком. Статусы ставятся клиентам: в окне объекта «Клиенту» или в подборке клиента.";
     // 17.10: «отправлен» — только если ушёл клиенту (подборка, реакция, показ); «Подобран» — ещё не отправлен
     const sent = items.filter((o) => o.clients.some((c) => c.status !== "matched")).length;
     const picked = items.filter((o) => o.clients.length && o.clients.every((c) => c.status === "matched")).length;
@@ -109,8 +109,8 @@
         <p class="wk-what">${esc(o.title)}${place(o) ? ` · ${esc(place(o))}` : ""}</p>
         <div class="wk-cl">${o.clients.length ? o.clients.map((c) => `<a class="wk-c p-${PC[c.status] || "sky"}" href="/clients?id=${c.id}" title="Карточка клиента">
             ${ic("user")}<span>${esc(c.name)}</span><b>${esc(c.label)}</b></a>`).join("")
-          : `<span class="wk-c none">Не отправлен клиентам — в окне объекта «Клиенту ▾»</span>`}</div>
-        <textarea class="wk-note" data-note="${o.id}" rows="2" maxlength="2000" placeholder="Заметка: о чём договорились, что важно клиенту…">${esc(o.note)}</textarea>
+          : `<span class="wk-c none" title="Отправить клиенту — кнопка «Клиенту» в окне объекта">${ic("users")}Не отправлен</span>`}</div>
+        ${o.note ? `<p class="wk-note-t" title="Личная заметка — изменить в окне объекта">${ic("note")}<span>${esc(o.note)}</span></p>` : ""}
         <div class="wk-foot">
           <span class="wk-when">${ic("clock")}${ago(o.touched)}</span>
           <a class="wk-btn" href="/planner?add=show&listing=${o.id}${o.clients.length === 1 ? `&client=${o.clients[0].id}` : ""}">${ic("calendar")}Показ</a>
@@ -145,7 +145,7 @@
     if (clientF && !list.length) { $("wkList").innerHTML = ""; return; }
     $("wkList").innerHTML = list.map(card).join("") || `<div class="wk-empty">${ic(items.length ? "search" : "heart")}
       <b>${items.length ? "Здесь пока пусто" : "Список пуст"}</b>
-      ${items.length ? "В этой вкладке нет объектов." : "Нажмите сердечко на объекте в поиске — он появится здесь. Клиентам объекты отправляются кнопкой «Клиенту ▾»."}
+      ${items.length ? "В этой вкладке нет объектов." : "Нажмите сердечко на объекте в поиске — он появится здесь. Клиентам объекты отправляются кнопкой «Клиенту»."}
       ${items.length ? "" : `<a class="pill" href="/">Перейти к поиску</a>`}</div>`;
   }
 
