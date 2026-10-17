@@ -109,3 +109,5 @@
   .wk-ind { display: none; }
   .wk-tab.on { background: linear-gradient(160deg, #f3e8bc, #e3cb8f); color: #0f2f2e; }
 }
+/* телефон: карточки в одну колонку — фото и заглушка пониже (16:10), иначе одна заглушка на весь экран */
+@media (max-width: 640px) { .wk-photo { aspect-ratio: 16 / 10; } }
