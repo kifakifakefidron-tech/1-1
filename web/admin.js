@@ -58,6 +58,18 @@
       (каждую правку можно откатить в окне объекта → «История правок»)</summary><ul>${o.price_report.examples.map((e) =>
         `<li><a href="/?open=${e.id}" target="_blank">${esc(e.title)}</a> — было ${esc(Number(e.before).toLocaleString("ru-RU"))} ₽,
         стало ${esc(Number(e.after).toLocaleString("ru-RU"))} ₽ (${e.why === "text" ? "цена из текста объявления" : "цена была в тысячах"})</li>`).join("")}</ul></details>` : "");
+    if (o.life) {   // 17.10: жизнь объектов — рамки и что где
+      const L = o.life, a = L.active_by_age;
+      $("overview").insertAdjacentHTML("beforeend", `<details class="adm-p0" open><summary>Жизнь объектов: на сайте ${L.rules.stale_days} дн. без повтора
+        → в архиве ${L.rules.archive_days} дн. → удаление</summary>
+        <p>На сайте <b>${esc(L.active)}</b> · без повтора в чатах: 0–3 дн. — ${a["0-3"]}, 4–7 — ${a["4-7"]}, 8–14 — ${a["8-14"]}, 15+ — ${a["15+"]}
+          (сегодня уйдут в архив).</p>
+        <p>В архиве <b>${esc(L.archive)}</b>: ${L.archive_by_reason.map((x) => `${esc(x.label)} — ${x.n}`).join("; ") || "пусто"}.</p>
+        <p>Снято «раньше срока»: <b class="${L.archived_early ? "bad" : ""}">${L.archived_early}</b> (должно быть 0) ·
+          удалится за 7 дней: ${L.delete_within_7d} · удалено всего: ${L.deleted_total}${L.restored_once != null ? ` · после обновления вернули на сайт: ${L.restored_once}` : ""}.</p>
+        <p class="note">Срок считается от последнего сообщения в чатах, но не раньше, чем от появления объекта на 1+1. Повтор в чатах сразу
+          возвращает объект из архива. Удалённые вами и «всё от номера» не стираются никогда.</p></details>`);
+    }
     online();
     stats();
   }

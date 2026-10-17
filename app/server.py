@@ -639,6 +639,7 @@ def api_me(request: Request, body: dict | None = None):
     me = accounts.me(conn, user)
     if me:
         me["counts"] = _counts(conn, user["id"])   # для меню слева и кабинета: что ждёт внимания
+        me["photo"] = settings.get(conn, user["id"]).get("pick_photo") or ""   # 17.10: фото из настроек — и фото аккаунта
     resp = JSONResponse({"me": me})
     tok = request.cookies.get(SESSION)
     if user and tok:   # продлить куку входа: заходите хотя бы раз в полгода — входить заново не нужно
@@ -854,6 +855,7 @@ def api_admin_overview(request: Request, body: dict | None = None):
     now = int(time.time())
     return JSONResponse({
         "listings": one(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE}"),
+        "life": __import__("app.lifecheck", fromlist=["report"]).report(conn, now),
         # 17.10: фильтр «Ремонт» — сколько объектов разобрано (квартиры и дома на сайте)
         "repair": {k: one(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE} AND l.type IN ('flat','new','house','room') AND {cond}")
                    for k, cond in (("yes", "l.repair = 'yes'"), ("no", "l.repair = 'no'"), ("none", "l.repair IS NULL"))},

@@ -153,11 +153,57 @@
   });
   document.querySelectorAll("[data-ic]").forEach((el) => { el.outerHTML = ic(el.dataset.ic); });
 
+  // ─── 17.10: подтверждение номера агента — прямо в настройках (тот же порядок, что в «Мои объекты») ───
+  const escH = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  let verTimer = 0;
+  async function verLoad() {
+    const r = await call("/api/agent");
+    const box = $("stVerBody");
+    if (!r.ok) { $("stVerify").hidden = true; return; }
+    const phones = r.data.phones || [];
+    box.innerHTML = (phones.length ? `<div class="st-ver-ok">${phones.map((p) => `<span class="st-ver-chip">${ic("check-circle")}${escH(p)}</span>`).join("")}</div>
+        <p class="note">Номер подтверждён. Можно добавить ещё один (например, рабочий).</p>` : "")
+      + `<form class="st-ver-form" id="stVerForm"><input id="stVerPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+7 918 123-45-67" aria-label="Ваш номер">
+        <button type="submit" class="pill">${phones.length ? "Подтвердить ещё номер" : "Получить код"}</button></form><div id="stVerCode"></div>`;
+    $("stVerForm").addEventListener("submit", (e) => { e.preventDefault(); verStart($("stVerPhone").value.trim()); });
+  }
+  async function verStart(phone) {
+    const box = $("stVerCode");
+    const r = await call("/api/agent/verify", { phone });
+    if (!r.ok) { box.innerHTML = `<p class="st-ver-err">${escH(r.data.detail || "Не получилось.")}</p>`; return; }
+    const { code, send_to: to, phone: ph } = r.data, text = `1+1-${code}`;
+    box.innerHTML = `<div class="st-ver-code"><p>Отправьте сообщение <b class="code">${escH(text)}</b><br>с номера <b>${escH(ph)}</b> на номер <b>${escH(to)}</b> в MAX.</p>
+      <div class="st-acts"><button type="button" class="chip" data-vcopy="${escH(text)}">Скопировать код</button>
+        <button type="button" class="chip" data-vcopy="${escH(to)}">Скопировать наш номер</button></div>
+      <button type="button" class="pill" id="stVerCheck">Я отправил — проверить</button>
+      <p class="note" id="stVerWait">Отправили? Нажмите «Проверить» — посмотрим сразу. Сами проверяем раз в 1–2 минуты.</p></div>`;
+    $("stVerCheck").addEventListener("click", async (e) => {
+      const b = e.currentTarget; b.disabled = true; b.textContent = "Проверяем…";
+      const c = await call("/api/agent/verify", { phone: ph, check: true });
+      b.disabled = false; b.textContent = "Проверить ещё раз";
+      if (c.ok && c.data.status === "ok") { clearInterval(verTimer); toast("Номер подтверждён"); verLoad(); return; }
+      $("stVerWait").textContent = c.data.detail || "Пока не пришло — попробуйте через минуту.";
+    });
+    clearInterval(verTimer);
+    let tries = 0;
+    verTimer = setInterval(async () => {
+      if (++tries > 360) { clearInterval(verTimer); return; }
+      const s = await call(`/api/agent/verify?phone=${encodeURIComponent(ph)}`);
+      if (s.ok && s.data.status === "ok") { clearInterval(verTimer); toast("Номер подтверждён"); verLoad(); }
+    }, 5000);
+  }
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-vcopy]");
+    if (!b) return;
+    try { await navigator.clipboard.writeText(b.dataset.vcopy); toast("Скопировано"); } catch { prompt("Скопируйте:", b.dataset.vcopy); }
+  });
+
   (async () => {
     const r = await call("/api/settings");
     if (r.status === 401) { $("stGuest").hidden = false; return; }
     st = r.data;
     $("stApp").hidden = false;
     fill();
+    verLoad();
   })();
 })();

@@ -9,7 +9,7 @@
   const num = (n, d = 0) => Number(n).toLocaleString("ru-RU", { maximumFractionDigits: d });
   const plural = (n, a, b, c) => (n % 10 === 1 && n % 100 !== 11 ? a : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? b : c);
   const price = (p, deal) => (!p ? "—" : deal === "rent" ? `${num(Math.round(p / 1000))} тыс. ₽/мес` : `${num(p / 1e6, 2)} млн ₽`);
-  const MAX = 5;
+  const MAX = 10;
   const head = (o) => (o.complex ? `ЖК ${o.complex}` : o.district || (o.street ? `ул. ${o.street}${o.house ? ", " + o.house : ""}` : o.settlement || o.title));
   const days = (o) => (o.first_seen ? Math.max(0, Math.floor((Date.now() / 1000 - o.first_seen) / 86400)) : null);
 
@@ -55,7 +55,7 @@
   function render() {
     const n = list.length;
     $("cpSub").textContent = n ? `${n} ${plural(n, "объект", "объекта", "объектов")} из ${MAX} — лучшее в каждой строке подсвечено`
-      : "До 5 объектов рядом — лучшее в каждой строке подсвечено";
+      : "До 10 объектов рядом — лучшее в каждой строке подсвечено";
     $("cpShare").hidden = $("cpClear").hidden = !n;
     if (!n) {
       $("cpBody").innerHTML = `<div class="cp-empty">${ic("scale")}<b>Сравнивать пока нечего</b>

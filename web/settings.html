@@ -18,7 +18,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=63">
+<link rel="stylesheet" href="/static/glass.css?v=64">
 <link rel="stylesheet" href="/static/settings.css?v=4">
 </head>
 <body>
@@ -40,7 +40,7 @@
             <small>Например, ваше фото, логотип агентства или красивый вид города. Лучше горизонтальное.</small></div>
           <div class="st-f"><span>Цвет подборки</span><div class="st-colors" id="stColors" role="radiogroup" aria-label="Цвет подборки"></div></div>
           <label class="st-f"><span>Подпись над заголовком</span><input id="stBrand" maxlength="60" placeholder="Подборка объектов — или название вашего агентства"></label>
-          <div class="st-f"><span>Ваше фото рядом с номером</span>
+          <div class="st-f"><span>Ваше фото — в подборках рядом с номером и как фото аккаунта</span>
             <div class="st-cover-row st-photo-row"><span class="st-ava" id="stPhotoPrev"></span>
               <label class="pill light st-upload"><input type="file" id="stPhotoFile" accept="image/*" hidden><i data-ic="plus"></i>Загрузить фото</label>
               <button type="button" class="chip" id="stPhotoDel" hidden>Убрать фото</button></div>
@@ -91,6 +91,13 @@
       <div class="st-acts"><a class="pill light" href="/cabinet">Открыть кабинет</a><button type="button" class="chip" id="stResetLayout">Вернуть порядок блоков как было</button></div>
     </section>
 
+    <section class="st-card" id="stVerify">
+      <div class="st-card-h"><span class="st-ic"><i data-ic="phone"></i></span><div><h2>Подтверждение номера</h2>
+        <p>Подтверждённый номер — отметка «Проверенный агент» у ваших объявлений и право менять их только вам.
+          Код отправляется сообщением в MAX с вашего номера.</p></div></div>
+      <div id="stVerBody"><p class="note">Загружаем…</p></div>
+    </section>
+
     <section class="st-card">
       <div class="st-card-h"><span class="st-ic"><i data-ic="shield"></i></span><div><h2>Вход и безопасность</h2><p id="stSessInfo"></p></div></div>
       <div class="st-acts"><button type="button" class="chip" id="stLogoutAll">Выйти на всех других устройствах</button>
@@ -109,8 +116,8 @@
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
 <script src="/static/icons.js?v=9"></script>
 <script src="/static/pickers.js?v=13"></script>
-<script src="/static/rail.js?v=20"></script>
-<script src="/static/settings.js?v=4"></script>
+<script src="/static/rail.js?v=21"></script>
+<script src="/static/settings.js?v=5"></script>
 <script src="/static/bell.js?v=6"></script>
 </body>
 </html>

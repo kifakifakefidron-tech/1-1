@@ -604,6 +604,15 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   (slideStage повторяет, ResizeObserver), счётчики 2×2 с правильными окончаниями. Главная: «Сохранить поиск и следить»;
   в строке поиска подсказка не всплывает — на телефоне короче (data-ph-short). «Избранное»: заметка только текстом, если
   написана (правка — в окне объекта); «Не отправлен» — короткая отметка.
+- 17.10 ночь (ветка launch-6): ЖИЗНЬ ОБЪЕКТА — STALE_DAYS 15 на сайте без повтора → ARCHIVE_DAYS 25 в архиве → удаление
+  (KEEP_DAYS ≥ 15+25); старые 20/20/45 из .env не действуют (config._days, как _LEGACY_PLANS). Причина ранних «архивов»:
+  срок считался от даты сообщения, а Wappi отдал историю — объявление 14-дневной давности уходило в архив через день.
+  Теперь срок — MAX(last_seen, listings.added_at) (added_at — появление на 1+1, ставится при INSERT); удаление — только
+  пролежавшее ARCHIVE_DAYS в архиве и старше 40 дней с последнего сообщения; админ/«всё от номера» — никогда. Разово
+  ingest.life_fix (state life_v1): added_at = сейчас всем, снятые как stale за 25 дней (не проданные/не скрытые) — обратно
+  на сайт. app/lifecheck.py — отчёт (Обзор админки «Жизнь объектов»; `docker compose exec web python -m app.lifecheck`),
+  счётчик удалённых — state deleted_listings. Сравнение — до 10. Фото в настройках (pick_photo) — и фото аккаунта
+  (/api/me → me.photo: меню и кабинет). Подтверждение номера — и в /settings (#stVerify, тот же /api/agent/verify).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
@@ -612,7 +621,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 261 тест
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 262 теста
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены

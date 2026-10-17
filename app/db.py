@@ -369,7 +369,8 @@ MIGRATIONS = [
     ("collection_items", "price", "INTEGER"),
     ("collection_items", "hide_price", "INTEGER NOT NULL DEFAULT 0"),
     ("collection_items", "photos", "TEXT"),
-    ("listings", "repair", "TEXT"),   # 17.10: состояние по тексту — 'yes' с ремонтом / 'no' без (ПЧО, черновая…) / NULL не сказано   # 17.10: свои фото агента к объекту в подборке (JSON, /photos/pk/…)
+    ("listings", "repair", "TEXT"),
+    ("listings", "added_at", "INTEGER"),   # 17.10: когда объект появился на 1+1 (срок «на сайте» не раньше этого дня)   # 17.10: состояние по тексту — 'yes' с ремонтом / 'no' без (ПЧО, черновая…) / NULL не сказано   # 17.10: свои фото агента к объекту в подборке (JSON, /photos/pk/…)
     # «Приведи коллегу»: свой код, кто пригласил, начислили ли бонус пригласившему
     ("users", "ref_code", "TEXT"),
     ("users", "referred_by", "INTEGER"),
