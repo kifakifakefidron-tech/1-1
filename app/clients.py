@@ -144,6 +144,8 @@ def save(conn: sqlite3.Connection, user_id: int, body: dict, user=None) -> dict:
                         WHERE id=:id AND user_id=:uid""", {**v, "now": now, "id": int(cid), "uid": user_id})
         if old["stage"] != v["stage"]:
             _log(conn, int(cid), "stage", f"Этап: {STAGES[old['stage']]} → {STAGES[v['stage']]}")
+            if v["stage"] == "deal":
+                after_deal(conn, user_id, int(cid), v["name"], now)
         if v["next_ts"] and (old["next_ts"] != v["next_ts"] or old["next_text"] != v["next_text"]):
             _log(conn, int(cid), "next", f"Следующий шаг: {v['next_text'] or 'связаться'}")
     else:
@@ -162,6 +164,29 @@ def save(conn: sqlite3.Connection, user_id: int, body: dict, user=None) -> dict:
     return detail(conn, user_id, int(cid))
 
 
+AFTER_DEAL = ((30, "call", "Попросить отзыв и рекомендацию"), (365, "call", "Год со сделки — поздравить"))
+
+
+def after_deal(conn: sqlite3.Connection, user_id: int, cid: int, name: str, now: int | None = None) -> int:
+    """17.10: клиент на этапе «Сделка» — работа не кончилась: через месяц попросить отзыв и рекомендацию,
+    через год — поздравить. События в планере (в 11:00 по Краснодару), повторно не создаются."""
+    now = int(now or time.time())
+    made = 0
+    for days, kind, text in AFTER_DEAL:
+        title = f"{text} — {name}"[:200]
+        if conn.execute("SELECT 1 FROM planner_events WHERE user_id = ? AND client_id = ? AND title = ?",
+                        (user_id, cid, title)).fetchone():
+            continue
+        day = (now + 3 * 3600) // 86400 + days       # сутки по UTC+3
+        ts = day * 86400 + 8 * 3600                    # 11:00 по Москве/Краснодару
+        conn.execute("""INSERT INTO planner_events (user_id, kind, title, ts, dur_min, client_id, remind_min, created, updated)
+                        VALUES (?,?,?,?,?,?,?,?,?)""", (user_id, kind, title, ts, 15, cid, 60, now, now))
+        made += 1
+    if made:
+        _log(conn, cid, "next", "В планере: через месяц — попросить отзыв, через год — поздравить")
+    return made
+
+
 def set_stage(conn: sqlite3.Connection, user_id: int, cid: int, stage: str) -> dict:
     old = _own(conn, user_id, cid)
     if old is None or stage not in STAGES:
@@ -170,6 +195,8 @@ def set_stage(conn: sqlite3.Connection, user_id: int, cid: int, stage: str) -> d
         now = int(time.time())
         conn.execute("UPDATE clients SET stage = ?, stage_ts = ?, updated = ?, stage_manual = 1 WHERE id = ?", (stage, now, now, cid))
         _log(conn, cid, "stage", f"Этап: {STAGES[old['stage']]} → {STAGES[stage]}")
+        if stage == "deal":
+            after_deal(conn, user_id, cid, old["name"], now)
         conn.commit()
     return {"ok": True}
 

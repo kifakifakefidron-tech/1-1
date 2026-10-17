@@ -711,3 +711,9 @@ dialog .pk-panel { z-index: 1000; isolation: isolate; }
   .c-dlg .close { position: absolute; top: 14px; right: 12px; z-index: 6; }
 }
 @media (max-width: 640px) { .c-dlg .c-dlg-head .d-ava { display: none; } }
+.pl-out-btns { display: grid; gap: 8px; margin: 14px 0 10px; }
+.pl-out-btns .pill { justify-content: center; display: inline-flex; align-items: center; gap: 6px; }
+.pl-out-btns .danger { color: var(--bad); }
+.pk2-me-hl { outline: 2px solid var(--gold); outline-offset: 4px; border-radius: var(--r-md, 14px); transition: outline-color .3s; }
+/* 17.10: на компьютере «Список / Карта» — переключатель справа; чип «Карта» — только на телефоне (без дубля) */
+@media (min-width: 641px) { .bar-tools .view-chip { display: none; } }

@@ -220,7 +220,7 @@
       <div class="pk2-share">
         <div class="pk2-link"><span title="${esc(link(p))}">${esc(link(p).replace(/^https?:\/\//, ""))}</span>
           <button type="button" class="pill" data-copy="${p.id}">${ic("link")}Копировать</button></div>
-        <button type="button" class="pk2-act" data-share-text="${esc(`${p.title}\n${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
+        <button type="button" class="pk2-act" data-need-me="${p.id}" data-share-text="${esc(`${p.title}\n${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
         <a class="pk2-act" href="${esc(link(p))}?as=agent" target="_blank" rel="noopener" title="Ваше открытие не засчитается как просмотр клиента">${ic("eye")}<span>Как видит клиент</span></a>
         <button type="button" class="pk2-act" data-dup="${p.id}">${ic("layers")}<span>Копия для другого клиента</span></button>
         <button type="button" class="pk2-act danger" data-del="${p.id}">${ic("trash")}<span>Удалить</span></button>
@@ -290,6 +290,20 @@
   $("pkTextSave").onclick = () => saveText(false);
   $("pkTextReset").onclick = () => saveText(true);
 
+  // 17.10: без имени и телефона клиент видит подборку «ни от кого» — сначала заполнить «Как вас показать клиенту»
+  const noMe = (p) => !p || !p.contact_name || !p.contact_phone || p.contact_name === "Коллега (по коду)";
+  function needMe(p) {
+    if (!noMe(p)) return false;
+    toast("Сначала укажите имя и телефон — клиент увидит, от кого подборка", 3200);
+    const f = document.querySelector(`.pk2-me[data-me="${p ? p.id : 0}"]`) || document.querySelector(".pk2-me");
+    if (f) { f.scrollIntoView({ block: "center", behavior: "smooth" }); f.classList.add("pk2-me-hl"); setTimeout(() => f.classList.remove("pk2-me-hl"), 1600);
+      (f.name.value ? f.phone : f.name)?.focus({ preventScroll: true }); }
+    return true;
+  }
+  window.addEventListener("click", (e) => {   // «Поделиться» ловит max.js (document, capture) — window срабатывает раньше
+    const b = e.target.closest("[data-need-me]");
+    if (b && needMe(list.find((x) => x.id === Number(b.dataset.needMe)))) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
   document.addEventListener("click", async (e) => {
     const t = e.target.closest("button, [data-open]");
     if (!t || t.closest("#pkText") || t.closest(".pk-panel")) return;
@@ -305,6 +319,7 @@
     const pid = Number(t.dataset.pid);
     if (t.dataset.copy) {
       const p = list.find((x) => x.id === Number(t.dataset.copy));
+      if (needMe(p)) return;
       try { await navigator.clipboard.writeText(link(p)); toast("Ссылка скопирована — отправьте её клиенту"); }
       catch { prompt("Скопируйте ссылку:", link(p)); }
       return;

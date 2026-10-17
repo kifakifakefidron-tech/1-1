@@ -467,6 +467,34 @@
 
   // ─── нажатия ───
   let clickTimer = 0;
+  // 17.10: показ с клиентом отмечен сделанным — спросить итог и сразу поменять статус объекта у клиента
+  function askOutcome(ev) {
+    const cid = ev && (ev.client_id || (ev.client && ev.client.id)), lid = ev && ev.listing_id;
+    if (!ev || ev.kind !== "show" || !cid || !lid) return;
+    let d = $("outcomeDlg");
+    if (!d) { d = document.createElement("dialog"); d.id = "outcomeDlg"; d.className = "small-dlg pl-outcome"; document.body.appendChild(d); }
+    const who = ev.client && ev.client.name ? `клиента «${ev.client.name}»` : "клиента";
+    d.innerHTML = `<div class="dlg-body"><h2>Как прошёл показ?</h2><p class="note">${esc(ev.title || "")}</p>
+      <div class="pl-out-btns">
+        <button type="button" class="pill" data-out="talks">${ic("check")}Понравилось — обсуждаем</button>
+        <button type="button" class="pill light" data-out="think">${ic("clock")}Думает</button>
+        <button type="button" class="pill light danger" data-out="rejected">${ic("x")}Не подошло</button></div>
+      <p class="note">Статус объекта у ${esc(who)} поменяется сам, итог попадёт в историю клиента.</p>
+      <div class="dlg-actions"><button type="button" class="ghost" data-out-skip>Позже</button></div></div>`;
+    d.onclick = async (e) => {
+      const b = e.target.closest("[data-out], [data-out-skip]");
+      if (!b) { if (e.target === d) d.close(); return; }
+      if (b.dataset.out) {
+        const out = b.dataset.out;
+        const txt = { talks: "Показ: понравилось — обсуждаем", think: "Показ: клиент думает", rejected: "Показ: не подошло" }[out];
+        if (out !== "think") await call(`/api/clients/${cid}/items`, { listing_id: lid, status: out });
+        await call(`/api/clients/${cid}/note`, { text: `${txt} — ${ev.title || ""}`.slice(0, 500) });
+        toast("Итог показа записан у клиента", 1800);
+      }
+      d.close();
+    };
+    d.showModal();
+  }
   document.addEventListener("click", async (e) => {
     const t = e.target.closest("button, [data-day], [data-ev-open]");
     if (!t) return;
@@ -479,7 +507,9 @@
       t.closest(".pv-ev") && t.closest(".pv-ev").classList.toggle("done", done);
       await call("/api/planner", { id: Number(t.dataset.done), done });
       toast(done ? "Сделано — отлично!" : "Снова в планах", 1600);
-      await reload(selDay); return;
+      await reload(selDay);
+      if (done) askOutcome(ev);
+      return;
     }
     if (t.dataset.ev && t.classList.contains("pv-pill")) { viewEvent(findEv(Number(t.dataset.ev))); return; }
     if (t.dataset.evOpen && !e.target.closest("a, button")) { viewEvent(findEv(Number(t.dataset.evOpen))); return; }
@@ -489,7 +519,9 @@
       const ev = findEv(Number(t.dataset.viewDone));
       await call("/api/planner", { id: ev.id, done: !ev.done });
       toast(ev.done ? "Снова в планах" : "Сделано — отлично!", 1600);
-      $("evView").close(); await reload(selDay); return;
+      $("evView").close(); await reload(selDay);
+      if (!ev.done) askOutcome(ev);
+      return;
     }
     if (t.dataset.viewDel) {
       if (!confirm("Удалить событие?")) return;

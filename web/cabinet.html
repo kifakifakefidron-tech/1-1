@@ -19,7 +19,7 @@
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/doc.css?v=3">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=52">
+<link rel="stylesheet" href="/static/glass.css?v=55">
 <link rel="stylesheet" href="/static/cabinet.css?v=21">
 </head>
 <body class="dash-body">
@@ -48,6 +48,7 @@
       </header>
 
       <div class="bento" id="bento">
+        <!-- 17.10: без дублей — клиенты, избранное, уведомления, рынок, поиски и быстрые ссылки живут в своих разделах (меню слева) -->
         <!-- погода -->
         <section class="g w-weather" id="wWeather"><div class="g-skel"></div></section>
         <!-- ключевая ставка -->
@@ -59,26 +60,13 @@
 
         <!-- день -->
         <section class="g w-day span-2" id="wDay"><div class="g-skel"></div></section>
-        <!-- клиенты (CRM) -->
-        <section class="g w-clients span-2" id="wClients"><div class="g-skel"></div></section>
-        <!-- объекты в работе (статусы) -->
-        <section class="g w-crm span-2" id="wCrm"><div class="g-skel"></div></section>
-
-        <!-- уведомления -->
-        <section class="g w-news" id="wNews"><div class="g-skel"></div></section>
-        <!-- рынок -->
-        <section class="g w-market" id="wMarket"><div class="g-skel"></div></section>
         <!-- калькулятор -->
         <section class="g w-calc span-2" id="wCalc"></section>
 
         <!-- доступ и подписка -->
         <section class="g w-plan" id="wPlan"></section>
-        <!-- быстрые действия -->
-        <section class="g w-quick" id="wQuick"></section>
         <!-- новости недвижимости (РБК, только заголовки со ссылкой) -->
         <section class="g w-rbc span-2" id="wRbc"><div class="g-skel"></div></section>
-        <!-- мои поиски -->
-        <section class="g w-saved" id="wSaved"></section>
         <!-- приведи коллегу + промокод -->
         <section class="g w-ref" id="wRef"></section>
 
@@ -130,7 +118,7 @@
 <script src="/static/pickers.js?v=10"></script>
 <script src="/static/max.js?v=2"></script>
 <script src="/static/rail.js?v=16"></script>
-<script src="/static/cabinet.js?v=26"></script>
+<script src="/static/cabinet.js?v=27"></script>
 <script src="/static/objview.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 </body>

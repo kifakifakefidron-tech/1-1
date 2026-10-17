@@ -385,6 +385,9 @@ def moex(conn: sqlite3.Connection, force: bool = False) -> dict | None:
 
 RBC_RSS = "https://rssexport.rbc.ru/realty/news/30/full.rss"
 NEWS_MAX = 12
+# 17.10 (Артём): только новости про Краснодар и край — московские стадионы и Турция агентам не нужны.
+# Ещё ленты (через запятую) — NEWS_RSS в .env, например региональная лента РБК Кубань, если она есть.
+NEWS_KEYWORDS = re.compile(r"(?i)краснодар|кубан|краснодарск|анап|новороссийск|сочи|геленджик|армавир|юг[а-я]* росси|юфо")
 
 
 def _lead(text: str, limit: int = 200) -> str:
@@ -415,12 +418,25 @@ def parse_rbc(raw: bytes) -> list[dict]:
                     "lead": _lead(it.findtext(f"{ns}anons") or it.findtext("description") or ""),
                     "tag": (it.findtext(f"{ns}tag") or it.findtext("category") or "").strip()[:40]})
     out.sort(key=lambda x: -x["ts"])
-    return out[:NEWS_MAX]
+    return out
 
 
-def _news_fetch() -> dict | None:
-    items = parse_rbc(_http(RBC_RSS))
-    return {"items": items, "source": "РБК Недвижимость", "source_url": "https://realty.rbc.ru/"} if items else None
+def _news_fetch() -> dict:
+    import os
+    urls = [RBC_RSS] + [u.strip() for u in os.getenv("NEWS_RSS", "").split(",") if u.strip().startswith("https://")]
+    items: list[dict] = []
+    for u in urls:
+        try:
+            items += parse_rbc(_http(u))
+        except Exception:  # noqa: BLE001 — одна лента не ответила, остальные показываем
+            continue
+    local = [x for x in items if NEWS_KEYWORDS.search(f"{x['title']} {x['lead']} {x['tag']}")]
+    local.sort(key=lambda x: -x["ts"])
+    seen, out = set(), []
+    for x in local:
+        if x["url"] not in seen:
+            seen.add(x["url"]); out.append(x)
+    return {"items": out[:NEWS_MAX], "source": "РБК", "source_url": "https://realty.rbc.ru/", "region": "Краснодарский край"}
 
 
 def news(conn: sqlite3.Connection, force: bool = False) -> dict | None:
