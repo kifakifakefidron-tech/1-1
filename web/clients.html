@@ -21,7 +21,7 @@
 <link rel="stylesheet" href="/static/theme.css?v=15">
 <link rel="stylesheet" href="/static/glass.css?v=43">
 <link rel="stylesheet" href="/static/cabinet.css?v=20">
-<link rel="stylesheet" href="/static/clients.css?v=11">
+<link rel="stylesheet" href="/static/clients.css?v=14">
 </head>
 <body class="dash-body">
 <main class="dash">
@@ -45,6 +45,7 @@
         </div>
       </header>
       <div class="c-kinds chips" id="cKinds"></div>
+      <div class="c-stagebar" id="cStageBar" hidden></div>
       <div class="c-board" id="cBoard"></div>
       <div class="c-list" id="cList" hidden></div>
       <p class="c-empty" id="cEmpty" hidden>Здесь будут ваши клиенты. Нажмите «+ Клиент» — укажите, что ищет человек, и сервис сам подберёт объекты.</p>
@@ -58,17 +59,21 @@
     <div class="c-dlg-head">
       <div class="c-dlg-who"><span class="d-ava big" id="dAva"></span><div><h2 id="dName">Новый клиент</h2><p class="note" id="dSub"></p></div></div>
       <div class="c-dlg-acts" id="dActs"></div>
+      <button type="button" class="pill light c-edit-btn" id="dEdit" hidden><span data-ic="edit"></span>Изменить</button>
       <button type="button" class="close" data-close aria-label="Закрыть">✕</button>
     </div>
     <div class="c-stages" id="dStages"></div>
     <div class="c-tabs" role="tablist">
-      <button type="button" class="on" data-tab="card">Карточка</button>
+      <button type="button" class="on" data-tab="info">Обзор</button>
       <button type="button" data-tab="items">Объекты <b id="dItemsN"></b></button>
       <button type="button" data-tab="log">История</button>
       <button type="button" data-tab="tasks">Дела</button>
     </div>
 
+    <div class="c-pane c-info" id="dInfo" data-pane="info" hidden></div>
+
     <form class="c-pane" id="pCard" data-pane="card" autocomplete="off">
+      <button type="button" class="c-back" id="dBackInfo" hidden><span data-ic="chevron-left"></span>К обзору клиента</button>
       <div class="c-grid">
         <label class="c-f"><span>Имя</span><input name="name" placeholder="Ирина"></label>
         <label class="c-f"><span>Телефон</span><input name="phone" inputmode="tel" placeholder="+7 918 …"></label>
@@ -138,7 +143,7 @@
 <script src="/static/max.js?v=2"></script>
 <script src="/static/rail.js?v=15"></script>
 <script src="/static/pickers.js?v=10"></script>
-<script src="/static/clients.js?v=15"></script>
+<script src="/static/clients.js?v=17"></script>
 <script src="/static/objview.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 </body>
