@@ -23,6 +23,14 @@
   function agentHTML(d, compact) {
     if (!d.contact_name && !d.contact_phone) return "";
     const digits = (d.contact_phone || "").replace(/\D/g, "");
+    const photo = (d.style || {}).photo;   // фото агента из настроек — кругом над именем (как у агентств)
+    if (!compact && photo) {
+      return `<span class="pk-agent-photo" style="background-image:url('${esc(photo)}')"></span>
+        <span class="pk-agent-who"><span class="pk-agent-label">Ваш агент</span><b>${esc(d.contact_name || "Агент")}</b>
+        ${digits ? `<a class="pk-agent-tel" href="tel:${esc(d.contact_phone)}">${esc(d.contact_phone)}</a>` : ""}</span>
+        ${digits ? `<span class="pk-agent-btns"><a class="pill" href="tel:${esc(d.contact_phone)}">Позвонить</a>
+          <button type="button" class="pill light" data-max="${esc(d.contact_phone)}">Написать в MAX</button></span>` : ""}`;
+    }
     return `${compact ? "" : `<span class="pk-agent-label">Ваш агент</span>`}<b>${esc(d.contact_name || "Агент")}</b>
       ${digits ? `<a class="pill" href="tel:${esc(d.contact_phone)}">Позвонить</a>
         <button type="button" class="pill light" data-max="${esc(d.contact_phone)}">Написать в MAX</button>` : ""}`;

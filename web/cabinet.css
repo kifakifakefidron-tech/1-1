@@ -437,3 +437,5 @@ body.d-arranging .g:not(.lifting) { opacity: .85; }
 /* значок «переставить блок» не налезает на ссылку в шапке блока («Планер», «Все клиенты») */
 .g:has(> .g-grip) .g-h, .g:has(> .g-grip) .g-head { padding-right: 40px; }
 @media (hover: none) { .g-grip { top: 10px; right: 10px; width: 26px; height: 26px; } }
+.d-promo input { flex: 1 1 auto; min-width: 0; }
+.d-promo button { flex: none; }

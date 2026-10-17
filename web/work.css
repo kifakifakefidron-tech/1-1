@@ -101,3 +101,13 @@
 .wk-card.nophoto .wk-photo > span { grid-auto-flow: column; gap: 8px; }
 .wk-card.nophoto .wk-photo > span svg { width: 18px; height: 18px; }
 .wk-tools .pk-btn { min-width: 160px; }
+/* телефон: вкладки помещаются целиком — без скрытых за краем */
+@media (max-width: 480px) {
+  .wk-tabs { width: 100%; }
+  .wk-tab { flex: 1 1 auto; justify-content: center; padding: 8px 9px; font-size: 12.5px; gap: 4px; }
+}
+@media (max-width: 480px) {
+  .wk-tabs { flex-wrap: wrap; border-radius: 18px; overflow: visible; }
+  .wk-ind { display: none; }
+  .wk-tab.on { background: linear-gradient(160deg, #f3e8bc, #e3cb8f); color: #0f2f2e; }
+}

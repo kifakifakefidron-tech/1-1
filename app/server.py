@@ -1196,13 +1196,13 @@ def api_settings(request: Request, body: dict | None = None):
             n = conn.execute("DELETE FROM sessions WHERE user_id = ? AND token_hash != ?", (user["id"], keep)).rowcount
             conn.commit()
             return JSONResponse({"ok": True, "closed": n})
-        if "cover" in body:
+        if "cover" in body or "photo" in body:   # обложка подборок или ваше фото рядом с номером (видит клиент)
             if _too_often(request, "cover", 20, 3600):
                 return _err("Слишком много фото за час.", 429)
-            url, why = settings.save_cover(str(body.get("cover") or ""))
+            url, why = settings.save_cover(str(body.get("cover") or body.get("photo") or ""))
             if not url:
                 return _err(why)
-            body = {"pick_cover": url}
+            body = {"pick_cover" if "cover" in body else "pick_photo": url}
         settings.save(conn, user["id"], body)
     st = settings.get(conn, user["id"])
     sessions = conn.execute("SELECT COUNT(*) FROM sessions WHERE user_id = ?", (user["id"],)).fetchone()[0]

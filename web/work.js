@@ -1,4 +1,4 @@
-/* «В работе» (ТЗ v2): закладки (избранное) без своих статусов — статусы живут у клиентов. На карточке видно, каким
+/* «Избранное» (/work): объекты с сердечком без своих статусов — статусы живут у клиентов. На карточке видно, каким
    клиентам объект отправлен и что с ним (отправлен, понравился, показ…), фильтр по клиенту, «Показ» — сразу в планер.
    Заметка сохраняется сама, видно снижение цены и «снят с сайта». API: /api/favorites, /api/notes/{id} {text}. */
 (() => {
@@ -16,7 +16,7 @@
   };
   let items = [], hiddenItems = [], tab = new URLSearchParams(location.search).get("tab") || "all", q = "", sort = "touched", clientF = 0;
   if (!["all", "with", "without", "hidden"].includes(tab)) tab = "all";
-  const TABS = { all: "Все закладки", with: "У клиентов", without: "Без клиента", hidden: "Скрытые" };
+  const TABS = { all: "Всё избранное", with: "У клиентов", without: "Без клиента", hidden: "Скрытые" };
   const PC = { matched: "slate", sent: "sky", opened: "sky", liked: "ok", rejected: "bad", show: "gold", talks: "violet", deal: "ok", lost: "bad" };
   const REASONS = { sold: "Продан или снят", no_coop: "Не сотрудничаю", not_fit: "Не подходит", other: "Скрыт" };
 
@@ -68,9 +68,9 @@
       data-tab="${k}" aria-pressed="${k === tab}">${TABS[k]}<b>${n(k)}</b></button>`).join("");
     requestAnimationFrame(slide);
     $("wkHelp").textContent = tab === "hidden" ? "Объекты, которые вы скрыли для себя: в поиске и на карте их не видно. «Вернуть» — снова показывать."
-      : "Закладки — объекты, отмеченные сердечком. Статусы ставятся клиентам: в окне объекта «Клиенту ▾» или в подборке клиента.";
+      : "Избранное — объекты, отмеченные сердечком. Статусы ставятся клиентам: в окне объекта «Клиенту ▾» или в подборке клиента.";
     const withC = items.filter((o) => o.clients.length).length;
-    $("wkSub").textContent = items.length ? `${items.length} в закладках · ${withC} отправлены клиентам` : "Закладки и объекты, с которыми вы работаете";
+    $("wkSub").textContent = items.length ? `${items.length} в избранном · ${withC} отправлены клиентам` : "Сохранённые объекты и каким клиентам они отправлены";
     // фильтр по клиенту
     const sel = $("wkClient");
     const used = [...new Map(items.flatMap((o) => o.clients).map((c) => [c.id, c.name])).entries()];
@@ -138,7 +138,7 @@
     const list = visible();
     $("wkList").innerHTML = list.map(card).join("") || `<div class="wk-empty">${ic(items.length ? "search" : "heart")}
       <b>${items.length ? "Здесь пока пусто" : "Список пуст"}</b>
-      ${items.length ? "В этой вкладке нет объектов." : "Нажмите ♡ на объекте в поиске — он появится здесь. Клиентам объекты отправляются кнопкой «Клиенту ▾»."}
+      ${items.length ? "В этой вкладке нет объектов." : "Нажмите сердечко на объекте в поиске — он появится здесь. Клиентам объекты отправляются кнопкой «Клиенту ▾»."}
       ${items.length ? "" : `<a class="pill" href="/">Перейти к поиску</a>`}</div>`;
   }
 

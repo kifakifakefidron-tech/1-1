@@ -19,7 +19,7 @@
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
 <link rel="stylesheet" href="/static/glass.css?v=43">
-<link rel="stylesheet" href="/static/settings.css?v=3">
+<link rel="stylesheet" href="/static/settings.css?v=4">
 </head>
 <body>
 <main class="st">
@@ -40,17 +40,23 @@
             <small>Например, ваше фото, логотип агентства или красивый вид города. Лучше горизонтальное.</small></div>
           <div class="st-f"><span>Цвет подборки</span><div class="st-colors" id="stColors" role="radiogroup" aria-label="Цвет подборки"></div></div>
           <label class="st-f"><span>Подпись над заголовком</span><input id="stBrand" maxlength="60" placeholder="Подборка объектов — или название вашего агентства"></label>
+          <div class="st-f"><span>Ваше фото рядом с номером</span>
+            <div class="st-cover-row st-photo-row"><span class="st-ava" id="stPhotoPrev"></span>
+              <label class="pill light st-upload"><input type="file" id="stPhotoFile" accept="image/*" hidden><i data-ic="plus"></i>Загрузить фото</label>
+              <button type="button" class="chip" id="stPhotoDel" hidden>Убрать фото</button></div>
+            <small>Клиент увидит его в подборке над вашим именем и телефоном — так подборке больше доверяют.</small></div>
           <div class="st-two">
             <label class="st-f"><span>Ваше имя для клиента</span><input id="stPickName" maxlength="80" placeholder="Например, Ирина Петрова"></label>
-            <label class="st-f"><span>Телефон для клиента</span><input id="stPickPhone" inputmode="tel" maxlength="30" placeholder="+7 …"></label>
+            <label class="st-f"><span>Телефон по умолчанию для подборок</span><input id="stPickPhone" inputmode="tel" maxlength="30" placeholder="+7 …"></label>
           </div>
+          <small class="st-note">Имя и телефон подставляются во все новые подборки — клиент звонит по этому номеру.</small>
           <p class="st-note" id="stPickUrl"></p>
         </div>
         <div class="st-preview" id="stPreview" aria-label="Как увидит клиент">
           <div class="sp-phone">
             <div class="sp-head" id="spHead"><div class="sp-cover" id="spCover"></div>
               <p class="sp-brand" id="spBrand">Подборка объектов</p><b class="sp-title">Подборка для вас</b></div>
-            <div class="sp-agent"><span><small>Ваш агент</small><b id="spName">Агент</b></span><i class="sp-btn">Позвонить</i></div>
+            <div class="sp-agent"><span class="sp-ava" id="spAva"></span><span><small>Ваш агент</small><b id="spName">Агент</b></span><i class="sp-btn">Позвонить</i></div>
             <div class="sp-item"><span class="sp-photo"></span><span class="sp-num">1</span><b>6,3 млн ₽</b><small>ЖК Свобода · 2-комн., 58 м²</small></div>
             <div class="sp-item"><span class="sp-photo b"></span><span class="sp-num">2</span><b>4,9 млн ₽</b><small>ФМР · 1-комн., 41 м²</small></div>
           </div>
@@ -98,7 +104,7 @@
 <script src="/static/icons.js?v=6"></script>
 <script src="/static/pickers.js?v=10"></script>
 <script src="/static/rail.js?v=15"></script>
-<script src="/static/settings.js?v=3"></script>
+<script src="/static/settings.js?v=4"></script>
 <script src="/static/bell.js?v=6"></script>
 </body>
 </html>
