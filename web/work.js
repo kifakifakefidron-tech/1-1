@@ -15,6 +15,7 @@
     refuse: { t: "Отказ", c: "coral", help: "Не подошло — останется для истории, можно вернуть." },
   };
   let items = [], hiddenItems = [], tab = new URLSearchParams(location.search).get("tab") || "all", q = "", sort = "touched", clientF = 0;
+  let allClients = [], match = null;   // 17.10: выбранный клиент → объекты под его пожелания (тот же подбор, что в карточке клиента)
   if (!["all", "with", "without", "hidden"].includes(tab)) tab = "all";
   const TABS = { all: "Всё избранное", with: "У клиентов", without: "Без клиента", hidden: "Скрытые" };
   const PC = { matched: "slate", sent: "sky", opened: "sky", liked: "ok", rejected: "bad", show: "gold", talks: "violet", deal: "ok", lost: "bad" };
@@ -74,12 +75,13 @@
     const picked = items.filter((o) => o.clients.length && o.clients.every((c) => c.status === "matched")).length;
     $("wkSub").textContent = items.length ? `${items.length} в избранном · ${sent} отправлены клиентам${picked ? ` · ${picked} подобраны, не отправлены` : ""}`
       : "Сохранённые объекты и каким клиентам они отправлены";
-    // фильтр по клиенту
+    // клиент: все клиенты агента (не только те, кому уже отправляли) — выбор подбирает объекты под его пожелания
     const sel = $("wkClient");
-    const used = [...new Map(items.flatMap((o) => o.clients).map((c) => [c.id, c.name])).entries()];
-    sel.hidden = !used.length;
-    if (used.length && sel.options.length !== used.length + 1) {
-      sel.innerHTML = `<option value="">Все клиенты</option>` + used.map(([id, nm]) => `<option value="${id}"${id === clientF ? " selected" : ""}>${esc(nm)}</option>`).join("");
+    const used = new Map(items.flatMap((o) => o.clients).map((c) => [c.id, c.name]));
+    allClients.filter((c) => !c.archived).forEach((c) => used.set(c.id, c.name));
+    sel.hidden = !used.size;
+    if (used.size && sel.options.length !== used.size + 1) {
+      sel.innerHTML = `<option value="">Все клиенты</option>` + [...used.entries()].map(([id, nm]) => `<option value="${id}"${id === clientF ? " selected" : ""}>${esc(nm)}</option>`).join("");
       if (window.Pick) Pick.select(sel, { searchPlaceholder: "Найти клиента" });
     }
   }
@@ -139,16 +141,64 @@
       return;
     }
     const list = visible();
+    renderMatch();
+    if (clientF && !list.length) { $("wkList").innerHTML = ""; return; }
     $("wkList").innerHTML = list.map(card).join("") || `<div class="wk-empty">${ic(items.length ? "search" : "heart")}
       <b>${items.length ? "Здесь пока пусто" : "Список пуст"}</b>
       ${items.length ? "В этой вкладке нет объектов." : "Нажмите сердечко на объекте в поиске — он появится здесь. Клиентам объекты отправляются кнопкой «Клиенту ▾»."}
       ${items.length ? "" : `<a class="pill" href="/">Перейти к поиску</a>`}</div>`;
   }
 
+  // ─── подбор под выбранного клиента ───
+  function matchCard(o) {
+    const photo = (o.photos || [])[0], fav = items.some((x) => x.id === o.id);
+    return `<article class="wk-card c-sky wk-m${photo ? "" : " nophoto"}" data-mid="${o.id}">
+      <a class="wk-photo" href="/?open=${o.id}">${photo ? `<img src="${esc(photo)}" alt="" loading="lazy">` : `<span class="ph-none"><img src="/static/favicon.svg" alt=""><small>Фото у агента</small></span>`}
+        ${fav ? `<em class="wk-drop down">${ic("heart")}в избранном</em>` : ""}</a>
+      <div class="wk-body">
+        <a class="wk-title" href="/?open=${o.id}">${esc(head(o))}</a>
+        <b class="wk-price">${esc(money(o.price, o.deal))}</b>
+        <p class="wk-what">${esc(o.title)}${place(o) ? ` · ${esc(place(o))}` : ""}</p>
+        <div class="wk-foot">
+          <button type="button" class="wk-btn gold" data-madd="${o.id}">${ic("folder")}В подборку клиента</button>
+          <button type="button" class="wk-btn" data-mno="${o.id}" title="Больше не предлагать этому клиенту">${ic("x")}Не подходит</button>
+        </div>
+      </div></article>`;
+  }
+  function renderMatch() {
+    const box = $("wkMatch");
+    if (!box) return;
+    if (!clientF || tab === "hidden") { box.hidden = true; box.innerHTML = ""; return; }
+    const c = allClients.find((x) => x.id === clientF);
+    const nm = esc(c ? c.name : "клиента");
+    box.hidden = false;
+    if (!match || match.cid !== clientF) {
+      box.innerHTML = `<div class="wk-mh"><b>Подходят для «${nm}»</b><span>Подбираем по пожеланиям клиента…</span></div>`;
+      return;
+    }
+    const n = match.items.length;
+    box.innerHTML = `<div class="wk-mh"><b>Подходят для «${nm}»${match.total ? ` · ${match.total}` : ""}</b>
+        <span>${n ? "По пожеланиям из карточки клиента: тип, комнаты, бюджет, районы. Что уже у клиента — ниже." : "По пожеланиям клиента новых объектов нет."}</span>
+        <a class="wk-btn" href="/clients?id=${clientF}">${ic("user")}Пожелания клиента</a></div>
+      ${n ? `<div class="wk-grid">${match.items.map(matchCard).join("")}</div>` : ""}
+      ${match.more ? `<a class="wk-btn wk-mmore" href="/clients?id=${clientF}">Ещё объекты — в карточке клиента</a>` : ""}
+      ${visible().length ? `<h3 class="wk-mh2">Уже у клиента и в избранном</h3>` : ""}`;
+  }
+  async function loadMatch(cid) {
+    match = null; renderMatch();
+    if (!cid) return;
+    const r = await call(`/api/clients/${cid}/match`);
+    if (cid !== clientF) return;
+    match = { cid, items: (r.ok && r.data.items || []).slice(0, 24), total: r.ok ? r.data.total : 0, more: r.ok && (r.data.total || 0) > 24 };
+    renderMatch();
+  }
+
   async function load() {
     const r = await call("/api/favorites");
     if (r.status === 401) { $("wkGuest").hidden = false; $("wkTabs").hidden = true; return; }
     items = r.data.items || [];
+    const cl = await call("/api/clients");
+    allClients = (cl.ok && cl.data.items) || [];
     const h = await call("/api/hidden");
     hiddenItems = (h.ok && h.data.items) || [];
     render();
@@ -157,6 +207,25 @@
   document.addEventListener("click", async (e) => {
     const t = e.target.closest("button");
     if (!t) return;
+    if (t.dataset.madd) {   // объект из подбора — в подборку клиента (статус «Отправлен»)
+      t.disabled = true;
+      const r = await call(`/api/clients/${clientF}/add`, { listing_id: Number(t.dataset.madd) });
+      if (!r.ok) { toast(r.data.detail || "Не получилось"); t.disabled = false; return; }
+      toast("Добавлено в подборку клиента");
+      const fr = await call("/api/favorites");
+      if (fr.ok) items = fr.data.items || items;
+      match.items = match.items.filter((x) => x.id !== Number(t.dataset.madd));
+      render(); return;
+    }
+    if (t.dataset.mno) {
+      const id = Number(t.dataset.mno);
+      await call(`/api/clients/${clientF}/hide`, { ids: [id] });
+      match.items = match.items.filter((x) => x.id !== id);
+      const el = document.querySelector(`[data-mid="${id}"]`);
+      if (el) { el.classList.add("bye"); setTimeout(renderMatch, 260); } else renderMatch();
+      toast("Больше не предложим этому клиенту");
+      return;
+    }
     if (t.dataset.unhide) {
       const id = Number(t.dataset.unhide);
       await call("/api/hidden", { id, hide: false });
@@ -208,7 +277,7 @@
   let qTimer = 0;
   $("wkQ").addEventListener("input", (e) => { clearTimeout(qTimer); qTimer = setTimeout(() => { q = e.target.value.trim(); render(); }, 200); });
   $("wkSort").addEventListener("change", (e) => { sort = e.target.value; render(); });
-  $("wkClient").addEventListener("change", (e) => { clientF = Number(e.target.value) || 0; render(); });
+  $("wkClient").addEventListener("change", (e) => { clientF = Number(e.target.value) || 0; render(); loadMatch(clientF); });
   window.addEventListener("resize", () => slide(false));
   load();
 })();

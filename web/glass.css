@@ -717,3 +717,50 @@ dialog .pk-panel { z-index: 1000; isolation: isolate; }
 .pk2-me-hl { outline: 2px solid var(--gold); outline-offset: 4px; border-radius: var(--r-md, 14px); transition: outline-color .3s; }
 /* 17.10: на компьютере «Список / Карта» — переключатель справа; чип «Карта» — только на телефоне (без дубля) */
 @media (min-width: 641px) { .bar-tools .view-chip { display: none; } }
+
+/* 17.10 (Артём): нижняя панель телефона — 5 пунктов (Объекты, Клиенты, Избранное, Планер, Ещё); выбранный пункт —
+   золотая капсула только вокруг иконки, подпись под ней золотом: текст больше не вылезает за подсветку */
+@media (max-width: 820px) {
+  .rail-g { gap: 0; padding: 6px 4px; justify-content: stretch; }
+  .rail-g .rail-a { flex: 1 1 0; min-width: 0; width: auto; height: 56px; gap: 3px; align-content: center;
+    background: none !important; box-shadow: none !important; color: var(--ink-3); -webkit-tap-highlight-color: transparent; }
+  .rail-g .rail-a:hover { background: none; }
+  .rail-g .rail-a:active { transform: none; }
+  .rail-g .rail-a svg { box-sizing: content-box; width: 21px; height: 21px; padding: 4px 16px; border-radius: 14px;
+    transition: background-color .28s var(--ease), color .28s var(--ease), transform .2s var(--ease); }
+  .rail-g .rail-a:active svg { transform: scale(.92); }
+  .rail-g .rail-a.on svg { color: #0f2f2e; background: linear-gradient(160deg, #f3e8bc, #e3cb8f); box-shadow: 0 4px 14px rgba(227, 203, 143, .28); }
+  .rail-g .rail-a .rail-lbl { max-width: 100%; font-size: 10.5px; }
+  .rail-g .rail-a.on .rail-lbl { color: var(--gold); font-weight: 600; }
+  .rail-g .rail-a .rail-n, .rail-g .rail-a .rail-c { top: 1px; right: calc(50% - 27px); }
+}
+@media (max-width: 360px) { .rail-g .rail-a svg { padding: 4px 11px; } .rail-g .rail-a .rail-lbl { font-size: 9.5px; } }
+
+/* 17.10: крестик в окнах, где его не было (pickers.js dress) — закреплён вверху справа */
+.dlg-x { position: sticky; top: 0; float: right; z-index: 7; display: grid; place-items: center; width: 36px; height: 36px; margin: -4px -4px 4px 10px;
+  border: 1px solid var(--glass-line); border-radius: 50%; background: rgba(4, 52, 51, .92); color: var(--ink); cursor: pointer;
+  transition: background .2s, transform .2s var(--ease); }
+.dlg-x svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.dlg-x:hover { background: rgba(255, 255, 255, .12); }
+.dlg-x:active { transform: scale(.92); }
+
+/* «Ещё» на телефоне: шторка на весь экран со своим затемнением — тап мимо попадает в неё и только закрывает */
+@media (max-width: 820px) {
+  .rail-sheet:popover-open { inset: 0; width: 100%; height: 100%; max-height: none; display: flex; flex-direction: column; justify-content: flex-end;
+    background: rgba(0, 14, 14, .45); animation: rsFade .3s var(--ease) both; }
+  .rail-sheet::backdrop { background: none; backdrop-filter: none; }
+  .rail-sheet .rs-in { width: 100%; box-sizing: border-box; transition: transform .26s var(--ease-in, ease-in); }
+  .rail-sheet.closing { animation: rsFadeOut .26s var(--ease) both; }
+  .rail-sheet.closing .rs-in { animation: none; transform: translateY(100%); }
+  .rail-sheet.dragging .rs-in { transition: none; }
+}
+@keyframes rsFade { from { background: rgba(0, 14, 14, 0); } }
+@keyframes rsFadeOut { to { background: rgba(0, 14, 14, 0); } }
+
+/* 17.10: длинная подсказка поля — всплывает над ним целиком (pickers.js) */
+.ph-hint { position: fixed; z-index: 2147483000; padding: 8px 12px; border-radius: 12px; pointer-events: none;
+  background: rgba(4, 52, 51, .97); border: 1px solid rgba(227, 203, 143, .35); color: var(--ink-2); font: 13px/1.4 var(--body);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .35); opacity: 0; transform: translateY(4px); visibility: hidden;
+  transition: opacity .2s var(--ease), transform .2s var(--ease), visibility 0s linear .2s; }
+.ph-hint.on { opacity: 1; transform: none; visibility: visible; transition: opacity .2s var(--ease), transform .2s var(--ease); }
+.rail-g button.rail-a { border: 0; font: inherit; padding: 0; appearance: none; -webkit-appearance: none; }

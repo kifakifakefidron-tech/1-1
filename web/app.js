@@ -1471,6 +1471,7 @@
 
   // Свайп вниз закрывает окно (телефон): тянем за верх, отпустили ниже 110px — закрыли
   function swipeToClose(d) {
+    d.setAttribute("data-own-swipe", "");   // pickers.js не вешает второй свайп
     let y0 = null, dy = 0;
     d.addEventListener("touchstart", (e) => {
       if (window.innerWidth > 640 || d.scrollTop > 0) { y0 = null; return; }
@@ -1542,6 +1543,28 @@
   // ─── шторка фильтров (телефон) ──────────────────────────────────────────
   function openSheet() { document.body.classList.add("sheet-open"); }
   function closeSheet() { document.body.classList.remove("sheet-open"); }
+  // 17.10: шторка фильтров на телефоне — свайп вниз от верха закрывает (как окна)
+  (() => {
+    const f = $("filters");
+    if (!f) return;
+    let y0 = null, dy = 0;
+    f.addEventListener("touchstart", (e) => {
+      y0 = innerWidth <= 640 && f.scrollTop <= 0 && !e.target.closest("input, textarea, .pk-panel, .range, [data-no-swipe]") ? e.touches[0].clientY : null;
+      dy = 0;
+    }, { passive: true });
+    f.addEventListener("touchmove", (e) => {
+      if (y0 === null) return;
+      dy = e.touches[0].clientY - y0;
+      if (dy < 0) { y0 = null; f.style.transform = ""; return; }
+      if (dy > 6) { f.style.transition = "none"; f.style.transform = `translateY(${dy}px)`; }
+    }, { passive: true });
+    f.addEventListener("touchend", () => {
+      if (y0 === null) return;
+      y0 = null;
+      f.style.transition = ""; f.style.transform = "";
+      if (dy > 100) closeSheet();
+    });
+  })();
   function filtersCount() {
     return state.types.length + state.rooms.length + state.districts.length + state.complexes.length
       + ["priceMin", "priceMax", "areaMin", "areaMax", "landMin", "landMax", "fresh"].filter((k) => state[k]).length
@@ -1614,7 +1637,7 @@
 
     const n = u ? u.favorites.length : 0;
     if ($("favBtn")) $("favBtn").innerHTML = `Избранное${n ? `<i class="nav-badge">${n}</i>` : ""}`;
-    $("toClientBtn").hidden = !u;
+
     if (u && $("hero")) $("hero").hidden = true;   // акт 14.10: вошедшему агенту приветствие не занимает первый экран
     if ($("heroLogin")) { $("heroLogin").hidden = !!u; $("heroCabinet").hidden = !u; }
     if (window.yaSelect) window.yaSelect(!!(u && u.is_admin));   // выделил адрес → «В Яндекс Картах»
@@ -1685,15 +1708,19 @@
     }, 2000);
   }
 
+  // 17.10 (Артём): после входа без ручного обновления не появлялись меню, кабинет, номера — страница собрана для гостя.
+  // Теперь просто перезагружаем её (открытый объект и фильтры — в адресе), «Вы вошли» показываем уже после загрузки.
   async function afterLogin() {
     if ($("loginDlg").open) closeDlg($("loginDlg"));
-    await reloadMeta();
-    loadSavedSearches();
-    toast("Вы вошли");
-    refresh();
-    if ($("detail").open && openedId) openDetail(openedId);
-    if ($("cabinetDlg").open) closeDlg($("cabinetDlg"));
+    const next = { fav: "/work", cabinet: "/cabinet", agent: "/my" }[ss("loginNext")];
+    try { sessionStorage.setItem("justIn", "1"); sessionStorage.removeItem("loginNext"); } catch { /* */ }
+    if (next) { location.replace(next); return; }
+    const u = new URL(location.href);
+    u.searchParams.delete("login");
+    location.replace(u.toString());
   }
+  function ss(k) { try { return sessionStorage.getItem(k); } catch { return null; } }
+  if (ss("justIn")) { try { sessionStorage.removeItem("justIn"); } catch { /* */ } setTimeout(() => toast("Вы вошли"), 400); }
 
   // «Приведи коллегу — неделя бесплатно»
   function refHTML(r) {
@@ -2130,17 +2157,17 @@
       if (state.hot) toast("🔥 Цена снизилась за неделю, ниже рынка или «срочно»", 3200);
     });
     $("watchBtn").addEventListener("click", watchSearch);
-    // «Клиент из поиска»: фильтры этой страницы → пожелания нового клиента (/clients?new=1&from=…)
-    $("toClientBtn").addEventListener("click", () => {
-      const pm = toNum(state.priceMin), px = toNum(state.priceMax);
-      const wishes = { types: state.types.filter((t) => ["flat", "house", "land", "commercial"].includes(t)),
-        area_min: toNum(state.areaMin) || "", area_max: toNum(state.areaMax) || "", not_first: state.notFirst || undefined,
-        complexes: state.complexes };
-      const from = { rooms: state.rooms, districts: state.districts, wishes,
-        price_min: pm != null ? Math.round(pm * priceMul()) : null, price_max: px != null ? Math.round(px * priceMul()) : null };
-      location.href = `/clients?new=1&from=${encodeURIComponent(JSON.stringify(from))}`;
+    // 17.10 (Артём): «Поделиться» — ссылка ровно с выбранными фильтрами (сделка, тип, комнаты, цена, районы, ЖК, фраза…),
+    // без открытого объекта и отметок уведомлений; собирается из фильтров в момент нажатия
+    $("shareSearchBtn").addEventListener("click", () => {
+      writeUrl();
+      const sp = new URLSearchParams(location.search);
+      ["open", "saved", "since", "hl", "embed"].forEach((k) => sp.delete(k));
+      const url = `${location.origin}/${sp.toString() ? `?${sp}` : ""}`;
+      const bits = [state.deal === "rent" ? "аренда" : "продажа", state.rooms.length ? `${state.rooms.map((r) => (r ? `${r}к` : "студия")).join(", ")}` : "",
+        state.districts.slice(0, 3).join(", "), state.complexes.slice(0, 2).map((c) => `ЖК ${c}`).join(", ")].filter(Boolean).join(" · ");
+      share(url, `Объекты Краснодара: ${bits}`);
     });
-    $("shareSearchBtn").addEventListener("click", () => share(location.href, "Подборка объектов на 1+1"));
 
     $("psMin").addEventListener("input", () => onSlider("min"));
     $("psMax").addEventListener("input", () => onSlider("max"));
@@ -2438,7 +2465,7 @@
       sp.delete(act);
       history.replaceState(null, "", sp.toString() ? `?${sp}` : location.pathname);
       if (act === "login") { if (!me()) openLogin(); }
-      else if (!me()) openLogin();
+      else if (!me()) { try { sessionStorage.setItem("loginNext", act); } catch { /* */ } openLogin(); }
       else if (act === "fav") setFavMode(true);
       else if (act === "cabinet") { location.replace(me() ? "/cabinet" : "/?login=1"); return; }
       else if (act === "agent") { location.replace("/my"); return; }   // «Мои объекты» — отдельная страница

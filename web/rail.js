@@ -30,7 +30,7 @@
       on: () => path === "/" && !params.has("fav") && !params.has("agent") },
     { href: "/cabinet", icon: "grid", tip: "Кабинет", desc: "Ваш день: дела, ставки, курсы и биржа, новости", user: true },
     { href: "/my", icon: "home", tip: "Мои объекты", desc: "Свои объявления: добавить, изменить, снять", user: true, also: ["/my/edit"] },
-    { href: "/clients", icon: "users", tip: "Клиенты", desc: "Клиенты по этапам, их подборки и журнал: что кому показали", user: true },
+    { href: "/clients", icon: "users", tip: "Клиенты", desc: "Клиенты по этапам, их подборки и журнал: что кому показали", main: true, user: true },
     { href: "/work", icon: "heart", tip: "Избранное", desc: "Сохранённые объекты и каким клиентам они отправлены", main: true, user: true,
       count: (c) => c.work, countTip: (n) => `в избранном: ${n}` },
     { href: "/planner", icon: "calendar", tip: "Планер", desc: "Показы, звонки и встречи с напоминаниями", main: true, user: true,
@@ -70,7 +70,7 @@
       + `<span class="rail-gap"></span>`
       + `<button type="button" class="rail-a main rail-more${items.some((it) => !it.main && !it.sep && isOn(it)) ? " on" : ""}" aria-label="Все разделы" aria-expanded="false">${ic("grid")}<span class="rail-lbl">Ещё</span><b class="rail-n" hidden></b>${tipHTML("Ещё", "Кабинет, подборки, мои объекты, уведомления, настройки")}</button>`
       + (me ? `<a class="rail-ava" href="/cabinet" aria-label="Профиль">${((me.name || me.email || "1").trim()[0] || "1").toUpperCase()}${tipHTML("Профиль и кабинет", who)}</a>`
-        : `<a class="rail-a main" href="/?login=1" aria-label="Войти">${ic("user")}${tipHTML("Войти", "Неделя бесплатно — без карты")}</a>`);
+        : `<a class="rail-a main" href="/?login=1" aria-label="Войти">${ic("user")}<span class="rail-lbl">Войти</span>${tipHTML("Войти", "Неделя бесплатно — без карты")}</a>`);
     document.body.prepend(rail);
     document.body.classList.add("has-rail");
     if (document.querySelector(".tabbar")) document.body.classList.add("has-tabbar");
@@ -79,7 +79,7 @@
     // телефон: «Все разделы» — шторка со списком всех страниц и пояснениями
     const sheet = document.createElement("div");
     sheet.className = "rail-sheet";
-    sheet.setAttribute("popover", "auto");
+    sheet.setAttribute("popover", "manual");   // сами закрываем: тап мимо не должен нажимать то, что под шторкой
     sheet.innerHTML = `<div class="rs-in"><span class="rs-grab" data-rs-close></span>
       <div class="rs-top"><b class="rs-h">Все разделы</b><button type="button" class="rs-x" data-rs-close aria-label="Закрыть">✕</button></div>`
       + (me ? "" : `<a class="rs-a" href="/?login=1">${ic("user")}<span><b>Войти</b><small>Неделя бесплатно — без карты</small></span></a>`)
@@ -87,29 +87,37 @@
       + `</div>`;
     document.body.appendChild(sheet);
     const more = rail.querySelector(".rail-more");
-    // 17.10: на iPhone тап по «Ещё» сначала закрывал шторку (тап мимо), а потом сразу открывал снова — «не реагирует».
-    // Поэтому: только что закрылась — не открываем; крестик, тап по полосе сверху, выбор пункта и тап мимо — закрывают.
-    let closedAt = 0;
+    // 17.10: шторка на весь экран со своим затемнением: тап мимо попадает в неё и только закрывает (плавно);
+    // крестик, полоса сверху, выбор пункта, свайп вниз и Esc — тоже закрывают
+    const inner = sheet.querySelector(".rs-in");
     const isOpen = () => { try { return sheet.matches(":popover-open"); } catch { return sheet.classList.contains("open"); } };
-    const close = () => { try { sheet.hidePopover(); } catch { sheet.classList.remove("open"); } };
-    const open = () => { try { sheet.showPopover(); } catch { sheet.classList.add("open"); } };
-    more.addEventListener("click", () => {
-      if (isOpen()) { close(); return; }
-      if (Date.now() - closedAt < 400) return;
-      open();
-    });
-    sheet.addEventListener("toggle", (e) => {
-      more.setAttribute("aria-expanded", e.newState === "open");
-      if (e.newState === "closed") closedAt = Date.now();
-    });
+    const hide = () => { sheet.classList.remove("closing", "dragging"); inner.style.transform = "";
+      try { sheet.hidePopover(); } catch { sheet.classList.remove("open"); } more.setAttribute("aria-expanded", "false"); };
+    const close = () => {
+      if (!isOpen() || sheet.classList.contains("closing")) return;
+      if (innerWidth > 820 || matchMedia("(prefers-reduced-motion: reduce)").matches) { hide(); return; }
+      sheet.classList.add("closing");
+      setTimeout(hide, 260);
+    };
+    const open = () => { try { sheet.showPopover(); } catch { sheet.classList.add("open"); } more.setAttribute("aria-expanded", "true"); };
+    more.addEventListener("click", () => { if (isOpen()) close(); else open(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && isOpen()) close(); });
     sheet.addEventListener("click", (e) => {
-      if (e.target === sheet || e.target.closest("[data-rs-close]") || e.target.closest("a")) close();
+      if (e.target === sheet || e.target.closest("[data-rs-close]")) { e.preventDefault(); close(); return; }
+      if (e.target.closest("a")) setTimeout(hide, 0);   // переход — шторку убираем без задержки
     });
-    let y0 = null;   // свайп вниз по шторке — закрыть
-    sheet.addEventListener("touchstart", (e) => { y0 = e.touches[0].clientY; }, { passive: true });
-    sheet.addEventListener("touchend", (e) => {
-      if (y0 != null && e.changedTouches[0].clientY - y0 > 70 && sheet.querySelector(".rs-in").scrollTop <= 0) close();
+    let y0 = null, dy = 0;   // свайп вниз по шторке — тянется за пальцем, отпустили ниже 90 px — закрыть
+    sheet.addEventListener("touchstart", (e) => { y0 = inner.scrollTop <= 0 ? e.touches[0].clientY : null; dy = 0; }, { passive: true });
+    sheet.addEventListener("touchmove", (e) => {
+      if (y0 === null) return;
+      dy = Math.max(0, e.touches[0].clientY - y0);
+      if (dy > 6) { sheet.classList.add("dragging"); inner.style.transform = `translateY(${dy}px)`; }
+    }, { passive: true });
+    sheet.addEventListener("touchend", () => {
+      if (y0 === null) return;
       y0 = null;
+      sheet.classList.remove("dragging");
+      if (dy > 90) close(); else inner.style.transform = "";
     });
   }
 

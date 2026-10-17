@@ -18,8 +18,8 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=55">
-<link rel="stylesheet" href="/static/work.css?v=10">
+<link rel="stylesheet" href="/static/glass.css?v=57">
+<link rel="stylesheet" href="/static/work.css?v=11">
 </head>
 <body>
 <main class="wk">
@@ -28,7 +28,7 @@
     <div class="wk-tools">
       <label class="wk-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <input id="wkQ" type="search" placeholder="Найти: ЖК, улица, заметка" autocomplete="off" aria-label="Найти объект"></label>
-      <select id="wkClient" aria-label="Клиент" hidden></select>
+      <select id="wkClient" aria-label="Подобрать для клиента" hidden></select>
       <select id="wkSort" aria-label="Порядок">
         <option value="touched">Сначала последние действия</option>
         <option value="price_asc">Дешевле</option>
@@ -42,15 +42,16 @@
 
   <nav class="wk-tabs" id="wkTabs" aria-label="Статус"><i class="wk-ind" aria-hidden="true"></i></nav>
   <p class="wk-help" id="wkHelp"></p>
+  <section class="wk-match" id="wkMatch" hidden aria-live="polite"></section>
   <div class="wk-grid" id="wkList"></div>
 </main>
 
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
 <script src="/static/icons.js?v=6"></script>
-<script src="/static/pickers.js?v=10"></script>
+<script src="/static/pickers.js?v=12"></script>
 <script src="/static/max.js?v=2"></script>
-<script src="/static/rail.js?v=16"></script>
-<script src="/static/work.js?v=8"></script>
+<script src="/static/rail.js?v=18"></script>
+<script src="/static/work.js?v=10"></script>
 <script src="/static/objview.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 </body>
