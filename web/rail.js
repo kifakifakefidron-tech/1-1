@@ -41,7 +41,7 @@
     { href: "/planner", icon: "calendar", tip: "Планер", desc: "Показы, звонки и встречи с напоминаниями", main: true, user: true,
       count: (c) => c.plan_today + c.plan_overdue, countTip: (n) => `дел на сегодня и просроченных: ${n}`, hot: (c) => c.plan_overdue > 0 },
     { href: "/picks", icon: "stack", tip: "Подборки", desc: "Ссылка с объектами для клиента — только ваш контакт", user: true },
-    { href: "/compare", icon: "scale", tip: "Сравнение", desc: "До 5 объектов рядом: цена, метр, площадь — лучшее подсвечено" },
+    { href: "/compare", icon: "scale", tip: "Сравнение", desc: "До 10 объектов рядом: цена, метр, площадь — лучшее подсвечено" },
     { href: "/market", icon: "chart", tip: "Аналитика рынка", short: "Аналитика", desc: "Цена за метр по районам и ЖК, динамика" },
     { href: "/notifications", icon: "bell", tip: "Уведомления", desc: "Новые объекты по поискам, снижение цен", user: true, bell: true },
     { sep: true },
@@ -75,7 +75,7 @@
         : `<a class="rail-a${isOn(it) ? " on" : ""}${it.main ? " main" : ""}" href="${it.href}" aria-label="${it.tip}">${ic(it.icon)}<span class="rail-lbl">${it.short || it.tip}</span>${it.bell ? `<b class="rail-n" hidden></b>` : badge(it)}${tipHTML(it.tip, badge(it) ? `${it.desc} · ${it.countTip(it.count(counts))}` : it.desc)}</a>`).join("")
       + `<span class="rail-gap"></span>`
       + `<button type="button" class="rail-a main rail-more${items.some((it) => !it.main && !it.sep && isOn(it)) ? " on" : ""}" aria-label="Все разделы" aria-expanded="false">${ic("more")}<span class="rail-lbl">Ещё</span><b class="rail-n" hidden></b>${tipHTML("Ещё", "Кабинет, подборки, мои объекты, уведомления, настройки")}</button>`
-      + (me ? `<a class="rail-ava" href="/cabinet" aria-label="Профиль">${((me.name || me.email || "1").trim()[0] || "1").toUpperCase()}${tipHTML("Профиль и кабинет", who)}</a>`
+      + (me ? `<a class="rail-ava${me.photo ? " has-photo" : ""}" href="/cabinet" aria-label="Профиль"${me.photo ? ` style="background-image:url('${encodeURI(String(me.photo)).replace(/['"()]/g, "")}')"` : ""}>${me.photo ? "" : ((me.name || me.email || "1").trim()[0] || "1").toUpperCase()}${tipHTML("Профиль и кабинет", who)}</a>`
         : `<a class="rail-a main" href="/?login=1" aria-label="Войти">${ic("user")}<span class="rail-lbl">Войти</span>${tipHTML("Войти", "Неделя бесплатно — без карты")}</a>`);
     document.body.prepend(rail);
     document.body.classList.add("has-rail");

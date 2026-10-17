@@ -47,8 +47,12 @@
     $("dHello").textContent = `${hi}, ${name}`;
     $("dDate").textContent = now.toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
     const letter = (name[0] || "1").toUpperCase();
-    $("dAva").textContent = letter;
-    $("dAva2").textContent = letter;
+    for (const id of ["dAva", "dAva2"]) {   // фото из настроек — фото аккаунта; нет фото — первая буква имени
+      const el = $(id);
+      el.textContent = me.photo ? "" : letter;
+      el.style.backgroundImage = me.photo ? `url("${me.photo}")` : "";
+      el.classList.toggle("has-photo", !!me.photo);
+    }
     $("dName").textContent = me.name || me.email || "Коллега";
     $("dMail").textContent = [me.name && me.email, me.tg_username && "@" + me.tg_username].filter(Boolean).join(" · ");
     const left = me.access_until ? Math.max(0, Math.ceil((me.access_until - Date.now() / 1000) / 86400)) : 0;

@@ -51,6 +51,7 @@ def tick(conn) -> dict:
     if learned.get("points") or learned.get("districts") or learned.get("recheck"):
         stats["autolearn"] = learned
     stats["geocoded"] = geocode.run(conn, limit=40)
+    stats["life"] = ingest.life_fix(conn) or None   # один раз: день появления на 1+1, вернуть снятых раньше срока
     stats["archived"] = ingest.archive_stale(conn)
     own = agent.expire_own(conn, _mail(conn))
     if any(own.values()):

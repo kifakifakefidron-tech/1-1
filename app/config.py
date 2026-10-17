@@ -57,13 +57,18 @@ WAPPI_INCLUDE_FROM_ME = _bool("WAPPI_INCLUDE_FROM_ME", False)
 # Выключатель сбора: false — новые сообщения из Wappi не забираются (уже скачанные разбираются)
 WAPPI_ENABLED = _bool("WAPPI_ENABLED", True)
 
-# Объект пропадает из поиска, если его не присылали столько дней
-STALE_DAYS = int(os.getenv("STALE_DAYS", "20"))
-# Через столько дней удаляем старые сообщения и давно скрытые объекты
-# Жизнь объекта (решение Артёма 13.10): STALE_DAYS на сайте без повтора в чатах → ARCHIVE_DAYS в архиве
-# (повтор в чатах — сразу снова на сайте) → удаляем. Сообщения храним столько же (по ним узнаём повторы).
-ARCHIVE_DAYS = int(os.getenv("ARCHIVE_DAYS", "20"))
-KEEP_DAYS = int(os.getenv("KEEP_DAYS", "40"))
+# Жизнь объекта (решение Артёма 17.10): STALE_DAYS (15) на сайте без повтора в чатах — считаем от ПОСЛЕДНЕГО сообщения,
+# но не раньше, чем от дня появления на 1+1 (listings.added_at: старые сообщения из истории Wappi тоже живут 15 дней) →
+# ARCHIVE_DAYS (25) в архиве (повтор в чатах — сразу снова на сайте) → удаляем. Сообщения храним KEEP_DAYS (40).
+# Старые значения из прежних .env (20 / 20, 45 из README) не действуют — как с ценами (_LEGACY_PLANS).
+def _days(name: str, default: int, legacy: tuple[str, ...]) -> int:
+    v = os.getenv(name, "").strip()
+    return int(v) if v.isdigit() and v not in legacy else default
+
+
+STALE_DAYS = _days("STALE_DAYS", 15, ("20", "45"))
+ARCHIVE_DAYS = _days("ARCHIVE_DAYS", 25, ("20",))
+KEEP_DAYS = max(_days("KEEP_DAYS", 40, ()), STALE_DAYS + ARCHIVE_DAYS)
 
 # Код коллег (временно, для теста): вход по коду даёт доступ к телефонам агентов
 ACCESS_CODE = os.getenv("ACCESS_CODE", "")

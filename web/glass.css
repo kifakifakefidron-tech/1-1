@@ -925,3 +925,19 @@ body.has-cmp .bell-pop { bottom: 86px !important; }
   .ci-stats b { font-size: 20px; }
   .ci-stats span { font-size: 12.5px !important; overflow: visible !important; text-overflow: clip !important; }
 }
+/* 17.10: фото аккаунта (из настроек) в меню и кабинете */
+.rail-ava.has-photo, .d-ava.has-photo { background-size: cover !important; background-position: center !important; color: transparent; }
+/* 17.10: подтверждение номера в настройках */
+.st-ver-ok { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.st-ver-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: rgba(167, 209, 182, .14);
+  color: var(--ok); font-weight: 600; font-size: 14px; }
+.st-ver-chip svg { width: 15px; height: 15px; }
+.st-ver-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.st-ver-form input { flex: 1 1 200px; min-width: 0; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--glass-line);
+  background: rgba(0, 0, 0, .18); color: var(--ink); font: 15px var(--body); }
+.st-ver-code { display: grid; gap: 10px; margin-top: 12px; padding: 14px; border-radius: 16px; border: 1px solid rgba(227, 203, 143, .35);
+  background: rgba(227, 203, 143, .06); }
+.st-ver-code p { margin: 0; line-height: 1.5; }
+.st-ver-code .code { color: var(--gold); font-size: 18px; letter-spacing: .04em; }
+.st-ver-code .pill { justify-self: start; }
+.st-ver-err { color: var(--bad); margin: 8px 0 0; }

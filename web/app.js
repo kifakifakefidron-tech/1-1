@@ -325,7 +325,7 @@
   }
 
   // ─── сравнение 2–3 объектов ─────────────────────────────────────────────
-  const CMP_MAX = 5;
+  const CMP_MAX = 10;
   let cmp = [];
   try { cmp = JSON.parse(localStorage.getItem("cmp") || "[]").filter(Number.isInteger).slice(0, CMP_MAX); } catch { cmp = []; }
   const cmpSave = () => { try { localStorage.setItem("cmp", JSON.stringify(cmp)); } catch { /* приватный режим */ } };

@@ -140,14 +140,14 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
             """INSERT INTO listings (type, deal, rooms, area, land, floor, floors, price, price_m2,
                    district, complex, settlement, street, house, title, description, fragment, phones,
                    first_seen, last_seen, seen_count, is_active, search_text, room_kind, rooms_mask, article,
-                   extra_districts, phone_roles, description_ts)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,1,?,?,?,?,?,?,?)""",
+                   extra_districts, phone_roles, description_ts, added_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,1,?,?,?,?,?,?,?,?)""",
             (d["type"], d["deal"], d["rooms"], d["area"], d["land"], d["floor"], d["floors"], d["price"],
              _price_m2(d["price"], d["area"]), d["district"], d["complex"], d["settlement"], d["street"],
              d["house"], d["title"], d["description"], d["fragment"], json.dumps(d["phones"], ensure_ascii=False),
              ts, ts, d["search_text"], d["room_kind"], rooms_mask(d["room_kind"], d["rooms"]), d["article"],
              json.dumps(d.get("extra_districts") or [], ensure_ascii=False),
-             json.dumps(d.get("phone_roles") or {}, ensure_ascii=False), ts),
+             json.dumps(d.get("phone_roles") or {}, ensure_ascii=False), ts, int(time.time())),
         )
         lid = cur.lastrowid
         if d.get("multi_units") or d.get("price_doubt"):
@@ -511,8 +511,9 @@ def fix_rent_rule(conn: sqlite3.Connection) -> dict:
 def archive_stale(conn: sqlite3.Connection, now: int | None = None) -> int:
     now = int(now or time.time())
     # Объекты фида СТРЕЛ не устаревают сами — их снимает сам фид
-    cur = conn.execute("UPDATE listings SET is_active = 0 WHERE is_active = 1 AND source = 'chat' AND last_seen < ?",
-                       (now - config.STALE_DAYS * 86400,))
+    # срок — от последнего сообщения в чатах, но не раньше, чем от появления на 1+1 (история Wappi, старые посты)
+    cur = conn.execute("""UPDATE listings SET is_active = 0 WHERE is_active = 1 AND source = 'chat'
+                          AND MAX(last_seen, COALESCE(added_at, 0)) < ?""", (now - config.STALE_DAYS * 86400,))
     conn.commit()
     return cur.rowcount
 
@@ -524,15 +525,41 @@ def cleanup_old(conn: sqlite3.Connection, now: int | None = None) -> dict:
     edge = now - config.KEEP_DAYS * 86400
     arch = now - config.ARCHIVE_DAYS * 86400
     # удалённые админом и «всё от номера» не стираем: по ним узнаём тот же объект в новых сообщениях
+    # удаляем ТОЛЬКО то, что пролежало в архиве ARCHIVE_DAYS с момента снятия (и не моложе срока жизни целиком)
+    life = now - (config.STALE_DAYS + config.ARCHIVE_DAYS) * 86400
     ids = [r[0] for r in conn.execute("""SELECT id FROM listings WHERE is_active = 0
                                          AND COALESCE(removed_at, last_seen + ?) < ?
+                                         AND MAX(last_seen, COALESCE(added_at, 0)) < ?
                                          AND COALESCE(hidden_reason, '') NOT IN ('admin', 'phone')""",
-                                      (config.STALE_DAYS * 86400, arch))]
+                                      (config.STALE_DAYS * 86400, arch, life))]
     for i in ids:
         conn.execute("DELETE FROM listings_fts WHERE rowid = ?", (i,))
         conn.execute("DELETE FROM listing_events WHERE listing_id = ?", (i,))
         conn.execute("DELETE FROM listings WHERE id = ?", (i,))
         shutil.rmtree(Path(config.PHOTOS_DIR) / str(i), ignore_errors=True)  # фото, загруженные агентом
     cur = conn.execute("DELETE FROM messages WHERE ts < ? AND status != 'new'", (edge,))
+    if ids:   # счётчик для отчёта «Жизнь объектов» (админка → Обзор)
+        from . import db
+        db.set_state(conn, "deleted_listings", str(int(db.get_state(conn, "deleted_listings") or 0) + len(ids)))
     conn.commit()
     return {"listings": len(ids), "messages": cur.rowcount}
+
+
+def life_fix(conn: sqlite3.Connection, now: int | None = None) -> dict | None:
+    """17.10 (Артём: «сервис живёт ~15 дней — удаляться ничего не должно»). Один раз (state life_v1):
+    1) объектам без дня появления на 1+1 (added_at) ставим «сегодня» — дальше 15 дней на сайте им гарантированы;
+    2) снятые как «устаревшие» за последние ARCHIVE_DAYS (не проданные, не скрытые админом, чатом, задатком и т. п.) —
+       возвращаем на сайт: их снимали по дате старого сообщения из истории чатов, а не по жизни на 1+1."""
+    from . import db
+    if db.get_state(conn, "life_v1"):
+        return None
+    now = int(now or time.time())
+    back = conn.execute("""UPDATE listings SET is_active = 1, added_at = ? WHERE is_active = 0 AND source = 'chat'
+                           AND removed_reason = 'stale' AND hidden_reason IS NULL AND sold_at IS NULL
+                           AND removed_at >= ?""", (now, now - config.ARCHIVE_DAYS * 86400)).rowcount
+    stamped = conn.execute("UPDATE listings SET added_at = ? WHERE added_at IS NULL", (now,)).rowcount
+    rep = {"restored": back, "stamped": stamped, "ts": now}
+    db.set_state(conn, "life_v1", json.dumps(rep))
+    conn.commit()
+    log.info("Жизнь объектов: вернули на сайт %s, отметили день появления %s", back, stamped)
+    return rep

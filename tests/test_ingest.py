@@ -100,11 +100,30 @@ def test_smart_search_rooms_and_district_jargon(conn, add):
     assert search.search(conn, search.Query(q="двушка"), NOW, False)["total"] == 2
 
 
-def test_stale_listing_hidden_after_20_days(conn, add):
+def test_stale_listing_hidden_after_15_days(conn, add):
+    """17.10: без повтора 15 дней — в архив; срок не раньше, чем от появления на 1+1 (старые сообщения из истории чатов)."""
+    from app import config, ingest
+    assert config.STALE_DAYS == 15 and config.ARCHIVE_DAYS == 25
+    lid = add(AGENT_A, ts=NOW - 25 * 86400)["results"][0]["listing_id"]
+    conn.execute("UPDATE listings SET added_at = ? WHERE id = ?", (NOW - 2 * 86400, lid))   # появился на 1+1 два дня назад
+    assert ingest.archive_stale(conn, now=NOW) == 0                     # старое сообщение — но на сайте всего 2 дня
+    assert ingest.archive_stale(conn, now=NOW + 14 * 86400) == 1        # 16 дней на 1+1 без повтора — в архив
+    assert search.search(conn, search.Query(), NOW + 14 * 86400, False)["total"] == 0
+    # в архиве 25 дней — не удаляем раньше
+    conn.execute("UPDATE listings SET removed_at = ? WHERE id = ?", (NOW + 14 * 86400, lid))
+    assert ingest.cleanup_old(conn, now=NOW + 30 * 86400)["listings"] == 0
+    assert ingest.cleanup_old(conn, now=NOW + 40 * 86400)["listings"] == 1
+
+
+def test_life_fix_restores_early_archived(conn, add):
     from app import ingest
-    add(AGENT_A, ts=NOW - 25 * 86400)
-    assert ingest.archive_stale(conn, now=NOW) == 1
-    assert search.search(conn, search.Query(), NOW, False)["total"] == 0
+    lid = add(AGENT_A, ts=NOW - 18 * 86400)["results"][0]["listing_id"]
+    conn.execute("UPDATE listings SET added_at = NULL WHERE id = ?", (lid,))
+    conn.execute("UPDATE listings SET is_active = 0 WHERE id = ?", (lid,))   # сняли как «устаревший» по дате сообщения
+    rep = ingest.life_fix(conn)
+    assert rep["restored"] == 1
+    assert conn.execute("SELECT is_active FROM listings WHERE id = ?", (lid,)).fetchone()[0] == 1
+    assert ingest.life_fix(conn) is None                                     # один раз
 
 
 def test_admin_ban_listing_never_returns(conn, add):
