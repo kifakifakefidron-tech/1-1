@@ -69,8 +69,11 @@
     requestAnimationFrame(slide);
     $("wkHelp").textContent = tab === "hidden" ? "Объекты, которые вы скрыли для себя: в поиске и на карте их не видно. «Вернуть» — снова показывать."
       : "Избранное — объекты, отмеченные сердечком. Статусы ставятся клиентам: в окне объекта «Клиенту ▾» или в подборке клиента.";
-    const withC = items.filter((o) => o.clients.length).length;
-    $("wkSub").textContent = items.length ? `${items.length} в избранном · ${withC} отправлены клиентам` : "Сохранённые объекты и каким клиентам они отправлены";
+    // 17.10: «отправлен» — только если ушёл клиенту (подборка, реакция, показ); «Подобран» — ещё не отправлен
+    const sent = items.filter((o) => o.clients.some((c) => c.status !== "matched")).length;
+    const picked = items.filter((o) => o.clients.length && o.clients.every((c) => c.status === "matched")).length;
+    $("wkSub").textContent = items.length ? `${items.length} в избранном · ${sent} отправлены клиентам${picked ? ` · ${picked} подобраны, не отправлены` : ""}`
+      : "Сохранённые объекты и каким клиентам они отправлены";
     // фильтр по клиенту
     const sel = $("wkClient");
     const used = [...new Map(items.flatMap((o) => o.clients).map((c) => [c.id, c.name])).entries()];

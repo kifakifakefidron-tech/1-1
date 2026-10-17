@@ -742,7 +742,7 @@
       <div class="mc-body">
         ${head ? `<div class="mc-head">${esc(head)}</div>` : ""}
         <div class="mc-price">${esc(fmtPrice(p.price, state.deal))}</div>
-        <div class="mc-title">${esc(p.title)}</div>
+        ${p.title ? `<div class="mc-title">${esc(p.title)}</div>` : ""}
         ${p.level && p.level !== "house" ? `<div class="mc-approx">Место примерное — в объявлении нет точного адреса</div>` : ""}
         <div class="mc-extra">${extra ?? `<div class="skel"><i></i><i></i></div>`}</div>
         <span class="mc-more" data-open="${p.id}">Подробнее →</span>
@@ -757,6 +757,8 @@
     if (!r.ok) { popup.setContent(popupHTML(p, "")); return; }
     const o = r.data;
     known.set(o.id, o);
+    // точка карты лёгкая (id, место, цена) — заголовок, фото и ЖК/район дополняем из объекта
+    Object.assign(p, { title: o.title, complex: o.complex, district: o.district, street: o.street, photo: (o.photos || [])[0] || null });
     const addr = address(o);
     const phones = o.phones && o.phones.length
       ? `<div class="mc-phones">${o.phones.map((ph) => `<a class="mc-call" href="tel:${esc(ph)}">${esc(ph)}</a>

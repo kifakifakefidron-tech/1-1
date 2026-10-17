@@ -31,7 +31,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=47">
+<link rel="stylesheet" href="/static/glass.css?v=55">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -52,8 +52,6 @@
     </a>
     <a class="bell" href="/notifications" id="bellMobile" data-bell hidden aria-label="Уведомления"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><b class="bell-count" hidden></b></a>
     <nav class="nav-links" aria-label="Разделы">
-      <button type="button" class="nav-link on" data-tab="list">Объекты</button>
-      <button type="button" class="nav-link" data-tab="map">Карта</button>
       <a class="nav-link" href="/work" id="favBtn">Избранное</a>
       <button type="button" class="nav-cta" id="accountBtn">Войти</button>
     </nav>
@@ -196,8 +194,8 @@
       <button type="button" class="chip" id="newTodayBtn" aria-pressed="false">Новое сегодня</button>
       <button type="button" class="chip" id="hotBtn" aria-pressed="false" title="Цена снизилась за неделю или объект заметно дешевле рынка">🔥 Горячее</button>
       <button type="button" class="chip" id="watchBtn" title="Пришлём письмо, когда появятся новые объекты по этому поиску">🔔 Следить</button>
-      <button type="button" class="chip" id="toClientBtn" hidden title="Новый клиент с пожеланиями из этих фильтров">👥 Клиент из поиска</button>
-      <button type="button" class="chip" id="shareSearchBtn" title="Ссылка на эту подборку">Поделиться</button>
+      <button type="button" class="chip" id="toClientBtn" hidden title="Создать клиента: его пожелания — эти фильтры, новые объекты по ним придут уведомлением">👥 Сохранить как клиента</button>
+      <button type="button" class="chip" id="shareSearchBtn" title="Скопировать ссылку на этот поиск с фильтрами">Поделиться</button>
     </div>
     <div class="bar-right">
       <label class="visually-hidden" for="sort">Сортировка</label>
@@ -381,12 +379,12 @@
 <script src="/static/icons.js?v=6"></script>
 <script src="/static/pickers.js?v=10"></script>
 <script src="/static/max.js?v=2"></script>
-<script src="/static/rail.js?v=15"></script>
+<script src="/static/rail.js?v=16"></script>
 <script src="/static/combo.js?v=3"></script>
 <script src="/static/yasel.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/app.js?v=112"></script>
+<script src="/static/app.js?v=113"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>

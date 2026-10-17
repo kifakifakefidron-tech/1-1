@@ -80,14 +80,37 @@
     const sheet = document.createElement("div");
     sheet.className = "rail-sheet";
     sheet.setAttribute("popover", "auto");
-    sheet.innerHTML = `<div class="rs-in"><span class="rs-grab"></span><b class="rs-h">Все разделы</b>`
+    sheet.innerHTML = `<div class="rs-in"><span class="rs-grab" data-rs-close></span>
+      <div class="rs-top"><b class="rs-h">Все разделы</b><button type="button" class="rs-x" data-rs-close aria-label="Закрыть">✕</button></div>`
       + (me ? "" : `<a class="rs-a" href="/?login=1">${ic("user")}<span><b>Войти</b><small>Неделя бесплатно — без карты</small></span></a>`)
       + items.filter((it) => !it.sep && !it.main).map((it) => `<a class="rs-a${isOn(it) ? " on" : ""}" href="${it.href}">${ic(it.icon)}<span><b>${it.tip}</b><small>${it.desc || ""}</small></span>${badge(it)}</a>`).join("")
       + `</div>`;
     document.body.appendChild(sheet);
     const more = rail.querySelector(".rail-more");
-    more.addEventListener("click", () => { try { sheet.togglePopover(); } catch { sheet.classList.toggle("open"); } });
-    sheet.addEventListener("toggle", (e) => more.setAttribute("aria-expanded", e.newState === "open"));
+    // 17.10: на iPhone тап по «Ещё» сначала закрывал шторку (тап мимо), а потом сразу открывал снова — «не реагирует».
+    // Поэтому: только что закрылась — не открываем; крестик, тап по полосе сверху, выбор пункта и тап мимо — закрывают.
+    let closedAt = 0;
+    const isOpen = () => { try { return sheet.matches(":popover-open"); } catch { return sheet.classList.contains("open"); } };
+    const close = () => { try { sheet.hidePopover(); } catch { sheet.classList.remove("open"); } };
+    const open = () => { try { sheet.showPopover(); } catch { sheet.classList.add("open"); } };
+    more.addEventListener("click", () => {
+      if (isOpen()) { close(); return; }
+      if (Date.now() - closedAt < 400) return;
+      open();
+    });
+    sheet.addEventListener("toggle", (e) => {
+      more.setAttribute("aria-expanded", e.newState === "open");
+      if (e.newState === "closed") closedAt = Date.now();
+    });
+    sheet.addEventListener("click", (e) => {
+      if (e.target === sheet || e.target.closest("[data-rs-close]") || e.target.closest("a")) close();
+    });
+    let y0 = null;   // свайп вниз по шторке — закрыть
+    sheet.addEventListener("touchstart", (e) => { y0 = e.touches[0].clientY; }, { passive: true });
+    sheet.addEventListener("touchend", (e) => {
+      if (y0 != null && e.changedTouches[0].clientY - y0 > 70 && sheet.querySelector(".rs-in").scrollTop <= 0) close();
+      y0 = null;
+    });
   }
 
   async function init() {

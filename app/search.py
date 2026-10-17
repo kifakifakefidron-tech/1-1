@@ -521,9 +521,7 @@ def map_points(conn: sqlite3.Connection, qr: Query, now: int) -> dict:
     """Точки для карты по тем же фильтрам + сколько объектов без точки (чтобы было видно, что не потеряны)."""
     where, params = _where(qr, now)
     rows = conn.execute(
-        f"""SELECT l.id, l.lat, l.lon, l.price, l.title, l.source, l.complex, l.district, l.street,
-                   l.geo_status = 'approx' AS approx, json_extract(l.photos, '$[0]') AS photo, {GEO_LEVEL} AS level,
-                   l.price_doubt IS 1 AS doubt
+        f"""SELECT l.id, l.lat, l.lon, l.price, l.complex, {GEO_LEVEL} AS level, l.price_doubt IS 1 AS doubt
             FROM listings l WHERE {where} AND l.lat IS NOT NULL LIMIT 20000""",
         params,
     ).fetchall()
@@ -536,14 +534,14 @@ def map_points(conn: sqlite3.Connection, qr: Query, now: int) -> dict:
             hidden += 1          # середина улицы / центр района — не метка: «адрес уточняется», объект в списке
         elif r["level"] == "complex" and r["complex"]:
             k = geo.complex_key(r["complex"]) or r["complex"]
-            g = groups.setdefault(k, {"complex": r["complex"], "lat": r["lat"], "lon": r["lon"], "n": 0,
-                                      "price_min": None, "photo": None})
+            g = groups.setdefault(k, {"complex": r["complex"], "lat": round(r["lat"], 5), "lon": round(r["lon"], 5), "n": 0,
+                                      "price_min": None})
             g["n"] += 1
             if r["price"] and not r["doubt"] and (g["price_min"] is None or r["price"] < g["price_min"]):
                 g["price_min"] = r["price"]
-            g["photo"] = g["photo"] or r["photo"]
-        else:
-            points.append(dict(r))
+        else:   # 17.10: только то, что нужно метке (ценник); заголовок, фото и адрес окошко берёт из /api/listings/{id}
+            points.append({"id": r["id"], "lat": round(r["lat"], 5), "lon": round(r["lon"], 5), "price": r["price"],
+                           "level": r["level"]})
     return {"points": points, "complexes": sorted(groups.values(), key=lambda g: -g["n"]), "total": total,
             "pending": pending or 0, "approx_hidden": hidden}
 

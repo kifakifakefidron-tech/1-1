@@ -36,7 +36,7 @@
     toast.t = setTimeout(() => { try { t.hidePopover(); } catch { t.hidden = true; } }, ms);
   }
   const head = (icon, title, link) => `<div class="g-h"><p class="g-t">${ic(icon)}${title}</p>${link || ""}</div>`;
-  const put = (id, html, i) => { const el = $(id); el.innerHTML = html; if (i != null) el.style.setProperty("--i", i); };
+  const put = (id, html, i) => { const el = $(id); if (!el) return; el.innerHTML = html; if (i != null) el.style.setProperty("--i", i); };   // блока нет на странице — пропускаем
 
   // ─── шапка ─────────────────────────────────────────────────────────
   function header() {
@@ -234,9 +234,10 @@
 
   // ─── новости недвижимости: заголовок + первая фраза + ссылка на РБК; список листается внутри блока ─
   function rbc(n) {
-    if (!n || !n.data.items.length) { put("wRbc", `${head("news", "Новости недвижимости")}<p class="g-empty">Загрузятся через несколько минут.</p>`, 8); return; }
+    if (!n) { put("wRbc", `${head("news", "Новости · Краснодарский край")}<p class="g-empty">Загрузятся через несколько минут.</p>`, 8); return; }
+    if (!n.data.items.length) { put("wRbc", `${head("news", "Новости · Краснодарский край")}<p class="g-empty">Свежих новостей недвижимости про Краснодар и край пока нет — покажем, как только появятся.</p>`, 8); return; }
     const d = n.data;
-    put("wRbc", `${head("news", "Новости недвижимости", `<a class="g-link" href="${esc(d.source_url)}" target="_blank" rel="noopener">${esc(d.source)} ${ic("external")}</a>`)}
+    put("wRbc", `${head("news", "Новости · Краснодарский край", `<a class="g-link" href="${esc(d.source_url)}" target="_blank" rel="noopener">${esc(d.source)} ${ic("external")}</a>`)}
       <div class="wr-list">${d.items.map((x) => `<a class="wr-it" href="${esc(x.url)}" target="_blank" rel="noopener">
         <span class="wr-meta">${x.tag ? `<i>${esc(x.tag)}</i>` : ""}<small>${ago(x.ts)}</small></span>
         <b>${esc(x.title)}</b>${x.lead ? `<p>${esc(x.lead)}</p>` : ""}</a>`).join("")}</div>
