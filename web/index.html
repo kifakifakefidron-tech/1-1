@@ -31,7 +31,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=65">
+<link rel="stylesheet" href="/static/glass.css?v=67">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -275,48 +275,58 @@
   </div>
 </dialog>
 
-<dialog id="loginDlg" class="small-dlg" aria-labelledby="loginTitle">
-  <span class="grab" aria-hidden="true"></span>
-  <div class="dlg-body">
-    <div class="dlg-logo"><svg class="logo" viewBox="0 0 100 100" aria-hidden="true">
-      <g class="walls" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
-        <path pathLength="1" d="M4 40V4h92v92H4V60"/>
-        <path pathLength="1" d="M49 4v12"/>
-        <path pathLength="1" d="M49 27v13h47"/>
-        <path pathLength="1" d="M49 59h13"/>
-        <path pathLength="1" d="M72 59h24"/>
-        <path pathLength="1" d="M49 59v37"/>
-      </g>
-      <text class="logo-txt" x="27" y="56.5" text-anchor="middle">1+1</text>
-    </svg></div>
-    <h2 id="loginTitle">Вход на 1+1</h2>
-    <p class="note" id="loginLead">Номера агентов открываются после входа.</p>
-    <label class="consent-chk"><input type="checkbox" id="consentChk">
-      <span>Даю <a href="/consent" target="_blank">согласие на обработку персональных данных</a>
-        и принимаю <a href="/terms" target="_blank">пользовательское соглашение</a></span></label>
-    <div class="login-opts">
-      <button type="button" class="pill wide" id="tgLogin">Войти через Telegram</button>
-      <div class="tg-wait" id="tgWait" hidden></div>
-      <div class="or">или по почте</div>
-      <form id="emailForm" class="inline-form">
-        <input id="emailInput" type="email" autocomplete="email" placeholder="Ваша почта" aria-label="Почта">
-        <button type="submit" class="pill light">Получить код</button>
-      </form>
-      <form id="codeForm" class="inline-form" hidden>
-        <input id="codeInput" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Код из письма" aria-label="Код из письма">
-        <button type="submit" class="pill">Войти</button>
-      </form>
-      <p class="err" id="loginErr" hidden></p>
-      <details class="promo-box" id="promoBox" hidden>
-        <summary>Есть код коллег?</summary>
-        <form id="accessForm" class="inline-form">
-          <input id="accessCode" autocomplete="off" placeholder="Код доступа" aria-label="Код доступа">
-          <button type="submit" class="pill light">Войти по коду</button>
+<dialog id="loginDlg" class="login-dlg" aria-labelledby="loginTitle">
+  <button type="button" class="close lg-x" data-close aria-label="Закрыть">✕</button>
+  <div class="lg">
+    <aside class="lg-side">
+      <div class="lg-brand"><svg class="logo" viewBox="0 0 100 100" aria-hidden="true">
+        <g class="walls" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+          <path pathLength="1" d="M4 40V4h92v92H4V60"/><path pathLength="1" d="M49 4v12"/><path pathLength="1" d="M49 27v13h47"/>
+          <path pathLength="1" d="M49 59h13"/><path pathLength="1" d="M72 59h24"/><path pathLength="1" d="M49 59v37"/>
+        </g><text class="logo-txt" x="27" y="56.5" text-anchor="middle">1+1</text></svg><span>1+1</span></div>
+      <h3 class="lg-h">Все объекты Краснодара из&nbsp;риелторских чатов — в&nbsp;одном поиске</h3>
+      <ul class="lg-list">
+        <li><i data-lic="phone"></i><span><b>Номера агентов</b>в каждом объявлении — звоните напрямую</span></li>
+        <li><i data-lic="map"></i><span><b>Карта и фильтры</b>«2к фмр до 7 млн» — как пишете в чате</span></li>
+        <li><i data-lic="users"></i><span><b>Клиенты и подборки</b>ссылка клиенту только с вашим контактом</span></li>
+        <li><i data-lic="bell"></i><span><b>Новое по вашим поискам</b>и снижение цен — уведомлением и письмом</span></li>
+      </ul>
+      <div class="lg-stats" id="lgStats" hidden></div>
+    </aside>
+    <div class="lg-main">
+      <div class="lg-steps" aria-hidden="true"><span class="on" id="lgS1">1 · Почта</span><span id="lgS2">2 · Код из письма</span></div>
+      <h2 id="loginTitle">Вход на 1+1</h2>
+      <p class="lg-lead" id="loginLead">Номера агентов открываются после входа.</p>
+      <div class="login-opts">
+        <label class="consent-chk"><input type="checkbox" id="consentChk">
+          <span>Даю <a href="/consent" target="_blank">согласие на обработку персональных данных</a>
+            и принимаю <a href="/terms" target="_blank">пользовательское соглашение</a></span></label>
+        <form id="emailForm" class="lg-form" novalidate>
+          <label class="lg-field"><span>Ваша почта</span>
+            <input id="emailInput" type="email" autocomplete="email" inputmode="email" placeholder="name@mail.ru" aria-label="Почта"></label>
+          <button type="submit" class="pill lg-go">Получить код на почту</button>
+          <p class="lg-small">Пароль не нужен: пришлём 6 цифр — вводите и вы внутри. Неделя бесплатно, без карты.</p>
         </form>
-      </details>
+        <form id="codeForm" class="lg-form" hidden novalidate>
+          <label class="lg-field"><span>Код из письма <button type="button" class="lg-link" id="lgChange">изменить почту</button></span>
+            <input id="codeInput" class="lg-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" aria-label="Код из письма"></label>
+          <button type="submit" class="pill lg-go">Войти</button>
+          <p class="lg-small">Нет письма? Проверьте «Спам» и «Промоакции». <button type="button" class="lg-link" id="lgResend" disabled>Отправить ещё раз</button></p>
+        </form>
+        <p class="err" id="loginErr" hidden></p>
+        <div class="or">или</div>
+        <button type="button" class="pill light wide" id="tgLogin">Войти через Telegram</button>
+        <div class="tg-wait" id="tgWait" hidden></div>
+        <details class="promo-box" id="promoBox" hidden>
+          <summary>Есть код коллег?</summary>
+          <form id="accessForm" class="inline-form">
+            <input id="accessCode" autocomplete="off" placeholder="Код доступа" aria-label="Код доступа">
+            <button type="submit" class="pill light">Войти по коду</button>
+          </form>
+        </details>
+      </div>
+      <p class="consent">Как мы обращаемся с данными — <a href="/privacy" target="_blank">политика</a>; оплата — <a href="/offer" target="_blank">оферта</a>.</p>
     </div>
-    <p class="consent">Как мы обращаемся с данными — <a href="/privacy" target="_blank">политика</a>; оплата — <a href="/offer" target="_blank">оферта</a>.</p>
-    <div class="dlg-actions"><button type="button" class="ghost" data-close>Закрыть</button></div>
   </div>
 </dialog>
 
@@ -387,7 +397,7 @@
 <script src="/static/yasel.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/app.js?v=118"></script>
+<script src="/static/app.js?v=119"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>

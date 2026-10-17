@@ -30,10 +30,11 @@ def _get(path: str, **params) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def start(phone: str) -> tuple[dict | None, str]:
-    """phone — +79… → {'check_id', 'call_phone' (+7…), 'call_pretty'} или (None, причина)."""
+def start(phone: str, ip: str = "") -> tuple[dict | None, str]:
+    """phone — +79… → {'check_id', 'call_phone' (+7…), 'call_pretty'} или (None, причина).
+    ip — адрес посетителя (не сервера): SMS.ru по нему понимает роуминг и выдаёт обычный номер вместо 8-800."""
     try:
-        d = _get("add", phone=phone.lstrip("+"))
+        d = _get("add", phone=phone.lstrip("+"), **({"ip": ip} if ip else {}))
     except Exception as e:  # noqa: BLE001 — сеть / SMS.ru недоступен
         log.warning("callcheck add: %s", e)
         return None, "Сервис звонков сейчас не отвечает — попробуйте через минуту или подтвердите кодом в MAX."

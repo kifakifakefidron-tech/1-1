@@ -277,3 +277,13 @@ def test_verify_by_call(env, monkeypatch):
     conn.commit()
     assert c.get("/api/agent/verify?phone=%2B79181234567&method=call").json()["status"] == "ok"
     assert c.get("/api/agent").json()["phones"] == ["+79181234567"]
+
+
+def test_always_verified_numbers(env):
+    """18.10: номера Артёма/агентства — всегда «Проверенный агент», без подтверждения."""
+    from app import ingest, search
+    c, conn, _ = env
+    mid = ingest.add_message(conn, source="wa", text="2-к квартира 58 м², 7/16 эт., ФМР, ул. Ставропольская 10. 7,5 млн. +7 918 332-60-33",
+                             chat_id="c", msg_id="av1")
+    lid = ingest.process_message(conn, mid, use_llm=False)["results"][0]["listing_id"]
+    assert search.listing_detail(conn, lid, True)["verified"] is True

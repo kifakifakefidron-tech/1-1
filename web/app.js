@@ -1673,11 +1673,37 @@
     renderAccount();
   }
 
+  // 18.10 (Артём): вход — большое окно в два шага (почта → код), слева — что даёт сервис и живые цифры
+  let resendT = 0;
+  function loginStep(n) {
+    $("emailForm").hidden = n !== 1 || !meta.email_login;
+    $("codeForm").hidden = n !== 2;
+    $("lgS1").classList.toggle("on", n === 1); $("lgS2").classList.toggle("on", n === 2);
+    $("lgS1").classList.toggle("done", n === 2);
+    $("loginDlg").classList.toggle("step2", n === 2);
+  }
+  function resendTimer(sec = 60) {
+    const b = $("lgResend");
+    clearInterval(resendT);
+    b.disabled = true;
+    const tick = () => { b.textContent = sec > 0 ? `Отправить ещё раз через ${sec} с` : "Отправить ещё раз"; b.disabled = sec > 0; if (sec-- <= 0) clearInterval(resendT); };
+    tick(); resendT = setInterval(tick, 1000);
+  }
+  async function loginStats() {
+    const box = $("lgStats");
+    try {
+      const s = await getJSON("/api/stats");
+      const cell = (n, t) => (n ? `<span><b>${num(n)}</b>${t}</span>` : "");
+      box.innerHTML = cell(s.sale, "в продаже") + cell(s.rent, "в аренде") + cell(s.new_24h, "новых за сутки");
+      box.hidden = !box.innerHTML;
+    } catch { box.hidden = true; }
+  }
   function openLogin(lead) {
     $("loginLead").innerHTML = lead || `Номера агентов открываются после входа. Новым — <b>${meta.trial_days || 7} дней бесплатно</b>.`;
+    document.querySelectorAll("#loginDlg [data-lic]").forEach((el) => { el.outerHTML = ic(el.dataset.lic); });
+    loginStats();
     $("tgLogin").hidden = !meta.tg_login;
-    $("emailForm").hidden = !meta.email_login;
-    $("codeForm").hidden = true;
+    loginStep(1);
     document.querySelector("#loginDlg .or").hidden = !(meta.tg_login && meta.email_login);
     $("promoBox").hidden = !meta.promo_login;
     $("tgWait").hidden = true;
@@ -2344,7 +2370,8 @@
     $("emailForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       const email = $("emailInput").value.trim();
-      if (!email) { loginError("Впишите почту."); return; }
+      if (!email) { loginError("Впишите почту."); $("emailInput").focus(); return; }
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { loginError("Проверьте почту — похоже, в адресе опечатка."); $("emailInput").focus(); return; }
       const btn = $("emailForm").querySelector("button");
       const label = btn.textContent;
       btn.disabled = true;
@@ -2354,14 +2381,30 @@
       btn.disabled = false;
       btn.textContent = label;
       if (!r.ok) { loginError(r.data.detail || `Не получилось отправить код (ошибка ${r.status}). Попробуйте ещё раз чуть позже.`); return; }
-      $("codeForm").hidden = false;
-      $("loginLead").innerHTML = `Код отправлен на <b>${esc(email)}</b>. Проверьте и папку «Спам».`;
+      loginStep(2);
+      $("loginLead").innerHTML = `Отправили 6 цифр на <b>${esc(email)}</b> — письмо придёт за минуту.`;
+      $("codeInput").value = "";
       $("codeInput").focus();
+      resendTimer(60);
     });
+    // код: только цифры, 6 цифр — входим сами; «изменить почту», «отправить ещё раз»
+    $("codeInput").addEventListener("input", (e) => {
+      const v = e.target.value.replace(/\D/g, "").slice(0, 6);
+      if (e.target.value !== v) e.target.value = v;
+      $("loginErr").hidden = true;
+      if (v.length === 6) $("codeForm").requestSubmit();
+    });
+    $("lgChange").addEventListener("click", () => { clearInterval(resendT); loginStep(1); $("loginErr").hidden = true; $("emailInput").focus();
+      $("loginLead").innerHTML = "Впишите другую почту — пришлём код туда."; });
+    $("lgResend").addEventListener("click", () => $("emailForm").requestSubmit());
     $("codeForm").addEventListener("submit", async (e) => {
       e.preventDefault();
+      const btn = $("codeForm").querySelector(".lg-go");
+      btn.disabled = true; btn.textContent = "Проверяем…";
       const r = await call("/api/auth/email/verify", { email: $("emailInput").value.trim(), code: $("codeInput").value.trim(), consent: consentOk() });
-      if (!r.ok) { loginError(r.data.detail || "Код не подошёл."); return; }
+      btn.disabled = false; btn.textContent = "Войти";
+      if (!r.ok) { loginError(r.data.detail || "Код не подошёл."); $("codeInput").select(); $("codeForm").classList.add("shake"); setTimeout(() => $("codeForm").classList.remove("shake"), 500); return; }
+      btn.textContent = "Входим…";
       await afterLogin();
     });
     $("accessForm").addEventListener("submit", async (e) => {
