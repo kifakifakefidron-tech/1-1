@@ -39,6 +39,7 @@
       ...(o.p0_report ? [card(o.p0_report.phones, "номеров вырезано из описаний"),
         card(o.p0_report.prices, "цена в карточке ≠ цене в тексте")] : []),
       ...(o.cx_report ? [card(o.cx_report.listings, `объектов: одно название ЖК (групп ${o.cx_report.groups})`)] : []),
+      ...(o.geo_daily ? [card((o.geo_daily.rules || 0), "ошибочных правил отключено сегодня (уборка раз в сутки)")] : []),
       ...(o.geo_cleanup ? [card((o.geo_cleanup.rules || 0) + (o.geo_cleanup.aliases || 0), "плохих правил отключено (уборка)"),
         card(o.geo_cleanup.junk || 0, "мусорных «ЖК» убрано"), card(o.geo_cleanup.listings || 0, "объектов поправлено уборкой")] : []),
       ...(o.price_report ? [card(o.price_report.scale, "цен «в тысячах» исправлено"),

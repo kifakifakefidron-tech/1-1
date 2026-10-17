@@ -871,6 +871,7 @@ def api_admin_overview(request: Request, body: dict | None = None):
         "cx_report": json.loads(db.get_state(conn, "cx_norm_report") or "null"),
         "price_report": json.loads(db.get_state(conn, "price_fix_report") or "null"),
         "geo_cleanup": json.loads(db.get_state(conn, "geo_cleanup_report") or "null"),
+        "geo_daily": json.loads(db.get_state(conn, "geo_daily_report") or "null"),
         "feed_synced": int(db.get_state(conn, "feed_synced") or 0),
     })
 

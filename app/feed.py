@@ -72,6 +72,9 @@ def parse_offer(o: ET.Element, skip_pictures: set[str] | frozenset = frozenset()
     cx = params.get("Жилой комплекс") or ""
     cx = re.sub(r"(?i)^\s*(?:жк|ж/к)\s+", "", cx).strip()
     complex_name = (geo.resolve_complex(cx).name if geo.resolve_complex(cx) else geo.pretty_name(cx)) if cx else po.complex
+    if complex_name:   # «Краснодар», «Южный» — не ЖК; «Акварели-2» — то же написание, что уже в базе
+        from . import geoaudit
+        complex_name = None if geoaudit.is_junk_complex(complex_name) else complex_name
     lat = lon = None
     m = re.search(r"(-?\d{2}\.\d+)\s*,\s*(-?\d{2}\.\d+)", params.get("Координаты", ""))
     if m:
@@ -114,6 +117,9 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
         seen.add(d["ext_id"])
         if conn.execute("SELECT 1 FROM banned WHERE kind = 'feed' AND key = ?", (d["ext_id"],)).fetchone():
             continue
+        if d.get("complex"):   # «Акварели-2» — то же написание ЖК, что уже в базе
+            from . import cxnorm
+            d["complex"] = cxnorm.canonical(conn, d["complex"])
         learning.apply(conn, d)   # правки админа по ЖК/району действуют и на объекты партнёра
         d["search_text"] = make_search_text(d)
         row = conn.execute("SELECT id, price, lat, lon, geo_status, deal, deal_fixed FROM listings WHERE ext_id = ?",

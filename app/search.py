@@ -343,7 +343,8 @@ _NOISE = {"этаж", "этажа", "этаже", "эт", "млн", "тыс", "�
 
 
 
-HOT_MARKET = -15   # «Горячее»: на 15 % и больше дешевле медианы м² по 15+ сравнимым (hooks.update_market_diff)
+HOT_MARKET = -25   # «Горячее» (17.10: должно быть 5–8 % базы): дешевле медианы м² на 25–45 % по 15+ сравнимым
+HOT_FLOOR = -45    # ещё дешевле — скорее ошибка в цене или площади, чем находка
 
 
 def _where(qr: Query, now: int) -> tuple[str, list]:
@@ -414,9 +415,9 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
         w.append("l.first_seen > ?"); p.append(qr.since)
     if qr.hot:
         # акт 14.10, С6: «Горячее» — 5–8 % базы: цена снизилась за неделю, заметно ниже рынка или «срочно» и дешевле рынка
-        w.append(f"""l.price_doubt IS NOT 1 AND ((l.prev_price > l.price AND l.prev_price < l.price * 1.5 AND l.price_changed_at >= ?)
-                     OR l.market_diff <= {HOT_MARKET} OR (l.search_text LIKE '%срочн%' AND l.market_diff <= -5))""")
-        p.append(now - 7 * 86400)
+        w.append(f"""l.price_doubt IS NOT 1 AND ((l.prev_price >= l.price * 1.03 AND l.prev_price < l.price * 1.5 AND l.price_changed_at >= ?)
+                     OR (l.market_diff BETWEEN {HOT_FLOOR} AND {HOT_MARKET} AND l.last_seen >= ?))""")
+        p += [now - 7 * 86400, now - 7 * 86400]
     if fts:
         w.append("l.id IN (SELECT rowid FROM listings_fts WHERE listings_fts MATCH ?)"); p.append(fts)
     if qr.hide_user:
