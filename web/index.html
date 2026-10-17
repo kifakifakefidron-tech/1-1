@@ -31,7 +31,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=67">
+<link rel="stylesheet" href="/static/glass.css?v=69">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -301,6 +301,17 @@
         <label class="consent-chk"><input type="checkbox" id="consentChk">
           <span>Даю <a href="/consent" target="_blank">согласие на обработку персональных данных</a>
             и принимаю <a href="/terms" target="_blank">пользовательское соглашение</a></span></label>
+        <div class="lg-tabs" id="lgTabs" role="tablist" hidden>
+          <button type="button" role="tab" data-lt="phone">По номеру телефона</button>
+          <button type="button" role="tab" data-lt="email">По почте</button></div>
+        <form id="phoneForm" class="lg-form" hidden novalidate>
+          <label class="lg-field"><span>Ваш номер телефона</span>
+            <input id="phoneInput" type="tel" inputmode="tel" autocomplete="tel" placeholder="+7 918 123-45-67" aria-label="Номер телефона"></label>
+          <button type="submit" class="pill lg-go">Войти звонком</button>
+          <p class="lg-small">Позвоните со своего номера на номер, который покажем, — звонок бесплатный и сбросится сам. Пароль и коды не нужны,
+            а номер сразу станет «Проверенный агент». Неделя бесплатно, без карты.</p>
+        </form>
+        <div id="phoneCall" class="lg-form" hidden></div>
         <form id="emailForm" class="lg-form" novalidate>
           <label class="lg-field"><span>Ваша почта</span>
             <input id="emailInput" type="email" autocomplete="email" inputmode="email" placeholder="name@mail.ru" aria-label="Почта"></label>
@@ -397,7 +408,7 @@
 <script src="/static/yasel.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/app.js?v=119"></script>
+<script src="/static/app.js?v=120"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>

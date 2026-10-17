@@ -287,3 +287,36 @@ def test_always_verified_numbers(env):
                              chat_id="c", msg_id="av1")
     lid = ingest.process_message(conn, mid, use_llm=False)["results"][0]["listing_id"]
     assert search.listing_detail(conn, lid, True)["verified"] is True
+
+
+def test_login_by_phone_call(env, monkeypatch):
+    """18.10: вход по номеру — звонок со своего номера; уже подтверждённый номер входит в свой аккаунт (без дублей)."""
+    from starlette.testclient import TestClient
+    from app import callcheck, config, server
+    c, conn, _ = env
+    monkeypatch.setattr(config, "SMSRU_API_ID", "test")
+    st = {"s": "400"}
+    def fake(path, **p):
+        if path == "add":
+            return {"status": "OK", "check_id": "c-1", "call_phone": "78005008275", "call_phone_pretty": "+7 (800) 500-8275"}
+        return {"status": "OK", "check_status": st["s"]}
+    monkeypatch.setattr(callcheck, "_get", fake)
+    with TestClient(server.app) as g:
+        assert g.get("/api/meta").json().get("phone_login") is True
+        assert g.post("/api/auth/phone", json={"phone": "+7 918 555-44-33"}).status_code == 400   # без согласия
+        r = g.post("/api/auth/phone", json={"phone": "+7 918 555-44-33", "consent": True}).json()
+        tid = r["tid"]
+        assert g.get(f"/api/auth/phone?tid={tid}").json()["status"] == "pending"
+        st["s"] = "401"
+        conn.execute("UPDATE phone_codes SET checked_at = NULL"); conn.commit()
+        res = g.get(f"/api/auth/phone?tid={tid}").json()
+        assert res["status"] == "ok"
+        me = g.get("/api/me").json()["me"]
+        assert me and g.get("/api/agent").json()["phones"] == ["+79185554433"]
+        assert g.get(f"/api/auth/phone?tid={tid}").json()["status"] == "used"   # повторно по той же метке не войти
+        uid = me["id"]
+    with TestClient(server.app) as g2:   # второй вход тем же номером — тот же аккаунт
+        tid = g2.post("/api/auth/phone", json={"phone": "89185554433", "consent": True}).json()["tid"]
+        conn.execute("UPDATE phone_codes SET checked_at = NULL"); conn.commit()
+        assert g2.get(f"/api/auth/phone?tid={tid}").json()["status"] == "ok"
+        assert g2.get("/api/me").json()["me"]["id"] == uid

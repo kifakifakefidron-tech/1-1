@@ -118,6 +118,23 @@ def upsert_email_user(conn: sqlite3.Connection, email: str) -> sqlite3.Row:
     return get_user(conn, cur.lastrowid)
 
 
+def upsert_phone_user(conn: sqlite3.Connection, phone: str) -> sqlite3.Row:
+    """18.10: вход по номеру (звонок через SMS.ru). Номер уже подтверждён в каком-то аккаунте (agent_phones) или привязан
+    через Telegram — входим в тот же аккаунт (без дублей). Иначе — новый аккаунт: номер сразу «подтверждённый агент»,
+    пробная неделя — один раз на номер (trials)."""
+    now = int(time.time())
+    row = conn.execute("SELECT u.* FROM agent_phones a JOIN users u ON u.id = a.user_id WHERE a.phone = ?", (phone,)).fetchone()         or conn.execute("SELECT * FROM users WHERE phone = ? ORDER BY id LIMIT 1", (phone,)).fetchone()
+    if row is None:
+        uid = conn.execute("INSERT INTO users (phone, created, last_seen) VALUES (?,?,?)", (phone, now, now)).lastrowid
+    else:
+        uid = row["id"]
+        conn.execute("UPDATE users SET phone = COALESCE(phone, ?) WHERE id = ?", (phone, uid))
+    conn.execute("INSERT OR IGNORE INTO agent_phones (phone, user_id, verified_at) VALUES (?,?,?)", (phone, uid, now))
+    conn.commit()
+    start_trial(conn, uid, phone)
+    return get_user(conn, uid)
+
+
 def create_promo_user(conn: sqlite3.Connection) -> sqlite3.Row:
     """Вход по коду коллег (временно): обычный аккаунт с доступом на PROMO_LOGIN_DAYS дней."""
     now = int(time.time())

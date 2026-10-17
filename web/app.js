@@ -1674,10 +1674,17 @@
   }
 
   // 18.10 (Артём): вход — большое окно в два шага (почта → код), слева — что даёт сервис и живые цифры
-  let resendT = 0;
+  let resendT = 0, lgMode = "email", phonePoll = 0, phoneTick = 0;
   function loginStep(n) {
-    $("emailForm").hidden = n !== 1 || !meta.email_login;
-    $("codeForm").hidden = n !== 2;
+    const ph = lgMode === "phone";
+    $("phoneForm").hidden = !(ph && n === 1);
+    $("phoneCall").hidden = !(ph && n === 2);
+    $("emailForm").hidden = !(!ph && n === 1 && meta.email_login);
+    $("codeForm").hidden = !(!ph && n === 2);
+    $("lgS1").textContent = ph ? "1 · Номер" : "1 · Почта";
+    $("lgS2").textContent = ph ? "2 · Звонок" : "2 · Код из письма";
+    $("lgTabs").hidden = !(meta.phone_login && meta.email_login) || n !== 1;
+    $("lgTabs").querySelectorAll("[data-lt]").forEach((b) => { const on = b.dataset.lt === lgMode; b.classList.toggle("on", on); b.setAttribute("aria-selected", on); });
     $("lgS1").classList.toggle("on", n === 1); $("lgS2").classList.toggle("on", n === 2);
     $("lgS1").classList.toggle("done", n === 2);
     $("loginDlg").classList.toggle("step2", n === 2);
@@ -1698,17 +1705,57 @@
       box.hidden = !box.innerHTML;
     } catch { box.hidden = true; }
   }
+  function stopPhone() { clearInterval(phonePoll); clearInterval(phoneTick); }
+  // 18.10: вход по номеру — звонок со своего номера (SMS.ru), номер сразу «Проверенный агент»
+  async function phoneStart(phone) {
+    if (!consentOk()) return;
+    const btn = $("phoneForm").querySelector(".lg-go");
+    btn.disabled = true; btn.textContent = "Готовим номер для звонка…";
+    $("loginErr").hidden = true;
+    const r = await call("/api/auth/phone", { phone, consent: true });
+    btn.disabled = false; btn.textContent = "Войти звонком";
+    if (!r.ok) { loginError(r.data.detail || "Не получилось — попробуйте ещё раз или войдите по почте."); return; }
+    const { tid, call_phone: to, call_pretty: pretty, phone: ph, ttl } = r.data;
+    let left = ttl || 300;
+    loginStep(2);
+    $("loginLead").innerHTML = `Позвоните с номера <b>${esc(ph)}</b> — и вы внутри.`;
+    $("phoneCall").innerHTML = `<div class="pv-card lg-call">
+        <span class="pv-step">Позвоните на номер</span>
+        <a class="pv-num" href="tel:${esc(to)}">${esc(pretty)}</a>
+        <div class="pv-acts"><a class="pill" href="tel:${esc(to)}">${ic("phone")}Позвонить</a>
+          <button type="button" class="chip" data-copy-call="${esc(to)}">Скопировать номер</button></div>
+        <p class="pv-wait"><span class="pv-dot"></span><span>Ждём звонок · <b id="lgLeft"></b></span></p>
+        <small class="note">Звонок бесплатный и сбросится сам, говорить ничего не нужно. С компьютера — позвоните с телефона на этот номер.</small></div>
+      <button type="button" class="lg-link" id="lgPhoneBack">← Другой номер</button>`;
+    const show = () => { const el = $("lgLeft"); if (el) el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`; };
+    show();
+    stopPhone();
+    phoneTick = setInterval(() => { left = Math.max(0, left - 1); show(); }, 1000);
+    phonePoll = setInterval(async () => {
+      const s = await call(`/api/auth/phone?tid=${encodeURIComponent(tid)}`);
+      if (!s.ok) return;
+      if (s.data.status === "ok" || s.data.status === "used") { stopPhone(); $("phoneCall").querySelector(".pv-wait").innerHTML = `${ic("check-circle")}<b>Номер подтверждён — входим…</b>`; await afterLogin(); return; }
+      if (s.data.status === "expired" || left <= 0) {
+        stopPhone();
+        $("phoneCall").innerHTML = `<div class="pv-card"><p class="pv-err">Время вышло — звонка не было.</p>
+          <button type="button" class="pill" id="lgPhoneAgain">Начать заново</button></div>`;
+        $("lgPhoneAgain").addEventListener("click", () => phoneStart(ph));
+      }
+    }, 3000);
+  }
   function openLogin(lead) {
+    lgMode = meta.phone_login ? "phone" : "email";
+    stopPhone();
     $("loginLead").innerHTML = lead || `Номера агентов открываются после входа. Новым — <b>${meta.trial_days || 7} дней бесплатно</b>.`;
     document.querySelectorAll("#loginDlg [data-lic]").forEach((el) => { el.outerHTML = ic(el.dataset.lic); });
     loginStats();
     $("tgLogin").hidden = !meta.tg_login;
     loginStep(1);
-    document.querySelector("#loginDlg .or").hidden = !(meta.tg_login && meta.email_login);
+    document.querySelector("#loginDlg .or").hidden = !(meta.tg_login && (meta.email_login || meta.phone_login));
     $("promoBox").hidden = !meta.promo_login;
     $("tgWait").hidden = true;
     $("loginErr").hidden = true;
-    if (!meta.tg_login && !meta.email_login && !meta.promo_login) {
+    if (!meta.tg_login && !meta.email_login && !meta.promo_login && !meta.phone_login) {
       $("loginLead").textContent = "Вход скоро откроется.";
     }
     openDlg($("loginDlg"));
@@ -2366,7 +2413,24 @@
     $("accountBtn").addEventListener("click", () => (me() ? (location.href = "/cabinet") : openLogin()));
 
     $("tgLogin").addEventListener("click", () => startTelegram(false));
-    $("loginDlg").addEventListener("close", () => clearInterval(tgPoll));
+    $("loginDlg").addEventListener("close", () => { clearInterval(tgPoll); stopPhone(); clearInterval(resendT); });
+    $("lgTabs").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-lt]");
+      if (!b) return;
+      lgMode = b.dataset.lt; $("loginErr").hidden = true; loginStep(1);
+      (lgMode === "phone" ? $("phoneInput") : $("emailInput")).focus();
+    });
+    $("phoneForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const v = $("phoneInput").value.trim();
+      if (v.replace(/\D/g, "").length < 10) { loginError("Впишите номер полностью, например +7 918 123-45-67."); $("phoneInput").focus(); return; }
+      phoneStart(v);
+    });
+    $("phoneCall").addEventListener("click", (e) => {
+      const c = e.target.closest("[data-copy-call]");
+      if (c) { navigator.clipboard.writeText(c.dataset.copyCall).then(() => { c.textContent = "Скопировано"; }, () => prompt("Номер:", c.dataset.copyCall)); return; }
+      if (e.target.closest("#lgPhoneBack")) { stopPhone(); loginStep(1); $("loginLead").innerHTML = "Впишите номер — покажем, куда позвонить."; $("phoneInput").focus(); }
+    });
     $("emailForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       const email = $("emailInput").value.trim();

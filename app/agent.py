@@ -126,6 +126,57 @@ def call_status(conn: sqlite3.Connection, user_id: int, phone_raw: str) -> str |
     return "pending"
 
 
+def start_login_call(conn: sqlite3.Connection, phone_raw: str, ip: str = "") -> tuple[dict | None, str | None]:
+    """18.10: вход по номеру — звонок со своего номера (SMS.ru callcheck). Возвращает tid — метку этой попытки для
+    браузера (по ней он спрашивает статус; чужую попытку по номеру не угадать)."""
+    from . import callcheck, db
+    phone = rules.normalize_phone(phone_raw)
+    if not phone:
+        return None, "Проверьте номер — нужен российский номер, например +7 918 123-45-67."
+    now = int(time.time())
+    if conn.execute("SELECT COUNT(*) FROM phone_codes WHERE phone = ? AND method = 'login' AND created > ?",
+                    (phone, now - 3600)).fetchone()[0] >= 6:
+        return None, "Слишком много попыток входа с этим номером — попробуйте через час или войдите по почте."
+    db.flush(conn)
+    got, why = callcheck.start(phone, ip)
+    if not got:
+        return None, why
+    tid = secrets.token_urlsafe(18)
+    conn.execute("""INSERT INTO phone_codes (user_id, phone, code, created, status, method, check_id, call_phone)
+                    VALUES (0, ?, ?, ?, 'pending', 'login', ?, ?)""", (phone, tid, now, got["check_id"], got["call_phone"]))
+    conn.commit()
+    return {"tid": tid, "phone": phone, "call_phone": got["call_phone"], "call_pretty": got["call_pretty"], "ttl": CALL_TTL}, None
+
+
+def login_call_status(conn: sqlite3.Connection, tid: str) -> tuple[str, str | None]:
+    """(статус, номер): ok — позвонил, можно входить (один раз: дальше 'used'), pending, expired."""
+    from . import callcheck
+    row = conn.execute("SELECT * FROM phone_codes WHERE code = ? AND method = 'login'", (tid,)).fetchone() if tid else None
+    if row is None:
+        return "expired", None
+    if row["status"] in ("used", "expired"):
+        return row["status"], row["phone"]
+    now = int(time.time())
+    if row["created"] < now - CALL_TTL:
+        conn.execute("UPDATE phone_codes SET status = 'expired' WHERE id = ?", (row["id"],))
+        conn.commit()
+        return "expired", row["phone"]
+    if row["checked_at"] and now - row["checked_at"] < 3:
+        return "pending", row["phone"]
+    conn.execute("UPDATE phone_codes SET checked_at = ? WHERE id = ?", (now, row["id"]))
+    conn.commit()
+    st = callcheck.status(row["check_id"])
+    if st == "ok":
+        conn.execute("UPDATE phone_codes SET status = 'used' WHERE id = ? AND status = 'pending'", (row["id"],))
+        conn.commit()
+        return "ok", row["phone"]
+    if st == "expired":
+        conn.execute("UPDATE phone_codes SET status = 'expired' WHERE id = ?", (row["id"],))
+        conn.commit()
+        return "expired", row["phone"]
+    return "pending", row["phone"]
+
+
 def has_pending(conn: sqlite3.Connection) -> bool:
     return bool(conn.execute("SELECT 1 FROM phone_codes WHERE status = 'pending' AND COALESCE(method, 'max') = 'max' AND created > ? LIMIT 1",
                              (int(time.time()) - CODE_TTL,)).fetchone())
