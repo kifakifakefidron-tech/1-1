@@ -166,6 +166,9 @@ YOOKASSA_SECRET = os.getenv("YOOKASSA_SECRET", "").strip()
 VERIFY_NUMBER = os.getenv("VERIFY_NUMBER", "").strip()
 # 17.10: подтверждение номера звонком (основной способ) — SMS.ru «Авторизация по звонку», ключ api_id из их кабинета
 SMSRU_API_ID = os.getenv("SMSRU_API_ID", "").strip()
+# 18.10 (Артём): номера, которые ВСЕГДА «Проверенный агент» (свои / агентства), без подтверждения; ещё — ALWAYS_VERIFIED в .env
+ALWAYS_VERIFIED = sorted({"+79618571772", "+79183326033", "+79604811577"}
+                         | {p.strip() for p in os.getenv("ALWAYS_VERIFIED", "").split(",") if p.strip().startswith("+7")})
 # Через какие мессенджеры принимаем код (профили Wappi): max, wa
 VERIFY_CHANNELS = [c.strip() for c in os.getenv("VERIFY_CHANNELS", "max").split(",") if c.strip()]
 OWN_LISTING_DAYS = int(os.getenv("OWN_LISTING_DAYS", "20"))  # сколько живёт свой объект без подтверждения

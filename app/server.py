@@ -1440,7 +1440,8 @@ def api_agent_verify(request: Request, body: dict | None = None):
             return _err("Подтверждение звонком ещё не подключено — подтвердите кодом в MAX.", 503)
         if _too_often(request, "agent_call", 6, 3600):
             return _err("Слишком много попыток — попробуйте через час.", 429)
-        res, why = agent.start_call(conn, user["id"], str((body or {}).get("phone", ""))[:40])
+        ip = (request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else ""))[:45]
+        res, why = agent.start_call(conn, user["id"], str((body or {}).get("phone", ""))[:40], ip)
         return JSONResponse(res) if res else _err(why)
     if (body or {}).get("check"):   # «Я отправил — проверить»: читаем личку сразу, не ждём фонового цикла
         phone = str(body.get("phone", ""))[:40]

@@ -80,7 +80,7 @@ def _confirm(conn: sqlite3.Connection, row_id: int, phone: str, user_id: int) ->
     accounts.reward_referrer(conn, user_id)   # «Приведи коллегу»: пригласившему +неделя
 
 
-def start_call(conn: sqlite3.Connection, user_id: int, phone_raw: str) -> tuple[dict | None, str | None]:
+def start_call(conn: sqlite3.Connection, user_id: int, phone_raw: str, ip: str = "") -> tuple[dict | None, str | None]:
     """17.10: подтверждение звонком — человек звонит со своего номера на номер SMS.ru, звонок сбрасывается сам."""
     from . import callcheck
     phone, why = _check_phone(conn, user_id, phone_raw)
@@ -88,7 +88,7 @@ def start_call(conn: sqlite3.Connection, user_id: int, phone_raw: str) -> tuple[
         return None, why
     from . import db
     db.flush(conn)   # перед ожиданием сети — закончить запись (иначе «база занята»)
-    got, why = callcheck.start(phone)
+    got, why = callcheck.start(phone, ip)
     if not got:
         return None, why
     now = int(time.time())

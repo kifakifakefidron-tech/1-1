@@ -11,7 +11,7 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 
-from . import geo
+from . import config, geo
 from .rules import TYPE_LABELS
 from .textnorm import norm, words
 
@@ -463,7 +463,11 @@ def geo_level(lat, status: str | None, src: str | None) -> str:
     return "house"
 
 
-VERIFIED = """(l.source = 'own' OR EXISTS (SELECT 1 FROM json_each(l.phones) j JOIN agent_phones a ON a.phone = j.value))"""
+VERIFIED = ("""(l.source = 'own' OR EXISTS (SELECT 1 FROM json_each(l.phones) j JOIN agent_phones a ON a.phone = j.value)"""
+            # 18.10: номера Артёма/агентства — всегда «Проверенный агент»
+            + (" OR EXISTS (SELECT 1 FROM json_each(l.phones) j WHERE j.value IN ("
+               + ",".join(f"'{p}'" for p in config.ALWAYS_VERIFIED if p[1:].isdigit()) + "))" if config.ALWAYS_VERIFIED else "")
+            + ")")
 
 PUBLIC_FIELDS = ("id", "type", "deal", "rooms", "area", "land", "floor", "floors", "price", "price_m2",
                  "district", "complex", "settlement", "street", "house", "title", "description",
