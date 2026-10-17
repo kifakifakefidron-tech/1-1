@@ -55,8 +55,79 @@ def start_verification(conn: sqlite3.Connection, user_id: int, phone_raw: str) -
     return {"phone": phone, "code": code, "send_to": config.VERIFY_NUMBER}, None
 
 
+CALL_TTL = 5 * 60   # SMS.ru держит проверку звонком несколько минут — потом начинаем заново
+
+
+def _check_phone(conn: sqlite3.Connection, user_id: int, phone_raw: str) -> tuple[str | None, str | None]:
+    phone = rules.normalize_phone(phone_raw)
+    if not phone:
+        return None, "Проверьте номер — нужен российский номер, например +7 918 123-45-67."
+    owner = conn.execute("SELECT user_id FROM agent_phones WHERE phone = ?", (phone,)).fetchone()
+    if owner and owner[0] != user_id:
+        return None, "Этот номер уже подтверждён другим аккаунтом. Если это ваш номер — напишите нам."
+    if owner and owner[0] == user_id:
+        return None, "Этот номер уже подтверждён."
+    if conn.execute("SELECT COUNT(*) FROM phone_codes WHERE user_id = ? AND created > ?",
+                    (user_id, int(time.time()) - 3600)).fetchone()[0] >= 5:
+        return None, "Слишком много попыток — попробуйте через час."
+    return phone, None
+
+
+def _confirm(conn: sqlite3.Connection, row_id: int, phone: str, user_id: int) -> None:
+    conn.execute("UPDATE phone_codes SET status = 'ok' WHERE id = ?", (row_id,))
+    conn.execute("INSERT OR IGNORE INTO agent_phones (phone, user_id, verified_at) VALUES (?,?,?)", (phone, user_id, int(time.time())))
+    conn.commit()
+    accounts.reward_referrer(conn, user_id)   # «Приведи коллегу»: пригласившему +неделя
+
+
+def start_call(conn: sqlite3.Connection, user_id: int, phone_raw: str) -> tuple[dict | None, str | None]:
+    """17.10: подтверждение звонком — человек звонит со своего номера на номер SMS.ru, звонок сбрасывается сам."""
+    from . import callcheck
+    phone, why = _check_phone(conn, user_id, phone_raw)
+    if not phone:
+        return None, why
+    from . import db
+    db.flush(conn)   # перед ожиданием сети — закончить запись (иначе «база занята»)
+    got, why = callcheck.start(phone)
+    if not got:
+        return None, why
+    now = int(time.time())
+    conn.execute("""INSERT INTO phone_codes (user_id, phone, code, created, status, method, check_id, call_phone)
+                    VALUES (?,?,?,?, 'pending', 'call', ?, ?)""", (user_id, phone, "", now, got["check_id"], got["call_phone"]))
+    conn.commit()
+    return {"phone": phone, "method": "call", "call_phone": got["call_phone"], "call_pretty": got["call_pretty"], "ttl": CALL_TTL}, None
+
+
+def call_status(conn: sqlite3.Connection, user_id: int, phone_raw: str) -> str | None:
+    """Последняя проверка звонком по этому номеру: ok / pending / expired; None — проверки звонком не было."""
+    from . import callcheck
+    phone = rules.normalize_phone(phone_raw) or phone_raw
+    row = conn.execute("""SELECT * FROM phone_codes WHERE user_id = ? AND phone = ? AND method = 'call'
+                          ORDER BY id DESC LIMIT 1""", (user_id, phone)).fetchone()
+    if row is None:
+        return None
+    if row["status"] == "ok":
+        return "ok"
+    now = int(time.time())
+    if row["created"] < now - CALL_TTL:
+        return "expired"
+    if row["checked_at"] and now - row["checked_at"] < 3:   # не дёргаем SMS.ru чаще раза в 3 секунды
+        return "pending"
+    conn.execute("UPDATE phone_codes SET checked_at = ? WHERE id = ?", (now, row["id"]))
+    conn.commit()
+    st = callcheck.status(row["check_id"])
+    if st == "ok":
+        _confirm(conn, row["id"], phone, user_id)
+        return "ok"
+    if st == "expired":
+        conn.execute("UPDATE phone_codes SET status = 'expired' WHERE id = ?", (row["id"],))
+        conn.commit()
+        return "expired"
+    return "pending"
+
+
 def has_pending(conn: sqlite3.Connection) -> bool:
-    return bool(conn.execute("SELECT 1 FROM phone_codes WHERE status = 'pending' AND created > ? LIMIT 1",
+    return bool(conn.execute("SELECT 1 FROM phone_codes WHERE status = 'pending' AND COALESCE(method, 'max') = 'max' AND created > ? LIMIT 1",
                              (int(time.time()) - CODE_TTL,)).fetchone())
 
 

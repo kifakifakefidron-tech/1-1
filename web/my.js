@@ -37,9 +37,7 @@
   // ════════════ /my — список ════════════
   function verifyBlock() {
     const phones = data.phones;
-    const form = `<form class="my-verify" id="verifyForm">
-        <input id="verifyPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+7 918 123-45-67" aria-label="Ваш номер">
-        <button type="submit" class="pill">Получить код</button></form><div id="verifyBox"></div>`;
+    const form = `<div class="pv" id="verifyMount"></div>`;   // 17.10: звонок — основной способ, код в MAX — запасной (verify.js)
     if (phones.length) {
       return `<section class="my-card my-phones"><div class="my-card-h"><span class="my-ic ok">${ic("check-circle")}</span>
         <div><h2>Номер подтверждён</h2><p>Объявления с ${phones.length > 1 ? "этими номерами" : "этим номером"} — ваши: менять их можете только вы.</p></div></div>
@@ -48,7 +46,7 @@
     }
     return `<section class="my-card my-step"><div class="my-card-h"><span class="my-ic">${ic("shield")}</span>
       <div><h2>Шаг 1 · подтвердите свой номер</h2><p>Так мы поймём, какие объявления из чатов — ваши. Никто другой не сможет их изменить.
-        Подтверждение — сообщением с кодом в MAX.</p></div></div>${form}</section>`;
+        ${(data.verify_methods || []).includes("call") ? "Проще всего — позвонить с этого номера: звонок бесплатный и сбросится сам." : "Подтверждение — сообщением с кодом в MAX."}</p></div></div>${form}</section>`;
   }
   function itemCard(o) {
     const sold = !o.is_active, own = o.source === "own";
@@ -85,40 +83,8 @@
           ${items.length ? "" : "Как только вы разместите объект в чатах с подтверждённым номером — он появится здесь. Или добавьте объект сами."}</div>`}</div>` : ""}
       <p class="my-rules">${ic("help")}Менять можно только объявления с вашим подтверждённым номером. Свой объект висит ${data.own_days} дней — за 10, 5, 2 и 1 день
         до конца спросим «ещё актуален?» (уведомление на сайте и письмо): «да» — продлим, «нет» — снимем сразу, без ответа — снимем по сроку. Все правки сохраняются в журнале.</p>`;
-    $("verifyForm").addEventListener("submit", (e) => { e.preventDefault(); startVerify($("verifyPhone").value.trim()); });
-  }
-
-  // подтверждение номера (как было в окне: код → MAX → «Я отправил — проверить»)
-  async function startVerify(phone) {
-    const box = $("verifyBox");
-    const r = await call("/api/agent/verify", { phone });
-    if (!r.ok) { box.innerHTML = `<p class="err">${esc(r.data.detail || "Не получилось.")}</p>`; return; }
-    const { code, send_to: to, phone: ph } = r.data;
-    const text = `1+1-${code}`;
-    box.innerHTML = `<div class="agent-code">
-        <p>Отправьте сообщение <b class="code">${esc(text)}</b><br>с номера <b>${esc(ph)}</b> на номер <b>${esc(to)}</b> в MAX.</p>
-        <div class="agent-code-btns">
-          <button type="button" class="pill light" data-copy="${esc(text)}">Скопировать код</button>
-          <button type="button" class="pill light" data-copy="${esc(to)}">Скопировать наш номер</button>
-        </div>
-        <button type="button" class="pill agent-check" id="verifyCheck">Я отправил — проверить</button>
-        <p class="note" id="verifyWait">Отправили? Нажмите «Проверить» — посмотрим сразу. Или подождите: сами проверяем раз в 1–2 минуты.</p></div>`;
-    $("verifyCheck").addEventListener("click", async (e) => {
-      const b = e.currentTarget, w = $("verifyWait");
-      b.disabled = true; b.textContent = "Проверяем…";
-      const c = await call("/api/agent/verify", { phone: ph, check: true });
-      b.disabled = false; b.textContent = "Проверить ещё раз";
-      if (c.ok && c.data.status === "ok") { clearInterval(waitTimer); toast("Номер подтверждён"); load(); return; }
-      w.textContent = c.data.detail || "Пока не пришло — попробуйте через минуту.";
-      w.classList.add("warn");
-    });
-    let tries = 0;
-    clearInterval(waitTimer);
-    waitTimer = setInterval(async () => {
-      if (++tries > 360) { clearInterval(waitTimer); return; }
-      const s = await call(`/api/agent/verify?phone=${encodeURIComponent(ph)}`);
-      if (s.ok && s.data.status === "ok") { clearInterval(waitTimer); toast("Номер подтверждён"); load(); }
-    }, 5000);
+    if (window.PhoneVerify && $("verifyMount")) PhoneVerify.mount($("verifyMount"), { methods: data.verify_methods, again: data.phones.length > 0,
+      onDone: () => { toast("Номер подтверждён"); load(); } });
   }
 
   // ════════════ /my/edit — новый объект или правка ════════════
