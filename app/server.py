@@ -312,6 +312,7 @@ def api_meta(request: Request, body: dict | None = None):
         "promo_login": bool(config.ACCESS_CODE),
         "tg_login": tg_alive(),
         "email_login": mailer.available(),
+        "phone_login": callcheck.enabled(),   # 18.10: вход по номеру звонком (SMS.ru)
         "payments": payments.available(),
         "price": config.SUB_PRICE, "period_days": config.SUB_DAYS, "trial_days": config.TRIAL_DAYS,
         "prices": _prices_text(), "price_first": config.SUB_FIRST[1] if config.SUB_FIRST else None,
@@ -617,6 +618,36 @@ def api_email_verify(request: Request, body: dict | None = None):
         user = accounts.get_user(conn, user["id"])
     token = accounts.create_session(conn, user["id"], request.headers.get("user-agent", ""))
     return _session_response(request, {"ok": True, "me": accounts.me(conn, user)}, token)
+
+
+def api_phone_login(request: Request, body: dict | None = None):
+    """18.10: вход по номеру. POST {phone, consent} — начать (звонок со своего номера); GET ?tid= — статус,
+    позвонил → входим (кука сессии), номер сразу подтверждён («Проверенный агент»)."""
+    conn = db.get()
+    if not callcheck.enabled():
+        return _err("Вход по номеру ещё не подключён — войдите по почте.", 503)
+    if request.method == "POST":
+        body = body or {}
+        if _no_consent(body):
+            return _err(CONSENT_ERR)
+        if _too_often(request, "phone_login", 10, 3600, who=str(body.get("phone", ""))[:40]):
+            return _err("Слишком много попыток — подождите час или войдите по почте.", 429)
+        ip = (request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else ""))[:45]
+        res, why = agent.start_login_call(conn, str(body.get("phone", ""))[:40], ip)
+        return JSONResponse(res) if res else _err(why)
+    db.flush(conn)
+    st, phone = agent.login_call_status(conn, request.query_params.get("tid", "")[:60])
+    if st != "ok":
+        return JSONResponse({"status": st})
+    user = accounts.upsert_phone_user(conn, phone)
+    if user["blocked"]:
+        return _err("Аккаунт заблокирован.", 403)
+    _save_consent(conn, user["id"])
+    if accounts.attach_referrer(conn, user["id"], request.cookies.get("ref") or ""):
+        user = accounts.get_user(conn, user["id"])
+    accounts.reward_referrer(conn, user["id"])   # номер подтверждён звонком — пригласившему бонус
+    token = accounts.create_session(conn, user["id"], request.headers.get("user-agent", ""))
+    return _session_response(request, {"status": "ok", "me": accounts.me(conn, user)}, token)
 
 
 def api_logout(request: Request, body: dict | None = None):
@@ -2473,6 +2504,7 @@ routes = [
     Route("/api/auth/email/start", threaded(api_email_start), methods=["POST"]),
     Route("/api/auth/email/verify", threaded(api_email_verify), methods=["POST"]),
     Route("/api/auth/logout", threaded(api_logout), methods=["POST"]),
+    Route("/api/auth/phone", threaded(api_phone_login), methods=["GET", "POST"]),
     Route("/api/me", threaded(api_me)),
     Route("/api/favorites", threaded(api_favorites)),
     Route("/api/hidden", threaded(api_hidden), methods=["GET", "POST"]),

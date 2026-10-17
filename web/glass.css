@@ -1048,3 +1048,18 @@ dialog.login-dlg { width: min(940px, calc(100vw - 32px)); max-width: none; max-h
 .login-dlg .login-opts { display: grid; gap: 12px; }
 .login-dlg.step2 .consent-chk { display: none; }
 .login-dlg .consent-chk { order: 0; }
+/* 18.10: вход — «По номеру телефона» (основной) / «По почте» */
+.lg-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 16px; background: rgba(0, 0, 0, .2);
+  border: 1px solid var(--glass-line); }
+.lg-tabs button { padding: 10px 8px; border: 0; border-radius: 12px; background: none; color: var(--ink-2); font: 600 13.5px var(--body);
+  cursor: pointer; transition: background .25s var(--ease), color .25s var(--ease); }
+.lg-tabs button.on { background: linear-gradient(160deg, #f3e8bc, #e3cb8f); color: #0f2f2e; }
+.lg-tabs button:not(.on):hover { color: var(--ink); background: rgba(255, 255, 255, .05); }
+.lg-call .pv-num { font-size: 30px; }
+.lg-call .pv-wait svg { width: 18px; height: 18px; color: var(--ok); }
+#lgPhoneBack { justify-self: start; }
+@media (max-width: 760px) {
+  .login-dlg .lg-list { display: none; }   /* на телефоне — сразу к входу: заголовок и цифры, без списка */
+  .lg-side { gap: 10px; padding-bottom: 14px; }
+  .lg-stats { gap: 6px; }
+}
