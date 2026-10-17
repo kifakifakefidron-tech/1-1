@@ -508,7 +508,7 @@
       ${photo}
       <button type="button" class="fav-btn${fav ? " on" : ""}" data-fav="${o.id}" aria-label="${fav ? "Убрать из избранного" : "В избранное"}">${HEART}</button>
       ${headline(o) ? `<h3 class="item-head">${esc(headline(o))}</h3>` : ""}
-      <div class="item-price"><div class="price">${esc(fmtPrice(o.price, o.deal))}</div>${m2}</div>
+      <div class="item-price"><div class="price">${o.price_doubt ? "Цена уточняется" : esc(fmtPrice(o.price, o.deal))}</div>${o.price_doubt ? "" : m2}</div>
       <div class="item-title">${esc(o.title)}</div>
       ${tag}
       ${addr ? `<div class="item-place">${esc(addr)}</div>` : ""}
@@ -536,6 +536,17 @@
     const img = e.target;
     if (img.tagName === "IMG" && img.dataset.full && img.src !== img.dataset.full) img.src = img.dataset.full;
   }, true);
+  // галочка согласия на обработку ПДн в окне входа (152-ФЗ): без неё сервер вход не пропустит — подсказываем заранее
+  function consentOk() {
+    const c = $("consentChk");
+    if (c && !c.checked) {
+      const e = $("loginErr");
+      if (e) { e.textContent = "Отметьте согласие на обработку персональных данных — без него вход невозможен."; e.hidden = false; }
+      c.closest(".consent-chk").classList.add("need");
+      setTimeout(() => c.closest(".consent-chk").classList.remove("need"), 1600);
+    }
+    return !!(c && c.checked);
+  }
   // «Пишите как в чате»: как сервис понял фразу из строки поиска — чипами; ✕ убирает эту часть из запроса
   function understoodHTML(u) {
     if (!u || (!u.chips.length && !u.text)) return "";
@@ -967,22 +978,29 @@
         ${(o.phones || []).map((p) => `<button type="button" class="chip danger" data-ban-phone="${esc(p)}" title="Скрыть все объекты и сообщения от этого номера и не принимать новые">🚫 Всё от ${esc(p)}</button>`).join("")}
       </div><p class="note">${esc(geoNote)}${chats ? " · " + esc(chats) : ""}</p>` : "";
 
+    // снят / продан: честно сверху, фото серые, вместо действий — «Похожие объекты» (17.10)
+    const gone = o.is_active === 0 || o.is_active === false;
+    const similarQ = new URLSearchParams({ deal: o.deal || "sale", ...(o.rooms != null ? { rooms: o.rooms } : {}),
+      ...(o.complex ? { complex: o.complex } : o.district ? { district: o.district } : {}) }).toString();
     return `
-      ${gallery}
+      ${gone ? `<div class="dv-gone">${ic("alert")}<span><b>Объект снят с продажи</b>
+        <small>Его больше не присылают в чаты${o.last_seen ? ` — последний раз ${esc(new Date(o.last_seen * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }))}` : ""}. Скорее всего, продан.</small></span>
+        <a class="pill" href="/?${similarQ}" target="_top">Похожие объекты</a></div>` : ""}
+      <div class="${gone ? "dv-gone-gal" : ""}">${gallery}</div>
       <div class="dv">
         <div class="dv-head">
           ${badgesHTML(o)}
           <h2 class="dv-title" id="dTitle">${esc(headline(o) || o.title)}</h2>
           <p class="dv-subt">${esc([...new Set([headline(o) ? o.title : "", address(o)].filter(Boolean))].join(" · "))}
             ${address(o) ? `<a class="ya-link" href="https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(yaQuery(o))}" target="_blank" rel="noopener">на карте ↗</a>` : ""}</p>
-          <div class="dv-price"><b>${esc(fmtPrice(o.price, o.deal))}</b>
+          <div class="dv-price"><b>${o.price_doubt ? "Цена уточняется" : esc(fmtPrice(o.price, o.deal))}</b>
             ${o.price_m2 && o.deal !== "rent" ? `<span>${esc(num(o.price_m2))} ₽/м²</span>` : ""}${marketTag}</div>
           ${o.text_price ? `<p class="dv-tp">${ic("alert")}<span>В тексте объявления (от ${esc(new Date(o.text_price.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }))})
             другая цена — ${esc(fmtPrice(o.text_price.price, o.deal))}. В карточке — <b>${esc(fmtPrice(o.price, o.deal))}</b> (из более свежего сообщения). Уточните у агента.</span></p>` : ""}
           ${o.price_doubt ? `<p class="dv-tp">${ic("alert")}<span>Цена записана в объявлении неоднозначно (например, «5400» без «тыс.» или «млн»). Уточните у агента —
             в сортировках по цене и фильтрах этот объект не участвует.</span></p>` : ""}
         </div>
-        <div class="dv-acts">${actions}</div>
+        ${gone ? "" : `<div class="dv-acts">${actions}</div>`}
         ${contactHTML(o)}
         ${facts ? `<dl class="dv-facts">${facts}</dl>` : ""}
         ${o.lat && o.lon && !o.loading && ["street", "district"].includes(o.geo_level)
@@ -1633,8 +1651,9 @@
 
   // Вход/подтверждение номера через бота: открываем Telegram и ждём подтверждения
   async function startTelegram(link) {
+    if (!link && !consentOk()) return;
     const w = window.open("", "_blank");  // открываем сразу, иначе браузер заблокирует окно
-    const r = await call("/api/auth/tg/start", link ? { link: true } : {});
+    const r = await call("/api/auth/tg/start", link ? { link: true } : { consent: true });
     if (!r.ok) {
       if (w) w.close();
       if (!$("loginDlg").open) openLogin();
@@ -2283,7 +2302,7 @@
       btn.disabled = true;
       btn.textContent = "Отправляем код…";
       $("loginErr").hidden = true;
-      const r = await call("/api/auth/email/start", { email });
+      const r = await call("/api/auth/email/start", { email, consent: consentOk() });
       btn.disabled = false;
       btn.textContent = label;
       if (!r.ok) { loginError(r.data.detail || `Не получилось отправить код (ошибка ${r.status}). Попробуйте ещё раз чуть позже.`); return; }
@@ -2293,7 +2312,7 @@
     });
     $("codeForm").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const r = await call("/api/auth/email/verify", { email: $("emailInput").value.trim(), code: $("codeInput").value.trim() });
+      const r = await call("/api/auth/email/verify", { email: $("emailInput").value.trim(), code: $("codeInput").value.trim(), consent: consentOk() });
       if (!r.ok) { loginError(r.data.detail || "Код не подошёл."); return; }
       await afterLogin();
     });
@@ -2301,7 +2320,7 @@
       e.preventDefault();
       const code = $("accessCode").value.trim();
       if (!code) return;
-      const r = await call("/api/login", { code });
+      const r = await call("/api/login", { code, consent: consentOk() });
       if (!r.ok) { loginError(r.data.detail || "Код не подошёл. Проверьте и введите ещё раз."); return; }
       await afterLogin();
     });

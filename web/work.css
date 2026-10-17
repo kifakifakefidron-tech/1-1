@@ -98,8 +98,6 @@
 .c-ok { --c: var(--ok); } .c-bad { --c: var(--bad); }
 /* заглушка без фото — компактная полоса, а не пол-экрана */
 /* без фото — та же высота, что с фото: ряды ровные (решение Артёма 17.10) */
-.wk-card.nophoto .wk-photo > span { grid-auto-flow: column; gap: 8px; }
-.wk-card.nophoto .wk-photo > span svg { width: 18px; height: 18px; }
 .wk-tools .pk-btn { min-width: 160px; }
 /* телефон: вкладки помещаются целиком — без скрытых за краем */
 @media (max-width: 480px) {

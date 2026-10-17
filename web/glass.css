@@ -669,3 +669,21 @@ body.map-mode #mapBox { height: calc(100dvh - 120px); min-height: 420px; scroll-
 .ph-none > img { position: static !important; width: min(88px, 38%) !important; height: auto !important; object-fit: contain !important;
   opacity: .5; transform: none !important; filter: none !important; }
 .ph-none small { font-size: 13px; letter-spacing: .03em; opacity: .85; }
+
+/* Окно объекта: действия — ровный ряд; снятый объект — плашка сверху (17.10) */
+.dv-acts { grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)) !important; }
+@media (max-width: 640px) { .dv-acts { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; gap: 4px !important; }
+  .dv-act { padding: 10px 2px 8px !important; font-size: 10.5px !important; } .dv-act span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; } }
+.dv-gone { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; padding: 14px 100px 14px 16px; border-radius: 18px;
+  background: rgba(226, 165, 150, .12); border: 1px solid rgba(226, 165, 150, .4); }
+.dv-gone > svg { width: 22px; height: 22px; color: var(--bad); flex: none; }
+.dv-gone > span { flex: 1 1 220px; display: grid; gap: 2px; }
+.dv-gone small { color: var(--ink-3); font-size: 13px; }
+.dv-gone .pill { flex: none; text-decoration: none; }
+.dv-gone-gal img { filter: grayscale(.85); opacity: .7; }
+
+/* Галочка согласия в окне входа */
+.consent-chk { display: flex; gap: 10px; align-items: flex-start; margin: 4px 0 14px; padding: 10px 12px; border-radius: 14px;
+  border: 1px solid var(--glass-line); font-size: 13.5px; line-height: 1.45; text-align: left; cursor: pointer; transition: border-color .2s; }
+.consent-chk input { width: 18px; height: 18px; margin-top: 1px; flex: none; accent-color: var(--gold); }
+.consent-chk.need { border-color: var(--bad); }

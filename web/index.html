@@ -31,7 +31,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=43">
+<link rel="stylesheet" href="/static/glass.css?v=46">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -233,6 +233,9 @@
   <a href="/how">Как это работает</a>
   <a href="/privacy">Политика конфиденциальности</a>
   <a href="/terms">Пользовательское соглашение</a>
+  <a href="/offer">Оферта</a>
+  <a href="/consent">Согласие на обработку данных</a>
+  <a href="/contacts">Контакты и реквизиты</a>
   <a id="optoutLink" href="#" target="_blank" rel="noopener">Агентам: убрать свой номер с сайта</a>
 </footer>
 
@@ -282,6 +285,9 @@
     </svg></div>
     <h2 id="loginTitle">Вход на 1+1</h2>
     <p class="note" id="loginLead">Номера агентов открываются после входа.</p>
+    <label class="consent-chk"><input type="checkbox" id="consentChk">
+      <span>Даю <a href="/consent" target="_blank">согласие на обработку персональных данных</a>
+        и принимаю <a href="/terms" target="_blank">пользовательское соглашение</a></span></label>
     <div class="login-opts">
       <button type="button" class="pill wide" id="tgLogin">Войти через Telegram</button>
       <div class="tg-wait" id="tgWait" hidden></div>
@@ -303,8 +309,7 @@
         </form>
       </details>
     </div>
-    <p class="consent">Входя, вы принимаете <a href="/terms" target="_blank">пользовательское соглашение</a>
-      и даёте согласие на обработку персональных данных по <a href="/privacy" target="_blank">политике</a>.</p>
+    <p class="consent">Как мы обращаемся с данными — <a href="/privacy" target="_blank">политика</a>; оплата — <a href="/offer" target="_blank">оферта</a>.</p>
     <div class="dlg-actions"><button type="button" class="ghost" data-close>Закрыть</button></div>
   </div>
 </dialog>
@@ -381,7 +386,7 @@
 <script src="/static/yasel.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/app.js?v=109"></script>
+<script src="/static/app.js?v=111"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>
