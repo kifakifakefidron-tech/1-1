@@ -99,7 +99,9 @@ def tick(conn) -> dict:
             stats["geo_daily"] = gd.get("rules", 0)
         from . import autolearn as _al
         stats["unstacked"] = _al.maybe_unstack(conn) or None
-        stats["repair"] = ingest.backfill_repair(conn) or None   # состояние «с ремонтом / без» — один раз после обновления правил
+        stats["repair"] = ingest.backfill_repair(conn) or None
+        from . import ownmatch   # 18.10: свои объекты (наш номер) — одна карточка: копии из чатов к карточке с сайта
+        stats["own"] = ownmatch.maybe_run(conn) or None   # состояние «с ремонтом / без» — один раз после обновления правил
     except Exception:  # noqa: BLE001
         log.exception("ежедневная уборка гео не прошла")
     gc = geoaudit.auto_cleanup(conn)   # один раз (акт 14.10): уборка правил и справочников, отчёт — в «Обзоре»

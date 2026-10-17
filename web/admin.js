@@ -58,6 +58,14 @@
       (каждую правку можно откатить в окне объекта → «История правок»)</summary><ul>${o.price_report.examples.map((e) =>
         `<li><a href="/?open=${e.id}" target="_blank">${esc(e.title)}</a> — было ${esc(Number(e.before).toLocaleString("ru-RU"))} ₽,
         стало ${esc(Number(e.after).toLocaleString("ru-RU"))} ₽ (${e.why === "text" ? "цена из текста объявления" : "цена была в тысячах"})</li>`).join("")}</ul></details>` : "");
+    if (o.own_match) {   // 18.10: свои объекты — одна карточка
+      const m = o.own_match;
+      $("overview").insertAdjacentHTML("beforeend", `<details class="adm-p0"><summary>Ваши объекты (номер СТРЕЛ): копий из чатов приклеено к сайту —
+        ${m.to_feed || 0}, дублей из чатов объединено — ${m.merged || 0}${m.nopair ? `, постов с фото без пары на сайте скрыто — ${m.nopair} (проверьте ниже)` : ""}</summary>
+        <p class="note">Объявление из рассылки (портянка, пост без артикула) с вашим номером — тот же объект, что на сайте: оно приклеивается к карточке
+          с сайта (там все фото). Совпадение строгое: тип, комнаты, площадь ±1,5 м², этаж, улица и дом или ЖК, цена ±15 %.</p>
+        <ul>${(m.examples || []).map((e) => `<li><a href="/?open=${e.id}" target="_blank">${esc(e.title)}</a> → ${e.to ? `<a href="/?open=${e.to}" target="_blank">карточка ${e.to}</a>` : "—"} (${esc(e.why)})</li>`).join("")}</ul></details>`);
+    }
     if (o.life) {   // 17.10: жизнь объектов — рамки и что где
       const L = o.life, a = L.active_by_age;
       $("overview").insertAdjacentHTML("beforeend", `<details class="adm-p0" open><summary>Жизнь объектов: на сайте ${L.rules.stale_days} дн. без повтора

@@ -129,6 +129,18 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
                 "INSERT INTO listing_events (listing_id, message_id, ts, price, phones, fragment_hash, match) "
                 "VALUES (?,?,?,?,?,?,'strely')", (own["id"], message_id, ts, d["price"], json.dumps(d["phones"]), fh))
             return own["id"], "strely"
+    else:   # 18.10: наш номер без артикула (портянка, пост без «Артикул») — тот же объект с сайта? → к его карточке
+        from . import ownmatch
+        m_ = conn.execute("SELECT source, msg_id FROM messages WHERE id = ?", (message_id,)).fetchone()
+        with_photo = bool(m_ and m_["msg_id"] and conn.execute(   # фото с подписью: сообщение само — картинка
+            "SELECT 1 FROM chat_media WHERE source = ? AND msg_id = ?", (m_["source"], m_["msg_id"])).fetchone())
+        fid = ownmatch.feed_match(conn, d, with_photo)
+        if fid:
+            conn.execute(
+                "INSERT INTO listing_events (listing_id, message_id, ts, price, phones, fragment_hash, match) "
+                "VALUES (?,?,?,?,?,?,'strely')", (fid, message_id, ts, d["price"], json.dumps(d["phones"]), fh))
+            conn.execute("UPDATE listings SET last_seen = MAX(last_seen, ?), seen_count = seen_count + 1 WHERE id = ?", (ts, fid))
+            return fid, "strely"
     match, why = dedupe.find_match(conn, o, fh, ts)
     if match is not None and match["hidden_reason"] == "admin":   # тот же объект, удалённый админом
         return match["id"], "banned"

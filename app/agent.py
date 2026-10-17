@@ -249,9 +249,12 @@ def my_listings(conn: sqlite3.Connection, user_id: int) -> list[sqlite3.Row]:
     if not phones:
         return conn.execute("SELECT * FROM listings l WHERE owner_user_id = ? ORDER BY last_seen DESC", (user_id,)).fetchall()
     cond, params = _phone_like(phones)
-    return conn.execute(f"""SELECT * FROM listings l WHERE l.source != 'feed' AND (l.owner_user_id = ? OR (({cond})
+    # 18.10: и объекты с сайта (фид) с этим номером — чтобы было видно всё своё (править их — на сайте); без потолка 300;
+    # скрытые копии своих объектов (приклеены к карточке с сайта — ownmatch) не показываем
+    return conn.execute(f"""SELECT * FROM listings l WHERE (l.owner_user_id = ? OR (({cond})
                             AND (l.owner_user_id IS NULL OR l.owner_user_id = ?)))
-                            ORDER BY l.is_active DESC, l.last_seen DESC LIMIT 300""",
+                            AND COALESCE(l.hidden_reason, '') NOT IN ('strely', 'own_dup', 'strely_photo')
+                            ORDER BY l.is_active DESC, l.last_seen DESC LIMIT 3000""",
                         [user_id, *params, user_id]).fetchall()
 
 
