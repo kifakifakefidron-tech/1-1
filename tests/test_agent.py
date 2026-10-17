@@ -253,3 +253,27 @@ def test_describe_uses_only_facts_and_strips_phones(monkeypatch):
     assert "89181112233" not in seen["user"] and "111-22-33" not in text
     monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "")
     assert agent.describe({"type": "flat"})[0] is None
+
+
+def test_verify_by_call(env, monkeypatch):
+    """17.10: подтверждение звонком (SMS.ru callcheck) — основной способ: позвонил со своего номера → номер подтверждён."""
+    from app import callcheck, config
+    c, conn, _ = env
+    _login(c, conn, email="caller@example.ru")
+    monkeypatch.setattr(config, "SMSRU_API_ID", "test")
+    state = {"st": "400"}
+    def fake(path, **p):
+        if path == "add":
+            assert p["phone"] == "79181234567"
+            return {"status": "OK", "check_id": "777-1", "call_phone": "78005008275", "call_phone_pretty": "+7 (800) 500-8275"}
+        return {"status": "OK", "check_status": state["st"]}
+    monkeypatch.setattr(callcheck, "_get", fake)
+    assert "call" in c.get("/api/agent").json()["verify_methods"]
+    r = c.post("/api/agent/verify", json={"phone": "8 918 123-45-67", "method": "call"}).json()
+    assert r["call_phone"] == "+78005008275" and r["method"] == "call"
+    assert c.get("/api/agent/verify?phone=%2B79181234567&method=call").json()["status"] == "pending"
+    state["st"] = "401"
+    conn.execute("UPDATE phone_codes SET checked_at = NULL")
+    conn.commit()
+    assert c.get("/api/agent/verify?phone=%2B79181234567&method=call").json()["status"] == "ok"
+    assert c.get("/api/agent").json()["phones"] == ["+79181234567"]

@@ -22,7 +22,7 @@ from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Re
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import (accounts, agent, autolearn, bankrates, brain, buyers, clients, dashboard, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
+from . import (accounts, agent, autolearn, callcheck, bankrates, brain, buyers, clients, dashboard, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
                market, notify, payments, picks, planner, region, search, settings, stats, tg, wappi, widgets, worklog)
 from .rules import TYPE_LABELS
 
@@ -1418,6 +1418,8 @@ def api_agent(request: Request, body: dict | None = None):
     return JSONResponse({
         "phones": agent.verified_phones(conn, user["id"]), "verify_number": config.VERIFY_NUMBER,
         "channels": config.VERIFY_CHANNELS, "access": accounts.has_access(user),
+        # способы подтверждения номера: звонок — основной (если подключён SMS.ru), код в MAX — запасной
+        "verify_methods": [m for m, on in (("call", callcheck.enabled()), ("max", bool(config.VERIFY_NUMBER))) if on],
         "own_days": config.OWN_LISTING_DAYS, "max_photos": config.MAX_PHOTOS, "items": _agent_items(conn, user),
     })
 
@@ -1428,7 +1430,18 @@ def api_agent_verify(request: Request, body: dict | None = None):
         return err
     conn = db.get()
     if request.method == "GET":
-        return JSONResponse({"status": agent.verification_status(conn, user["id"], request.query_params.get("phone", ""))})
+        ph = request.query_params.get("phone", "")
+        if request.query_params.get("method") == "call":   # звонок: спрашиваем SMS.ru (не чаще раза в 3 с)
+            db.flush(conn)
+            return JSONResponse({"status": agent.call_status(conn, user["id"], ph) or "expired"})
+        return JSONResponse({"status": agent.verification_status(conn, user["id"], ph)})
+    if (body or {}).get("method") == "call":   # 17.10: подтвердить звонком (основной способ)
+        if not callcheck.enabled():
+            return _err("Подтверждение звонком ещё не подключено — подтвердите кодом в MAX.", 503)
+        if _too_often(request, "agent_call", 6, 3600):
+            return _err("Слишком много попыток — попробуйте через час.", 429)
+        res, why = agent.start_call(conn, user["id"], str((body or {}).get("phone", ""))[:40])
+        return JSONResponse(res) if res else _err(why)
     if (body or {}).get("check"):   # «Я отправил — проверить»: читаем личку сразу, не ждём фонового цикла
         phone = str(body.get("phone", ""))[:40]
         if agent.verification_status(conn, user["id"], phone) != "pending":

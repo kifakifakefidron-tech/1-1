@@ -613,6 +613,14 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   на сайт. app/lifecheck.py — отчёт (Обзор админки «Жизнь объектов»; `docker compose exec web python -m app.lifecheck`),
   счётчик удалённых — state deleted_listings. Сравнение — до 10. Фото в настройках (pick_photo) — и фото аккаунта
   (/api/me → me.photo: меню и кабинет). Подтверждение номера — и в /settings (#stVerify, тот же /api/agent/verify).
+- 17.10 (ветка launch-7): ПОДТВЕРЖДЕНИЕ НОМЕРА ЗВОНКОМ — основной способ (решение Артёма), код в MAX — запасной.
+  app/callcheck.py (SMS.ru «Авторизация по звонку»: callcheck/add → check_id + номер, куда звонить; callcheck/status →
+  400 ждём / 401 подтверждён / 402 истёк), ключ SMSRU_API_ID в .env (без него — только MAX). agent.start_call / call_status
+  (phone_codes.method='call', check_id, call_phone, checked_at — SMS.ru не чаще раза в 3 с, CALL_TTL 5 мин), _confirm —
+  agent_phones + бонус «Приведи коллегу». API: POST /api/agent/verify {phone, method:"call"}, GET …?method=call;
+  /api/agent → verify_methods. Общий блок web/verify.js (PhoneVerify.mount) — в /my и /settings. README: пошагово
+  «Почта на домене (Яндекс 360)» (тариф «Минимальный», MX/SPF/DKIM/DMARC в reg.ru, ящик noreply, пароль приложения,
+  SMTP_*) и «Подтверждение номера звонком (SMS.ru)». Политика: SMS.ru — в списке получателей (только номер агента).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
@@ -621,7 +629,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 262 теста
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 263 теста
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены

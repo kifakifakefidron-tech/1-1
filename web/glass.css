@@ -941,3 +941,31 @@ body.has-cmp .bell-pop { bottom: 86px !important; }
 .st-ver-code .code { color: var(--gold); font-size: 18px; letter-spacing: .04em; }
 .st-ver-code .pill { justify-self: start; }
 .st-ver-err { color: var(--bad); margin: 8px 0 0; }
+
+/* 17.10: подтверждение номера — звонок (основной) и код в MAX (запасной), verify.js */
+.pv { display: grid; gap: 8px; }
+.pv-form { display: flex; flex-wrap: wrap; gap: 8px; }
+.pv-form input { flex: 1 1 200px; min-width: 0; padding: 11px 14px; border-radius: 12px; border: 1px solid var(--glass-line);
+  background: rgba(0, 0, 0, .18); color: var(--ink); font: 16px var(--body); }
+.pv-form input:focus { outline: none; border-color: var(--gold); }
+.pv-form .pill { display: inline-flex; align-items: center; gap: 6px; }
+.pv-form .pill svg { width: 16px; height: 16px; }
+.pv-hint { margin: 0; }
+.pv-alt { justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: var(--gold);
+  font: 500 13.5px var(--body); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.pv-alt svg { width: 14px; height: 14px; }
+.pv-card { display: grid; gap: 10px; margin-top: 6px; padding: 16px; border-radius: 18px; border: 1px solid rgba(227, 203, 143, .4);
+  background: linear-gradient(160deg, rgba(243, 232, 188, .1), rgba(227, 203, 143, .03)); }
+.pv-card p { margin: 0; line-height: 1.5; }
+.pv-step { color: var(--ink-2); font-size: 14px; }
+.pv-num { font: 600 26px/1.15 var(--display); color: var(--gold); text-decoration: none; letter-spacing: .02em; }
+.pv-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.pv-acts .pill { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.pv-acts .pill svg { width: 16px; height: 16px; }
+.pv-wait { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 14px; }
+.pv-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--gold); animation: pvPulse 1.2s var(--ease) infinite; }
+@keyframes pvPulse { 50% { opacity: .3; transform: scale(.7); } }
+.pv-code { color: var(--gold); font-size: 18px; letter-spacing: .04em; }
+.pv-err { color: var(--bad); margin: 4px 0 0; }
+.pv-ok { display: inline-flex; align-items: center; gap: 6px; color: var(--ok); font-weight: 600; margin: 0; }
+.pv-ok svg { width: 18px; height: 18px; }
