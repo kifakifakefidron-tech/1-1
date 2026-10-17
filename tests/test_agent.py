@@ -97,8 +97,8 @@ def test_other_agent_cannot_edit_owned_card(env):
     # Второй аккаунт не может подтвердить тот же номер и не может править
     c.cookies.clear()
     _login(c, conn, email="other@example.ru")
-    r = c.post("/api/agent/verify", json={"phone": "89181112233"})
-    assert r.status_code == 400 and "другим аккаунтом" in r.json()["detail"]
+    r = c.post("/api/agent/verify", json={"phone": "89181112233"})   # начать можно — подтвердит только владелец номера
+    assert r.status_code == 200 and r.json()["code"]
     assert c.post(f"/api/agent/listings/{lid}", json={"price": 1}).status_code == 403
 
 
@@ -320,3 +320,29 @@ def test_login_by_phone_call(env, monkeypatch):
         conn.execute("UPDATE phone_codes SET checked_at = NULL"); conn.commit()
         assert g2.get(f"/api/auth/phone?tid={tid}").json()["status"] == "ok"
         assert g2.get("/api/me").json()["me"]["id"] == uid
+
+
+def test_accounts_merge_by_email_and_phone(env, monkeypatch):
+    """18.10: один человек — один аккаунт. Вошёл по номеру (новый аккаунт), привязал почту прежнего аккаунта →
+    объединились: избранное, клиенты, подтверждённые номера — в старшем, доступ — самый поздний."""
+    from app import accounts, mailer
+    c, conn, _ = env
+    old = accounts.upsert_email_user(conn, "agent@old.ru")
+    conn.execute("UPDATE users SET paid_until = 2000000000 WHERE id = ?", (old["id"],))
+    conn.commit()
+    accounts.toggle_favorite(conn, old["id"], 5)
+    new = accounts.upsert_phone_user(conn, "+79185550001")          # вошёл по номеру — пока другой аккаунт
+    assert new["id"] != old["id"]
+    c.cookies.set(server.SESSION, accounts.create_session(conn, new["id"]))
+    monkeypatch.setattr(mailer, "available", lambda: True)
+    sent = {}
+    monkeypatch.setattr(mailer, "send_code", lambda to, code: sent.update(code=code) or True)
+    assert c.post("/api/account/email", json={"email": "agent@old.ru"}).json()["ok"]
+    r = c.post("/api/account/email", json={"email": "agent@old.ru", "code": sent["code"]}).json()
+    assert r["merged"] is True and r["me"]["id"] == old["id"]
+    me = c.get("/api/me").json()["me"]                               # та же сессия — уже в объединённом аккаунте
+    assert me["id"] == old["id"] and me["email"] == "agent@old.ru" and me["phones"] == ["+79185550001"]
+    assert 5 in me["favorites"] and me["paid_until"] == 2000000000
+    assert accounts.get_user(conn, new["id"]) is None
+    # теперь вход по этому номеру ведёт в тот же аккаунт
+    assert accounts.upsert_phone_user(conn, "+79185550001")["id"] == old["id"]

@@ -165,7 +165,39 @@
       + `<div class="pv" id="stVerMount"></div>`;
     // 17.10: звонок — основной способ, код в MAX — запасной (общий блок verify.js)
     if (window.PhoneVerify) PhoneVerify.mount($("stVerMount"), { methods: r.data.verify_methods, again: phones.length > 0,
-      onDone: () => { toast("Номер подтверждён"); verLoad(); } });
+      onDone: () => { toast("Номер подтверждён. Если он был у другого вашего аккаунта — аккаунты объединены", 3500); setTimeout(() => location.reload(), 1500); } });
+  }
+
+  // ─── 18.10: почта — привязать к аккаунту (вошли по номеру); уже была у другого аккаунта — объединим ───
+  async function mailLoad() {
+    const m = await call("/api/me");
+    const me = m.ok && m.data.me;
+    const box = $("stMailBody");
+    if (!me) { $("stMail").hidden = true; return; }
+    box.innerHTML = (me.email ? `<div class="st-ver-ok"><span class="st-ver-chip">${ic("check-circle")}${escH(me.email)}</span></div>
+        <p class="note">Можно заменить на другую почту.</p>` : `<p class="note">Почта не привязана — привяжите, чтобы получать письма и входить по почте.
+        Входили раньше по почте? Привяжите её — аккаунты объединятся (избранное, клиенты, подборки — всё будет в одном).</p>`)
+      + `<form class="st-ver-form" id="stMailForm"><input id="stMailInput" type="email" inputmode="email" autocomplete="email" placeholder="name@mail.ru" aria-label="Почта">
+        <button type="submit" class="pill">${me.email ? "Заменить почту" : "Прислать код"}</button></form><div id="stMailCode"></div>`;
+    $("stMailForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = $("stMailInput").value.trim();
+      const r = await call("/api/account/email", { email });
+      if (!r.ok) { $("stMailCode").innerHTML = `<p class="st-ver-err">${escH(r.data.detail || "Не получилось.")}</p>`; return; }
+      $("stMailCode").innerHTML = `<div class="st-ver-code"><p>Отправили 6 цифр на <b>${escH(email)}</b>. Проверьте и «Спам».</p>
+        <form class="st-ver-form" id="stMailCodeForm"><input id="stMailCodeInput" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Код из письма">
+        <button type="submit" class="pill">Привязать</button></form></div>`;
+      const f = $("stMailCodeForm"), inp = $("stMailCodeInput");
+      inp.focus();
+      inp.addEventListener("input", () => { inp.value = inp.value.replace(/\D/g, "").slice(0, 6); if (inp.value.length === 6) f.requestSubmit(); });
+      f.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const v = await call("/api/account/email", { email, code: inp.value });
+        if (!v.ok) { toast(v.data.detail || "Код не подошёл"); inp.select(); return; }
+        toast(v.data.merged ? "Почта привязана — нашли ваш прежний аккаунт и объединили" : "Почта привязана", 3500);
+        if (v.data.merged) setTimeout(() => location.reload(), 1200); else mailLoad();
+      });
+    });
   }
 
   (async () => {
@@ -174,6 +206,7 @@
     st = r.data;
     $("stApp").hidden = false;
     fill();
+    mailLoad();
     verLoad();
   })();
 })();

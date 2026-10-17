@@ -633,6 +633,14 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   номер уже подтверждён/привязан — тот же аккаунт (без дублей), иначе новый; номер сразу в agent_phones («Проверенный
   агент»), пробная неделя — один раз на номер (trials), согласие, «Приведи коллегу». На телефоне в окне входа — без списка
   возможностей (сразу форма).
+- 18.10 (ветка launch-10): ОДИН ЧЕЛОВЕК — ОДИН АККАУНТ. accounts.merge_users(a, b): остаётся старший id, всё по
+  _USER_TABLES (+ listings.owner_user_id, tg_tokens, users.referred_by) переносится (UPDATE OR IGNORE + удаление дублей),
+  доступ/пробный — максимум, админ — если у любого; второй аккаунт удаляется, его сессии ведут в старший. Объединение —
+  только когда человек доказал, что второе тоже его: link_email (код из письма, /api/account/email {email}|{email,code},
+  блок «Почта» в /settings) и claim_phone (звонок SMS.ru или код с этого номера в MAX — agent._confirm/check_message).
+  Подтверждение номера, уже подтверждённого другим аккаунтом, больше не запрещено (подтвердит только владелец номера).
+  Вход по номеру уже подтверждённого номера — в тот же аккаунт (upsert_phone_user). /api/me → phones. Кабинет: «Привяжите
+  почту» (нет email) и «Подтвердите свой номер» (нет номера) → /settings.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
@@ -641,7 +649,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 265 тестов
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 266 тестов
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены

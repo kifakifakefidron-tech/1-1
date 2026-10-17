@@ -447,7 +447,9 @@
       [c.work, "heart", `в избранном: ${c.work}`, "/work", ""],
       [me.unread, "bell", `новых уведомлений: ${me.unread}`, "/notifications", ""],
       // акт 14.10: путь к отметке «Проверенный агент» — подтвердить свой номер
-      [!me.phone_confirmed, "check", "Подтвердите свой номер — отметка «Проверенный агент» у ваших объявлений", "/my", ""],
+      [!(me.phones || []).length && !me.phone_confirmed, "check", "Подтвердите свой номер — отметка «Проверенный агент» у ваших объявлений", "/settings#stVerify", ""],
+      // 18.10: вошли по номеру — привязать почту (письма + вход по почте; прежний аккаунт по почте объединится)
+      [!me.email, "note", "Привяжите почту — для писем и входа по почте", "/settings#stMail", ""],
     ].filter(([n]) => n);
     $("dToday").innerHTML = chips.length
       ? chips.map(([, icon, text, href, hot]) => `<a class="d-att${hot ? " hot" : ""}" href="${href}">${ic(icon)}${text}</a>`).join("")

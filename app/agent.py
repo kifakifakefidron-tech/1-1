@@ -40,8 +40,7 @@ def start_verification(conn: sqlite3.Connection, user_id: int, phone_raw: str) -
     if not phone:
         return None, "Проверьте номер — нужен российский номер, например +7 918 123-45-67."
     owner = conn.execute("SELECT user_id FROM agent_phones WHERE phone = ?", (phone,)).fetchone()
-    if owner and owner[0] != user_id:
-        return None, "Этот номер уже подтверждён другим аккаунтом. Если это ваш номер — напишите нам."
+    # у другого аккаунта — подтвердив кодом с этого номера, человек докажет, что номер его: аккаунты объединятся
     if owner and owner[0] == user_id:
         return None, "Этот номер уже подтверждён."
     now = int(time.time())
@@ -63,8 +62,7 @@ def _check_phone(conn: sqlite3.Connection, user_id: int, phone_raw: str) -> tupl
     if not phone:
         return None, "Проверьте номер — нужен российский номер, например +7 918 123-45-67."
     owner = conn.execute("SELECT user_id FROM agent_phones WHERE phone = ?", (phone,)).fetchone()
-    if owner and owner[0] != user_id:
-        return None, "Этот номер уже подтверждён другим аккаунтом. Если это ваш номер — напишите нам."
+    # номер у другого аккаунта — не ошибка: подтвердив звонком, человек докажет, что номер его, и аккаунты объединятся
     if owner and owner[0] == user_id:
         return None, "Этот номер уже подтверждён."
     if conn.execute("SELECT COUNT(*) FROM phone_codes WHERE user_id = ? AND created > ?",
@@ -75,8 +73,8 @@ def _check_phone(conn: sqlite3.Connection, user_id: int, phone_raw: str) -> tupl
 
 def _confirm(conn: sqlite3.Connection, row_id: int, phone: str, user_id: int) -> None:
     conn.execute("UPDATE phone_codes SET status = 'ok' WHERE id = ?", (row_id,))
-    conn.execute("INSERT OR IGNORE INTO agent_phones (phone, user_id, verified_at) VALUES (?,?,?)", (phone, user_id, int(time.time())))
     conn.commit()
+    user_id, _ = accounts.claim_phone(conn, user_id, phone)   # номер был у другого аккаунта — объединяем
     accounts.reward_referrer(conn, user_id)   # «Приведи коллегу»: пригласившему +неделя
 
 
@@ -193,11 +191,7 @@ def check_message(conn: sqlite3.Connection, sender_phone: str | None, text: str)
                            (phone, code, int(time.time()) - CODE_TTL)).fetchone()
         if row is None:
             continue
-        conn.execute("UPDATE phone_codes SET status = 'ok' WHERE id = ?", (row["id"],))
-        conn.execute("INSERT OR IGNORE INTO agent_phones (phone, user_id, verified_at) VALUES (?,?,?)",
-                     (phone, row["user_id"], int(time.time())))
-        conn.commit()
-        accounts.reward_referrer(conn, row["user_id"])   # «Приведи коллегу»: пригласившему +неделя
+        _confirm(conn, row["id"], phone, row["user_id"])   # код с этого номера в MAX: номер его (другой аккаунт — объединяем)
         return True
     return False
 

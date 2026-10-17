@@ -650,6 +650,36 @@ def api_phone_login(request: Request, body: dict | None = None):
     return _session_response(request, {"status": "ok", "me": accounts.me(conn, user)}, token)
 
 
+def api_account_email(request: Request, body: dict | None = None):
+    """18.10: привязать почту к аккаунту (вошли по номеру). {email} — прислать код; {email, code} — проверить и привязать.
+    Почта уже у другого аккаунта (входили по почте раньше) — это тот же человек: аккаунты объединяются."""
+    user, err = _need_user(request)
+    if err:
+        return err
+    conn = db.get()
+    body = body or {}
+    email = str(body.get("email", "")).strip().lower()[:200]
+    if body.get("code"):
+        if _too_often(request, "email_verify", 20, 600, who=email):
+            return _err("Слишком много попыток — подождите 10 минут.", 429)
+        ok, why = accounts.check_email_code(conn, email, str(body.get("code"))[:12])
+        if not ok:
+            return _err(why)
+        uid, merged = accounts.link_email(conn, user["id"], email)
+        return JSONResponse({"ok": True, "merged": merged, "me": accounts.me(conn, accounts.get_user(conn, uid))})
+    if not mailer.available():
+        return _err("Почта пока не настроена.", 503)
+    if _too_often(request, "email", 5, 3600, who=email):
+        return _err("Слишком много запросов кода — попробуйте через час.", 429)
+    code, why = accounts.new_email_code(conn, email)
+    if why:
+        return _err(why)
+    db.flush(conn)
+    if not mailer.send_code(email, code):
+        return _err("Письмо не отправилось — попробуйте через минуту.", 502)
+    return JSONResponse({"ok": True})
+
+
 def api_logout(request: Request, body: dict | None = None):
     accounts.end_session(db.get(), request.cookies.get(SESSION))
     resp = JSONResponse({"ok": True})
@@ -2505,6 +2535,7 @@ routes = [
     Route("/api/auth/email/verify", threaded(api_email_verify), methods=["POST"]),
     Route("/api/auth/logout", threaded(api_logout), methods=["POST"]),
     Route("/api/auth/phone", threaded(api_phone_login), methods=["GET", "POST"]),
+    Route("/api/account/email", threaded(api_account_email), methods=["POST"]),
     Route("/api/me", threaded(api_me)),
     Route("/api/favorites", threaded(api_favorites)),
     Route("/api/hidden", threaded(api_hidden), methods=["GET", "POST"]),
