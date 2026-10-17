@@ -39,6 +39,7 @@
       ...(o.p0_report ? [card(o.p0_report.phones, "номеров вырезано из описаний"),
         card(o.p0_report.prices, "цена в карточке ≠ цене в тексте")] : []),
       ...(o.cx_report ? [card(o.cx_report.listings, `объектов: одно название ЖК (групп ${o.cx_report.groups})`)] : []),
+      ...(o.geo_daily ? [card((o.geo_daily.rules || 0), "ошибочных правил отключено сегодня (уборка раз в сутки)")] : []),
       ...(o.geo_cleanup ? [card((o.geo_cleanup.rules || 0) + (o.geo_cleanup.aliases || 0), "плохих правил отключено (уборка)"),
         card(o.geo_cleanup.junk || 0, "мусорных «ЖК» убрано"), card(o.geo_cleanup.listings || 0, "объектов поправлено уборкой")] : []),
       ...(o.price_report ? [card(o.price_report.scale, "цен «в тысячах» исправлено"),
@@ -663,13 +664,13 @@
       $("admLoginBtn").disabled = true;
       try {
         if (step === "email") {
-          await call("/api/auth/email/start", { email });
+          await call("/api/auth/email/start", { email, consent: true });   // администратор — оператор сервиса
           step = "code";
           $("admCode").hidden = false; $("admCode").focus();
           $("admLoginNote").textContent = `Код отправлен на ${email}. Нет письма — проверьте «Спам».`;
           $("admLoginBtn").textContent = "Войти";
         } else {
-          const r = await call("/api/auth/email/verify", { email, code: $("admCode").value.trim() });
+          const r = await call("/api/auth/email/verify", { email, code: $("admCode").value.trim(), consent: true });
           if (!r.me || !r.me.is_admin) { err("Вход выполнен, но у этой почты нет прав администратора."); return; }
           location.reload();
         }

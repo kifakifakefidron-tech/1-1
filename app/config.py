@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 
@@ -127,10 +128,27 @@ SMTP_USER = os.getenv("SMTP_USER", "").strip()
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").strip()
 SMTP_FROM = os.getenv("SMTP_FROM", "").strip() or SMTP_USER
 
-# Данные для политики конфиденциальности и соглашения (страницы /privacy, /terms, /how)
-OPERATOR_NAME = os.getenv("OPERATOR_NAME", "").strip() or "[ФИО самозанятого — впишите OPERATOR_NAME в .env]"
-OPERATOR_INN = os.getenv("OPERATOR_INN", "").strip() or "[ИНН — впишите OPERATOR_INN в .env]"
-CONTACT_EMAIL = os.getenv("CONTACT_EMAIL", "").strip() or ALERT_EMAIL or next(iter(sorted(ADMIN_EMAILS)), "")
+# Данные для политики, соглашения, оферты и «Контактов» (/privacy, /terms, /offer, /consent, /contacts)
+def _operator_env() -> dict:
+    """OPERATOR_NAME / OPERATOR_INN / CONTACT_EMAIL. Если в .env их вписали в одну строку
+    («OPERATOR_NAME=Иванов OPERATOR_INN=2322… CONTACT_EMAIL=…»), разбираем, а не публикуем строку целиком."""
+    vals = {k: os.getenv(k, "").strip() for k in ("OPERATOR_NAME", "OPERATOR_INN", "CONTACT_EMAIL")}
+    for k in list(vals):
+        parts = re.split(r"[\s,;]+(?=(?:OPERATOR_NAME|OPERATOR_INN|CONTACT_EMAIL)=)", vals[k])
+        vals[k] = parts[0].strip().strip(",;")
+        for extra in parts[1:]:
+            key, _, val = extra.partition("=")
+            if not vals.get(key):
+                vals[key] = val.strip().strip(",;")
+    vals["OPERATOR_INN"] = re.sub(r"\D", "", vals["OPERATOR_INN"])
+    return vals
+
+
+_OP = _operator_env()
+OPERATOR_NAME = _OP["OPERATOR_NAME"]            # ФИО самозанятого; пусто — в документах «Администрация сервиса «1+1»»
+OPERATOR_INN = _OP["OPERATOR_INN"]              # только цифры; пусто — ИНН в документах не пишем
+CONTACT_EMAIL = _OP["CONTACT_EMAIL"] or ALERT_EMAIL or next(iter(sorted(ADMIN_EMAILS)), "")
+OPERATOR_TEXT = (OPERATOR_NAME or "Администрация сервиса «1+1»") + (f", ИНН {OPERATOR_INN}" if OPERATOR_INN else "")
 POLICY_DATE = os.getenv("POLICY_DATE", "07.10.2026").strip()
 
 # Оплата ЮKassa — подготовлена, но выключена, пока PAYMENTS_ENABLED не true

@@ -210,7 +210,7 @@ def test_referral_bonus_after_phone_confirmed(env, monkeypatch):
     c.get(f"/?ref={code}")                       # пришёл по ссылке — запомнили
     assert c.cookies.get("ref") == code
     monkeypatch.setattr(accounts, "check_email_code", lambda *a: (True, ""))   # вход по почте без письма
-    c.post("/api/auth/email/verify", json={"email": "new@example.ru", "code": "1"})
+    c.post("/api/auth/email/verify", json={"consent": True, "email": "new@example.ru", "code": "1"})
     new = conn.execute("SELECT * FROM users WHERE email = 'new@example.ru'").fetchone()
     assert new["referred_by"] == inviter["id"]
     server._hits.clear()   # лимит «подтверждений в час» общий для всех тестов

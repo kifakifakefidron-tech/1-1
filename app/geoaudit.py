@@ -240,6 +240,29 @@ def auto_cleanup(conn: sqlite3.Connection) -> dict | None:
     return res
 
 
+DAILY_MIN_POINTS = 5     # ежедневная уборка: правило с 5+ домами на карте…
+DAILY_MAX_SHARE = 0.5    # …из которых в «своём» районе меньше половины, — явно ошибочное, отключаем само
+
+
+def daily(conn: sqlite3.Connection) -> dict | None:
+    """Раз в сутки (state geo_daily_day): явно ошибочные правила «улица/ЖК → район» (5+ домов на вашей карте, в своём
+    районе < 50 %), ЖК-мусор, одно написание ЖК. Каждое изменение объекта — в журнале правок, итог — в «Обзоре»."""
+    from . import cxnorm, db
+    day = time.strftime("%Y-%m-%d", time.gmtime(time.time() + 3 * 3600))
+    if db.get_state(conn, "geo_daily_day") == day:
+        return None
+    rr = rules_report(conn)
+    bad = [r for r in rr if r["points"] >= DAILY_MIN_POINTS and (r["share"] or 0) < DAILY_MAX_SHARE]
+    res = apply(conn, [r["id"] for r in bad], [j["name"] for j in junk_report(conn)], False)
+    res["cx_names"] = cxnorm.run(conn, apply=True).get("listings", 0)
+    res["bad_rules"] = [r["label"] for r in bad][:40]
+    res["ts"] = int(time.time())
+    db.set_state(conn, "geo_daily_report", json.dumps(res, ensure_ascii=False))
+    db.set_state(conn, "geo_daily_day", day)
+    conn.commit()
+    return res
+
+
 def district_dupes(conn: sqlite3.Connection) -> list[dict]:
     """Район записан не тем именем, под которым он в справочнике («Молодёжный» при «Молодежный/Витаминкомбинат»)."""
     learning.sync_districts(conn)

@@ -26,13 +26,22 @@ def test_seo_basics(c):
     r = client.get("/robots.txt")
     assert r.status_code == 200 and "Sitemap:" in r.text and "Disallow: /api/" in r.text
     r = client.get("/sitemap.xml")
-    assert r.status_code == 200 and f"/?open={lid}" in r.text and "<urlset" in r.text
+    # карточки объектов (данные агентов из чатов) — не в карту сайта и закрыты от индекса (17.10, 152-ФЗ)
+    assert r.status_code == 200 and f"/?open={lid}" not in r.text and "/offer" in r.text and "<urlset" in r.text
     assert client.get("/favicon.ico").status_code == 200
     home = client.get("/").text
     assert '<meta name="description"' in home and 'property="og:image"' in home and "{{SITE_URL}}" not in home
     obj = client.get(f"/?open={lid}").text
-    assert '"@type": "Offer"' in obj and f'rel="canonical" href="{config.SITE_URL}/?open={lid}"' in obj
+    assert 'noindex' in obj and '"@type": "Offer"' not in obj and f'rel="canonical" href="{config.SITE_URL}/?open={lid}"' in obj
+    assert "Disallow: /*?open=" in client.get("/robots.txt").text
     assert obj.count('property="og:title"') == 1 and "89180000901" not in obj and "+79180000901" not in obj
     nf = client.get("/no-such-page")
     assert nf.status_code == 404 and "К поиску объектов" in nf.text
     assert client.get("/api/no-such").status_code == 404
+
+
+def test_public_text_hides_names_commission_and_broken_phones():
+    from app import parser
+    t = parser.public_text("2к 58 м2\nРемонт\nПлачу 3%\nЗвоните 8918384538 Наталия\nЕлена 892825773125\nВячеслав Цветков")
+    assert t == "2к 58 м2\nРемонт"
+    assert parser.mask_names("Звоните Вячеслав Цветков", "[имя]") == "Звоните [имя]"

@@ -426,7 +426,7 @@ def unstack_points(conn: sqlite3.Connection) -> int:
     for r in conn.execute("""SELECT id, lat, lon, street, house, settlement, geo_status, geo_src FROM listings
                              WHERE is_active = 1 AND lat IS NOT NULL AND geo_status != 'manual'""").fetchall():
         if geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house":
-            groups[(round(r["lat"], 5), round(r["lon"], 5))].append(r)
+            groups[(round(r["lat"], 4), round(r["lon"], 4))].append(r)   # ~10 м: «одна точка» для разных домов
     n = 0
     for rows in groups.values():
         keys = {learning.addr_key(r["street"], r["house"], r["settlement"]) for r in rows} - {None}
@@ -439,6 +439,15 @@ def unstack_points(conn: sqlite3.Connection) -> int:
             n += 1
     conn.commit()
     return n
+
+
+def maybe_unstack(conn: sqlite3.Connection) -> int:
+    """Раз в 10 минут (state unstack_ts) — не только при часовой перепроверке: новые «стопки» точек разбираются быстро."""
+    from . import db
+    if time.time() - float(db.get_state(conn, "unstack_ts") or 0) < 600:
+        return 0
+    db.set_state(conn, "unstack_ts", str(int(time.time())))
+    return unstack_points(conn)
 
 
 def mark_multi(conn: sqlite3.Connection) -> int:

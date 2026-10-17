@@ -201,13 +201,14 @@ def index(request: Request, body: dict | None = None):
                                        f"ул. {r['street']}" if r["street"] else None) if x)
         title = f"{r['title']} — {_price_text(r['price'], r['deal'])}"
         photos = json.loads(r["photos"] or "[]")
-        img = photos[0] if photos else "/static/favicon.svg"
+        # фото из чатов — чужие произведения: в превью ссылки только фото партнёра (фид СТРЕЛ), иначе значок 1+1
+        img = photos[0] if photos and r["source"] == "feed" else "/static/icon-192.png"
         if img.startswith("/"):
             img = config.SITE_URL + img
         esc = lambda v: html.escape(str(v), quote=True)  # noqa: E731
         url = f"{config.SITE_URL}/?open={oid}"
-        desc = " ".join(parser.client_text(r["description"]).split())[:200] or place or "Объект на 1+1"
-        meta = (f'<link rel="canonical" href="{esc(url)}">'
+        desc = " ".join(parser.public_text(r["description"]).split())[:200] or place or "Объект на 1+1"
+        meta = (f'<link rel="canonical" href="{esc(url)}"><meta name="robots" content="noindex, follow">'   # карточки — не в поиск
                 f'<meta property="og:type" content="website">'
                 f'<meta property="og:title" content="{esc(title)}">'
                 f'<meta property="og:description" content="{esc(place or desc)}">'
@@ -229,8 +230,9 @@ def index(request: Request, body: dict | None = None):
                                  if r["lat"] is not None else {})}}
         if r["price"] and not r["price_doubt"]:
             ld["price"] = r["price"]
-        meta += ('<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace("</", "<\\/")
-                 + "</script>")
+        if r["source"] == "feed":   # разметка для поисковиков — только у объектов партнёра (у чатов карточки закрыты от индекса)
+            meta += ('<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace("</", "<\\/")
+                     + "</script>")
         html_text = re.sub(r"<!--og-->.*?<!--/og-->", lambda _m: meta, html_text, count=1, flags=re.S)
         html_text = html_text.replace("<title>1+1 · поиск объектов</title>", f"<title>{esc(title)} · 1+1</title>", 1)
         html_text = re.sub(r'<meta name="description" content="[^"]*">',
@@ -259,7 +261,8 @@ def _page(name: str) -> Response:
     """Текстовая страница с подстановкой данных оператора и условий подписки."""
     html = (WEB / name).read_text(encoding="utf-8")
     for key, val in {
-        "OPERATOR_NAME": config.OPERATOR_NAME, "OPERATOR_INN": config.OPERATOR_INN,
+        "OPERATOR_NAME": config.OPERATOR_NAME or "Администрация сервиса «1+1»", "OPERATOR_INN": config.OPERATOR_INN or "—",
+        "OPERATOR_TEXT": config.OPERATOR_TEXT,
         "CONTACT_EMAIL": config.CONTACT_EMAIL or "почту из раздела «Контакты»", "POLICY_DATE": config.POLICY_DATE,
         "SITE_URL": config.SITE_URL, "TRIAL_DAYS": config.TRIAL_DAYS, "SUB_PRICE": config.SUB_PRICE, "PRICES": _prices_text(),
         "SUB_DAYS": config.SUB_DAYS, "STALE_DAYS": config.STALE_DAYS, "ARCHIVE_DAYS": config.ARCHIVE_DAYS, "KEEP_DAYS": config.KEEP_DAYS,
@@ -275,6 +278,18 @@ def how_page(request: Request, body: dict | None = None):
 
 def privacy_page(request: Request, body: dict | None = None):
     return _page("privacy.html")
+
+
+def offer_page(request: Request, body: dict | None = None):
+    return _page("offer.html")
+
+
+def consent_page(request: Request, body: dict | None = None):
+    return _page("consent.html")
+
+
+def contacts_page(request: Request, body: dict | None = None):
+    return _page("contacts.html")
 
 
 def terms_page(request: Request, body: dict | None = None):
@@ -497,14 +512,31 @@ def _stats() -> dict:
 
 
 # ─── промокод для коллег (временный) ───────────────────────────────────────
+CONSENT_ERR = "Отметьте согласие на обработку персональных данных — без него вход невозможен."
+
+
+def _no_consent(body: dict | None) -> bool:
+    """152-ФЗ (с 01.09.2025): согласие — отдельный документ и отдельная галочка; без неё не входим."""
+    return not (body or {}).get("consent")
+
+
+def _save_consent(conn, user_id: int) -> None:
+    conn.execute("UPDATE users SET consent_at = COALESCE(consent_at, ?), consent_ver = ? WHERE id = ?",
+                 (int(time.time()), config.POLICY_DATE, user_id))
+    conn.commit()
+
+
 def api_login(request: Request, body: dict | None = None):
     if _too_often(request, "promo", 60, 600):
         return _err("Слишком много попыток — подождите 10 минут.", 429)
     body = body or {}
+    if _no_consent(body):
+        return _err(CONSENT_ERR)
     code = str(body.get("code", "")).strip().encode()  # bytes: код может быть по-русски
     if config.ACCESS_CODE and hmac.compare_digest(code, config.ACCESS_CODE.encode()):
         conn = db.get()
         user = current_user(request) or accounts.create_promo_user(conn)
+        _save_consent(conn, user["id"])
         token = accounts.create_session(conn, user["id"], request.headers.get("user-agent", ""))
         resp = _session_response(request, {"ok": True, "me": accounts.me(conn, accounts.get_user(conn, user["id"]))},
                                  token)
@@ -522,6 +554,8 @@ def api_tg_start(request: Request, body: dict | None = None):
         return _err("Слишком много попыток — подождите немного.", 429)
     body = body or {}
     purpose = "link" if body.get("link") else "login"
+    if purpose == "login" and _no_consent(body):
+        return _err(CONSENT_ERR)
     user = current_user(request)
     if purpose == "link" and user is None:
         return _err("Сначала войдите.", 401)
@@ -538,6 +572,7 @@ def api_tg_status(request: Request, body: dict | None = None):
         conn.execute("UPDATE tg_tokens SET status = 'used' WHERE token = ?", (row["token"],))
         conn.commit()
         user = accounts.get_user(conn, row["result_user"])
+        _save_consent(conn, user["id"])   # вход через Telegram начинался с галочки согласия (api_tg_start)
         token = accounts.create_session(conn, user["id"], request.headers.get("user-agent", ""))
         return _session_response(request, {"status": "ok", "me": accounts.me(conn, user)}, token)
     return JSONResponse({"status": row["status"]})
@@ -548,6 +583,8 @@ def api_email_start(request: Request, body: dict | None = None):
     if not mailer.available():
         return _err("Вход по почте пока не настроен.", 503)
     body = body or {}
+    if _no_consent(body):
+        return _err(CONSENT_ERR)
     email = str(body.get("email", ""))[:200]
     # лимит — на адрес почты (5 кодов в час), общий по сайту — только от явного перебора
     if _too_often(request, "email", 5, 3600, who=email.strip().lower()) or _too_often(request, "email_all", 300, 3600):
@@ -567,12 +604,15 @@ def api_email_verify(request: Request, body: dict | None = None):
     email = str(body.get("email", ""))[:200]
     if _too_often(request, "email_verify", 20, 600, who=email.strip().lower()):
         return _err("Слишком много попыток — подождите 10 минут.", 429)
+    if _no_consent(body):
+        return _err(CONSENT_ERR)
     ok, err = accounts.check_email_code(conn, email, str(body.get("code", ""))[:12])
     if not ok:
         return _err(err)
     user = accounts.upsert_email_user(conn, email)
     if user["blocked"]:
         return _err("Аккаунт заблокирован.", 403)
+    _save_consent(conn, user["id"])
     if accounts.attach_referrer(conn, user["id"], request.cookies.get("ref") or str(body.get("ref") or "")):
         user = accounts.get_user(conn, user["id"])
     token = accounts.create_session(conn, user["id"], request.headers.get("user-agent", ""))
@@ -831,6 +871,7 @@ def api_admin_overview(request: Request, body: dict | None = None):
         "cx_report": json.loads(db.get_state(conn, "cx_norm_report") or "null"),
         "price_report": json.loads(db.get_state(conn, "price_fix_report") or "null"),
         "geo_cleanup": json.loads(db.get_state(conn, "geo_cleanup_report") or "null"),
+        "geo_daily": json.loads(db.get_state(conn, "geo_daily_report") or "null"),
         "feed_synced": int(db.get_state(conn, "feed_synced") or 0),
     })
 
@@ -2295,7 +2336,7 @@ def robots_txt(request: Request, body: dict | None = None):
     lines = ["User-agent: *", "Allow: /", "Disallow: /api/", "Disallow: /admin", "Disallow: /fix", "Disallow: /learn",
              "Disallow: /c/", "Disallow: /cabinet", "Disallow: /clients", "Disallow: /picks", "Disallow: /planner",
              "Disallow: /work", "Disallow: /my", "Disallow: /settings", "Disallow: /notifications", "Disallow: /pay",
-             "Disallow: /*?ref=", "", f"Sitemap: {config.SITE_URL}/sitemap.xml"]
+             "Disallow: /*?ref=", "Disallow: /*?open=", "Disallow: /*&open=", "", f"Sitemap: {config.SITE_URL}/sitemap.xml"]
     return Response("\n".join(lines) + "\n", media_type="text/plain; charset=utf-8")
 
 
@@ -2303,11 +2344,9 @@ def sitemap_xml(request: Request, body: dict | None = None):
     """Карта сайта: открытые страницы и все объекты на сайте (до 45 000)."""
     from xml.sax.saxutils import escape
     base = config.SITE_URL
-    urls = [(f"{base}/", None), (f"{base}/how", None), (f"{base}/market", None), (f"{base}/privacy", None), (f"{base}/terms", None)]
-    for deal in ("sale", "rent"):
-        w, p = search._where(search.Query(deal=deal), int(time.time()))
-        urls += [(f"{base}/?open={i}", ts) for i, ts in db.get().execute(
-            f"SELECT l.id, l.last_seen FROM listings l WHERE {w} ORDER BY l.last_seen DESC LIMIT 22500", p)]
+    urls = [(f"{base}/", None), (f"{base}/how", None), (f"{base}/market", None), (f"{base}/privacy", None), (f"{base}/terms", None),
+            (f"{base}/offer", None), (f"{base}/consent", None), (f"{base}/contacts", None)]
+    # карточки объектов в карту сайта не входят: в них данные агентов из чатов — в поиск только открытые страницы
     body_xml = "".join(f"<url><loc>{escape(u)}</loc>"
                        + (f"<lastmod>{time.strftime('%Y-%m-%d', time.gmtime(ts))}</lastmod>" if ts else "") + "</url>"
                        for u, ts in urls)
@@ -2345,6 +2384,9 @@ routes = [
     Route("/how", threaded(how_page)),
     Route("/privacy", threaded(privacy_page)),
     Route("/terms", threaded(terms_page)),
+    Route("/offer", threaded(offer_page)),
+    Route("/consent", threaded(consent_page)),
+    Route("/contacts", threaded(contacts_page)),
     Route("/api/meta", threaded(api_meta)),
     Route("/api/listings", threaded(api_listings)),
     Route("/api/listings/{id:int}", threaded(api_listing)),

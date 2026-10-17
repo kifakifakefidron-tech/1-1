@@ -413,6 +413,10 @@ def _learn_move(conn: sqlite3.Connection, r, district: str) -> None:
     from . import learning
     want = {"addr": bool(r["street"] and r["house"]), "cx_district": bool(r["complex"]),
             "street": bool(r["street"] and not r["house"] and not r["complex"])}
+    if want["street"] or want["cx_district"]:   # улица/ЖК в нескольких районах — правило не создаём (как на экране разбора)
+        ok = learning.allowed(learning.safety(conn, r), district)
+        want["street"] = want["street"] and ok["street"][0]
+        want["cx_district"] = want["cx_district"] and ok["cx_district"][0]
     if any(want.values()):
         learning.learn(conn, r, r["complex"], district, want)
     conn.execute("UPDATE listings SET admin_fixed = 1 WHERE id = ?", (r["id"],))

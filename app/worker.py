@@ -92,6 +92,14 @@ def tick(conn) -> dict:
     if pf:
         stats["price_fix"] = pf["scale"] + pf["text"]
     from . import geoaudit
+    try:
+        gd = geoaudit.daily(conn)   # раз в сутки: явно ошибочные правила, ЖК-мусор, одно написание ЖК
+        if gd:
+            stats["geo_daily"] = gd.get("rules", 0)
+        from . import autolearn as _al
+        stats["unstacked"] = _al.maybe_unstack(conn) or None
+    except Exception:  # noqa: BLE001
+        log.exception("ежедневная уборка гео не прошла")
     gc = geoaudit.auto_cleanup(conn)   # один раз (акт 14.10): уборка правил и справочников, отчёт — в «Обзоре»
     if gc:
         stats["geo_cleanup"] = gc.get("listings", 0)
