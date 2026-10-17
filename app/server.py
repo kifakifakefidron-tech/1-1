@@ -917,6 +917,7 @@ def api_admin_overview(request: Request, body: dict | None = None):
     return JSONResponse({
         "listings": one(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE}"),
         "life": __import__("app.lifecheck", fromlist=["report"]).report(conn, now),
+        "own_match": json.loads(db.get_state(conn, "own_match_report") or "null"),
         # 17.10: фильтр «Ремонт» — сколько объектов разобрано (квартиры и дома на сайте)
         "repair": {k: one(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE} AND l.type IN ('flat','new','house','room') AND {cond}")
                    for k, cond in (("yes", "l.repair = 'yes'"), ("no", "l.repair = 'no'"), ("none", "l.repair IS NULL"))},

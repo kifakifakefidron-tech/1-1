@@ -1063,3 +1063,5 @@ dialog.login-dlg { width: min(940px, calc(100vw - 32px)); max-width: none; max-h
   .lg-side { gap: 10px; padding-bottom: 14px; }
   .lg-stats { gap: 6px; }
 }
+.my-src.site { background: linear-gradient(160deg, #f3e8bc, #e3cb8f) !important; color: #0f2f2e !important; }
+.my-tabs { flex-wrap: wrap; }

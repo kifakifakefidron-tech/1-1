@@ -62,10 +62,12 @@ def test_feed_first_and_chat_copy_by_article_hidden(conn, add):
     assert search.search(conn, search.Query(), NOW, False)["total"] == 2
 
 
-def test_message_without_article_stays_separate(conn, add):
+def test_own_message_without_article_sticks_to_site_card(conn, add):
+    """18.10 (решение Артёма): наш номер без артикула — тот же объект с сайта → к его карточке, без дубля
+    (было 06.10: «без артикула — отдельная карточка»)."""
     feed.sync(conn, FEED, now=NOW)
     add("Евро-2 60м2, Этаж: 13/22, ЖК Достояние. Цена 11,9 млн. 89618571772")
-    assert search.search(conn, search.Query(), NOW, False)["total"] == 2
+    assert search.search(conn, search.Query(), NOW, False)["total"] == 1
     assert ingest.make_title({"type": "flat", "rooms": 2, "room_kind": "mini", "area": 35}) == "Мини-2, 35 м²"
 
 

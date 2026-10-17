@@ -49,11 +49,11 @@
         ${(data.verify_methods || []).includes("call") ? "Проще всего — позвонить с этого номера: звонок бесплатный и сбросится сам." : "Подтверждение — сообщением с кодом в MAX."}</p></div></div>${form}</section>`;
   }
   function itemCard(o) {
-    const sold = !o.is_active, own = o.source === "own";
+    const sold = !o.is_active, own = o.source === "own", site = o.source === "feed";
     const photo = (o.photos || [])[0];
     return `<article class="wk-card my-item${sold ? " gone" : ""} c-${sold ? "slate" : own ? "gold" : "teal"}">
       <a class="wk-photo" href="${o.can_edit ? `/my/edit?id=${o.id}` : `/?open=${o.id}`}">${photo ? `<img src="${esc(photo)}" alt="" loading="lazy">` : `<span>${ic("plus")}<small>${o.can_edit ? "Добавить фото" : "Фото нет"}</small></span>`}
-        <em class="my-src">${own ? "Добавлен вами" : "Из чатов"}</em>${sold ? `<em class="wk-gone">Снят с сайта</em>` : ""}</a>
+        <em class="my-src${site ? " site" : ""}">${own ? "Добавлен вами" : site ? "С сайта" : "Из чатов"}</em>${sold ? `<em class="wk-gone">Снят с сайта</em>` : ""}</a>
       <div class="wk-body">
         <a class="wk-title" href="/?open=${o.id}">${esc(head(o))}</a>
         <b class="wk-price">${esc(money(o.price, o.deal))}</b>
@@ -62,6 +62,7 @@
         <div class="wk-foot">
           ${o.can_edit ? `<a class="pill my-edit" href="/my/edit?id=${o.id}">${ic("edit")}Изменить</a>
             <button type="button" class="wk-btn" data-status="${sold ? "active" : "sold"}" data-id="${o.id}">${sold ? "Вернуть на сайт" : "Продано · снять"}</button>`
+          : site ? `<span class="my-note">Объект с сайта arrowsrealty.ru — цена, фото и описание меняются на сайте (Тильда)</span>`
           : `<span class="my-note">Этой карточкой управляет другой агент</span>`}
         </div>
       </div></article>`;
@@ -69,15 +70,18 @@
   function renderList() {
     clearInterval(waitTimer);
     const items = data.items || [];
-    const n = { all: items.length, on: items.filter((o) => o.is_active).length, off: items.filter((o) => !o.is_active).length };
-    const shown = items.filter((o) => tab === "all" || (tab === "on" ? o.is_active : !o.is_active));
+    const F = { all: () => true, on: (o) => o.is_active, off: (o) => !o.is_active, site: (o) => o.source === "feed",
+      chat: (o) => o.source === "chat", own: (o) => o.source === "own" };
+    const n = Object.fromEntries(Object.keys(F).map((k) => [k, items.filter(F[k]).length]));
+    const shown = items.filter(F[tab] || F.all);
     main.innerHTML = `
-      <header class="my-head"><div><h1>Мои объекты</h1><p>Объявления с вашим номером из чатов и объекты, которые вы добавили сами.</p></div>
+      <header class="my-head"><div><h1>Мои объекты</h1><p>Всё с вашим номером: объекты с вашего сайта, объявления из чатов и добавленные вами — без повторов.</p></div>
         ${data.phones.length ? (data.access ? `<a class="pill my-add" href="/my/edit">${ic("plus")}Добавить объект</a>`
           : `<a class="pill light" href="/pay">Добавлять — с подпиской</a>`) : ""}</header>
       ${verifyBlock()}
       ${data.phones.length || items.length ? `
-        <nav class="wk-tabs my-tabs">${[["all", "Все"], ["on", "На сайте"], ["off", "Снятые"]].map(([k, t]) =>
+        <nav class="wk-tabs my-tabs">${[["all", "Все"], ["site", "С сайта"], ["chat", "Из чатов"], ["own", "Добавлены вами"], ["on", "Активные"], ["off", "Снятые"]]
+          .filter(([k]) => k === "all" || n[k]).map(([k, t]) =>
           `<button type="button" class="wk-tab${k === tab ? " on" : ""}" data-tab="${k}">${t}<b>${n[k]}</b></button>`).join("")}</nav>
         <div class="wk-grid my-grid">${shown.map(itemCard).join("") || `<div class="wk-empty">${ic("home")}<b>${items.length ? "Здесь пусто" : "Пока нет объявлений"}</b>
           ${items.length ? "" : "Как только вы разместите объект в чатах с подтверждённым номером — он появится здесь. Или добавьте объект сами."}</div>`}</div>` : ""}
