@@ -839,7 +839,8 @@ def api_admin_mailtest(request: Request, body: dict | None = None):
         return _err("Впишите адрес почты.")
     if not mailer.available():
         return JSONResponse({"ok": False, "error": "Почта не настроена: в .env нет SMTP_USER / SMTP_PASSWORD."})
-    ok = mailer.send_code(to, "123456")
+    import secrets
+    ok = mailer.send_code(to, f"{secrets.randbelow(900000) + 100000}")   # «123456» фильтры считают тестовым спамом
     return JSONResponse({"ok": ok, "sender": mailer.sender(), "host": config.SMTP_HOST,
                          "error": None if ok else mailer.last_error.get("error")})
 

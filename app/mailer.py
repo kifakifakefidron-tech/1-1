@@ -65,17 +65,17 @@ def send_text(to: str, subject: str, body: str) -> bool:
 
 def send_code(to: str, code: str) -> bool:
     msg = EmailMessage()
-    _headers(msg, to, f"Код входа на 1+1: {code}")
+    # 17.10: Яндекс отклонял письмо «554 5.7.1 suspicion of SPAM» — фильтр исходящей почты не любит ссылку на молодой
+    # домен в коротком письме с кодом. Поэтому в письме с кодом — только текст, без ссылок и без «+» в теме.
+    _headers(msg, to, f"Код для входа: {code}")
     msg.set_content(
-        f"Ваш код для входа на сайт 1+1: {code}\n\n"
-        f"Код действует 15 минут. Если вы не запрашивали вход — просто удалите это письмо.\n\n"
-        f"{config.SITE_URL}\n")
+        f"Здравствуйте!\n\nВаш код для входа в сервис «Один плюс один»: {code}\n\n"
+        f"Код действует 15 минут. Если вы не запрашивали вход, просто не отвечайте на это письмо.\n")
     # вторая часть письма — простой HTML: почты (Gmail) реже считают такие письма «подозрительными»
     msg.add_alternative(
-        f'<div style="font:16px/1.5 Arial,sans-serif;color:#12302f">Ваш код для входа на сайт 1+1:'
+        f'<div style="font:16px/1.5 Arial,sans-serif;color:#12302f">Здравствуйте!<br><br>Ваш код для входа в сервис «Один плюс один»:'
         f'<div style="font:700 28px/1.2 Arial,sans-serif;letter-spacing:4px;margin:12px 0">{code}</div>'
-        f'Код действует 15 минут. Если вы не запрашивали вход — просто удалите это письмо.<br><br>'
-        f'<a href="{config.SITE_URL}">{config.SITE_URL}</a></div>', subtype="html")
+        f'Код действует 15 минут. Если вы не запрашивали вход, просто не отвечайте на это письмо.</div>', subtype="html")
     try:
         with smtplib.SMTP_SSL(config.SMTP_HOST, config.SMTP_PORT, context=ssl.create_default_context(), timeout=10) as s:
             s.login(config.SMTP_USER, config.SMTP_PASSWORD)

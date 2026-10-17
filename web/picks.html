@@ -18,7 +18,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=55">
+<link rel="stylesheet" href="/static/glass.css?v=57">
 <link rel="stylesheet" href="/static/picks.css?v=16">
 </head>
 <body>
@@ -52,7 +52,7 @@
   <form method="dialog" class="pk2-dlg-in">
     <h2>Текст объявления для клиента</h2>
     <p class="pk2-hint">Можно переписать по-своему. Номера телефонов из текста уберём — клиент видит только ваш контакт.</p>
-    <textarea id="pkTextArea" rows="12" maxlength="5000"></textarea>
+    <textarea id="pkTextArea" data-grow rows="12" maxlength="5000"></textarea>
     <div class="pk2-dlg-acts"><button type="button" class="chip" id="pkTextReset">Вернуть исходный</button><span></span>
       <button type="submit" class="chip" value="cancel">Отмена</button><button type="button" class="pill" id="pkTextSave">Сохранить</button></div>
   </form>
@@ -92,10 +92,10 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
 <script src="/static/icons.js?v=6"></script>
-<script src="/static/pickers.js?v=10"></script>
+<script src="/static/pickers.js?v=12"></script>
 <script src="/static/max.js?v=2"></script>
-<script src="/static/rail.js?v=16"></script>
-<script src="/static/picks.js?v=16"></script>
+<script src="/static/rail.js?v=18"></script>
+<script src="/static/picks.js?v=17"></script>
 <script src="/static/objview.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 </body>

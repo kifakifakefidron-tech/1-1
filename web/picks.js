@@ -153,7 +153,7 @@
         <a class="pk2-ot" href="/?open=${it.listing_id}">${esc(it.title)}</a>
         <small>${esc(sub(it))}</small>
         <label class="pk2-ptext"><span>Текст для клиента <small>— можно исправить прямо здесь, сохранится сам</small></span>
-          <textarea data-ptext="${it.listing_id}" data-pid="${p.id}" rows="4" maxlength="5000">${esc(it.text || it.orig || "")}</textarea>
+          <textarea data-ptext="${it.listing_id}" data-pid="${p.id}" data-grow rows="4" maxlength="5000">${esc(it.text || it.orig || "")}</textarea>
           ${it.text ? `<button type="button" class="pk2-ptext-reset" data-ptext-reset="${it.listing_id}" data-pid="${p.id}">Вернуть исходный текст</button>` : ""}</label>
         <input class="pk2-com" data-com="${it.listing_id}" data-pid="${p.id}" maxlength="1000" value="${esc(it.note || "")}"
           placeholder="Комментарий от вас — клиент увидит над текстом" aria-label="Комментарий для клиента">

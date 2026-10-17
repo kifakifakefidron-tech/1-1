@@ -32,6 +32,7 @@
     document.body.appendChild(panel);
     document.addEventListener("pointerdown", (e) => {
       if (!owner || panel.contains(e.target) || owner.contains(e.target)) return;
+      if (panel.classList.contains("sheet")) swallowClick();   // 17.10: на телефоне тап мимо — просто закрыть
       close();
     }, true);
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && owner) { e.stopPropagation(); e.preventDefault(); close(); } }, true);
@@ -393,10 +394,113 @@
   document.addEventListener("click", (e) => {   // и нажали, и отпустили мимо окна (не выделение текста, начатое внутри)
     const d = downOnBackdrop;
     downOnBackdrop = null;
-    if (d && e.target === d && outside(d, e)) { close(); d.close(); }
+    if (d && e.target === d && outside(d, e)) { close(); softClose(d); }
   }, true);
+
+  // ─── 17.10 (Артём): окна на телефоне — крестик всегда, свайп вниз и плавное закрытие; тап мимо — только закрыть ───
+  function swallowClick() {   // следующее нажатие (тот же тап) не должно сработать на том, что под пальцем
+    const stop = (e) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
+    window.addEventListener("click", stop, { capture: true, once: true });
+    setTimeout(() => window.removeEventListener("click", stop, { capture: true }), 600);
+  }
+  function softClose(d) {
+    if (!d || !d.open || d.classList.contains("closing")) return;
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { d.close(); return; }
+    d.classList.add("closing");
+    let done = false;
+    const fin = () => { if (done) return; done = true; d.classList.remove("closing", "dragging"); d.style.transform = d.style.transition = ""; d.close(); };
+    d.addEventListener("animationend", fin, { once: true });
+    setTimeout(fin, 340);
+  }
+  window.softClose = softClose;
+  const OWN = "[data-own-swipe]";   // окна главной: app.js закрывает их сам
+  function hasClose(d) { return d.querySelector('[aria-label="Закрыть"], .close, [data-close], .dlg-x'); }
+  function dress(d) {
+    if (d.__dressed) return;
+    d.__dressed = true;
+    if (!d.matches(OWN)) {
+      d.addEventListener("cancel", (e) => { e.preventDefault(); close(); softClose(d); });   // Esc — тоже плавно
+    }
+    if (!hasClose(d)) {
+      const x = document.createElement("button");
+      x.type = "button"; x.className = "dlg-x"; x.setAttribute("aria-label", "Закрыть");
+      x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+      x.addEventListener("click", () => { close(); softClose(d); });
+      d.prepend(x);
+    }
+    if (d.matches(OWN)) return;
+    let y0 = null, x0 = 0, dy = 0, scroller = null;
+    const scrollTop = (el) => { for (let n = el; n && n !== d.parentNode; n = n.parentElement) if (n.scrollTop > 0) return n.scrollTop; return 0; };
+    d.addEventListener("touchstart", (e) => {
+      y0 = null;
+      if (innerWidth > 820 || e.touches.length > 1) return;
+      const t = e.target;
+      if (t.closest("input, textarea, select, [contenteditable], .leaflet-container, .pk-panel, [data-no-swipe]")) return;
+      if (scrollTop(t) > 0) return;
+      y0 = e.touches[0].clientY; x0 = e.touches[0].clientX; dy = 0; scroller = t;
+    }, { passive: true });
+    d.addEventListener("touchmove", (e) => {
+      if (y0 === null) return;
+      const ddy = e.touches[0].clientY - y0, ddx = Math.abs(e.touches[0].clientX - x0);
+      if (dy === 0 && (ddy < 0 || ddx > Math.abs(ddy))) { y0 = null; return; }   // вверх или вбок — это прокрутка
+      dy = Math.max(0, ddy);
+      if (dy > 6) { d.classList.add("dragging"); d.style.transform = `translateY(${dy}px)`; }
+    }, { passive: true });
+    d.addEventListener("touchend", () => {
+      if (y0 === null) return;
+      y0 = null;
+      d.classList.remove("dragging");
+      if (dy > 100) { close(); softClose(d); return; }
+      d.style.transition = "transform .3s cubic-bezier(.2,.9,.25,1)"; d.style.transform = "";
+      setTimeout(() => { d.style.transition = ""; }, 320);
+    });
+  }
+  // ─── 17.10: подсказка в поле (placeholder) не помещается — при нажатии всплывает над полем целиком ───
+  let hint = null, hintFor = null, ctx = null;
+  const TEXTY = /^(text|search|email|tel|url|number|password|)$/;
+  function overflows(el) {
+    ctx = ctx || document.createElement("canvas").getContext("2d");
+    const cs = getComputedStyle(el);
+    ctx.font = cs.font || `${cs.fontSize} ${cs.fontFamily}`;
+    const avail = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    return ctx.measureText(el.placeholder).width > avail - 2;
+  }
+  function hideHint() { if (hint) { hint.classList.remove("on"); hintFor = null; } }
+  function showHint(el) {
+    if (!hint) { hint = document.createElement("div"); hint.className = "ph-hint"; hint.setAttribute("aria-hidden", "true"); }
+    const host = el.closest("dialog[open]") || document.body;
+    if (hint.parentElement !== host) host.appendChild(hint);
+    hint.textContent = el.placeholder;
+    hintFor = el;
+    const r = el.getBoundingClientRect(), vw = innerWidth;
+    hint.style.maxWidth = `${Math.min(380, vw - 16)}px`;
+    hint.classList.add("on");
+    const w = hint.offsetWidth, h = hint.offsetHeight;
+    hint.style.left = `${Math.max(8, Math.min(r.left, vw - w - 8))}px`;
+    hint.style.top = `${r.top - h - 8 > 8 ? r.top - h - 8 : r.bottom + 8}px`;
+  }
+  const checkHint = (el) => {
+    if (el.value || !el.placeholder || !TEXTY.test(el.type || "") || el.tagName !== "INPUT" || !overflows(el)) { if (hintFor === el) hideHint(); return; }
+    showHint(el);
+  };
+  document.addEventListener("focusin", (e) => { if (e.target instanceof HTMLInputElement) checkHint(e.target); });
+  document.addEventListener("input", (e) => { if (e.target === hintFor) checkHint(e.target); });
+  document.addEventListener("focusout", (e) => { if (e.target === hintFor) hideHint(); });
+  document.addEventListener("scroll", () => { if (hintFor) showHint(hintFor); }, true);
+
+  // поле текста [data-grow] растёт под весь текст — без внутренней прокрутки (подборки: текст для клиента)
+  const grow = (t) => { if (!t.getClientRects().length) return; t.style.height = "auto"; t.style.height = `${t.scrollHeight + 2}px`; };
+  document.addEventListener("input", (e) => { if (e.target.matches && e.target.matches("textarea[data-grow]")) grow(e.target); });
+  window.addEventListener("resize", () => document.querySelectorAll("textarea[data-grow]").forEach(grow));
+  const dressAll = () => { document.querySelectorAll("dialog").forEach(dress);
+    requestAnimationFrame(() => document.querySelectorAll("textarea[data-grow]").forEach(grow)); };
+  let dq = false;   // не чаще раза за кадр (карта добавляет сотни меток)
+  const dressSoon = () => { if (dq) return; dq = true; requestAnimationFrame(() => { dq = false; dressAll(); }); };
+  new MutationObserver((ms) => { if (ms.some((m) => m.type === "attributes" || m.addedNodes.length)) dressSoon(); })
+    .observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["open"] });
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", dressAll); else dressAll();
 
   // программно поменяли значение исходного поля — обновить кнопку: Pick.refresh(form)
   const refresh = (root) => root.querySelectorAll("[data-pk]").forEach((el) => el.dispatchEvent(new Event("pk-refresh")));
-  window.Pick = { date, time, select, multi, chips, refresh, close, auto };
+  window.Pick = { date, time, select, multi, chips, refresh, close, auto, softClose };
 })();
