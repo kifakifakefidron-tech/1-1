@@ -73,6 +73,25 @@ def make_search_text(o: dict) -> str:
 def _reindex(conn: sqlite3.Connection, listing_id: int, text: str) -> None:
     conn.execute("DELETE FROM listings_fts WHERE rowid = ?", (listing_id,))
     conn.execute("INSERT INTO listings_fts(rowid, search_text) VALUES (?, ?)", (listing_id, text))
+    # состояние «с ремонтом / без ремонта» — по тому же тексту (фильтр «Ремонт»)
+    conn.execute("UPDATE listings SET repair = ? WHERE id = ?", (rules.detect_repair(text), listing_id))
+
+
+REPAIR_V = "3"
+
+
+def backfill_repair(conn: sqlite3.Connection) -> int:
+    """Один раз после обновления правил (state repair_v): проставить состояние всем объектам."""
+    from . import db
+    if db.get_state(conn, "repair_v") == REPAIR_V:
+        return 0
+    n = 0
+    for r in conn.execute("SELECT id, search_text FROM listings").fetchall():
+        conn.execute("UPDATE listings SET repair = ? WHERE id = ?", (rules.detect_repair(r["search_text"]), r["id"]))
+        n += 1
+    db.set_state(conn, "repair_v", REPAIR_V)
+    conn.commit()
+    return n
 
 
 def _price_m2(price, area) -> int | None:

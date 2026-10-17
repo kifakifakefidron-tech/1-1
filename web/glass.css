@@ -884,3 +884,44 @@ dialog .pk-panel { z-index: 1000; isolation: isolate; }
 .dv-hist li { display: grid !important; grid-template-columns: 1fr; gap: 2px; justify-items: start; }
 .dv-hist li .hs-tag { margin: 0 0 2px; }
 .dv-hist li.hs-first, .dv-hist li.hs-last { padding-top: 8px; }
+
+/* 17.10 (скриншот Артёма): iPhone «на экране Домой» — окна-шторки не заходят под часы и значки сверху */
+@media (display-mode: standalone) and (max-width: 820px) {
+  dialog[open] { max-height: calc(100dvh - env(safe-area-inset-top) - 10px) !important; }
+}
+@media (max-width: 820px) {
+  .c-dlg { max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 10px) !important; }
+  .c-dlg .c-dlg-head { flex-wrap: nowrap !important; padding-right: 56px !important; }
+  .c-dlg .c-dlg-who { min-width: 0; }
+  .c-dlg .c-dlg-who h2 { font-size: 20px; }
+  .c-dlg #dEdit { flex: none; white-space: nowrap; padding: 8px 14px; }
+  .ci-stats { gap: 6px; }
+  .ci-stats button { padding: 9px 8px; min-width: 0; }
+  .ci-stats span { font-size: 11.5px; line-height: 1.2; overflow-wrap: normal; word-break: keep-all; hyphens: none; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+}
+dialog:focus, dialog:focus-visible { outline: none; }
+/* 17.10: iPhone приближает страницу, если шрифт поля меньше 16 px, и не отдаляет обратно — на телефоне все поля 16 px */
+@media (max-width: 820px) {
+  input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea { font-size: 16px !important; }
+}
+/* 17.10: закрытие окон — сразу и плавно (было ease-in: медленный старт ощущался как задержка) */
+dialog.closing, dialog.closing::backdrop { animation-duration: .2s !important; animation-timing-function: cubic-bezier(.2, .75, .3, 1) !important;
+  pointer-events: none; }
+/* плашка «К сравнению» внизу — уведомления всплывают над ней, а не поверх счётчика */
+body.has-cmp .toast, body.has-cmp .toast[popover] { bottom: calc(96px + var(--tabbar-h, 0px)) !important; }
+@media (max-width: 820px) { body.has-rail.has-cmp .toast, body.has-rail.has-cmp .toast[popover] { bottom: calc(158px + env(safe-area-inset-bottom)) !important; }
+  body.has-rail .cmp-bar { bottom: calc(88px + env(safe-area-inset-bottom)) !important; } }
+body.has-cmp .bell-pop { bottom: 86px !important; }
+/* предпросмотр подборки агентом: полоса «← Назад к подборке» */
+.pk-agentbar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px; background: rgba(6, 60, 59, .96); border-bottom: 1px solid rgba(227, 203, 143, .3);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); font-size: 13px; color: var(--ink-3); }
+.pk-back { display: inline-flex; align-items: center; padding: 7px 14px; border-radius: 999px; text-decoration: none; font-weight: 600;
+  background: linear-gradient(160deg, #f3e8bc, #e3cb8f); color: #0f2f2e; }
+@media (max-width: 520px) {
+  .ci-stats { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .ci-stats button { display: flex !important; align-items: baseline; gap: 8px !important; padding: 10px 12px !important; }
+  .ci-stats b { font-size: 20px; }
+  .ci-stats span { font-size: 12.5px !important; overflow: visible !important; text-overflow: clip !important; }
+}

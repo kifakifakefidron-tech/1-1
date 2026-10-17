@@ -145,3 +145,12 @@
 .wk-btn { cursor: pointer; }
 .wk-m .wk-drop.down { background: rgba(227, 203, 143, .92); color: #0f2f2e; }
 @media (max-width: 760px) { .wk-match { padding: 12px 10px; margin: 0 -2px 16px; } .wk-mh b { font-size: 16px; } }
+
+/* 17.10: заметка — только если написана (править — в окне объекта); «Не отправлен» — короткая отметка */
+.wk-note-t { display: flex; gap: 6px; margin: 2px 0 0; padding: 7px 9px; border-radius: 10px; background: rgba(0, 0, 0, .16);
+  font-size: 12.5px; line-height: 1.4; color: var(--ink-2); }
+.wk-note-t svg { flex: none; width: 14px; height: 14px; margin-top: 2px; color: var(--gold); }
+.wk-note-t span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.wk-c.none { gap: 5px; padding: 3px 9px 3px 7px !important; background: rgba(255, 255, 255, .04) !important; border: 1px dashed var(--glass-line);
+  color: var(--ink-3); white-space: nowrap; }
+.wk-c.none svg { color: var(--ink-3) !important; }

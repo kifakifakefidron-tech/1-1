@@ -109,8 +109,9 @@ def save(conn: sqlite3.Connection, user_id: int, patch: dict) -> dict:
     return cur
 
 
-def save_cover(data_url: str) -> tuple[str | None, str]:
-    """Обложка подборки: картинка из браузера (уже уменьшенная) → data/photos/0/<хеш>.<тип>."""
+def save_cover(data_url: str, folder_name: str = COVER_DIR) -> tuple[str | None, str]:
+    """Обложка подборки (и свои фото к объекту в подборке — folder_name='pk'): картинка из браузера (уже уменьшенная)
+    → data/photos/<папка>/<хеш>.<тип>."""
     try:
         raw = base64.b64decode(str(data_url).split(",", 1)[-1], validate=False)
     except (ValueError, TypeError):
@@ -119,10 +120,10 @@ def save_cover(data_url: str) -> tuple[str | None, str]:
     if ext is None or len(raw) > 4_000_000 or len(raw) < 1000:
         return None, "Нужна фотография JPEG/PNG до 4 МБ."
     name = hashlib.sha1(raw).hexdigest()[:16] + "." + ext
-    folder = Path(config.PHOTOS_DIR) / COVER_DIR
+    folder = Path(config.PHOTOS_DIR) / folder_name
     folder.mkdir(parents=True, exist_ok=True)
     (folder / name).write_bytes(raw)
-    return f"/photos/{COVER_DIR}/{name}", "Обложка загружена."
+    return f"/photos/{folder_name}/{name}", "Фото загружено."
 
 
 def public_pick_style(conn: sqlite3.Connection, user_id: int) -> dict:

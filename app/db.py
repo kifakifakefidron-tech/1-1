@@ -368,6 +368,8 @@ MIGRATIONS = [
     # 17.10 (Артём): своя цена для клиента в подборке (NULL — как в объявлении) и «скрыть цену»
     ("collection_items", "price", "INTEGER"),
     ("collection_items", "hide_price", "INTEGER NOT NULL DEFAULT 0"),
+    ("collection_items", "photos", "TEXT"),
+    ("listings", "repair", "TEXT"),   # 17.10: состояние по тексту — 'yes' с ремонтом / 'no' без (ПЧО, черновая…) / NULL не сказано   # 17.10: свои фото агента к объекту в подборке (JSON, /photos/pk/…)
     # «Приведи коллегу»: свой код, кто пригласил, начислили ли бонус пригласившему
     ("users", "ref_code", "TEXT"),
     ("users", "referred_by", "INTEGER"),

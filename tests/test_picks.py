@@ -121,3 +121,40 @@ def test_repair_filter():
     prices = lambda cond: sorted(x["price"] for x in search.search(conn, search.Query(cond=[cond]), 0, True)["items"])  # noqa: E731
     assert prices("repair") == [6_000_000]
     assert prices("norepair") == [4_500_000, 5_000_000]
+
+
+def test_pick_own_photos_first_for_client(env, tmp_path, monkeypatch):
+    """17.10: свои фото агента к объекту в подборке — клиент видит их первыми; убрать — пропадают."""
+    import base64
+    from app import config
+    monkeypatch.setattr(config, "PHOTOS_DIR", str(tmp_path / "photos"))
+    c, conn, lid = env
+    _login(c, conn)
+    p = c.post("/api/picks", json={"title": "Фото", "listing_id": lid, "contact_phone": "8 900 111 22 33"}).json()["pick"]
+    jpg = "data:image/jpeg;base64," + base64.b64encode(b"\xff\xd8\xff" + b"\x00" * 3000).decode()
+    r = c.post(f"/api/picks/{p['id']}/items", json={"listing_id": lid, "photo": jpg}).json()
+    assert r["ok"] and r["photos"][0].startswith("/photos/pk/")
+    own = r["photos"][0]
+    assert c.get(f"/api/c/{p['token']}?as=agent").json()["items"][0]["photos"][0] == own
+    mine = [x for x in c.get("/api/picks").json()["items"] if x["id"] == p["id"]][0]["items"][0]
+    assert mine["my_photos"] == [own] and mine["photo"] == own
+    assert c.post(f"/api/picks/{p['id']}/items", json={"listing_id": lid, "photo": "data:image/jpeg;base64,AAAA"}).status_code == 400
+    c.post(f"/api/picks/{p['id']}/items", json={"listing_id": lid, "photo_del": own})
+    assert own not in c.get(f"/api/c/{p['token']}?as=agent").json()["items"][0]["photos"]
+
+
+def test_compare_page(env):
+    c, conn, lid = env
+    r = c.get("/compare")
+    assert r.status_code == 200 and "compare.js" in r.text
+
+
+def test_detect_repair_phrases():
+    from app import rules
+    no = ["ПЧО, сдача 2026", "предчистовая отделка", "white box", "черновая", "без отделки", "без ремонта", "под ремонт",
+          "требует косметического ремонта", "бабушкин ремонт", "ремонт в процессе", "в бетоне", "ремонт под себя, сейчас пчо"]
+    yes = ["евроремонт", "ремонт. мебель", "свежий ремонт", "чистовая отделка", "заезжай и живи", "с ремонтом",
+           "без обременений, евроремонт", "под ипотеку, ремонт свежий", "ремонт под ключ"]
+    assert [t for t in no if rules.detect_repair(t) != "no"] == []
+    assert [t for t in yes if rules.detect_repair(t) != "yes"] == []
+    assert rules.detect_repair("2к 54 м 6 млн") is None

@@ -225,10 +225,10 @@
     const over = c.next_ts && c.next_ts * 1000 < now;
     $("dInfo").innerHTML = `
       <div class="ci-stats">
-        <button type="button" data-tab="items"><b>${items.length}</b><span>объектов</span></button>
+        <button type="button" data-tab="items"><b>${items.length}</b><span>${pl(items.length, "объект", "объекта", "объектов")}</span></button>
         <button type="button" data-tab="items"><b>${liked}</b><span>понравилось</span></button>
-        <button type="button" data-tab="items"><b>${shows}</b><span>показов</span></button>
-        <button type="button" data-tab="items"><b>${(cur.picks || []).length}</b><span>подборок</span></button>
+        <button type="button" data-tab="items"><b>${shows}</b><span>${pl(shows, "показ", "показа", "показов")}</span></button>
+        <button type="button" data-tab="items"><b>${(cur.picks || []).length}</b><span>${pl((cur.picks || []).length, "подборка", "подборки", "подборок")}</span></button>
       </div>
       <div class="ci-grid">
         <section class="ci-box ci-next${over ? " over" : ""}"><h4>${ic("clock")}Следующий шаг</h4>
@@ -261,6 +261,7 @@
     document.querySelectorAll("#cDlg [data-pane]").forEach((p) => { p.hidden = p.dataset.pane !== name; });
     if (name === "items" && cur && !$("dMatchList").dataset.loaded) match();
   }
+  const pl = (n, a, b, c) => (n % 10 === 1 && n % 100 !== 11 ? a : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? b : c);
   function stagesHTML() {
     const keys = Object.keys(data.stages), at = cur ? keys.indexOf(cur.client.stage) : 0;
     $("dStages").hidden = !cur;
@@ -275,9 +276,11 @@
     requestAnimationFrame(() => slideStage(cur ? cur.client.stage : keys[0], false));
   }
   // плашка выбранного этапа плавно переезжает к нажатому
-  function slideStage(stage, animate = true) {
+  function slideStage(stage, animate = true, tries = 0) {
     const box = $("dStages"), ind = box.querySelector(".c-stage-ind"), b = box.querySelector(`[data-stage="${stage}"]`);
     if (!ind || !b) return;
+    // 17.10: окно ещё раскрывается (размеры 0) — плашка не рисовалась и выбранный этап был не виден; ждём и повторяем
+    if (!b.offsetWidth && tries < 20) { setTimeout(() => slideStage(stage, false, tries + 1), 50); return; }
     if (!animate) ind.style.transition = "none";
     ind.style.width = `${b.offsetWidth}px`;
     ind.style.height = `${b.offsetHeight}px`;
@@ -292,6 +295,9 @@
     const sl = b.offsetLeft - box.clientWidth / 2 + b.offsetWidth / 2;   // на телефоне — прокрутить к выбранному
     box.scrollTo({ left: sl, behavior: animate ? "smooth" : "auto" });
   }
+  // окно меняет ширину (поворот телефона, раскрытие) — плашка этапа встаёт на место
+  const stageRO = window.ResizeObserver ? new ResizeObserver(() => { if (cur) slideStage(cur.client.stage, false); }) : null;
+  if (stageRO && $("dStages")) stageRO.observe($("dStages"));
   function fillForm() {
     const c = cur ? cur.client : { kind: "buyer", rooms: [], districts: [], deal: "sale" };
     form = { kind: c.kind, rooms: [...(c.rooms || [])], districts: [...(c.districts || [])], wishes: { ...(c.wishes || {}) } };

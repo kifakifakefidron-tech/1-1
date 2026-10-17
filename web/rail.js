@@ -41,6 +41,7 @@
     { href: "/planner", icon: "calendar", tip: "Планер", desc: "Показы, звонки и встречи с напоминаниями", main: true, user: true,
       count: (c) => c.plan_today + c.plan_overdue, countTip: (n) => `дел на сегодня и просроченных: ${n}`, hot: (c) => c.plan_overdue > 0 },
     { href: "/picks", icon: "stack", tip: "Подборки", desc: "Ссылка с объектами для клиента — только ваш контакт", user: true },
+    { href: "/compare", icon: "scale", tip: "Сравнение", desc: "До 5 объектов рядом: цена, метр, площадь — лучшее подсвечено" },
     { href: "/market", icon: "chart", tip: "Аналитика рынка", short: "Аналитика", desc: "Цена за метр по районам и ЖК, динамика" },
     { href: "/notifications", icon: "bell", tip: "Уведомления", desc: "Новые объекты по поискам, снижение цен", user: true, bell: true },
     { sep: true },
