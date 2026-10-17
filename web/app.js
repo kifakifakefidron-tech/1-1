@@ -583,7 +583,7 @@
     }
     $("sheetApply").textContent = data.total ? `Показать ${num(data.total)} ${plural(data.total, "объект", "объекта", "объектов")}` : "Ничего не нашлось";
     $("count").innerHTML = favMode
-      ? `Избранное и в работе: ${num(data.total)} <button type="button" class="link-btn" id="favExit">← ко всем объектам</button>
+      ? `Избранное: ${num(data.total)} <button type="button" class="link-btn" id="favExit">← ко всем объектам</button>
         <a class="link-btn" href="/picks">📁 Подборки для клиентов</a> <a class="link-btn" href="/planner">📅 Планер</a>${crmChips()}`
       : esc(data.total ? `${num(data.total)} ${plural(data.total, "объект", "объекта", "объектов")}` : "Ничего не нашлось")
         + understoodHTML(data.understood);
@@ -1531,6 +1531,8 @@
   // ─── нижняя панель (телефон) ────────────────────────────────────────────
   function setTab(tab) {
     document.querySelectorAll(".tabbar [data-tab], .nav-links [data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+    const vc = $("viewChip");   // кнопка «Карта / Список» в строке над выдачей (на телефоне — единственный переключатель)
+    if (vc) { vc.dataset.tab = tab === "map" ? "list" : "map"; vc.textContent = tab === "map" ? "Список" : "Карта"; }
   }
 
   const known = new Map();  // объекты, которые уже пришли списком/картой — для мгновенного открытия
@@ -1574,7 +1576,7 @@
     } else if (r.status === 404) {
       $("detailBody").innerHTML = EMBED
         ? `<p class="d-place">Этот объект уже сняли с продажи или удалили.</p>
-          <button type="button" class="pill" onclick="document.getElementById('detail').close()">Закрыть</button>`
+          <button type="button" class="pill" data-close-dlg>Закрыть</button>`
         : `<p class="d-place">Этот объект уже сняли с продажи или обновили. Обновите список — он покажет актуальное.</p>
           <button type="button" class="pill" data-refresh-list>Обновить список</button>`;
       document.querySelectorAll(`.item[data-id="${id}"]`).forEach((el) => el.remove());
@@ -1589,9 +1591,9 @@
     const u = me();
     $("accountBtn").textContent = u ? "Кабинет" : "Войти";
     $("accountBtn").classList.toggle("on", !!u);
-    $("tabAccount").textContent = u ? "Кабинет" : "Войти";
+
     const n = u ? u.favorites.length : 0;
-    $("favBtn").innerHTML = `Избранное${n ? `<i class="nav-badge">${n}</i>` : ""}`;
+    if ($("favBtn")) $("favBtn").innerHTML = `Избранное${n ? `<i class="nav-badge">${n}</i>` : ""}`;
     $("toClientBtn").hidden = !u;
     if (u && $("hero")) $("hero").hidden = true;   // акт 14.10: вошедшему агенту приветствие не занимает первый экран
     if ($("heroLogin")) { $("heroLogin").hidden = !!u; $("heroCabinet").hidden = !u; }
@@ -1599,8 +1601,7 @@
     const unread = u ? u.unread || 0 : 0;
     $("bellMobile").hidden = !u;
     if (u && window.bellSet) window.bellSet(unread);   // колокольчик с числом (web/bell.js)
-    $("favBadge").hidden = !n;
-    $("favBadge").textContent = n;
+
     $("optoutLink").hidden = !meta.bot;
     if (meta.bot) $("optoutLink").href = `https://t.me/${meta.bot}?start=optout`;
   }
@@ -1934,7 +1935,7 @@
       if (t.dataset.tab) {
         const tab = t.dataset.tab;
         if (tab === "account") { if (me()) location.href = "/cabinet"; else openLogin(); return; }
-        if (tab === "fav") { setFavMode(true); return; }
+        if (tab === "fav") { location.href = "/work"; return; }   // одно «Избранное» на весь сайт
         const go = () => {
           if (favMode) setFavMode(false);
           if (state.view !== tab) { state.view = tab; syncControls(); writeUrl(); applyView(); if (tab === "map") loadMap(); else loadList(); }

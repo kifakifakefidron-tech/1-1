@@ -394,14 +394,21 @@ def banned_phones(conn: sqlite3.Connection) -> set[str]:
     return {r[0] for r in conn.execute("SELECT key FROM banned WHERE kind = 'phone'")}
 
 
-def ban_phone(conn: sqlite3.Connection, phone: str) -> dict:
-    """Админ: всё от этого номера — скрыть объекты и запросы, удалить сообщения; новые не принимать."""
+def ban_phone(conn: sqlite3.Connection, phone: str, block: bool = True) -> dict:
+    """Админ: всё от этого номера — скрыть объекты и запросы, удалить сообщения; block=True — и новые не принимать
+    никогда. block=False — удалить только уже собранные объекты (повторы их не вернут), новые объявления принимаются."""
     phone = rules.normalize_phone(phone or "")
     if not phone:
         return {"error": "Номер не распознан."}
     if phone == rules.normalize_phone(config.FEED_PHONE or ""):
         return {"error": "Это номер партнёра (объекты СТРЕЛ из фида) — его нельзя удалить целиком."}
     now = int(time.time())
+    if not block:
+        listings = conn.execute("""UPDATE listings SET is_active = 0, hidden_reason = 'admin'
+                                   WHERE EXISTS (SELECT 1 FROM json_each(listings.phones) j WHERE j.value = ?)
+                                     AND source NOT IN ('own', 'feed')""", (phone,)).rowcount
+        conn.commit()
+        return {"ok": True, "phone": phone, "listings": listings, "requests": 0, "messages": 0, "blocked": False}
     conn.execute("INSERT OR IGNORE INTO banned (kind, key, title, ts) VALUES ('phone', ?, ?, ?)", (phone, phone, now))
     listings = conn.execute("""UPDATE listings SET is_active = 0, hidden_reason = 'phone'
                                WHERE EXISTS (SELECT 1 FROM json_each(listings.phones) j WHERE j.value = ?)
@@ -420,7 +427,7 @@ def ban_phone(conn: sqlite3.Connection, phone: str) -> dict:
         part = gone[i:i + 500]
         conn.execute(f"DELETE FROM messages WHERE id IN ({','.join('?' * len(part))})", part)
     conn.commit()
-    return {"ok": True, "phone": phone, "listings": listings, "requests": requests, "messages": len(gone)}
+    return {"ok": True, "phone": phone, "listings": listings, "requests": requests, "messages": len(gone), "blocked": True}
 
 
 def unban_phone(conn: sqlite3.Connection, phone: str) -> None:

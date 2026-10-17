@@ -214,7 +214,7 @@
     const what = own ? [TYPES[x.type] || "", rooms, v.area && `${v.area} м²`, v.land && `${v.land} сот.`, v.floor && `${v.floor}${v.floors ? "/" + v.floors : ""} эт.`].filter(Boolean).join(", ") : o.title;
     const photo = (o.photos || [])[0];
     $("myPrev").innerHTML = `<p class="my-prev-l">Так увидят коллеги в поиске</p>
-      <div class="my-prev-card"><div class="my-prev-ph">${photo ? `<img src="${esc(photo)}" alt="">` : `<span>${ic("home")}Фото у агента</span>`}</div>
+      <div class="my-prev-card"><div class="my-prev-ph">${photo ? `<img src="${esc(photo)}" alt="">` : `<span class="ph-none"><img src="/static/favicon.svg" alt=""><small>Фото у агента</small></span>`}</div>
         <div class="my-prev-b"><small>${esc(head(x) || "Район / ЖК / улица")}</small><b>${price ? esc(money(price, deal)) : "Цена"}</b>
           <span>${esc(what || "Параметры")}</span><em>${esc(place(x) || "")}</em></div></div>`;
     const has = (k) => String(v[k] || "").trim();

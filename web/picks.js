@@ -143,7 +143,7 @@
   }
   function objCard(p, it, i) {
     return `<article class="pk2-obj${it.is_active ? "" : " gone"}" draggable="true" data-lid="${it.listing_id}" data-pid="${p.id}" style="--i:${i}">
-      <a class="pk2-ph" href="/?open=${it.listing_id}">${it.photo ? `<img src="${esc(it.photo)}" alt="" loading="lazy">` : `<span>${ic("home")}Фото у агента</span>`}
+      <a class="pk2-ph" href="/?open=${it.listing_id}">${it.photo ? `<img src="${esc(it.photo)}" alt="" loading="lazy">` : `<span class="ph-none"><img src="/static/favicon.svg" alt=""><small>Фото у агента</small></span>`}
         <span class="pk2-num">${i + 1}</span>${it.is_active ? "" : `<span class="pk2-gone">Снят с сайта</span>`}</a>
       ${it.is_active ? "" : `<button type="button" class="pk2-sim" data-sim="${it.listing_id}" data-pid="${p.id}">${ic("repeat")}Снят — показать похожие</button>`}
       <div class="pk2-ob">
@@ -459,7 +459,8 @@
             <a href="/?open=${f.id}">Открыть</a></span>
           <button type="button" class="pill" data-swap="${pid}:${lid}:${f.id}">Заменить</button></div>`).join("")}</div>`
         : `<p class="pk2-hint">Похожих сейчас нет на сайте.</p>`}
-      <div class="pk2-dlg-acts"><span></span><button type="button" class="chip" onclick="this.closest('dialog').close()">Закрыть</button></div></div>`;
+      <div class="pk2-dlg-acts"><span></span><button type="button" class="chip" data-pk-close>Закрыть</button></div></div>`;
+    d.querySelector("[data-pk-close]").addEventListener("click", () => d.close());   // без onclick — так требует CSP
     d.showModal();
   });
 

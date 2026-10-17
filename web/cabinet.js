@@ -202,7 +202,7 @@
         <small${over ? ' style="color:var(--bad)"' : ""}>${new Date(x.next_ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</small></a>`;
     }).join("");
     put("wClients", `${head("users", "Клиенты", `<a class="g-link" href="/clients">Все клиенты →</a>`)}
-      ${c.total ? `<div class="wc-pipe cl">${c.stages.filter((s) => s.key !== "lost").map((s) => `<a class="wc-st" href="/clients"><b>${s.n}</b><span>${esc(s.label)}</span>
+      ${c.total ? `<div class="wc-pipe wc-cli">${c.stages.filter((s) => s.key !== "lost").map((s) => `<a class="wc-st" href="/clients"><b>${s.n}</b><span>${esc(s.label)}</span>
         <div class="wc-bar"><i style="--w:${Math.round(s.n / max * 100)}%;--c:${CL_C[s.key]}"></i></div></a>`).join("")}</div>
         ${nxt ? `<p class="wd-gt" style="margin-top:14px">Следующие шаги</p>${nxt}` : ""}`
         : `<p class="g-empty">Ведите покупателей и продавцов: этапы сделки, подобранные объекты, история и напоминания — в одном месте.</p>`}
@@ -214,7 +214,7 @@
   function crm() {
     const max = Math.max(1, ...dash.crm.map((s) => s.n));
     const total = dash.crm.reduce((a, s) => a + s.n, 0);
-    put("wCrm", `${head("briefcase", "Объекты в работе", `<a class="g-link" href="/work">Рабочий список →</a>`)}
+    put("wCrm", `${head("briefcase", "Избранное", `<a class="g-link" href="/work">Всё избранное →</a>`)}
       <div class="wc-pipe">${dash.crm.map((s) => `<a class="wc-st" href="/work?status=${s.key}"><b>${s.n}</b><span>${esc(s.label)}</span>
         <div class="wc-bar"><i style="--w:${Math.round(s.n / max * 100)}%;--c:${ST_COLOR[s.key]}"></i></div></a>`).join("")}</div>
       <div class="wc-foot"><span>В избранном: <b>${dash.favorites}</b></span><span>Со статусом: <b>${total}</b></span>
@@ -427,7 +427,7 @@
     const chips = [
       [c.plan_overdue, "alert", `просрочено: ${c.plan_overdue}`, "/planner", "hot"],
       [c.plan_today, "calendar", `дел сегодня: ${c.plan_today}`, "/planner", ""],
-      [c.work, "heart", `объектов в работе: ${c.work}`, "/work", ""],
+      [c.work, "heart", `в избранном: ${c.work}`, "/work", ""],
       [me.unread, "bell", `новых уведомлений: ${me.unread}`, "/notifications", ""],
       // акт 14.10: путь к отметке «Проверенный агент» — подтвердить свой номер
       [!me.phone_confirmed, "check", "Подтвердите свой номер — отметка «Проверенный агент» у ваших объявлений", "/my", ""],

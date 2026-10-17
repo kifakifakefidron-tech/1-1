@@ -59,7 +59,7 @@
   }
 
   // ─── кто сейчас на сайте (обновляется сам раз в 30 с, пока открыт «Обзор») ───
-  const PAGE_NAMES = { "/": "поиск", "/cabinet": "кабинет", "/planner": "планер", "/clients": "клиенты", "/work": "в работе",
+  const PAGE_NAMES = { "/": "поиск", "/cabinet": "кабинет", "/planner": "планер", "/clients": "клиенты", "/work": "избранное",
     "/my": "мои объекты", "/my/edit": "правка объекта", "/picks": "подборки", "/market": "аналитика", "/notifications": "уведомления",
     "/settings": "настройки", "/pay": "оплата", "/admin": "админка", "/learn": "обучение", "/fix": "разбор", "/how": "как это работает" };
   async function online() {
@@ -689,4 +689,16 @@
       adminLogin();
     }
   })();
+  // «Проверить почту»: тестовое письмо и ответ почтового сервера
+  document.addEventListener("submit", async (e) => {
+    if (e.target.id !== "mailTest") return;
+    e.preventDefault();
+    $("mailRes").textContent = "Отправляем…";
+    try {
+      const r = await call("/api/admin/mailtest", { to: $("mailTo").value });
+      $("mailRes").textContent = r.ok
+        ? `Отправлено от ${r.sender} через ${r.host}. Нет письма за 2 минуты — посмотрите «Спам» и «Промоакции»; если и там нет — получатель отклоняет письма с этого ящика (нужна почта на своём домене).`
+        : `Не отправилось: ${r.error || "ошибка"}`;
+    } catch (err) { $("mailRes").textContent = err.message; }
+  });
 })();

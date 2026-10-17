@@ -31,7 +31,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=42">
+<link rel="stylesheet" href="/static/glass.css?v=43">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -54,7 +54,7 @@
     <nav class="nav-links" aria-label="Разделы">
       <button type="button" class="nav-link on" data-tab="list">Объекты</button>
       <button type="button" class="nav-link" data-tab="map">Карта</button>
-      <button type="button" class="nav-link" data-tab="fav" id="favBtn">Избранное</button>
+      <a class="nav-link" href="/work" id="favBtn">Избранное</a>
       <button type="button" class="nav-cta" id="accountBtn">Войти</button>
     </nav>
   </div>
@@ -192,6 +192,7 @@
     </div>
     <div class="bar-tools">
       <button type="button" class="chip reset-chip" id="resetBtn" hidden>✕ Сбросить фильтры</button>
+      <button type="button" class="chip view-chip" id="viewChip" data-tab="map">Карта</button>
       <button type="button" class="chip" id="newTodayBtn" aria-pressed="false">Новое сегодня</button>
       <button type="button" class="chip" id="hotBtn" aria-pressed="false" title="Цена снизилась за неделю, ниже рынка или «срочно»">🔥 Горячее</button>
       <button type="button" class="chip" id="watchBtn" title="Пришлём письмо, когда появятся новые объекты по этому поиску">🔔 Следить</button>
@@ -225,21 +226,6 @@
 <div class="cmp-bar" id="cmpBar" hidden><span id="cmpText"></span>
   <button type="button" class="pill" id="cmpOpen">Сравнить</button>
   <button type="button" class="ghost" id="cmpClear" aria-label="Очистить сравнение">✕</button></div>
-
-<nav class="tabbar" aria-label="Разделы">
-  <button type="button" data-tab="list" class="on">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>
-    <span>Объекты</span></button>
-  <button type="button" data-tab="map">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
-    <span>Карта</span></button>
-  <button type="button" data-tab="fav">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7.5-4.6-9.2-9.4C1.6 7.2 4 4 7.3 4c2 0 3.6 1.2 4.7 2.8C13.1 5.2 14.7 4 16.7 4 20 4 22.4 7.2 21.2 10.6 19.5 15.4 12 20 12 20z"/></svg>
-    <span>Избранное</span><i class="tab-badge" id="favBadge" hidden></i></button>
-  <button type="button" data-tab="account">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>
-    <span id="tabAccount">Войти</span></button>
-</nav>
 
 <footer class="foot">
   <span>1+1 · поиск объектов Краснодара</span>
@@ -390,12 +376,12 @@
 <script src="/static/icons.js?v=6"></script>
 <script src="/static/pickers.js?v=10"></script>
 <script src="/static/max.js?v=2"></script>
-<script src="/static/rail.js?v=13"></script>
+<script src="/static/rail.js?v=15"></script>
 <script src="/static/combo.js?v=3"></script>
 <script src="/static/yasel.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/app.js?v=108"></script>
+<script src="/static/app.js?v=109"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>

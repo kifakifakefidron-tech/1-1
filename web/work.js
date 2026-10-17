@@ -94,7 +94,7 @@
     const photo = (o.photos || [])[0];
     const cls = o.clients.length ? PC[o.clients[0].status] || "sky" : "slate";
     return `<article class="wk-card c-${cls}${o.is_active ? "" : " gone"}${photo ? "" : " nophoto"}" data-id="${o.id}">
-      <a class="wk-photo" href="/?open=${o.id}">${photo ? `<img src="${esc(photo)}" alt="" loading="lazy">` : `<span>${ic("home")}<small>Фото у агента</small></span>`}
+      <a class="wk-photo" href="/?open=${o.id}">${photo ? `<img src="${esc(photo)}" alt="" loading="lazy">` : `<span class="ph-none"><img src="/static/favicon.svg" alt=""><small>Фото у агента</small></span>`}
         ${o.is_active ? "" : `<em class="wk-gone">Снят с сайта</em>`}
         ${d ? `<em class="wk-drop ${d < 0 ? "down" : "up"}">${ic(d < 0 ? "trend-down" : "trend")}${d < 0 ? "−" : "+"}${short(Math.abs(d))}</em>` : ""}</a>
       <div class="wk-body">
@@ -116,7 +116,7 @@
   function hiddenCard(o) {
     const photo = (o.photos || [])[0];
     return `<article class="wk-card c-slate gone" data-hid="${o.id}">
-      <a class="wk-photo" href="/?open=${o.id}">${photo ? `<img src="${esc(photo)}" alt="" loading="lazy">` : `<span>${ic("home")}<small>Фото у агента</small></span>`}
+      <a class="wk-photo" href="/?open=${o.id}">${photo ? `<img src="${esc(photo)}" alt="" loading="lazy">` : `<span class="ph-none"><img src="/static/favicon.svg" alt=""><small>Фото у агента</small></span>`}
         <em class="wk-gone">${esc(REASONS[o.reason] || "Скрыт")}</em></a>
       <div class="wk-body">
         <a class="wk-title" href="/?open=${o.id}">${esc(head(o))}</a>

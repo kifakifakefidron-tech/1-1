@@ -789,6 +789,21 @@ def api_admin_online(request: Request, body: dict | None = None):
     return JSONResponse(_online(db.get()))
 
 
+def api_admin_mailtest(request: Request, body: dict | None = None):
+    """Админ проверяет почту: письмо с тестовым кодом на любой адрес — и сразу видно, что ответил почтовый сервер."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    to = str((body or {}).get("to") or "").strip()[:120]
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", to):
+        return _err("Впишите адрес почты.")
+    if not mailer.available():
+        return JSONResponse({"ok": False, "error": "Почта не настроена: в .env нет SMTP_USER / SMTP_PASSWORD."})
+    ok = mailer.send_code(to, "123456")
+    return JSONResponse({"ok": ok, "sender": mailer.sender(), "host": config.SMTP_HOST,
+                         "error": None if ok else mailer.last_error.get("error")})
+
+
 def api_admin_overview(request: Request, body: dict | None = None):
     _, err = _need_admin(request)
     if err:
@@ -1906,7 +1921,7 @@ def api_admin_phone_ban(request: Request, body: dict | None = None):
         ingest.unban_phone(conn, str(body.get("phone") or ""))
         res = {"ok": True}
     else:
-        res = ingest.ban_phone(conn, str(body.get("phone") or ""))
+        res = ingest.ban_phone(conn, str(body.get("phone") or ""), block=body.get("action") != "delete")
         if "error" in res:
             return _err(res["error"])
     _bump_cache()
@@ -2363,6 +2378,7 @@ routes = [
     Route("/pay", threaded(pay_page)),
     Route("/api/payments/yookassa", threaded(api_yookassa), methods=["POST"]),
     Route("/api/admin/overview", threaded(api_admin_overview)),
+    Route("/api/admin/mailtest", threaded(api_admin_mailtest), methods=["POST"]),
     Route("/api/admin/online", threaded(api_admin_online)),
     Route("/api/ping", threaded(api_ping), methods=["POST"]),
     Route("/api/admin/stats", threaded(api_admin_stats)),
@@ -2444,4 +2460,34 @@ async def _server_error(request: Request, exc: Exception):
                 f"пришлите скриншот.", 500)
 
 
-app = Starlette(routes=routes, exception_handlers={404: _not_found, Exception: _server_error})
+# Защита браузера от чужих скриптов (CSP): код страниц — только с сайта и двух проверенных CDN; встроенных
+# обработчиков onclick и eval нет. Стили inline разрешены (style="…" в разметке), картинки — с любых https (фото фида).
+CSP = ("default-src 'self'; "
+       "script-src 'self' https://cdnjs.cloudflare.com https://unpkg.com; "
+       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://unpkg.com; "
+       "font-src 'self' data: https://fonts.gstatic.com; "
+       "img-src 'self' data: blob: https:; "
+       "connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; worker-src 'self'; manifest-src 'self'; "
+       "object-src 'none'; base-uri 'self'; form-action 'self'")
+
+
+class _CSP:
+    """Добавляет заголовок CSP ко всем ответам сайта."""
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.inner(scope, receive, send)
+
+        async def send2(msg):
+            if msg["type"] == "http.response.start":
+                headers = [h for h in msg.get("headers", []) if h[0].lower() != b"content-security-policy"]
+                headers.append((b"content-security-policy", CSP.encode()))
+                msg = {**msg, "headers": headers}
+            await send(msg)
+        return await self.inner(scope, receive, send2)
+
+
+app = _CSP(Starlette(routes=routes, exception_handlers={404: _not_found, Exception: _server_error}))
