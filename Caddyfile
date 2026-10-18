@@ -25,7 +25,7 @@
 		header Cache-Control "public, max-age=31536000, immutable"
 		file_server
 	}
-	@photo path_regexp photo ^/photos/[0-9]+/[0-9a-f]{16}\.(jpg|png|webp)$
+	@photo path_regexp photo ^/photos/([0-9]+|pk)/[0-9a-f]{16}\.(jpg|png|webp)$
 	handle @photo {
 		root * /srv/data
 		header Cache-Control "public, max-age=31536000, immutable"
@@ -58,14 +58,14 @@
 		X-Robots-Tag "noindex"
 		-Server
 	}
-	@pickStatic path /static/style.css /static/motion.css /static/theme.css /static/glass.css /static/pick.css /static/pick.js /static/icons.js /static/icons.svg /static/pickers.js /static/max.js /static/house.svg
+	@pickStatic path /static/style.css /static/motion.css /static/theme.css /static/glass.css /static/pick.css /static/pick.js /static/icons.js /static/icons.svg /static/pickers.js /static/max.js /static/house.svg /static/cookies.js
 	handle @pickStatic {
 		uri strip_prefix /static
 		root * /srv/web
 		header Cache-Control "public, max-age=31536000, immutable"
 		file_server
 	}
-	@photo path_regexp photo ^/photos/[0-9]+/[0-9a-f]{16}\.(jpg|png|webp)$
+	@photo path_regexp photo ^/photos/([0-9]+|pk)/[0-9a-f]{16}\.(jpg|png|webp)$
 	handle @photo {
 		root * /srv/data
 		header Cache-Control "public, max-age=31536000, immutable"
