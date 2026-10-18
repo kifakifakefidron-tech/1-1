@@ -987,7 +987,7 @@
         <button type="button" data-photo-del="${esc(u)}" data-id="${o.id}" aria-label="Удалить фото" title="Удалить фото">${ic("trash")}</button></span>`).join("")}</div>` : "";
     const adminBody = admin ? `${adminPhotos}<div class="dv-edhist"><button type="button" class="chip" data-hist-load="${o.id}">${ic("history")}История правок: что, кем, когда</button>
         <div class="dv-ed-list" id="dvEd${o.id}"></div></div><div class="dv-admin">
-        <button type="button" class="chip" data-place-edit="${o.id}">✎ ЖК, район и цена${o.admin_fixed ? " ✓" : ""}</button>
+        <button type="button" class="chip" data-place-edit="${o.id}">✎ Все характеристики${o.admin_fixed ? " ✓" : ""}</button>
         <button type="button" class="chip" data-geo-edit="${o.id}">📍 Точка на карте</button>
         <button type="button" class="chip" data-admin-act="deal" data-deal="${o.deal === "rent" ? "sale" : "rent"}" data-id="${o.id}">⇄ ${o.deal === "rent" ? "В продажу" : "В аренду"}</button>
         <button type="button" class="chip danger" data-admin-act="delete" data-id="${o.id}">🗑 Удалить навсегда</button>
@@ -1301,6 +1301,11 @@
     $("placePriceLabel").textContent = rent ? "Цена, тыс. ₽/мес (если разобралась неверно)" : "Цена, млн ₽ (если разобралась неверно)";
     f.price.value = o.price ? String(+(o.price / (rent ? 1000 : 1e6)).toFixed(rent ? 0 : 3)).replace(".", ",") : "";
     f.price.dataset.orig = f.price.value;
+    // 18.10: все характеристики — в этом же окне
+    const FV = { type: o.type === "new" ? "flat" : o.type, deal: o.deal || "sale", rooms: o.rooms == null ? "" : String(Math.min(o.rooms, 5)),
+      room_kind: o.room_kind || "", area: o.area ?? "", land: o.land ?? "", floor: o.floor ?? "", floors: o.floors ?? "",
+      street: o.street || "", house: o.house || "", settlement: o.settlement || "", repair: o.repair || "none" };
+    for (const [k, v] of Object.entries(FV)) { const el = f[`f_${k}`]; if (el) { el.value = String(v).replace(".", ","); el.dataset.orig = el.value; } }
     $("placeInfo").textContent = [o.title, address(o)].filter(Boolean).join(" · ");
     $("placeYa").href = `https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(yaQuery(o))}`;
     $("placeSkip").hidden = !placeQueue;
@@ -1331,6 +1336,9 @@
     ["addr", "alias", "cx_district", "street"].forEach((k) => { if (f[`learn_${k}`] && f[`learn_${k}`].checked) learn[k] = true; });
     const body = { complex: f.complex.value, district: f.district.value, learn };
     if (f.price.value.trim() && f.price.value !== f.price.dataset.orig) body.price = f.price.value;
+    const fields = {};
+    f.querySelectorAll("[name^='f_']").forEach((el) => { if (el.value !== el.dataset.orig) fields[el.name.slice(2)] = el.value; });
+    if (Object.keys(fields).length) body.fields = fields;
     const r = await call(`/api/admin/listings/${placeId}/place`, body);
     if (!r.ok) { toast(r.data.detail || "Не получилось сохранить"); return; }
     const o = known.get(placeId);

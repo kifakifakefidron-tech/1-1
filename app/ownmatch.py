@@ -186,6 +186,17 @@ def run(conn: sqlite3.Connection, now: int | None = None) -> dict:
                                       AND COALESCE(owner_user_id, 0) = 0""").fetchall() if is_own(r["phones"], r["phone_roles"])]
     feed = conn.execute("SELECT * FROM listings WHERE source = 'feed' AND is_active = 1").fetchall()
     to_feed, merged, nopair, ex = 0, 0, 0, []
+    # 18.10: и старые копии, уже ушедшие в архив (были «Снятые» в «Мои объекты»), — привязать к карточке с сайта
+    # (в архиве и останутся, но с пометкой 'strely': не показываются как отдельный объект и не вернутся дублем)
+    for a in conn.execute("""SELECT * FROM listings WHERE source = 'chat' AND is_active = 0 AND hidden_reason IS NULL
+                             AND COALESCE(owner_user_id, 0) = 0""").fetchall():
+        if not is_own(a["phones"], a["phone_roles"]):
+            continue
+        fid = best(feed, a) or (best(feed, a, loose) if photo_post(conn, a) else None)
+        if fid:
+            _move(conn, a["id"], fid)
+            conn.execute("UPDATE listings SET hidden_reason = 'strely' WHERE id = ?", (a["id"],))
+            to_feed += 1
     rest = []
     for a in own:
         pp = photo_post(conn, a)

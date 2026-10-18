@@ -143,8 +143,16 @@
           <button type="button" class="chip danger" data-ban-phone="${esc(p)}">🚫 Никогда не добавлять на сайт объявления от ${esc(p)}<small>удалит всё от номера и не будет принимать новое</small></button>`).join("")}</div></details>`;
     const rent = it.deal === "rent";
     $("fxPriceLabel").textContent = rent ? "Цена, тыс. ₽/мес" : "Цена, млн ₽";
-    $("fxPrice").value = it.price ? String(+(it.price / (rent ? 1000 : 1e6)).toFixed(rent ? 0 : 3)).replace(".", ",") : "";
-    $("fxPrice").dataset.orig = $("fxPrice").value;
+    $("fxPriceIn").value = it.price ? String(+(it.price / (rent ? 1000 : 1e6)).toFixed(rent ? 0 : 3)).replace(".", ",") : "";
+    $("fxPriceIn").dataset.orig = $("fxPriceIn").value;
+    // 18.10: все характеристики — здесь же
+    const FV = { type: it.type === "new" ? "flat" : it.type, deal: it.deal || "sale", rooms: it.rooms == null ? "" : String(Math.min(it.rooms, 5)),
+      room_kind: it.room_kind || "", area: it.area ?? "", land: it.land ?? "", floor: it.floor ?? "", floors: it.floors ?? "",
+      street: it.street || "", house: it.house || "", settlement: it.settlement || "", repair: it.repair || "none" };
+    for (const [k, v] of Object.entries(FV)) {
+      const el = document.querySelector(`#fxFields [name="f_${k}"]`);
+      if (el) { el.value = String(v).replace(".", ","); el.dataset.orig = el.value; }
+    }
     $("fxPlace").hidden = false;
     $("fxHide").hidden = mode !== "geo";
     const needMap = mode === "geo" || kind === "conflict" || !it.lat || it.geo_status === "approx";
@@ -359,15 +367,19 @@
     let r, groupSent = false;
     const learnedAll = [];
     let applied = 0;
-    const priceChanged = !!$("fxPrice").value.trim() && $("fxPrice").value !== $("fxPrice").dataset.orig;
+    const priceChanged = !!$("fxPriceIn").value.trim() && $("fxPriceIn").value !== $("fxPriceIn").dataset.orig;
+    const fields = {};
+    document.querySelectorAll("#fxFields [name^='f_']").forEach((el) => { if (el.value !== el.dataset.orig) fields[el.name.slice(2)] = el.value; });
+    const fieldsChanged = Object.keys(fields).length > 0;
     const placeChanged = (chosenDistrict || null) !== (item.district || null) || $("fxComplex").value.trim() !== (item.complex || "")
-      || extraDistricts.join("|") !== (item.extra_districts || []).join("|") || priceChanged;
+      || extraDistricts.join("|") !== (item.extra_districts || []).join("|") || priceChanged || fieldsChanged;
     // 1) район / ЖК / цена — в очередях района всегда (это подтверждение), в очередях карты — если меняли
     if (!extra && (mode === "place" || placeChanged)) {
       const learn = {};
       if (placeChanged) document.querySelectorAll("#fxLearn input").forEach((i) => { if (i.checked) learn[i.name] = true; });
       const body = { complex: $("fxComplex").value, district: chosenDistrict || "", extra: extraDistricts, learn };
-      if (priceChanged) body.price = $("fxPrice").value;
+      if (priceChanged) body.price = $("fxPriceIn").value;
+      if (fieldsChanged) body.fields = fields;
       if (mode === "place" && group && $("fxGroupAll") && $("fxGroupAll").checked) {
         groupSent = true;
         body.group_ids = group.ids.filter((id) => id !== item.id);

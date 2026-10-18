@@ -371,6 +371,7 @@ MIGRATIONS = [
     ("collection_items", "photos", "TEXT"),
     ("listings", "repair", "TEXT"),
     ("listings", "added_at", "INTEGER"),
+    ("listings", "admin_fields", "TEXT"),   # 18.10: характеристики, поправленные админом (JSON) — повторы их не перетирают
     ("phone_codes", "method", "TEXT"),       # 17.10: NULL/'max' — код в MAX, 'call' — звонок (SMS.ru callcheck)
     ("phone_codes", "check_id", "TEXT"),
     ("phone_codes", "call_phone", "TEXT"),

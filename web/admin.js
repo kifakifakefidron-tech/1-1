@@ -58,6 +58,17 @@
       (каждую правку можно откатить в окне объекта → «История правок»)</summary><ul>${o.price_report.examples.map((e) =>
         `<li><a href="/?open=${e.id}" target="_blank">${esc(e.title)}</a> — было ${esc(Number(e.before).toLocaleString("ru-RU"))} ₽,
         стало ${esc(Number(e.after).toLocaleString("ru-RU"))} ₽ (${e.why === "text" ? "цена из текста объявления" : "цена была в тысячах"})</li>`).join("")}</ul></details>` : "");
+    if (o.billing) {   // 18.10: оплаты сервисов — напоминание за 2 дня и в день оплаты (колокольчик + письмо)
+      const d = (ts) => (ts ? new Date(ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }) : "—");
+      $("overview").insertAdjacentHTML("beforeend", `<details class="adm-p0 adm-bill" open><summary>Оплаты сервисов — напомню за 2 дня до срока</summary>
+        <table class="adm-bill-t"><tr><th>Сервис</th><th>Оплачен</th><th>Следующая</th><th></th></tr>${o.billing.map((s) => `<tr class="${s.left == null || s.left <= 2 ? "due" : ""}">
+          <td><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.name)}</a><small>каждые ${s.period} дн.</small></td>
+          <td>${d(s.paid)}</td><td>${s.due ? `${d(s.due)}${s.left < 0 ? ` <b class="bad">просрочено ${-s.left} дн.</b>` : s.left <= 2 ? ` <b class="bad">через ${s.left} дн.</b>` : ""}` : "<b class='bad'>отметьте дату</b>"}</td>
+          <td><button type="button" class="chip" data-bill="${esc(s.key)}">Оплатил сегодня</button></td></tr>`).join("")}</table></details>`);
+    }
+    if (o.llm_on != null) {
+      $("overview").insertAdjacentHTML("beforeend", `<p class="note">Нейросеть DeepSeek: <b class="${o.llm_on ? "" : "bad"}">${o.llm_on ? "включена — новые сообщения разбирает она + правила" : "ВЫКЛЮЧЕНА — разбор только правилами (нет DEEPSEEK_API_KEY в .env)"}</b>${o.rules_fix ? ` · исправлено по новым правилам: ${Object.entries(o.rules_fix).map(([k, v]) => `${esc(k)} — ${v}`).join(", ")}` : ""}${o.rent_leak && o.rent_leak.moved ? ` · из аренды в продажу (продажа рядом с «сдам +КУ» в одном сообщении): <b>${o.rent_leak.moved}</b> — ${o.rent_leak.examples.slice(0, 5).map(e => `<a href="/?open=${e.id}" target="_blank">${esc(e.title || "#" + e.id)}</a>`).join(", ")}` : ""}</p>`);
+    }
     if (o.own_match) {   // 18.10: свои объекты — одна карточка
       const m = o.own_match;
       $("overview").insertAdjacentHTML("beforeend", `<details class="adm-p0"><summary>Ваши объекты (номер СТРЕЛ): копий из чатов приклеено к сайту —
@@ -520,6 +531,12 @@
         <td>${day(o.ts)}</td><td class="acts"><button data-unban="${o.id}">Восстановить</button></td></tr>`).join("")}</tbody>`
       : `<tr><td class="note">Пока ничего не удалено. Удалить объект — в его окне: «⚙ Админ» → «🗑 Удалить навсегда».</td></tr>`;
   }
+  document.addEventListener("click", async (e) => {   // 18.10: «Оплатил сегодня» — следующее напоминание через период
+    const b = e.target.closest("[data-bill]");
+    if (!b) return;
+    b.disabled = true;
+    try { await call("/api/admin/billing", { key: b.dataset.bill }); b.textContent = "Отмечено ✓"; overview(); } catch (err) { fail(err); b.disabled = false; }
+  });
   document.addEventListener("click", async (e) => {
     const p = e.target.closest("[data-unban-phone]");
     if (p) { try { await call("/api/admin/phones/ban", { phone: p.dataset.unbanPhone, action: "unban" }); banned(); } catch (err) { fail(err); } return; }

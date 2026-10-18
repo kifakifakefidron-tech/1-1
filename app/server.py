@@ -891,6 +891,18 @@ def api_admin_online(request: Request, body: dict | None = None):
     return JSONResponse(_online(db.get()))
 
 
+def api_admin_billing(request: Request, body: dict | None = None):
+    """18.10: «Оплатил» — {key, period?} → следующее напоминание через период."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    from . import billing
+    body = body or {}
+    if not billing.mark_paid(db.get(), str(body.get("key", "")), _num(body.get("period"), int)):
+        return _err("Нет такого сервиса.")
+    return JSONResponse({"ok": True, "items": billing.status(db.get())})
+
+
 def api_admin_mailtest(request: Request, body: dict | None = None):
     """Админ проверяет почту: письмо с тестовым кодом на любой адрес — и сразу видно, что ответил почтовый сервер."""
     _, err = _need_admin(request)
@@ -918,6 +930,10 @@ def api_admin_overview(request: Request, body: dict | None = None):
         "listings": one(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE}"),
         "life": __import__("app.lifecheck", fromlist=["report"]).report(conn, now),
         "own_match": json.loads(db.get_state(conn, "own_match_report") or "null"),
+        "billing": __import__("app.billing", fromlist=["status"]).status(conn, now),
+        "rules_fix": json.loads(db.get_state(conn, "rules_fix_report") or "null"),
+        "rent_leak": json.loads(db.get_state(conn, "rent_leak_report") or "null"),
+        "llm_on": __import__("app.llm", fromlist=["available"]).available(),
         # 17.10: фильтр «Ремонт» — сколько объектов разобрано (квартиры и дома на сайте)
         "repair": {k: one(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE} AND l.type IN ('flat','new','house','room') AND {cond}")
                    for k, cond in (("yes", "l.repair = 'yes'"), ("no", "l.repair = 'no'"), ("none", "l.repair IS NULL"))},
@@ -1778,9 +1794,17 @@ def api_admin_place(request: Request, body: dict | None = None):
         _reindex(conn, gid, gd["search_text"])
         applied += 1
     conn.commit()
+    changed = {}
+    if body.get("fields"):   # 18.10: все характеристики в одном окне (тип, комнаты, площадь, этаж, адрес, ремонт…)
+        res = ingest.set_fields(conn, lid, body["fields"], user["id"])
+        if "error" in res:
+            return _err(res["error"])
+        changed = res["changed"]
+        if changed:
+            learned = learned + ["характеристики: " + ", ".join(ingest.FIELD_SPEC[k][1] for k in changed)]
     price = conn.execute("SELECT price FROM listings WHERE id = ?", (lid,)).fetchone()[0]
     return JSONResponse({"ok": True, "complex": cx, "district": district, "extra": extra, "learned": learned, "skipped": skipped,
-                         "applied": applied, "price": price})
+                         "applied": applied, "price": price, "changed": changed})
 
 
 _PLACE_QUEUE = {
@@ -1821,7 +1845,7 @@ def _fix_item(conn, lid: int) -> dict | None:
     photos = json.loads(r["photos"] or "[]")
     return {k: r[k] for k in ("id", "title", "price", "deal", "type", "rooms", "area", "floor", "floors", "complex",
                               "district", "street", "house", "settlement", "lat", "lon", "geo_status", "admin_fixed",
-                              "source")} | {
+                              "source", "room_kind", "repair")} | {
         "text": text, "photo": photos[0] if photos else None, "photos": photos[:12], "land": r["land"],
         "phones": json.loads(r["phones"] or "[]"),
         "extra_districts": json.loads(r["extra_districts"] or "[]"),
@@ -2548,6 +2572,7 @@ routes = [
     Route("/api/payments/yookassa", threaded(api_yookassa), methods=["POST"]),
     Route("/api/admin/overview", threaded(api_admin_overview)),
     Route("/api/admin/mailtest", threaded(api_admin_mailtest), methods=["POST"]),
+    Route("/api/admin/billing", threaded(api_admin_billing), methods=["POST"]),
     Route("/api/admin/online", threaded(api_admin_online)),
     Route("/api/ping", threaded(api_ping), methods=["POST"]),
     Route("/api/admin/stats", threaded(api_admin_stats)),

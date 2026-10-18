@@ -74,10 +74,12 @@ def _reindex(conn: sqlite3.Connection, listing_id: int, text: str) -> None:
     conn.execute("DELETE FROM listings_fts WHERE rowid = ?", (listing_id,))
     conn.execute("INSERT INTO listings_fts(rowid, search_text) VALUES (?, ?)", (listing_id, text))
     # состояние «с ремонтом / без ремонта» — по тому же тексту (фильтр «Ремонт»)
-    conn.execute("UPDATE listings SET repair = ? WHERE id = ?", (rules.detect_repair(text), listing_id))
+    conn.execute("""UPDATE listings SET repair = CASE WHEN json_type(admin_fields, '$.repair') IS NOT NULL
+                    THEN NULLIF(json_extract(admin_fields, '$.repair'), '') ELSE ? END WHERE id = ?""",
+                 (rules.detect_repair(text), listing_id))   # ремонт, поправленный админом, не пересчитываем
 
 
-REPAIR_V = "3"
+REPAIR_V = "4"
 
 
 def backfill_repair(conn: sqlite3.Connection) -> int:
@@ -176,6 +178,9 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
                   "street", "house", "article"):
             if merged.get(k) in (None, "") and d.get(k) not in (None, ""):
                 merged[k] = d[k]
+        for k, v in json.loads(cur_d.get("admin_fields") or "{}").items():   # поправленное админом — главнее повтора
+            if k in merged and k != "repair":
+                merged[k] = v
         # Карточкой управляет агент (кабинет): его цену меняет только более свежий пост, описание не трогаем
         owned = bool(cur_d.get("owner_user_id"))
         new_price = False
@@ -361,12 +366,16 @@ def process_pending(conn: sqlite3.Connection, limit: int = 200, use_llm: bool | 
 
 
 def learned_fix(conn: sqlite3.Connection, fh: str, d: dict) -> None:
-    for kind, val in conn.execute("SELECT kind, value FROM learned_rules WHERE kind IN ('frag_price', 'frag_deal') AND key = ?", (fh,)):
+    for kind, val in conn.execute("SELECT kind, value FROM learned_rules WHERE kind IN ('frag_price', 'frag_deal', 'frag_fields') AND key = ?", (fh,)):
         v = json.loads(val)
         if kind == "frag_price" and v.get("price"):
             d["price"] = int(v["price"])
         elif kind == "frag_deal" and v.get("deal") in ("sale", "rent"):
             d["deal"] = v["deal"]
+        elif kind == "frag_fields":   # 18.10: этот текст админ уже поправлял (тип, комнаты, площадь, этаж, адрес…)
+            for k, x in v.items():
+                if k in FIELD_SPEC and k != "repair":
+                    d[k] = x
 
 
 def learn_listing_fix(conn: sqlite3.Connection, listing_id: int, kind: str, value: dict, label: str) -> int:
@@ -380,6 +389,92 @@ def learn_listing_fix(conn: sqlite3.Connection, listing_id: int, kind: str, valu
                      (kind, h, json.dumps(value, ensure_ascii=False), label, now))
     conn.commit()
     return len(hashes)
+
+
+# 18.10 (Артём: «возможность изменения админом всех характеристик в одном месте — много ошибок»): поле → проверка значения
+def _f(lo, hi, cast=float):
+    def v(x):
+        if x in (None, ""):
+            return None
+        try:
+            x = cast(str(x).replace(",", ".").replace(" ", ""))
+        except ValueError:
+            raise ValueError("число") from None
+        if not lo <= x <= hi:
+            raise ValueError(f"от {lo} до {hi}")
+        return x
+    return v
+
+
+def _s(n):
+    return lambda x: (str(x).strip()[:n] or None) if x not in (None, "") else None
+
+
+def _choice(*opts):
+    def v(x):
+        if x in (None, ""):
+            return None
+        if x not in opts:
+            raise ValueError("выберите из списка")
+        return x
+    return v
+
+
+FIELD_SPEC = {
+    "type": (_choice(*TYPE_LABELS.keys()), "тип"), "deal": (_choice("sale", "rent"), "сделка"),
+    "rooms": (_f(0, 9, int), "комнаты"), "room_kind": (_choice("studio", "classic", "euro", "mini"), "планировка"),
+    "area": (_f(5, 20000), "площадь"), "land": (_f(0.1, 100000), "участок"),
+    "floor": (_f(1, 99, int), "этаж"), "floors": (_f(1, 99, int), "этажность"),
+    "street": (_s(120), "улица"), "house": (_s(20), "дом"), "settlement": (_s(80), "населённый пункт"),
+    "repair": (_choice("yes", "no", "none"), "ремонт"),
+}
+
+
+def set_fields(conn: sqlite3.Connection, listing_id: int, fields: dict, user_id: int | None = None) -> dict:
+    """Админ поправил характеристики объекта. Сохраняем, пишем в журнал, запоминаем: повторы этого объявления
+    не перетирают (listings.admin_fields), а тот же текст в других сообщениях сразу приходит верным (frag_fields)."""
+    r = conn.execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
+    if r is None:
+        return {"error": "не найдено"}
+    ch = {}
+    for k, raw in (fields or {}).items():
+        if k not in FIELD_SPEC:
+            continue
+        try:
+            val = FIELD_SPEC[k][0](raw)
+        except ValueError as e:
+            return {"error": f"{FIELD_SPEC[k][1].capitalize()}: {e}"}
+        cur = r["repair"] if k == "repair" else r[k]
+        if k == "repair":
+            val = None if val in (None, "none") else val
+        if val != cur:
+            ch[k] = val
+    if not ch:
+        return {"ok": True, "changed": {}}
+    d = dict(r) | ch
+    sets = {k: v for k, v in ch.items() if k != "repair"}
+    sets["title"] = make_title(d)
+    sets["price_m2"] = _price_m2(d["price"], d["area"])
+    sets["rooms_mask"] = rooms_mask(d.get("room_kind"), d.get("rooms"))
+    adm = json.loads(r["admin_fields"] or "{}")
+    adm.update({k: ("" if (k == "repair" and v is None) else v) for k, v in ch.items()})
+    sets["admin_fields"] = json.dumps(adm, ensure_ascii=False)
+    sets["admin_fixed"] = 1
+    if "street" in ch or "house" in ch:
+        sets["geo_status"] = r["geo_status"] if r["geo_status"] in ("manual", "feed") else "pending"   # новый адрес — искать точку заново
+    conn.execute(f"UPDATE listings SET {', '.join(f'{k} = ?' for k in sets)} WHERE id = ?", (*sets.values(), listing_id))
+    now = int(time.time())
+    for k, v in ch.items():
+        conn.execute("INSERT INTO listing_edits (listing_id, user_id, ts, field, old, new, src) VALUES (?,?,?,?,?,?, 'админ')",
+                     (listing_id, user_id or 0, now, k, json.dumps(r["repair"] if k == "repair" else r[k], ensure_ascii=False),
+                      json.dumps(v, ensure_ascii=False)))
+    st = make_search_text(d)
+    conn.execute("UPDATE listings SET search_text = ? WHERE id = ?", (st, listing_id))
+    _reindex(conn, listing_id, st)
+    learn_listing_fix(conn, listing_id, "frag_fields", {k: v for k, v in adm.items() if k != "repair"},
+                      "характеристики: " + ", ".join(FIELD_SPEC[k][1] for k in ch))
+    conn.commit()
+    return {"ok": True, "changed": ch}
 
 
 def set_price(conn: sqlite3.Connection, listing_id: int, price: int, user_id: int | None = None) -> dict:
@@ -520,6 +615,36 @@ def fix_rent_rule(conn: sqlite3.Connection) -> dict:
     return {"to_sale": to_sale, "hidden": hidden}
 
 
+def fix_rent_leak(conn: sqlite3.Connection) -> dict:
+    """18.10 (Артём: «в аренду постоянно попадают продажи — «11699т.р» это цена продажи»): в портянке «сдам … +КУ» у
+    одного объекта делал арендой все объекты сообщения. Один раз: аренда из чатов, у которой в СВОЁМ куске текста явная
+    продажа («#продам», «в ДКП», ипотека, задаток, цена от 1,5 млн) и нет «сдам/аренда», — обратно в продажу (с журналом)."""
+    from . import db
+    moved, ex = 0, []
+    for r in conn.execute("""SELECT * FROM listings WHERE deal = 'rent' AND deal_fixed = 0 AND COALESCE(admin_fixed, 0) = 0
+                             AND source = 'chat'""").fetchall():
+        frag = r["fragment"] or r["description"] or ""
+        if not frag or rules.has_rent_words(frag) or not rules.sale_markers(frag, r["type"]):
+            continue
+        row = dict(r)
+        row["deal"] = "sale"
+        price = r["price"]
+        p = rules.extract_price(frag)
+        if p and p >= 300_000:
+            price = row["price"] = p
+        row["title"] = make_title(row)
+        conn.execute("UPDATE listings SET deal = 'sale', price = ?, title = ? WHERE id = ?", (price, row["title"], r["id"]))
+        conn.execute("""INSERT INTO listing_edits (listing_id, user_id, ts, field, old, new, src)
+                        VALUES (?, 0, ?, 'deal', 'rent', 'sale', 'проверка аренды')""", (r["id"], int(time.time())))
+        moved += 1
+        if len(ex) < 30:
+            ex.append({"id": r["id"], "title": row["title"]})
+    conn.commit()
+    rep = {"moved": moved, "examples": ex, "ts": int(time.time())}
+    db.set_state(conn, "rent_leak_report", json.dumps(rep, ensure_ascii=False))
+    return rep
+
+
 def archive_stale(conn: sqlite3.Connection, now: int | None = None) -> int:
     now = int(now or time.time())
     # Объекты фида СТРЕЛ не устаревают сами — их снимает сам фид
@@ -575,3 +700,60 @@ def life_fix(conn: sqlite3.Connection, now: int | None = None) -> dict | None:
     conn.commit()
     log.info("Жизнь объектов: вернули на сайт %s, отметили день появления %s", back, stamped)
     return rep
+
+
+RULES_FIX_V = "1"
+
+
+def rules_fix(conn: sqlite3.Connection) -> dict | None:
+    """18.10 (аудит Артёма по скриншотам): один раз (state rules_fix) поправить уже сохранённые объекты по новым правилам —
+    «35,6/11/16» (площадь/этаж/этажность), «1/3 часть дома» — не этаж, «Е-2 КВ» — евро-2, «Обр Сбербанка 1,7 млн» — не цена
+    («Всего 6,1 млн» — цена), лишний перенос строки в номере дома. Правленое админом/агентом не трогаем; каждая правка —
+    в журнал (listing_edits, src «проверка разбора», можно откатить)."""
+    import re
+    from . import db
+    if db.get_state(conn, "rules_fix") == RULES_FIX_V:
+        return None
+    now, n = int(time.time()), {}
+    rows = conn.execute("""SELECT * FROM listings WHERE source = 'chat' AND COALESCE(admin_fixed, 0) = 0
+                           AND COALESCE(owner_user_id, 0) = 0 AND fragment IS NOT NULL""").fetchall()
+    for r in rows:
+        frag, ch = rules.normalize_digits(r["fragment"]), {}
+        af = rules.area_floor(frag)
+        if af and (r["area"] is None or r["floor"] is None or (r["floor"], r["floors"]) != (af[1], af[2])):
+            ch.update(area=af[0], floor=af[1], floors=af[2])
+        if r["house"] and r["house"] != r["house"].strip():
+            ch["house"] = r["house"].strip()
+        if r["floor"] and r["floors"] and re.search(rf"(?<!\d){r['floor']}\s*/\s*{r['floors']}\s*(?:част|дол)", frag, re.I):
+            ch.update(floor=None, floors=None)
+        if r["room_kind"] == "classic" and re.search(r"(?<![а-яё])е\s*-\s*[1-6]\s*(?:кв|к\b|ккв)", frag.lower()):
+            ch["room_kind"] = "euro"
+        cols = r.keys()
+        price_locked = ("price_fixed" in cols and r["price_fixed"])
+        if not price_locked and re.search(r"(?i)\bобр\b|\bвсего\b|\bитого\b", frag):
+            p = rules.extract_price(frag, r["deal"] or "sale")
+            if p and r["price"] and p != r["price"]:
+                ch["price"] = p
+        if not ch:
+            continue
+        d = dict(r) | ch
+        ch["title"] = make_title(d)
+        sets = dict(ch)
+        if "price" in ch or "area" in ch:
+            sets["price_m2"] = _price_m2(d["price"], d["area"])
+        if "room_kind" in ch:
+            sets["rooms_mask"] = rooms_mask(d["room_kind"], d["rooms"])
+        conn.execute(f"UPDATE listings SET {', '.join(f'{k} = ?' for k in sets)} WHERE id = ?", (*sets.values(), r["id"]))
+        for k in ch:
+            if k == "title":
+                continue
+            conn.execute("INSERT INTO listing_edits (listing_id, user_id, ts, field, old, new, src) VALUES (?,0,?,?,?,?, 'проверка разбора')",
+                         (r["id"], now, k, json.dumps(r[k], ensure_ascii=False), json.dumps(ch[k], ensure_ascii=False)))
+            n[k] = n.get(k, 0) + 1
+        st = make_search_text(d)
+        conn.execute("UPDATE listings SET search_text = ? WHERE id = ?", (st, r["id"]))
+        _reindex(conn, r["id"], st)
+    db.set_state(conn, "rules_fix", RULES_FIX_V)
+    db.set_state(conn, "rules_fix_report", json.dumps(n, ensure_ascii=False))
+    conn.commit()
+    return n
