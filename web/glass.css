@@ -1080,3 +1080,7 @@ dialog.login-dlg { width: min(940px, calc(100vw - 32px)); max-width: none; max-h
 .adm-fgrid .agent-field { margin: 0; min-width: 0; }
 .adm-fgrid input, .adm-fgrid select { width: 100%; box-sizing: border-box; }
 @media (min-width: 700px) { #placeDlg { width: min(720px, calc(100vw - 32px)); } .adm-fgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* 18.10: карта в окне «Все характеристики» */
+.adm-map .geo-find { margin: 6px 0; }
+.adm-geo-map { height: min(42vh, 340px); margin: 6px 0 0; }
