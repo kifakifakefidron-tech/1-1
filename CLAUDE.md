@@ -716,6 +716,11 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   мышь — после 6 px, палец — удержание 0,3 с (touchmove preventDefault), соседи расступаются (FLIP); × у своего — удалить, у фото
   объявления — скрыть («Скрыто от клиента» — вернуть). collection_items.photo_order {order, hidden}; picks.ordered_photos (новые — в
   конец), item_photo(order|hide|unhide), POST /api/picks/{id}/items {photo_order|photo_hide|photo_unhide}; public отдаёт этот порядок.
+- 18.10 (ветка perf-1): после возобновления Wappi поток 1–3 тыс. сообщений за проход, worker держит одно ядро на 100 %,
+  проход 10–13 мин, очередь растёт. В журнал цикла добавлено «долго»: шаги дольше 2 с (worker._Laps: секунды и процессорное
+  время по шагам wappi / разбор / фото / самообучение / геокодер / уведомления / виджеты / фид / уборка / разовые задачи).
+  На копии базы ×7 (5,6 тыс. объектов) разбор 200 сообщений — 9,5 с, самообучение — 4 с: медленное место — только на живых данных.
+  Репост (тот же текст) возвращает на сайт только ушедшее в архив по сроку (hidden_reason IS NULL), а не скрытое по причине.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

@@ -123,3 +123,17 @@ def test_archived_own_copy_tied_to_site_card():
     r = conn.execute("SELECT is_active, hidden_reason FROM listings WHERE source = 'chat'").fetchone()
     assert (r[0], r[1]) == (0, "strely")
     assert conn.execute("SELECT seen_count FROM listings WHERE id = ?", (fid,)).fetchone()[0] == 3
+
+
+def test_repost_does_not_revive_hidden_copy():
+    conn = db.connect(":memory:")
+    text = "2к квартира ЮМР ул. Ставропольская 10, 54 м², этаж 4/9. Цена 6,2 млн. 89181112233"
+    _add(conn, text)
+    conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'own_dup' WHERE source = 'chat'")
+    conn.commit()
+    _add(conn, text)   # тот же текст ещё раз (репост)
+    assert conn.execute("SELECT is_active FROM listings WHERE source = 'chat'").fetchone()[0] == 0
+    conn.execute("UPDATE listings SET hidden_reason = NULL WHERE source = 'chat'")   # ушёл в архив по сроку
+    conn.commit()
+    _add(conn, text)
+    assert conn.execute("SELECT is_active FROM listings WHERE source = 'chat'").fetchone()[0] == 1

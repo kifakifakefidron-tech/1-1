@@ -310,7 +310,9 @@ def process_message(conn: sqlite3.Connection, message_id: int, use_llm: bool | N
         for lid in listing_ids:
             conn.execute(
                 "UPDATE listings SET last_seen = MAX(last_seen, ?), seen_count = seen_count + 1, "
-                "is_active = CASE WHEN hidden_reason IN ('admin', 'deposit') THEN 0 ELSE 1 END WHERE id = ?",
+                # 18.10: повтор возвращает на сайт только ушедшее в архив по сроку (hidden_reason пуст); скрытое по причине
+                # (копия СТРЕЛ, дубль, отключённый чат, задаток, админ…) — не возвращаем
+                "is_active = CASE WHEN hidden_reason IS NULL THEN 1 ELSE is_active END WHERE id = ?",
                 (m["ts"], lid))
             conn.execute(
                 "INSERT INTO listing_events (listing_id, message_id, ts, match) VALUES (?,?,?, 'repost')",

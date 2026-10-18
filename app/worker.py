@@ -24,11 +24,28 @@ def _mail(conn):
     return send
 
 
+class _Laps:
+    """18.10: сколько секунд занял каждый шаг цикла — в журнал попадают шаги дольше 2 с (искать, что грузит процессор)."""
+
+    def __init__(self) -> None:
+        self.t = time.monotonic()
+        self.cpu = time.process_time()
+        self.slow: dict = {}
+
+    def __call__(self, name: str) -> None:
+        now, cpu = time.monotonic(), time.process_time()
+        if now - self.t > 2:
+            self.slow[name] = f"{now - self.t:.0f}с (проц. {cpu - self.cpu:.0f}с)"
+        self.t, self.cpu = now, cpu
+
+
 def tick(conn) -> dict:
+    lap = _Laps()
     if config.WAPPI_ENABLED and wappi.refresh_chat_names(conn) is not None:
         stats_r = region.hide_foreign(conn)   # чаты Сочи/Адлера/… — не показываем
         log.info("другие города: %s", stats_r)
     stats = {"new_messages": wappi.poll_all(conn) if config.WAPPI_ENABLED else "пауза"}
+    lap("wappi")
     if not config.WAPPI_ENABLED and wappi.poll_verify_only(conn):   # пауза, но агенты ждут подтверждения номера
         stats["verify_check"] = True
     purged = region.purge_blocked(conn)   # отключённые чаты: удалить их сообщения и объекты только оттуда
@@ -36,6 +53,7 @@ def tick(conn) -> dict:
         stats["purged"] = purged
     llm.failures = 0
     stats["processed"] = ingest.process_pending(conn, limit=300, budget_s=60)
+    lap("разбор")
     from . import media
     if media.trim_chat_photos(conn):   # один раз: у объявлений из чатов — по одному фото
         stats["photos_trimmed"] = True
@@ -43,14 +61,17 @@ def tick(conn) -> dict:
         got = media.attach(conn)   # фото из чатов — по одному в карточку объекта
         if got["photos"]:
             stats["photos"] = got["photos"]
+    lap("фото")
     stats["queue"] = conn.execute("SELECT COUNT(*) FROM messages WHERE status='new'").fetchone()[0]
     from . import autolearn, osmaddr
     if osmaddr.maybe_refresh(conn):   # справочник адресов OSM — раз в месяц (≈20 с)
         stats["osm_addr"] = osmaddr.loaded(conn)
     learned = autolearn.run(conn)   # точки и районы из уже известного (фид, ЖК, контуры районов, соседние объявления)
+    lap("самообучение")
     if learned.get("points") or learned.get("districts") or learned.get("recheck"):
         stats["autolearn"] = learned
     stats["geocoded"] = geocode.run(conn, limit=40)
+    lap("геокодер")
     stats["life"] = ingest.life_fix(conn) or None   # один раз: день появления на 1+1, вернуть снятых раньше срока
     stats["archived"] = ingest.archive_stale(conn)
     own = agent.expire_own(conn, _mail(conn))
@@ -69,6 +90,7 @@ def tick(conn) -> dict:
             stats["client_matches"] = n
     # подписки на поиск, избранное (цена, снят с сайта), окончание доступа — на сайте и письмом
     sent = hooks.run(conn, _mail(conn))
+    lap("уведомления")
     if sent and any(sent.values()):
         stats["notices"] = sent
     try:
@@ -76,6 +98,7 @@ def tick(conn) -> dict:
         widgets.refresh(conn)   # погода, ставка ЦБ, курсы, ипотека — заранее, чтобы кабинет открывался мгновенно
     except Exception:  # noqa: BLE001
         log.exception("виджеты кабинета не обновились")
+    lap("виджеты")
     try:
         from . import bankrates
         if bankrates.remind(conn):   # ставки банков устарели — напомнить админу
@@ -86,6 +109,7 @@ def tick(conn) -> dict:
     synced = feed.maybe_sync(conn)
     if synced:
         stats["feed"] = synced
+    lap("фид")
     if not db.get_state(conn, "deposit_v1"):   # один раз (акт 14.10): «под задатком» — с сайта сразу
         db.set_state(conn, "deposit_v1", str(ingest.hide_deposits(conn)))
     from . import pricefix
@@ -110,6 +134,7 @@ def tick(conn) -> dict:
         stats["own"] = ownmatch.maybe_run(conn) or None   # состояние «с ремонтом / без» — один раз после обновления правил
     except Exception:  # noqa: BLE001
         log.exception("ежедневная уборка гео не прошла")
+    lap("уборка/свои объекты")
     gc = geoaudit.auto_cleanup(conn)   # один раз (акт 14.10): уборка правил и справочников, отчёт — в «Обзоре»
     if gc:
         stats["geo_cleanup"] = gc.get("listings", 0)
@@ -146,6 +171,7 @@ def tick(conn) -> dict:
         stats["cleanup"] = ingest.cleanup_old(conn)
         db.set_state(conn, "cleanup_day", time.strftime("%Y-%m-%d"))
     notify.check_health(conn, dict(wappi.errors), llm.failures)
+    lap("разовые задачи")
     notify.daily_summary(conn)
     try:
         from . import geoquality
@@ -169,6 +195,9 @@ def tick(conn) -> dict:
     except Exception as e:  # noqa: BLE001
         log.exception("резервная копия не сделана")
         notify.alert(conn, "backup", f"Резервная копия базы не сделана: {e!r}"[:400], every_s=86400)
+    lap("прочее")
+    if lap.slow:
+        stats["долго"] = lap.slow
     db.set_state(conn, "worker_tick", str(int(time.time())))   # для админки: фоновая работа жива
     return stats
 
