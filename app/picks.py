@@ -209,6 +209,12 @@ def set_item(conn: sqlite3.Connection, user_id: int, cid: int, listing_id: int, 
 MAX_OWN_PHOTOS = 10
 
 
+def _no_license(conn: sqlite3.Connection, phones_json: str | None) -> bool:
+    from . import consent
+    nl = consent.prefs(conn)["no_license"]
+    return bool(nl) and any(p in nl for p in json.loads(phones_json or "[]"))
+
+
 def ordered_photos(mine: list[str], listing: list[str], po: str | None) -> tuple[list[str], list[str]]:
     """18.10 (Артём: «фото в подборке можно перетаскивать»): фото для клиента в порядке агента. Новые фото (добавили позже
     или пришли в объявлении) — в конце, свои агента — перед фото объявления; скрытые агентом — не показываем."""
@@ -457,9 +463,11 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
             "lat": _coarse(r["lat"], hide) if search.geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house" else None,
             "lon": _coarse(r["lon"], hide) if search.geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house" else None,
             "approx": hide,
-            # фото в порядке агента (перетаскиванием в /picks), скрытые — не показываем; свои агента — первыми
-            "photos": ordered_photos(json.loads(r["my_photos"] or "[]"), json.loads(r["photos"] or "[]"), r["photo_order"])[0],
-            "description": "" if not r["is_active"] else
+            # фото в порядке агента (перетаскиванием в /picks), скрытые — не показываем; свои агента — первыми.
+            # 19.10: автор объявления не разрешил тексты и фото (/agent) — клиенту только свои фото агента подборки, без текста
+            "photos": ordered_photos(json.loads(r["my_photos"] or "[]"), [] if _no_license(conn, r["phones"]) else json.loads(r["photos"] or "[]"),
+                                     r["photo_order"])[0],
+            "description": "" if not r["is_active"] or (not r["item_text"] and _no_license(conn, r["phones"])) else
                            parser.guard_phones(r["item_text"] or parser.client_text(r["description"]))[:5000],
             "note": r["item_note"] or "", "is_active": r["is_active"],
             "reaction": mine_r.get(r["id"])})

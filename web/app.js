@@ -1501,11 +1501,14 @@
     if (o.loading) return `<div class="d-locked loading"><div class="skel"><i></i></div><p>Загружаем контакты…</p></div>`;
     if (o.phones && o.phones.length) {
       const pretty = (p) => { const d = p.replace(/\D/g, ""); return d.length === 11 ? `+7 ${d.slice(1, 4)} ${d.slice(4, 7)}-${d.slice(7, 9)}-${d.slice(9)}` : p; };
+      // 19.10: выбор агента на /agent — без кнопки MAX; номер не подтверждён агентом — честная пометка и «Это мой номер»
+      const pm = o.phones_meta || {};
       return `<div class="dv-contacts"><span class="dv-contacts-h">${o.phones.length > 1 ? "Контакты агентов" : "Контакт агента"}</span>${o.phones.map((p) => {
-        const digits = p.replace(/\D/g, "");
+        const m = pm[p] || {};
         return `<div class="dv-phone"><a class="dv-phone-num" href="tel:${esc(p)}">${esc(pretty(p))}</a>
           <a class="dv-ic-btn" href="tel:${esc(p)}" aria-label="Позвонить" title="Позвонить">${ic("phone")}</a>
-          <button type="button" class="dv-ic-btn dv-max" data-max="${esc(p)}" aria-label="Написать в MAX" title="Написать в MAX">MAX</button></div>`;
+          ${m.no_max ? "" : `<button type="button" class="dv-ic-btn dv-max" data-max="${esc(p)}" aria-label="Написать в MAX" title="Написать в MAX">MAX</button>`}</div>
+          ${o.phones_meta && !m.confirmed ? `<p class="dv-unconf">Номер из объявления в чате — агент его ещё не подтвердил · <a href="/agent" target="_top">Это мой номер</a></p>` : ""}`;
       }).join("")}${o.sender_phone ? `<p class="dv-sender">Прислал в чат: <a href="tel:${esc(o.sender_phone)}">${esc(pretty(o.sender_phone))}</a></p>` : ""}${o.url ? `<a class="dv-site${o.source === "feed" ? " strely" : ""}" href="${esc(o.url)}" target="_blank" rel="noopener">${o.source === "feed"
         ? `${STRELY}<span>Объект партнёра «СТРЕЛЫ» — смотреть на arrowsrealty.ru</span>${ic("external")}` : `${ic("link")}Объявление на сайте агентства`}</a>` : ""}</div>`;
     }
@@ -1735,8 +1738,8 @@
     $("bellMobile").hidden = !u;
     if (u && window.bellSet) window.bellSet(unread);   // колокольчик с числом (web/bell.js)
 
-    $("optoutLink").hidden = !meta.bot;
-    if (meta.bot) $("optoutLink").href = `https://t.me/${meta.bot}?start=optout`;
+    $("optoutLink").hidden = false;   // 19.10 (приёмка п. 1): своя страница вместо бота — подтвердить или скрыть номер
+    $("optoutLink").href = "/agent";
   }
 
   async function reloadMeta() {
@@ -1875,7 +1878,7 @@
   // Теперь просто перезагружаем её (открытый объект и фильтры — в адресе), «Вы вошли» показываем уже после загрузки.
   async function afterLogin() {
     if ($("loginDlg").open) closeDlg($("loginDlg"));
-    const next = { fav: "/work", cabinet: "/cabinet", agent: "/my" }[ss("loginNext")];
+    const next = { fav: "/work", cabinet: "/cabinet", agent: "/my", num: "/agent" }[ss("loginNext")];
     try { sessionStorage.setItem("justIn", "1"); sessionStorage.removeItem("loginNext"); } catch { /* */ }
     if (next) { location.replace(next); return; }
     const u = new URL(location.href);
@@ -2662,7 +2665,7 @@
       geoQueue = sp.get("geo");
       setTimeout(() => openGeoEdit(openId), 700);
     }
-    const act = ["login", "fav", "cabinet", "agent"].find((k) => sp.has(k));
+    const act = ["login", "fav", "cabinet", "agent", "num"].find((k) => sp.has(k));
     if (act) {
       sp.delete(act);
       history.replaceState(null, "", sp.toString() ? `?${sp}` : location.pathname);
@@ -2671,6 +2674,7 @@
       else if (act === "fav") setFavMode(true);
       else if (act === "cabinet") { location.replace(me() ? "/cabinet" : "/?login=1"); return; }
       else if (act === "agent") { location.replace("/my"); return; }   // «Мои объекты» — отдельная страница
+      else if (act === "num") { location.replace("/agent"); return; }   // «Ваш номер на 1+1»
     }
   }
 

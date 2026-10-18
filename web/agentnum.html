@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ваш номер на 1+1</title>
+<meta name="description" content="Агентам: подтвердите свой номер на 1+1 — управляйте объявлениями из чатов, получите отметку «Проверенный агент» и 30 дней бесплатно. Или уберите номер одной кнопкой.">
+<meta name="theme-color" content="#035352">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="1+1">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="/static/vendor/fonts/fonts.css?v=1">
+<link rel="stylesheet" href="/static/style.css?v=26">
+<link rel="stylesheet" href="/static/motion.css?v=35">
+<link rel="stylesheet" href="/static/theme.css?v=15">
+<link rel="stylesheet" href="/static/glass.css?v=78">
+<link rel="stylesheet" href="/static/settings.css?v=4">
+<link rel="stylesheet" href="/static/agentnum.css?v=1">
+</head>
+<body>
+<main class="st an">
+  <header class="st-head an-hero">
+    <p class="an-eyebrow">Агентам</p>
+    <h1>Ваш номер на 1+1</h1>
+    <p>Ваши объявления из риелторских чатов Краснодара есть на 1+1. Подтвердите номер — и управляйте ими сами:
+      отмечайте проданные, правьте цену и параметры, добавляйте фото. Или уберите номер одной кнопкой.</p>
+    <ul class="an-perks">
+      <li><i data-ic="check-circle"></i><span><b>«Проверенный агент»</b> на всех ваших объявлениях</span></li>
+      <li><i data-ic="edit"></i><span><b>Свои объекты — в одном месте</b>: «продано», цена, этаж, район, фото</span></li>
+      <li><i data-ic="gift"></i><span><b id="anBonus">30 дней</b> полного доступа бесплатно — один раз</span></li>
+      <li><i data-ic="shield"></i><span><b>Ваш выбор</b>: показывать ли имя и кнопку MAX; отзыв — одной кнопкой</span></li>
+    </ul>
+  </header>
+
+  <section class="st-card" id="anGuest" hidden>
+    <div class="st-card-h"><span class="st-ic"><i data-ic="phone"></i></span><div><h2>Шаг 1. Войдите по своему номеру</h2>
+      <p>Вход звонком сразу подтверждает, что номер ваш: вы звоните на бесплатный номер, звонок сбросится сам.</p></div></div>
+    <a class="pill" href="/?login=1&amp;num=1" id="anLogin">Войти по номеру телефона</a>
+  </section>
+
+  <div id="anPhones"></div>
+
+  <section class="st-card" id="anVerifyCard" hidden>
+    <div class="st-card-h"><span class="st-ic"><i data-ic="phone"></i></span><div><h2 id="anVerifyH">Подтвердите номер из объявлений</h2>
+      <p>Номер должен совпадать с номером в ваших объявлениях. Подтвердить можно звонком со своего номера (бесплатно) или кодом в MAX.</p></div></div>
+    <div id="anVerify"></div>
+  </section>
+
+
+  <p class="an-docs">Документы: <a href="/consent-publish">Согласие на распространение персональных данных</a> ·
+    <a href="/license">Разрешение на использование текстов и фото</a> · <a href="/consent">Согласие на обработку данных</a> ·
+    <a href="/privacy">Политика</a>. Вопросы — <a href="/contacts">контакты</a>.</p>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
+<script src="/static/icons.js?v=9"></script>
+<script src="/static/pickers.js?v=16"></script>
+<script src="/static/rail.js?v=24"></script>
+<script src="/static/verify.js?v=1"></script>
+<script src="/static/agentnum.js?v=1"></script>
+<script src="/static/bell.js?v=6"></script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+/* «Ваш номер на 1+1» (/agent) — поверх settings.css */
+.an-hero h1 { font-size: clamp(30px, 6vw, 44px); }
+.an-eyebrow { margin: 0 0 6px; color: var(--gold); font-weight: 600; font-size: 14px; letter-spacing: .04em; text-transform: uppercase; }
+.an-perks { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.an-perks li { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 16px; border: 1px solid var(--glass-line);
+  background: rgba(255, 255, 255, .03); font-size: 14px; line-height: 1.4; }
+.an-perks .ic { width: 20px; height: 20px; color: var(--gold); flex: none; margin-top: 1px; }
+.an-ph-h { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 8px; }
+.an-num { display: block; font-size: 22px; font-weight: 600; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.an-st { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 13px; color: var(--ink-3); }
+.an-st.on { color: var(--ok); } .an-st.off { color: var(--bad); }
+.an-st .ic { width: 16px; height: 16px; }
+.an-when { margin: 0 0 10px; font-size: 13px; color: var(--ink-3); }
+.an-checks { display: grid; gap: 8px; margin: 10px 0; }
+.an-checks .consent-chk { margin: 0; font-size: 14px; line-height: 1.45; }
+.an-opts { display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 6px 0 10px; }
+.an-sw { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; }
+.an-sw input { position: absolute; opacity: 0; pointer-events: none; }
+.an-sw span { position: relative; width: 42px; height: 26px; border-radius: 13px; background: rgba(255, 255, 255, .14); transition: background .25s; flex: none; }
+.an-sw span::after { content: ""; position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .3); transition: transform .3s var(--m-spring, ease); }
+.an-sw input:checked + span { background: var(--gold); }
+.an-sw input:checked + span::after { transform: translateX(16px); }
+.an-sw input:focus-visible + span { outline: 2px solid var(--gold); outline-offset: 2px; }
+.an-hint { margin: 0 0 12px; font-size: 13px; color: var(--ink-3); }
+.an-docs { margin: 18px 4px 40px; font-size: 13px; color: var(--ink-3); line-height: 1.6; }
+.an-docs a { color: var(--ink-2); }

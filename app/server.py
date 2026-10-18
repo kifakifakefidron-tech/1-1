@@ -313,6 +313,18 @@ def offer_page(request: Request, body: dict | None = None):
     return _page("offer.html")
 
 
+def agent_num_page(request: Request, body: dict | None = None):
+    return _page("agentnum.html")   # 19.10: «Ваш номер на 1+1» — подтвердить, дать согласие или убрать номер
+
+
+def consent_publish_page(request: Request, body: dict | None = None):
+    return _page("consent-publish.html")
+
+
+def license_page(request: Request, body: dict | None = None):
+    return _page("license.html")
+
+
 def consent_page(request: Request, body: dict | None = None):
     return _page("consent.html")
 
@@ -495,6 +507,16 @@ def api_listing(request: Request, body: dict | None = None):
         if d.get("fragment"):
             d["fragment"] = parser.strip_phones(d["fragment"])
     row = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
+    if access and phones:   # 19.10: выбор агента (согласие на /agent) — подтверждён ли номер, без имени, без кнопки MAX
+        from . import consent
+        pf = consent.prefs(conn)
+        ver = {r[0] for r in conn.execute(f"SELECT phone FROM agent_phones WHERE phone IN ({','.join('?' * len(phones))})", phones)}
+        d["phones_meta"] = {p: {"confirmed": p in ver or p in config.ALWAYS_VERIFIED or p in pf["published"],
+                                "no_max": p in pf["no_max"]} for p in phones}
+        if any(p in pf["no_name"] for p in phones):
+            d["description"] = parser.mask_names(d.get("description") or "")
+            if d.get("fragment"):
+                d["fragment"] = parser.mask_names(d["fragment"])
     if access and phones:   # кто прислал объявление в чат, если это другой номер (не тот, что в тексте)
         roles = json.loads(row["phone_roles"] or "{}")
         d["sender_phone"] = next((p for p, role in roles.items() if role == "sender" and p not in d["phones"]), None)
@@ -1058,6 +1080,7 @@ def api_admin_overview(request: Request, body: dict | None = None):
         "listings": one(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE}"),
         "life": __import__("app.lifecheck", fromlist=["report"]).report(conn, now),
         "own_match": json.loads(db.get_state(conn, "own_match_report") or "null"),
+        "agent_consent": __import__("app.consent", fromlist=["overview"]).overview(conn),   # 19.10: доля подтвердивших агентов
         "billing": __import__("app.billing", fromlist=["status"]).status(conn, now),
         "rules_fix": json.loads(db.get_state(conn, "rules_fix_report") or "null"),
         "rent_leak": json.loads(db.get_state(conn, "rent_leak_report") or "null"),
@@ -1642,6 +1665,31 @@ def api_agent(request: Request, body: dict | None = None):
         "verify_methods": [m for m, on in (("call", callcheck.enabled()), ("max", bool(config.VERIFY_NUMBER))) if on],
         "own_days": config.OWN_LISTING_DAYS, "max_photos": config.MAX_PHOTOS, "items": _agent_items(conn, user),
     })
+
+
+def api_agent_consent(request: Request, body: dict | None = None):
+    """19.10 (приёмка, раздел 7): согласие агента. GET — номера и их согласия; POST {phone, publish, license, show_name,
+    allow_max} — сохранить (в журнал); POST {phone, revoke: true} — отозвать, номер скрыт сразу."""
+    from . import consent
+    user, err = _need_user(request)
+    if err:
+        return err
+    conn = db.get()
+    if request.method == "POST":
+        b = body or {}
+        phone = str(b.get("phone", ""))[:40]
+        if b.get("revoke"):
+            res = consent.revoke(conn, user["id"], phone)
+        else:
+            ip = (request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else ""))
+            res = consent.give(conn, user["id"], phone, bool(b.get("publish")), bool(b.get("license")),
+                               bool(b.get("show_name", True)), bool(b.get("allow_max", True)), ip)
+        if "error" in res:
+            return _err(res["error"])
+        _bump_cache()
+        return JSONResponse({**res, "phones": consent.status(conn, user["id"])})
+    return JSONResponse({"phones": consent.status(conn, user["id"]), "bonus_days": consent.BONUS_DAYS, "version": consent.VERSION,
+                         "verify_methods": [m for m, on in (("call", callcheck.enabled()), ("max", bool(config.VERIFY_NUMBER))) if on]})
 
 
 def api_agent_verify(request: Request, body: dict | None = None):
@@ -2766,6 +2814,10 @@ routes = [
     Route("/api/agent/listings/{id:int}/photos", threaded(api_agent_photo), methods=["POST", "DELETE"]),
     Route("/api/agent/describe", threaded(api_agent_describe), methods=["POST"]),
     Route("/agent/confirm", threaded(agent_confirm_page)),
+    Route("/agent", threaded(agent_num_page)),
+    Route("/consent-publish", threaded(consent_publish_page)),
+    Route("/license", threaded(license_page)),
+    Route("/api/agent/consent", threaded(api_agent_consent), methods=["GET", "POST"]),
     Route("/api/admin/edits", threaded(api_admin_edits), methods=["GET", "POST"]),
     Route("/api/admin/chats", threaded(api_admin_chats), methods=["GET", "POST"]),
     Route("/api/admin/listings/{id:int}/geo", threaded(api_admin_geo), methods=["POST"]),
