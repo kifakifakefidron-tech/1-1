@@ -331,6 +331,15 @@ CACHE_S = 15
 _computing: dict[str, threading.Lock] = {}
 
 
+def _json_or_none(v: str | None) -> dict | None:
+    """Отчёт из state: только словарь (старые отчёты бывали просто числом)."""
+    try:
+        d = json.loads(v or "null")
+    except ValueError:
+        return None
+    return d if isinstance(d, dict) else None
+
+
 def _cached(request: Request, compute, ttl: int = CACHE_S) -> Response:
     # cache_ver меняется при правках агентов/админа — второй процесс сайта тоже сразу видит новое
     key = f"{db.get_state(db.get(), 'cache_ver', '0')}:{request.url.path}?{request.url.query}"
@@ -933,6 +942,7 @@ def api_admin_overview(request: Request, body: dict | None = None):
         "billing": __import__("app.billing", fromlist=["status"]).status(conn, now),
         "rules_fix": json.loads(db.get_state(conn, "rules_fix_report") or "null"),
         "rent_leak": json.loads(db.get_state(conn, "rent_leak_report") or "null"),
+        "media_strict": _json_or_none(db.get_state(conn, "media_strict_report")),
         "llm_on": __import__("app.llm", fromlist=["available"]).available(),
         # 17.10: фильтр «Ремонт» — сколько объектов разобрано (квартиры и дома на сайте)
         "repair": {k: one(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE} AND l.type IN ('flat','new','house','room') AND {cond}")

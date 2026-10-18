@@ -75,27 +75,59 @@ def _listing_for(conn: sqlite3.Connection, r) -> tuple[str, int | None]:
     return ("wait", None) if time.time() - r["ts"] < WAIT_TEXT else ("skip", None)
 
 
-def strict_cleanup(conn: sqlite3.Connection) -> int:
-    """Один раз (state media_strict_v2): у объявлений из чатов убрать фото, привязанные по старым правилам («рядом по
-    времени», «альбом ±20 с»), если по новому (только подпись к этому фото) оно к этому объявлению не относится."""
-    if db.get_state(conn, "media_strict_v2") == "1":
-        return 0
-    n = 0
-    for r in conn.execute("""SELECT c.* FROM chat_media c JOIN listings l ON l.id = c.listing_id
-                             WHERE c.status = 'done' AND c.url IS NOT NULL AND l.source = 'chat'
-                             AND COALESCE(l.owner_user_id, 0) = 0""").fetchall():
-        state, lid = _listing_for(conn, r)
-        if state == "ok" and lid == r["listing_id"]:
-            continue
-        row = conn.execute("SELECT photos FROM listings WHERE id = ?", (r["listing_id"],)).fetchone()
-        photos = [u for u in json.loads((row["photos"] if row else None) or "[]") if u != r["url"]]
-        conn.execute("UPDATE listings SET photos = ? WHERE id = ?", (json.dumps(photos), r["listing_id"]))
-        conn.execute("UPDATE chat_media SET status = 'skip' WHERE id = ?", (r["id"],))
-        n += 1
-    db.set_state(conn, "media_strict_v2", "1")
-    db.set_state(conn, "media_strict_report", str(n))
+def strict_cleanup(conn: sqlite3.Connection) -> dict | None:
+    """Один раз (state media_strict_v3, 18.10 — Артём: «проверить все загруженные объекты и удалить фото, если не
+    соответствует: в чатах тысячи сообщений, по времени могли подобраться какие угодно; фид СТРЕЛ не трогаем»).
+
+    Проверяется КАЖДОЕ фото у КАЖДОГО объявления из чатов (на сайте и в архиве): фото остаётся, только если оно
+    скачано из сообщения, текст которого (подпись к этой самой картинке) и дал этот объект. Всё остальное — фото без
+    записи, откуда оно, фото «рядом по времени», альбомы, портянки, фото, чьё сообщение уже не проверить, — удаляется
+    (и файл тоже). Не трогаем: фид СТРЕЛ, свои объекты агентов (source='own') и карточки, где фото ведёт агент
+    (owner_user_id — он загружал их сам)."""
+    if db.get_state(conn, "media_strict_v3") == "1":
+        return None
+    rep = {"checked": 0, "kept": 0, "removed": 0, "listings": 0, "ts": int(time.time()), "examples": []}
+    rows = conn.execute("""SELECT id, title, photos FROM listings WHERE source = 'chat' AND COALESCE(owner_user_id, 0) = 0
+                           AND photos IS NOT NULL AND photos NOT IN ('', '[]')""").fetchall()
+    for lr in rows:
+        lid = lr["id"]
+        photos = json.loads(lr["photos"] or "[]")
+        keep = []
+        for u in photos:
+            rep["checked"] += 1
+            cm = conn.execute("SELECT * FROM chat_media WHERE url = ? AND status = 'done' ORDER BY id DESC LIMIT 1", (u,)).fetchone()
+            state, owner = _listing_for(conn, cm) if cm is not None else ("skip", None)
+            if state == "ok" and owner == lid:
+                keep.append(u)
+                continue
+            if cm is not None:
+                conn.execute("UPDATE chat_media SET status = 'skip' WHERE id = ?", (cm["id"],))
+            _drop_file(conn, lid, u)
+        if len(keep) != len(photos):
+            conn.execute("UPDATE listings SET photos = ? WHERE id = ?", (json.dumps(keep), lid))
+            rep["removed"] += len(photos) - len(keep)
+            rep["listings"] += 1
+            if len(rep["examples"]) < 30:
+                rep["examples"].append({"id": lid, "title": lr["title"], "removed": len(photos) - len(keep)})
+        rep["kept"] += len(keep)
+    db.set_state(conn, "media_strict_v3", "1")
+    db.set_state(conn, "media_strict_report", json.dumps(rep, ensure_ascii=False))
     conn.commit()
-    return n
+    log.info("фото из чатов: проверено %s, оставлено %s, удалено %s у %s объектов",
+             rep["checked"], rep["kept"], rep["removed"], rep["listings"])
+    return rep
+
+
+def _drop_file(conn: sqlite3.Connection, lid: int, url: str) -> None:
+    """Файл фото из папки объекта — удалить, если больше ни у кого его нет."""
+    if not url.startswith(f"/photos/{lid}/"):
+        return
+    if conn.execute("SELECT 1 FROM listings WHERE id != ? AND photos LIKE ?", (lid, f'%"{url}"%')).fetchone():
+        return
+    try:
+        (Path(config.PHOTOS_DIR) / str(lid) / url.rsplit("/", 1)[-1]).unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _download(r) -> bytes | None:

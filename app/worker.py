@@ -102,7 +102,8 @@ def tick(conn) -> dict:
         stats["repair"] = ingest.backfill_repair(conn) or None
         stats["rules_fix"] = ingest.rules_fix(conn) or None   # 18.10: старые объекты — по исправленным правилам (разово)
         from . import media as _media
-        stats["media_strict"] = _media.strict_cleanup(conn) or None   # фото «рядом по времени» без подписи — убрать (разово)
+        _ms = _media.strict_cleanup(conn)   # каждое фото объявлений из чатов — только подпись к нему (разово, фид не трогаем)
+        stats["media_strict"] = _ms and _ms["removed"]
         from . import billing
         stats["billing"] = billing.remind(conn) or None       # напоминания об оплате сервисов (раз в сутки)
         from . import ownmatch   # 18.10: свои объекты (наш номер) — одна карточка: копии из чатов к карточке с сайта

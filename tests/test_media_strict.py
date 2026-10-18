@@ -28,3 +28,25 @@ def test_photo_only_with_caption():
     # 3) просто текст, а картинка отдельно через минуту — не связываем
     _msg(conn, "txt3", "1к квартира ЮМР ул. Ставропольская 5, 38 м², этаж 2/5. Цена 4 млн. 89180001122", now + 400)
     assert media._listing_for(conn, _img(conn, "lone4", now + 460))[0] == "skip"
+
+
+def test_cleanup_checks_every_photo_feed_untouched():
+    import json
+    conn = db.connect(":memory:")
+    now = int(time.time()) - 5000
+    text = "2к квартира ФМР ул. Красная 10, 54 м², этаж 4/9. Цена 6,2 млн. 89180001122"
+    _img(conn, "cap1", now)
+    _msg(conn, "cap1", text, now)
+    lid = conn.execute("SELECT id FROM listings WHERE source = 'chat'").fetchone()[0]
+    _img(conn, "lone2", now + 3)   # фото без подписи через 3 секунды (раньше привязалось бы по времени)
+    conn.execute("UPDATE chat_media SET status = 'done', listing_id = ?, url = '/photos/' || ? || '/' || msg_id || '.jpg'", (lid, lid))
+    good, bad = f"/photos/{lid}/cap1.jpg", f"/photos/{lid}/lone2.jpg"
+    conn.execute("UPDATE listings SET photos = ? WHERE id = ?", (json.dumps([good, bad, "/photos/x/unknown.jpg"]), lid))
+    fid = conn.execute("""INSERT INTO listings (type, deal, title, photos, first_seen, last_seen, seen_count, is_active, source, search_text)
+                          VALUES ('flat','sale','фид','["https://static.tildacdn.com/a.jpg"]',1,1,1,1,'feed','')""").lastrowid
+    conn.commit()
+    rep = media.strict_cleanup(conn)
+    assert (rep["kept"], rep["removed"]) == (1, 2)
+    assert json.loads(conn.execute("SELECT photos FROM listings WHERE id = ?", (lid,)).fetchone()[0]) == [good]
+    assert json.loads(conn.execute("SELECT photos FROM listings WHERE id = ?", (fid,)).fetchone()[0]) == ["https://static.tildacdn.com/a.jpg"]
+    assert media.strict_cleanup(conn) is None   # один раз
