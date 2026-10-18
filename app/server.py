@@ -2667,12 +2667,13 @@ async def _server_error(request: Request, exc: Exception):
                 f"пришлите скриншот.", 500)
 
 
-# Защита браузера от чужих скриптов (CSP): код страниц — только с сайта и двух проверенных CDN; встроенных
+# Защита браузера от чужих скриптов (CSP): код, стили и шрифты — только с самого сайта (18.10: шрифты и карта —
+# свои копии в web/vendor, браузер посетителя не обращается к Google/Cloudflare); встроенных
 # обработчиков onclick и eval нет. Стили inline разрешены (style="…" в разметке), картинки — с любых https (фото фида).
 CSP = ("default-src 'self'; "
-       "script-src 'self' https://cdnjs.cloudflare.com https://unpkg.com; "
-       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://unpkg.com; "
-       "font-src 'self' data: https://fonts.gstatic.com; "
+       "script-src 'self'; "
+       "style-src 'self' 'unsafe-inline'; "
+       "font-src 'self' data:; "
        "img-src 'self' data: blob: https:; "
        "connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; worker-src 'self'; manifest-src 'self'; "
        "object-src 'none'; base-uri 'self'; form-action 'self'")
