@@ -355,13 +355,14 @@ def views_today(conn: sqlite3.Connection, user_id: int) -> int:
 
 
 def open_phones(conn: sqlite3.Connection, user: sqlite3.Row | None, listing_id: int,
-                phones: list[str]) -> tuple[list[str] | None, str | None]:
-    """Отдать телефоны объекта, если можно. (телефоны, причина отказа)."""
+                phones: list[str], limited: bool = True) -> tuple[list[str] | None, str | None]:
+    """Отдать телефоны объекта, если можно. (телефоны, причина отказа). limited=False — объект партнёра (фид):
+    номер агентства, в суточный лимит не входит."""
     phones = [p for p in phones if p not in optout_set(conn)]
     if not phones:
         return [], None
     uid = user["id"] if user is not None else None
-    if user is not None and not user["is_admin"] and config.PHONE_VIEWS_PER_DAY > 0:
+    if limited and user is not None and not user["is_admin"] and config.PHONE_VIEWS_PER_DAY > 0:
         since = int(time.time()) - DAY
         seen = conn.execute("SELECT 1 FROM phone_views WHERE user_id = ? AND listing_id = ? AND ts >= ?",
                             (uid, listing_id, since)).fetchone()

@@ -439,7 +439,7 @@ def api_listing(request: Request, body: dict | None = None):
     if "phones_masked" in d:
         d["phones_masked"] = [m for m, p in zip(d["phones_masked"], _raw_phones(conn, lid)) if p not in optout]
     if access:
-        phones, why = accounts.open_phones(conn, user, lid, d.get("phones") or [])
+        phones, why = accounts.open_phones(conn, user, lid, d.get("phones") or [], limited=d.get("source") != "feed")
         d["phones"] = phones or []
         d["phones_limit"] = why == "limit"
         if d.get("fragment"):
