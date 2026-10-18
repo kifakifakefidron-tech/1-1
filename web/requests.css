@@ -25,3 +25,31 @@
 .rq-lock { color: var(--ink-3); font-size: 14px; display: block; margin-top: 8px; }
 .rq-empty { padding: 24px; border-radius: 16px; background: var(--chip); color: var(--ink-2); }
 .rq-empty b { display: block; color: var(--ink); }
+
+/* 19.10: вкладки, быстрые кнопки, «новый», «подходит под ваш объект», замок без подписки */
+.rq-stat { color: var(--ink-3); margin: 4px 0 12px; }
+.rq-tools { display: grid; gap: 10px; margin-bottom: 6px; }
+.rq-tabs { display: inline-flex; gap: 4px; padding: 4px; border-radius: 14px; background: rgba(255, 255, 255, .05); border: 1px solid var(--glass-line); width: max-content; }
+.rq-tabs button { border: 0; background: none; color: var(--ink-2); padding: 8px 14px; border-radius: 10px; font: 500 14px var(--body); cursor: pointer; }
+.rq-tabs button.on { background: var(--gold); color: #0f2f2e; }
+.rq-tabs b { margin-left: 4px; }
+.rq-chipsbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rq-sep { width: 1px; height: 22px; background: var(--glass-line); margin: 0 4px; }
+.rq-chipsbar .rq-search { flex: 1 1 220px; border-radius: 999px; padding: 9px 16px; }
+.rq-item.fresh { border-color: rgba(227, 203, 143, .55); }
+.rq-new { padding: 3px 9px; border-radius: 999px; background: var(--gold); color: #0f2f2e; font: 600 12px var(--body); }
+.rq-text.clamp { -webkit-line-clamp: 6; }
+.rq-text:not(.clamp) { display: block; }
+.rq-more { align-self: flex-start; margin: -2px 0 6px; padding: 0; border: 0; background: none; color: var(--gold); font: 500 13px var(--body); cursor: pointer; }
+.rq-mine { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 0 0 8px; padding: 8px 10px; border-radius: 12px;
+  background: rgba(227, 203, 143, .12); font-size: 13px; }
+.rq-mine .ic { width: 16px; height: 16px; color: var(--gold); }
+.rq-mine a { color: var(--gold); }
+.rq-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.rq-acts .chip { text-decoration: none; font-size: 13px; }
+.rq-acts .ic, .rq-phones .ic { width: 15px; height: 15px; }
+.rq-lockbox { display: grid; gap: 8px; justify-items: start; padding: 22px; border-radius: 22px; border: 1px solid var(--glass-line);
+  background: rgba(255, 255, 255, .04); max-width: 620px; }
+.rq-lockbox b { font-size: 20px; } .rq-lockbox span { color: var(--ink-3); }
+.rq-lockbox .pill { margin-top: 6px; text-decoration: none; }
+.rq-minehint a { color: var(--gold); }

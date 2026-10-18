@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from datetime import datetime
 
-from . import agent, clients, market, widgets
+from . import accounts, agent, clients, market, widgets
 from .planner import MSK, events
 
 STATUS_LABELS = {"call": "Звонок", "show": "Показ", "think": "Думает", "refuse": "Отказ"}
@@ -51,5 +51,8 @@ def build(conn, user) -> dict:
         "picks": {"n": picks[0], "views": picks[1]}, "mine": mine, "new_today": new_today,
         "market": _market(conn),
         "clients": clients.summary(conn, uid),
+        # 19.10: запросы покупателей — в кабинете наверху (всем с подпиской), «под ваши объекты» — по подтверждённым номерам
+        "requests": __import__("app.buyers", fromlist=["summary"]).summary(conn, uid) if accounts.has_access(user)
+                    else {"locked": True},
         "widgets": widgets.all_widgets(conn),
     }

@@ -77,9 +77,16 @@ def test_pick_page_neutral_and_pick_domain(client, monkeypatch):
     assert client.get("/api/picks").json()["items"][0]["url"] == f"https://podborka.example/c/{p['token']}"
 
 
-def test_buyer_requests_admin_only(client):
-    assert client.get("/api/requests").status_code == 403
-    assert client.get("/requests", follow_redirects=False).status_code == 303
+def test_buyer_requests_for_subscribers(client):
+    """19.10 (Артём): запросы — всем с подпиской (было только админу); удаляет только админ; реклама не попадает."""
+    from app import buyers
+    d = client.get("/api/requests").json()
+    assert "items" in d and not d.get("locked")          # у вошедшего по коду есть доступ
+    assert client.post("/api/requests", json={"id": 1, "delete": True}).status_code == 403
+    assert client.get("/requests").status_code == 200
+    assert buyers.is_ad("Выкупим вашу квартиру за 1 день, деньги сразу") and buyers.is_ad("Одобрим ипотеку с плохой КИ")
+    assert not buyers.is_ad("Ищу 2к в ФМР до 7 млн, ипотека Сбер одобрена")
+    assert buyers.STALE_DAYS == 10
 
 
 def test_counts_and_planner_move(client):

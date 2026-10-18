@@ -332,6 +332,12 @@ CREATE TABLE IF NOT EXISTS notes (
 
 # Новые поля в уже существующих таблицах (база на сервере обновится сама при запуске)
 MIGRATIONS = [
+    # 19.10: запросы покупателей — всем с подпиской; удаление админом, реклама, запрос клиента от агента сайта
+    ("buyer_requests", "removed", "INTEGER NOT NULL DEFAULT 0"),   # 1 — удалил админ, 2 — реклама
+    ("buyer_requests", "source", "TEXT NOT NULL DEFAULT 'chat'"),  # chat | agent (опубликовал агент на сайте)
+    ("buyer_requests", "user_id", "INTEGER"),                       # агент, опубликовавший запрос клиента
+    ("buyer_requests", "client_id", "INTEGER"),
+    ("buyer_requests", "notified", "INTEGER NOT NULL DEFAULT 0"),  # агентам с подходящими объектами уже сообщили
     ("listings", "source", "TEXT NOT NULL DEFAULT 'chat'"),   # chat | feed
     ("listings", "ext_id", "TEXT"),                           # id объекта в фиде
     ("listings", "photos", "TEXT NOT NULL DEFAULT '[]'"),

@@ -14,7 +14,19 @@ import time
 from . import config, geo, parser, rules
 from .textnorm import norm, words
 
-STALE_DAYS = 20
+STALE_DAYS = 10   # 19.10 (Артём): запрос живёт 10 дней, если его не повторяют
+
+# 19.10 (Артём: «явную рекламу не добавляем»): выкуп квартир, ипотечные/юридические услуги, каналы, акции — не запрос покупателя
+_AD = re.compile(r"(?:выкуп\w*|выкупим|купим (?:вашу|ваш|любую|любые|квартир\w* за)|срочный выкуп|деньги за (?:день|час)|"
+                 r"(?:одобрим|одобряем|поможем одобрить|помощь в одобрении) ипотек|ипотек\w* (?:с|при) плох\w* (?:ки|кредитн)|"
+                 r"помо(?:жем|щь) (?:с|в) (?:ипотек|одобрен)|юридическ\w* (?:услуг|сопровожд)|"
+                 r"услуги (?:риелтор|юрист|оценк)|оценка недвижимост|ремонт (?:под ключ|квартир)|дизайн[- ]проект|"
+                 r"подписывайтесь|наш (?:канал|сайт)|переходите|t\.me/|https?://|www\.|скидк\w*|акци[яи]\b|реклам\w*|"
+                 r"обучени\w* (?:риелтор|агент)|курс\w* (?:риелтор|агент)|вакансия|требуются (?:агент|риелтор))", re.I)
+
+
+def is_ad(text: str) -> bool:
+    return bool(_AD.search(norm(text or "")))
 
 
 # ─── разбор запроса ────────────────────────────────────────────────────────
@@ -134,9 +146,11 @@ def parse_request(text: str) -> dict:
 def save(conn: sqlite3.Connection, m: sqlite3.Row) -> int | None:
     """Сообщение-запрос → запись в buyer_requests (повтор того же текста — только «ещё присылали»)."""
     text = (m["text"] or "").strip()
-    if len(text) < 15:
+    if len(text) < 15 or is_ad(text):
         return None
-    hit = conn.execute("SELECT id FROM buyer_requests WHERE text_hash = ?", (m["text_hash"],)).fetchone()
+    if conn.execute("SELECT 1 FROM banned WHERE kind = 'reqhash' AND key = ?", (m["text_hash"],)).fetchone():
+        return None   # этот запрос админ удалил — повтор не возвращаем
+    hit = conn.execute("SELECT id FROM buyer_requests WHERE text_hash = ? AND removed = 0", (m["text_hash"],)).fetchone()
     if hit:
         conn.execute("""UPDATE buyer_requests SET last_seen = MAX(last_seen, ?), seen_count = seen_count + 1, is_active = 1
                         WHERE id = ?""", (m["ts"], hit[0]))
@@ -191,6 +205,66 @@ def backfill(conn: sqlite3.Connection) -> int:
     return n
 
 
+def remove(conn: sqlite3.Connection, rid: int) -> bool:
+    """Админ удаляет запрос: с ленты сразу, а повтор того же текста больше не попадёт (banned 'reqhash')."""
+    r = conn.execute("SELECT text_hash, text FROM buyer_requests WHERE id = ?", (rid,)).fetchone()
+    if r is None:
+        return False
+    conn.execute("UPDATE buyer_requests SET is_active = 0, removed = 1 WHERE id = ?", (rid,))
+    if r["text_hash"]:
+        conn.execute("INSERT OR IGNORE INTO banned (kind, key, title, ts) VALUES ('reqhash', ?, ?, ?)",
+                     (r["text_hash"], (r["text"] or "")[:80], int(time.time())))
+    conn.commit()
+    return True
+
+
+def hide_ads(conn: sqlite3.Connection) -> int:
+    """Один раз (state buyers_ads_v1): уже собранная явная реклама — с ленты запросов."""
+    n = 0
+    for r in conn.execute("SELECT id, text FROM buyer_requests WHERE removed = 0").fetchall():
+        if is_ad(r["text"]):
+            conn.execute("UPDATE buyer_requests SET is_active = 0, removed = 2 WHERE id = ?", (r["id"],))
+            n += 1
+    conn.commit()
+    return n
+
+
+def _req(r: sqlite3.Row) -> dict:
+    return {"deal": r["deal"], "type": r["type"], "rooms_mask": r["rooms_mask"], "price_max": r["price_max"],
+            "price_min": r["price_min"], "districts": json.loads(r["districts"] or "[]"), "complexes": json.loads(r["complexes"] or "[]")}
+
+
+def agent_listings(conn: sqlite3.Connection, user_id: int) -> list[dict]:
+    """Объекты на сайте с подтверждёнными номерами этого агента (для «под мои объекты» и уведомлений)."""
+    phones = [r[0] for r in conn.execute("SELECT phone FROM agent_phones WHERE user_id = ?", (user_id,))]
+    if not phones:
+        return []
+    out = []
+    for p in phones:
+        for r in conn.execute("""SELECT id, deal, type, rooms_mask, price, district, extra_districts, complex, title FROM listings
+                                 WHERE is_active = 1 AND phones LIKE ?""", (f'%"{p}"%',)):
+            d = dict(r)
+            d["extra_districts"] = json.loads(r["extra_districts"] or "[]")
+            out.append(d)
+    return list({o["id"]: o for o in out}.values())
+
+
+def for_agent(conn: sqlite3.Connection, user_id: int, limit: int = 300) -> dict[int, list[int]]:
+    """Какие активные запросы подходят под объекты агента: {id запроса: [id его объектов]}."""
+    mine = agent_listings(conn, user_id)
+    if not mine:
+        return {}
+    out: dict[int, list[int]] = {}
+    for r in conn.execute("SELECT * FROM buyer_requests WHERE is_active = 1 AND removed = 0 ORDER BY last_seen DESC LIMIT 2000"):
+        req = _req(r)
+        hit = [o["id"] for o in mine if matches(req, o)]
+        if hit:
+            out[r["id"]] = hit
+            if len(out) >= limit:
+                break
+    return out
+
+
 def archive(conn: sqlite3.Connection, now: int | None = None) -> int:
     now = int(now or time.time())
     n = conn.execute("UPDATE buyer_requests SET is_active = 0 WHERE is_active = 1 AND last_seen < ?",
@@ -243,7 +317,7 @@ def _row(r: sqlite3.Row, with_contacts: bool) -> dict:
 
 def for_listing(conn: sqlite3.Connection, o: dict, with_contacts: bool, limit: int = 30) -> list[dict]:
     out = []
-    for r in conn.execute("SELECT * FROM buyer_requests WHERE is_active = 1 AND deal = ? ORDER BY last_seen DESC LIMIT 2000",
+    for r in conn.execute("SELECT * FROM buyer_requests WHERE is_active = 1 AND removed = 0 AND deal = ? ORDER BY last_seen DESC LIMIT 2000",
                           (o.get("deal"),)):
         req = {"deal": r["deal"], "type": r["type"], "rooms_mask": r["rooms_mask"], "price_max": r["price_max"],
                "price_min": r["price_min"], "districts": json.loads(r["districts"] or "[]"),
@@ -276,8 +350,16 @@ def search_url(r: dict) -> str:
 
 
 def feed(conn: sqlite3.Connection, with_contacts: bool, deal: str = "", district: str = "", rooms: int | None = None,
-         q: str = "", page: int = 1, size: int = 32) -> dict:
-    where, params = ["is_active = 1"], []
+         q: str = "", page: int = 1, size: int = 32, user_id: int | None = None, mine: bool = False) -> dict:
+    """Лента запросов. 19.10: всем с подпиской; mine — только подходящие под объекты агента (по подтверждённым номерам);
+    у каждого запроса — ссылка «подходящие объекты» и (для агента) какие его объекты подходят."""
+    fits = for_agent(conn, user_id) if user_id else {}
+    where, params = ["is_active = 1", "removed = 0"], []
+    if mine:
+        if not fits:
+            return {"total": 0, "items": [], "page": 1, "pages": 0, "stale_days": STALE_DAYS, "access": with_contacts,
+                    "mine_total": 0, "has_listings": bool(user_id and agent_listings(conn, user_id)), "new_24h": 0}
+        where.append(f"id IN ({','.join(str(int(i)) for i in fits)})")
     if deal in ("sale", "rent"):
         where.append("deal = ?"); params.append(deal)
     if district:
@@ -292,9 +374,24 @@ def feed(conn: sqlite3.Connection, with_contacts: bool, deal: str = "", district
                         params + [size, (max(1, page) - 1) * size]).fetchall()
     items = []
     for r in rows:
-        items.append(_row(r, with_contacts))
-    districts = [x[0] for x in conn.execute(
-        "SELECT j.value, COUNT(*) n FROM buyer_requests, json_each(districts) j WHERE is_active = 1 GROUP BY 1 ORDER BY 2 DESC LIMIT 40")]
-    return {"total": total, "items": items, "districts": districts, "page": page,
-            "pages": (total + size - 1) // size, "stale_days": STALE_DAYS, "access": with_contacts,
-            "site": config.SITE_URL}
+        d = _row(r, with_contacts)
+        d["search"] = search_url(d)
+        d["mine"] = fits.get(r["id"], [])[:5]
+        d["source"] = r["source"]
+        items.append(d)
+    new_24h = conn.execute("SELECT COUNT(*) FROM buyer_requests WHERE is_active = 1 AND removed = 0 AND first_seen > ?",
+                           (int(time.time()) - 86400,)).fetchone()[0]
+    return {"total": total, "items": items, "page": page, "pages": (total + size - 1) // size, "stale_days": STALE_DAYS,
+            "access": with_contacts, "mine_total": len(fits), "new_24h": new_24h,
+            "has_listings": bool(fits) or bool(user_id and agent_listings(conn, user_id))}
+
+
+def summary(conn: sqlite3.Connection, user_id: int | None) -> dict:
+    """Для кабинета: сколько запросов, новых за сутки, под объекты агента и 3 свежих."""
+    fits = for_agent(conn, user_id) if user_id else {}
+    rows = conn.execute("SELECT * FROM buyer_requests WHERE is_active = 1 AND removed = 0 ORDER BY last_seen DESC LIMIT 3").fetchall()
+    one = lambda sql, *a: conn.execute(sql, a).fetchone()[0]  # noqa: E731
+    return {"total": one("SELECT COUNT(*) FROM buyer_requests WHERE is_active = 1 AND removed = 0"),
+            "new_24h": one("SELECT COUNT(*) FROM buyer_requests WHERE is_active = 1 AND removed = 0 AND first_seen > ?",
+                           int(time.time()) - 86400),
+            "mine": len(fits), "latest": [{**_row(r, False), "search": search_url(_req(r))} for r in rows]}

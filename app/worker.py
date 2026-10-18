@@ -172,6 +172,9 @@ def tick(conn) -> dict:
         from . import buyers
         stats["buyers_recheck"] = buyers.recheck(conn)
         db.set_state(conn, "buyers_v2", "1")
+    if not db.get_state(conn, "buyers_ads_v1"):   # один раз (19.10): явная реклама — с ленты запросов
+        from . import buyers
+        db.set_state(conn, "buyers_ads_v1", str(buyers.hide_ads(conn)))
     if not db.get_state(conn, "buyers_v1"):   # один раз: запросы из уже разобранных сообщений
         from . import buyers
         stats["buyers_backfill"] = buyers.backfill(conn)
