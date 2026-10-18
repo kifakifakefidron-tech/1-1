@@ -182,7 +182,8 @@ def dative_fio(fio: str) -> str:
 # 18.10 (приёмка п. 10): «даю … согласие» — кому? (дательный падеж)
 OPERATOR_NAME_DAT = os.getenv("OPERATOR_NAME_DAT", "").strip() or (dative_fio(OPERATOR_NAME) if OPERATOR_NAME else "")
 OPERATOR_TEXT_DAT = (OPERATOR_NAME_DAT or "Администрации сервиса «1+1»") + (f", ИНН {OPERATOR_INN}" if OPERATOR_INN else "")
-POLICY_DATE = os.getenv("POLICY_DATE", "19.10.2026").strip()   # редакция документов (менять при правке текстов)
+POLICY_DATE = os.getenv("POLICY_DATE", "19.10.2026").strip()
+LOADTEST_KEY = os.getenv("LOADTEST_KEY", "").strip()   # 19.10: пропуск нагрузочного теста мимо лимитов частоты (пусто — выключено)   # редакция документов (менять при правке текстов)
 
 # Оплата ЮKassa — подготовлена, но выключена, пока PAYMENTS_ENABLED не true
 PAYMENTS_ENABLED = _bool("PAYMENTS_ENABLED", False)
