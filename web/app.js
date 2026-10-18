@@ -620,7 +620,10 @@
     else $("results").innerHTML = html || (favMode
       ? `<li class="empty"><span class="empty-logo">${LOGO}</span><b>Пока пусто</b>Нажмите ♡ на объекте, чтобы сохранить его сюда.</li>`
       : `<li class="empty"><span class="empty-logo">${LOGO}</span><b>Ничего не нашлось</b>Попробуйте убрать часть фильтров или изменить запрос.</li>`);
-    $("loadMore").hidden = state.view !== "list" || data.page >= data.pages;
+    $("loadMore").hidden = state.view !== "list" || data.page >= data.pages || !!data.guest_limit;
+    // 18.10 (приёмка п. 8): гость долистал 5 страниц — дальше после входа
+    const cta = $("guestMore");
+    if (cta) cta.hidden = !(data.guest_limit || (!me() && !favMode && data.page >= 5 && data.pages > 5));
   }
 
   // Фильтр «Избранного» по статусам: сколько объектов в каждом
@@ -783,17 +786,31 @@
       ${phones}`));
   }
 
-  async function loadMap() {
+  // 18.10 (приёмка п. 8): гостю сервер отдаёт карту по видимой области — на общем виде кружки «N объектов»,
+  // приблизил — метки с ценами; сдвинул/приблизил карту — подгружаем эту область
+  let mapFitted = false, guestMoveT = 0, guestMoveBound = false;
+  async function loadMap(fit = true) {
     ensureMap();
     if (!map) return;
     const seq = reqSeq;
+    const guest = !me();
+    let q = apiParams();
+    if (guest && !fit) {
+      const b = map.getBounds();
+      q += `&bbox=${[b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map((x) => x.toFixed(4)).join(",")}`;
+    }
+    if (guest && !guestMoveBound) {
+      guestMoveBound = true;
+      map.on("moveend", () => { if (!me() && mapFitted && state.view === "map") { clearTimeout(guestMoveT); guestMoveT = setTimeout(() => loadMap(false), 350); } });
+    }
     let res;
-    try { res = await getJSON(`/api/map?${apiParams()}`); } catch { return; }
+    try { res = await getJSON(`/api/map?${q}`); } catch { return; }
     if (seq !== reqSeq) return;
     const pts = res.points;
     const cxs = res.complexes || [];
+    const agg = res.agg || [];
     // Сколько найденных объектов на карте — чтобы было видно, что ничего не потерялось
-    const onMap = pts.length + cxs.reduce((s, c) => s + c.n, 0);
+    const onMap = pts.length + cxs.reduce((s, c) => s + c.n, 0) + agg.reduce((s, c) => s + c.n, 0);
     const off = res.total - onMap;
     const vague = res.approx_hidden ? ` ${num(res.approx_hidden)} — адрес уточняется (известна только улица или район).` : "";
     $("mapNote").textContent = off > 0
@@ -824,9 +841,18 @@
         { closeButton: false, className: "map-pop", offset: [0, -30], maxWidth: 280, minWidth: 220 });
       markers.push(mk);
     });
+    agg.forEach((c) => {   // гость, общий вид: кружок с числом объектов; нажатие — приблизить сюда
+      const icon = L.divIcon({ className: "pin-wrap", iconSize: null, html: `<div class="pin agg">${num(c.n)}</div>` });
+      markers.push(L.marker([c.lat, c.lon], { icon, n: c.n }).on("click", () => map.flyTo([c.lat, c.lon], Math.min(17, map.getZoom() + 2), { duration: 0.5 })));
+    });
+    if (agg.length && res.guest) {
+      $("mapNote").textContent = `${$("mapNote").textContent} Приблизьте карту, чтобы увидеть цены, — или войдите.`.trim();
+    }
     if (cluster.addLayers) cluster.addLayers(markers); else markers.forEach((m) => cluster.addLayer(m));
     const chosen = districtShapes.filter((sh) => state.districts.includes(sh.zoneName));
-    const all = pts.map((p) => [p.lat, p.lon]).concat(cxs.map((c) => [c.lat, c.lon]));
+    const all = pts.map((p) => [p.lat, p.lon]).concat(cxs.map((c) => [c.lat, c.lon]), agg.map((c) => [c.lat, c.lon]));
+    if (!fit) return;   // гость двигал карту сам — вид не меняем
+    mapFitted = true;
     if (all.length) map.flyToBounds(coreBounds(all).pad(0.1), { maxZoom: 15, duration: 0.6 });
     if (mapScrollPending) {
       mapScrollPending = false;

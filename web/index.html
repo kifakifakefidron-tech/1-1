@@ -29,7 +29,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=76">
+<link rel="stylesheet" href="/static/glass.css?v=77">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -221,7 +221,9 @@
   <div id="mapBox" class="map" hidden></div>
   <p class="map-note" id="mapNote" hidden></p>
   <ol class="results" id="results"></ol>
-  <div class="more-results"><button type="button" id="loadMore" class="pill" hidden>Показать ещё</button></div>
+  <div class="more-results"><button type="button" id="loadMore" class="pill" hidden>Показать ещё</button>
+    <div class="guest-more" id="guestMore" hidden><b>Дальше — после входа</b><span>Без входа видны первые 5 страниц. Войдите по номеру телефона — неделя бесплатно.</span>
+      <a class="pill" href="/?login=1">Войти</a></div></div>
 </main>
 
 <button type="button" class="new-pill" id="newPill" hidden>↑ Новые объекты: <b id="newCount"></b></button>
@@ -437,7 +439,7 @@
 <script src="/static/yasel.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/app.js?v=126"></script>
+<script src="/static/app.js?v=127"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>
