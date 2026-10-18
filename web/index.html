@@ -29,7 +29,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=78">
+<link rel="stylesheet" href="/static/glass.css?v=79">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -186,6 +186,7 @@
     <button type="button" class="saved-toggle" id="savedToggle">Скрыть</button>
   </div>
   <div class="hit-note" id="hitNote" hidden></div>
+  <div class="hit-note house-chip" id="houseChip" hidden></div>
 
   <div class="bar">
     <div class="count-wrap">
@@ -426,6 +427,23 @@
   </div>
 </dialog>
 
+<dialog id="watchDlg" class="small-dlg watch-dlg" aria-labelledby="watchTitle">
+  <span class="grab" aria-hidden="true"></span>
+  <div class="dlg-body">
+    <h2 id="watchTitle">Следить</h2>
+    <p class="note" id="watchInfo"></p>
+    <form id="watchForm" class="agent-form">
+      <div class="watch-opts" id="watchOpts"></div>
+      <div class="watch-more" id="watchMore">
+        <label class="check"><input type="checkbox" name="same_rooms" checked> <span id="watchRoomsT">Только такие же по комнатам</span></label>
+        <label class="agent-field"><span id="watchPriceT">Цена до, млн ₽ (пусто — любая)</span><input name="price" inputmode="decimal" autocomplete="off"></label>
+      </div>
+      <p class="note">Новые объекты придут в «Уведомления» — и на почту, если она привязана.</p>
+      <div class="dlg-actions"><button type="button" class="ghost" data-close>Отмена</button><button type="submit" class="pill">Следить</button></div>
+    </form>
+  </div>
+</dialog>
+
 <dialog id="agentDlg" class="small-dlg agent-dlg" aria-labelledby="agentTitle">
   <span class="grab" aria-hidden="true"></span>
   <div class="dlg-body" id="agentBody"></div>
@@ -439,7 +457,7 @@
 <script src="/static/yasel.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/app.js?v=128"></script>
+<script src="/static/app.js?v=129"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>

@@ -192,7 +192,7 @@ def noted_ids(conn: sqlite3.Connection, user_id: int) -> list[int]:
 
 # ─── подписки на поиск ─────────────────────────────────────────────────────
 _KEEP = ("q", "deal", "type", "rooms", "price_min", "price_max", "area_min", "area_max", "land_min", "land_max",
-         "district", "complex", "not_first", "not_last", "hot")
+         "district", "complex", "not_first", "not_last", "hot", "street", "house", "cond")
 
 
 def clean_params(query: str) -> str:
@@ -211,9 +211,11 @@ def describe(params: str, types: dict) -> str:
         parts.append(", ".join("студии" if r == "0" else ("4+" if r == "4" else r) for r in p["rooms"].split(",")) + " комн.")
     for k in ("district", "complex"):
         if p.get(k):
-            parts.append(p[k].replace(",", ", "))
+            parts.append(("ЖК " if k == "complex" else "") + p[k].replace(",", ", "))
+    if p.get("street"):   # 19.10: «следить за этим домом»
+        parts.append(f"ул. {p['street']}" + (f", {p['house']}" if p.get("house") else ""))
     rent = p.get("deal") == "rent"
-    fmt = (lambda v: f"{int(v) // 1000} тыс.") if rent else (lambda v: f"{int(v) / 1e6:g} млн")
+    fmt = (lambda v: f"{int(v) // 1000} тыс.") if rent else (lambda v: f"{int(v) / 1e6:g} млн".replace(".", ","))
     if p.get("price_min"):
         parts.append(f"от {fmt(p['price_min'])}")
     if p.get("price_max"):

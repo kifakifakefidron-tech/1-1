@@ -46,6 +46,8 @@ class Query:
     land_max: float | None = None
     districts: list[str] = field(default_factory=list)
     complexes: list[str] = field(default_factory=list)
+    street: str = ""   # 19.10: «следить за этим домом» — улица и дом (точное совпадение, регистр буквы дома не важен)
+    house: str = ""
     not_first: bool = False
     not_last: bool = False
     fresh_days: int | None = None
@@ -95,6 +97,7 @@ def query_from_params(qp) -> Query:
         area_min=num_param(qp.get("area_min")), area_max=num_param(qp.get("area_max")),
         land_min=num_param(qp.get("land_min")), land_max=num_param(qp.get("land_max")),
         districts=_list(qp, "district"), complexes=_list(qp, "complex"),
+        street=qp.get("street", "")[:80].strip(), house=qp.get("house", "")[:20].strip(),
         not_first=qp.get("not_first") == "1", not_last=qp.get("not_last") == "1",
         cond=[c for c in _list(qp, "cond") if c in COND_SQL],
         fresh_days=num_param(qp.get("fresh_days"), int), new_days=num_param(qp.get("new_days"), int),
@@ -394,6 +397,11 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
     if qr.complexes:
         keys = sorted({geo.complex_key(c) for c in qr.complexes if geo.complex_key(c)})
         w.append(f"cxkey(l.complex) IN ({','.join('?' * len(keys))})"); p += keys
+    if qr.street:
+        w.append("l.street = ?"); p.append(qr.street)
+        if qr.house:   # «10Б» = «10б» = «10 Б» (SQLite не меняет регистр кириллицы — варианты готовим здесь)
+            h = re.sub(r"[\s\-]", "", qr.house)
+            w.append("REPLACE(REPLACE(l.house, ' ', ''), '-', '') IN (?, ?, ?)"); p += [h, h.upper(), h.lower()]
     if qr.not_first:
         w.append("(l.floor IS NULL OR l.floor > 1)")
     if qr.not_last:
