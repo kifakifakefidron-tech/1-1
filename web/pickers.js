@@ -8,6 +8,61 @@
    Значения пишутся в исходные поля (тот же формат) + событие change, поэтому остальной код не меняется;
    если код меняет значение поля сам (sel.value = …, новые варианты, form.reset) — кнопка обновится сама.
    Панель открывается ВНУТРИ открытого окна (dialog): иначе браузер считает её «за окном» и не даёт нажимать. */
+
+// ─── 18.10: ЛЮБОЕ окно на ЛЮБОЙ странице закрывается плавно ────────────────────────────────────────────────
+// Раньше плавно закрывались только крестик/свайп/Esc, а ~30 мест в коде (сохранить, отмена, «Изменить»…) звали
+// dialog.close() — окно исчезало рывком. Теперь close() сам проигрывает анимацию ухода (.closing из motion/glass.css)
+// и только потом закрывает окно; showModal() во время ухода сначала доводит закрытие до конца.
+(() => {
+  const P = window.HTMLDialogElement && HTMLDialogElement.prototype;
+  if (!P || P.__softClose) return;
+  P.__softClose = true;
+  const rawClose = P.close, rawModal = P.showModal, rawShow = P.show;
+  const openDesc = Object.getOwnPropertyDescriptor(P, "open");
+  const reallyOpen = (d) => openDesc.get.call(d);
+  // пока окно уходит, для кода страниц оно уже закрыто: «if (!d.open) d.showModal()» сразу открывает его снова
+  Object.defineProperty(P, "open", { configurable: true, enumerable: openDesc.enumerable,
+    get() { return reallyOpen(this) && !this.__closeFin; }, set(v) { openDesc.set.call(this, v); } });
+  const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches || document.hidden;
+  function finish(d) { if (d.__closeFin) d.__closeFin(); }
+  P.close = function (rv) {
+    if (this.__closeFin) return;                         // уже уходит
+    if (!reallyOpen(this)) return rawClose.apply(this, arguments);
+    if (still() || this.matches("[data-instant]")) return rawClose.apply(this, arguments);
+    const d = this, args = arguments;
+    d.classList.add("closing");
+    const onEnd = (e) => { if (e.target === d) fin(); };  // анимации карточек внутри окна — не наши
+    const fin = () => {
+      if (!d.__closeFin) return;
+      d.__closeFin = null;
+      clearTimeout(t);
+      d.removeEventListener("animationend", onEnd);
+      d.classList.remove("closing", "dragging");
+      d.style.transform = d.style.transition = "";
+      rawClose.apply(d, args);
+    };
+    d.__closeFin = fin;
+    d.addEventListener("animationend", onEnd);
+    const t = setTimeout(fin, 360);                       // страховка: анимация не проигралась
+  };
+  P.showModal = function () { finish(this); this.classList.remove("closing"); return rawModal.apply(this, arguments); };
+  P.show = function () { finish(this); this.classList.remove("closing"); return rawShow.apply(this, arguments); };
+  // событие «close» приходит чуть позже; если окно за это время открыли снова — оно не должно сбрасывать новое окно
+  // (например, убирать ?open= из адреса) — гасим запоздалое событие
+  window.addEventListener("close", (e) => {
+    if (e.target instanceof HTMLDialogElement && reallyOpen(e.target)) e.stopImmediatePropagation();
+  }, true);
+  // <form method="dialog"> закрывает окно сам, мимо close() — перехватываем (после обработчиков страницы)
+  document.addEventListener("submit", (e) => {
+    const f = e.target;
+    if (e.defaultPrevented || !(f instanceof HTMLFormElement) || (f.getAttribute("method") || "").toLowerCase() !== "dialog") return;
+    const d = f.closest("dialog");
+    if (!d || !d.open) return;
+    e.preventDefault();
+    d.close(e.submitter && e.submitter.value != null ? e.submitter.value : "");
+  });
+})();
+
 (() => {
   "use strict";
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -403,14 +458,8 @@
     window.addEventListener("click", stop, { capture: true, once: true });
     setTimeout(() => window.removeEventListener("click", stop, { capture: true }), 600);
   }
-  function softClose(d) {
-    if (!d || !d.open || d.classList.contains("closing")) return;
-    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { d.close(); return; }
-    d.classList.add("closing");
-    let done = false;
-    const fin = () => { if (done) return; done = true; d.classList.remove("closing", "dragging"); d.style.transform = d.style.transition = ""; d.close(); };
-    d.addEventListener("animationend", fin, { once: true });
-    setTimeout(fin, 340);
+  function softClose(d) {   // 18.10: плавный уход теперь делает сам dialog.close() (см. начало файла)
+    if (d && d.open) d.close();
   }
   window.softClose = softClose;
   const OWN = "[data-own-swipe]";   // окна главной: app.js закрывает их сам

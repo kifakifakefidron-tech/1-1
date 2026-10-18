@@ -687,6 +687,17 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   страницах больше нет (тест test_no_third_party_scripts_or_fonts), CSP — script/style/font только 'self'; наружу браузер
   ходит только за подложкой OSM. На PICK_DOMAIN Caddy отдаёт /static/vendor/*. Решения 18.10: шифрование клиентов НЕ делаем
   (данные клиентов — на сервере, видит только агент), Google-таблицу с текстами НЕ делаем.
+- 18.10 ЕДИНАЯ АНИМАЦИЯ (ветка motion-1): pickers.js (на всех страницах) подменяет HTMLDialogElement.close/showModal/show —
+  ЛЮБОЙ dialog.close() сначала играет уход (.closing, ~0,2 с), потом закрывает; пока окно уходит, d.open === false (код страниц
+  «if (!d.open) d.showModal()» открывает сразу, уход отменяется); запоздалое событие close у снова открытого окна гасится;
+  <form method="dialog"> закрывается так же плавно. app.js closeDlg и Pick.softClose — просто d.close(). [data-instant] — без
+  анимации. glass.css (конец, «ЕДИНАЯ АНИМАЦИЯ»): --m-out/--m-close/--m-spring; окна — подъём .4 с / уход .2 с, на телефоне шторка;
+  содержимое окна проявляется на 60 мс позже рамки; ТОСТЫ — .toast[popover]:popover-open видим (раньше на 9 страницах кабинет/
+  клиенты/планер/подборки/избранное/настройки/мои объекты/уведомления/сравнение тост открывался ПРОЗРАЧНЫМ — opacity 0 без .show),
+  вход/уход через @starting-style + allow-discrete; выпадающие списки уходят плавно; <details> раскрываются по высоте
+  (interpolate-size, ::details-content); переходы между страницами — @view-transition (меню rail не мерцает, view-transition-name);
+  меню въезжает только при первом заходе за сессию (rail-first, sessionStorage railSeen). prefers-reduced-motion — всё без движения.
+  Проверка в браузере: в скрытой панели предпросмотра кадры не рисуются (rAF стоит, close-событие не приходит) — смотреть со скриншотом.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

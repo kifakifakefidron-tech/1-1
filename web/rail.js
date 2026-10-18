@@ -60,6 +60,9 @@
   function build(me) {
     const rail = document.createElement("nav");
     rail.className = "rail rail-g";
+    // 18.10: меню «въезжает» только при первом заходе за сессию — при переходах между разделами оно стоит на месте
+    try { if (!sessionStorage.getItem("railSeen")) { rail.classList.add("rail-first"); sessionStorage.setItem("railSeen", "1"); } }
+    catch { rail.classList.add("rail-first"); }
     rail.setAttribute("aria-label", "Разделы");
     const items = ITEMS.filter((it) => (!it.user || me) && (!it.admin || (me && me.is_admin)));
     const counts = (me && me.counts) || {};

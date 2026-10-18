@@ -1084,3 +1084,72 @@ dialog.login-dlg { width: min(940px, calc(100vw - 32px)); max-width: none; max-h
 /* 18.10: карта в окне «Все характеристики» */
 .adm-map .geo-find { margin: 6px 0; }
 .adm-geo-map { height: min(42vh, 340px); margin: 6px 0 0; }
+
+/* ═══ 18.10 — ЕДИНАЯ АНИМАЦИЯ САЙТА («дорого и спокойно»): одинаковые кривые и длительности на всех страницах ═══
+   Правила: появление — мягкое замедление (--m-out, .32–.44 с), уход — быстрый старт (--m-close, .2 с); двигаем только
+   opacity и transform (видеокарта, без рывков на телефонах); размытие не анимируем; prefers-reduced-motion — без движения. */
+:root { --m-out: cubic-bezier(.22, 1, .36, 1); --m-close: cubic-bezier(.2, .75, .3, 1); --m-spring: cubic-bezier(.32, .72, 0, 1);
+        interpolate-size: allow-keywords; }
+
+/* всплывающие сообщения: раньше на 9 страницах (кабинет, клиенты, планер, подборки…) окошко открывалось прозрачным —
+   его «проявлял» только класс .show главной. Теперь видно всегда: выезжает снизу и плавно уходит (allow-discrete) */
+.toast[popover] { transition: opacity .3s var(--m-out), transform .42s var(--m-out), overlay .3s allow-discrete, display .3s allow-discrete; }
+.toast[popover]:popover-open { opacity: 1; transform: translate(-50%, 0); }
+@starting-style { .toast[popover]:popover-open { opacity: 0; transform: translate(-50%, 18px) scale(.98); } }
+
+/* выпадающие списки (pickers.js): уходят так же мягко, как появляются */
+.pk-panel { transition: opacity .2s var(--m-out), transform .24s var(--m-out), overlay .2s allow-discrete, display .2s allow-discrete; }
+
+/* окна: появление — подъём с лёгким увеличением, уход — короткое опускание; фон — плавное затемнение */
+@media (min-width: 641px) {
+  dialog[open] { animation: dlg18In .4s var(--m-out); }
+  dialog.closing { animation: dlg18Out .2s var(--m-close) forwards !important; }
+  @keyframes dlg18In { from { opacity: 0; transform: translate3d(0, 16px, 0) scale(.97); } to { opacity: 1; transform: none; } }
+  @keyframes dlg18Out { to { opacity: 0; transform: translate3d(0, 10px, 0) scale(.98); } }
+}
+@media (max-width: 640px) {
+  dialog[open] { animation: dlg18Sheet .46s var(--m-spring); }
+  dialog.closing { animation: dlg18SheetOut .24s var(--m-close) forwards !important; }
+  @keyframes dlg18Sheet { from { transform: translate3d(0, 100%, 0); } to { transform: none; } }
+  @keyframes dlg18SheetOut { to { transform: translate3d(0, 100%, 0); } }
+}
+dialog.dragging { animation: none !important; }
+dialog[open]::backdrop { animation: dlg18Fade .34s var(--m-out); }
+dialog.closing::backdrop { animation: dlg18FadeOut .22s var(--m-close) forwards !important; }
+@keyframes dlg18Fade { from { opacity: 0; } }
+@keyframes dlg18FadeOut { to { opacity: 0; } }
+/* содержимое окна проявляется чуть позже рамки — ощущение «дорогого» открытия */
+dialog[open] > .dlg-body, dialog[open] > form, dialog[open] > .pk2-dlg-in { animation: dlg18Body .5s var(--m-out) .06s both; }
+@keyframes dlg18Body { from { opacity: 0; transform: translateY(6px); } }
+html.embed dialog[open], html.embed dialog[open] > * { animation: none !important; }
+
+/* раскрывающиеся блоки (<details>): плавно раскрываются по высоте (Chrome/Edge 131+, остальные — как раньше) */
+details::details-content { height: 0; overflow: clip; opacity: 0;
+  transition: height .34s var(--m-out), opacity .28s var(--m-out), content-visibility .34s allow-discrete; }
+details[open]::details-content { height: auto; opacity: 1; }
+summary { transition: color .2s var(--m-out); }
+
+/* меню слева въезжает только при первом заходе — при переходах между разделами стоит на месте (rail.js .rail-first) */
+.rail-g:not(.rail-first) { animation: none; }
+
+/* переходы между страницами сайта — мягкое растворение вместо «белой вспышки» (Chrome/Edge 126+, Safari 18.2+);
+   меню и шапка не мерцают — у них своё имя и они остаются на месте */
+@view-transition { navigation: auto; }
+::view-transition-old(root) { animation: vt18Out .18s var(--m-close) both; }
+::view-transition-new(root) { animation: vt18In .32s var(--m-out) both; }
+@keyframes vt18Out { to { opacity: 0; } }
+@keyframes vt18In { from { opacity: 0; transform: translateY(6px); } }
+.rail-g { view-transition-name: rail; }
+::view-transition-group(rail), ::view-transition-old(rail), ::view-transition-new(rail) { animation: none; }
+
+/* кнопки: одинаковый отклик на нажатие и наведение */
+@media (hover: hover) {
+  .pill:not(:disabled):hover, .chip:not(:disabled):hover { transform: translateY(-1px); }
+}
+.pill:not(:disabled):active, .chip:not(:disabled):active, .dv-act:active, .rail-a:active { transform: scale(.97); transition-duration: .08s; }
+
+@media (prefers-reduced-motion: reduce) {
+  dialog[open], dialog.closing, dialog[open] > *, dialog[open]::backdrop, dialog.closing::backdrop { animation: none !important; }
+  .toast[popover], .pk-panel, details::details-content { transition: none !important; }
+  @view-transition { navigation: none; }
+}
