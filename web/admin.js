@@ -39,6 +39,8 @@
         <button type="button" class="pill light" data-queue="6">Пропустить старше 6 ч</button>
         <button type="button" class="pill light" data-queue="all">Сбросить всю очередь</button></span>` : ""}</div>`,
       card(o.users, "пользователей"),
+      ...(o.agent_consent ? [card(`${o.agent_consent.verified} из ${o.agent_consent.agents}`, "агентов подтвердили номер"),
+        card(o.agent_consent.published, "дали согласие на показ номера (/agent)"), card(o.agent_consent.hidden, "агентов скрыли номер")] : []),
       card(o.users_access, "с открытым доступом"), card(o.users_paid, "оплатили подписку"),
       card(o.views_24h, "открытий номеров за сутки"), card(o.complaints_new, "новых жалоб"),
       card(o.optouts, "скрытых номеров"),
