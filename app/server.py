@@ -1232,6 +1232,11 @@ def api_pick_items(request: Request, body: dict | None = None):
     elif "photo" in body or "photo_del" in body:   # свои фото к объекту в подборке
         res = picks.item_photo(db.get(), user["id"], cid, int(body.get("listing_id") or 0),
                                data_url=body.get("photo"), remove=body.get("photo_del"))
+    elif "photo_order" in body or "photo_hide" in body or "photo_unhide" in body:   # 18.10: порядок фото для клиента
+        po = body.get("photo_order")
+        res = picks.item_photo(db.get(), user["id"], cid, int(body.get("listing_id") or 0),
+                               order=[str(x) for x in po][:60] if isinstance(po, list) else None,
+                               hide=str(body.get("photo_hide") or "") or None, unhide=str(body.get("photo_unhide") or "") or None)
     elif "status" in body:   # статус объекта в подборке клиента (понравился, не подходит, показ…)
         res = picks.set_status(db.get(), user["id"], cid, int(body.get("listing_id") or 0), str(body["status"]))
     else:

@@ -48,7 +48,7 @@ def mine(conn: sqlite3.Connection, user_id: int) -> list[dict]:
         d["color"] = r["color"] if r["color"] in settings.COLORS else settings.COLORS[r["id"] % len(settings.COLORS)]
         d["notes"] = {str(k): v[:5] for k, v in worklog.for_pick(conn, user_id, r["id"], r["client_id"]).items()}
         d["items"] = [dict(x) for x in conn.execute(
-            """SELECT i.listing_id, i.note, i.text, i.pos, i.price AS my_price, i.hide_price, i.photos AS my_photos, l.title, l.price, l.deal, l.is_active, l.photos,
+            """SELECT i.listing_id, i.note, i.text, i.pos, i.price AS my_price, i.hide_price, i.photos AS my_photos, i.photo_order, l.title, l.price, l.deal, l.is_active, l.photos,
                       l.description AS orig, l.type, l.rooms, l.area, l.land, l.floor, l.floors, l.complex, l.district,
                       l.street, l.house
                FROM collection_items i JOIN listings l ON l.id = i.listing_id
@@ -59,7 +59,8 @@ def mine(conn: sqlite3.Connection, user_id: int) -> list[dict]:
         for it in d["items"]:
             photos = json.loads(it.pop("photos") or "[]")
             it["my_photos"] = json.loads(it["my_photos"] or "[]")
-            it["photo"] = (it["my_photos"] or photos or [None])[0]
+            it["photos_all"], it["photos_hidden"] = ordered_photos(it["my_photos"], photos, it.pop("photo_order"))
+            it["photo"] = (it["photos_all"] or [None])[0]
             it["orig"] = parser.client_text(it["orig"])   # стартовый текст для клиента — уже очищенный
             pr = pairs.get(it["listing_id"]) or {}
             it["status"], it["reaction"], it["reaction_text"] = pr.get("status"), pr.get("reaction"), pr.get("reaction_text")
@@ -208,15 +209,44 @@ def set_item(conn: sqlite3.Connection, user_id: int, cid: int, listing_id: int, 
 MAX_OWN_PHOTOS = 10
 
 
+def ordered_photos(mine: list[str], listing: list[str], po: str | None) -> tuple[list[str], list[str]]:
+    """18.10 (Артём: «фото в подборке можно перетаскивать»): фото для клиента в порядке агента. Новые фото (добавили позже
+    или пришли в объявлении) — в конце, свои агента — перед фото объявления; скрытые агентом — не показываем."""
+    d = json.loads(po or "{}") if po else {}
+    pool = list(dict.fromkeys(mine + listing))
+    hidden = [u for u in d.get("hidden") or [] if u in pool]
+    order = [u for u in d.get("order") or [] if u in pool and u not in hidden]
+    rest = [u for u in pool if u not in order and u not in hidden]
+    return order + rest, hidden
+
+
 def item_photo(conn: sqlite3.Connection, user_id: int, cid: int, listing_id: int, data_url: str | None = None,
-               remove: str | None = None) -> dict:
+               remove: str | None = None, order: list | None = None, hide: str | None = None,
+               unhide: str | None = None) -> dict:
     """17.10 (Артём): свои фото агента к объекту в подборке — клиент видит их первыми, перед фото из объявления."""
     if not conn.execute("SELECT 1 FROM collections WHERE id = ? AND user_id = ?", (cid, user_id)).fetchone():
         return {"error": "Подборка не найдена."}
-    row = conn.execute("SELECT photos FROM collection_items WHERE collection_id = ? AND listing_id = ?", (cid, listing_id)).fetchone()
+    row = conn.execute("""SELECT i.photos, i.photo_order, l.photos AS lphotos FROM collection_items i JOIN listings l ON l.id = i.listing_id
+                          WHERE i.collection_id = ? AND i.listing_id = ?""", (cid, listing_id)).fetchone()
     if row is None:
         return {"error": "Объекта нет в подборке."}
     photos = json.loads(row["photos"] or "[]")
+    if order is not None or hide or unhide:   # порядок / скрыть / вернуть фото для клиента
+        visible, hidden = ordered_photos(photos, json.loads(row["lphotos"] or "[]"), row["photo_order"])
+        pool = set(visible) | set(hidden)
+        if order is not None:
+            visible = [u for u in dict.fromkeys(str(x) for x in order) if u in pool and u not in hidden] +                       [u for u in visible if u not in order]
+        if hide and hide in pool:
+            if len([u for u in visible if u != hide]) < 1:
+                return {"error": "Оставьте клиенту хотя бы одно фото."}
+            visible, hidden = [u for u in visible if u != hide], hidden + [hide]
+        if unhide and unhide in hidden:
+            hidden, visible = [u for u in hidden if u != unhide], visible + [unhide]
+        conn.execute("UPDATE collection_items SET photo_order = ? WHERE collection_id = ? AND listing_id = ?",
+                     (json.dumps({"order": visible, "hidden": hidden}), cid, listing_id))
+        conn.execute("UPDATE collections SET updated = ? WHERE id = ?", (int(time.time()), cid))
+        conn.commit()
+        return {"ok": True, "photos": photos, "visible": visible, "hidden": hidden}
     if remove:
         photos = [x for x in photos if x != remove]
     elif data_url:
@@ -412,8 +442,8 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
         """SELECT listing_id, kind FROM pick_reactions WHERE collection_id = ? AND device = ? AND kind != 'question'
            ORDER BY ts""",
         (c["id"], device or "-"))} if device else {}
-    for r in conn.execute("""SELECT l.*, i.note AS item_note, i.text AS item_text, i.price AS my_price, i.hide_price, i.photos AS my_photos
-                             FROM collection_items i JOIN listings l ON l.id = i.listing_id
+    for r in conn.execute("""SELECT l.*, i.note AS item_note, i.text AS item_text, i.price AS my_price, i.hide_price, i.photos AS my_photos,
+                                    i.photo_order FROM collection_items i JOIN listings l ON l.id = i.listing_id
                              WHERE i.collection_id = ? ORDER BY i.pos, i.added""", (c["id"],)):
         items.append({
             "id": r["id"], "title": r["title"], "type": r["type"], "deal": r["deal"],
@@ -427,7 +457,8 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
             "lat": _coarse(r["lat"], hide) if search.geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house" else None,
             "lon": _coarse(r["lon"], hide) if search.geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house" else None,
             "approx": hide,
-            "photos": json.loads(r["my_photos"] or "[]") + json.loads(r["photos"] or "[]"),   # свои фото агента — первыми
+            # фото в порядке агента (перетаскиванием в /picks), скрытые — не показываем; свои агента — первыми
+            "photos": ordered_photos(json.loads(r["my_photos"] or "[]"), json.loads(r["photos"] or "[]"), r["photo_order"])[0],
             "description": "" if not r["is_active"] else
                            parser.guard_phones(r["item_text"] or parser.client_text(r["description"]))[:5000],
             "note": r["item_note"] or "", "is_active": r["is_active"],

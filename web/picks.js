@@ -150,6 +150,22 @@
         <li><b>3</b><span>Отправьте ссылку — увидите, когда клиент её откроет</span></li></ol>
       ${list.length ? "" : `<button type="button" class="pill" data-focus-new>${ic("plus")}Создать подборку</button>`}</div>`;
   }
+  // 18.10 (Артём: «фото в подборке можно перетаскивать»): все фото объекта в том порядке, в каком их увидит клиент.
+  // Перетащить — поменять местами (мышь — сразу, палец — подержать 0,3 с); × у своего фото — удалить, у фото объявления — скрыть.
+  function photosHTML(p, it) {
+    const mine = new Set(it.my_photos || []);
+    const vis = it.photos_all || [], hid = it.photos_hidden || [];
+    return `<div class="pk2-own" data-phs="${it.listing_id}" data-pid="${p.id}">
+      <span class="pk2-own-h">Фото для клиента <small>— перетащите, чтобы поменять порядок; первое — обложка</small></span>
+      <div class="pk2-own-list">${vis.map((u, k) => `<span class="pk2-own-ph pk2-pt${k === 0 ? " first" : ""}" data-u="${esc(u)}" draggable="false">
+          <img src="${esc(u)}" alt="" loading="lazy" draggable="false">${k === 0 ? `<em>Обложка</em>` : ""}
+          ${mine.has(u) ? `<button type="button" data-ph-del="${esc(u)}" data-lid="${it.listing_id}" data-pid="${p.id}" aria-label="Удалить своё фото" title="Удалить своё фото">${ic("x")}</button>`
+            : vis.length > 1 ? `<button type="button" data-ph-hide="${esc(u)}" data-lid="${it.listing_id}" data-pid="${p.id}" aria-label="Скрыть от клиента" title="Скрыть от клиента">${ic("x")}</button>` : ""}</span>`).join("")}
+        ${(it.my_photos || []).length < 10 ? `<label class="pk2-own-add" title="Добавить свои фото">${ic("plus")}<span>Фото</span>
+          <input type="file" accept="image/*" multiple data-ph-add="${it.listing_id}" data-pid="${p.id}" hidden></label>` : ""}</div>
+      ${hid.length ? `<div class="pk2-hid"><span>Скрыто от клиента:</span>${hid.map((u) => `<button type="button" class="pk2-hid-ph" data-ph-unhide="${esc(u)}" data-lid="${it.listing_id}" data-pid="${p.id}" title="Вернуть клиенту"><img src="${esc(u)}" alt="" loading="lazy"><i>${ic("plus")}</i></button>`).join("")}</div>` : ""}
+    </div>`;
+  }
   function objCard(p, it, i) {
     return `<article class="pk2-obj${it.is_active ? "" : " gone"}" draggable="true" data-lid="${it.listing_id}" data-pid="${p.id}" style="--i:${i}">
       <button type="button" class="pk2-rm" data-rm="${it.listing_id}" data-pid="${p.id}" aria-label="Убрать из подборки" title="Убрать из подборки">${ic("x")}</button>
@@ -165,11 +181,7 @@
               aria-label="Цена для клиента"${it.hide_price ? " disabled" : ""}><em>${it.deal === "rent" ? "тыс. ₽/мес" : "млн ₽"}</em></label>
           <label class="pk2-phide"><input type="checkbox" data-phide="${it.listing_id}" data-pid="${p.id}"${it.hide_price ? " checked" : ""}>Скрыть цену</label>
         </div>
-        <div class="pk2-own"><span class="pk2-own-h">Ваши фото для клиента <small>— покажутся первыми</small></span>
-          <div class="pk2-own-list">${(it.my_photos || []).map((u) => `<span class="pk2-own-ph"><img src="${esc(u)}" alt="" loading="lazy">
-            <button type="button" data-ph-del="${esc(u)}" data-lid="${it.listing_id}" data-pid="${p.id}" aria-label="Убрать фото">${ic("x")}</button></span>`).join("")}
-            ${(it.my_photos || []).length < 10 ? `<label class="pk2-own-add" title="Добавить свои фото">${ic("plus")}<span>Фото</span>
-              <input type="file" accept="image/*" multiple data-ph-add="${it.listing_id}" data-pid="${p.id}" hidden></label>` : ""}</div></div>
+        ${photosHTML(p, it)}
         <small class="pk2-phint">В объявлении: <b>${esc(money(it.price, it.deal))}</b>${it.my_price && !it.hide_price ? " · клиент видит вашу цену" : ""}${it.hide_price ? " · клиент видит «Цена по запросу»" : ""}</small>
         <a class="pk2-ot" href="/?open=${it.listing_id}">${esc(it.title)}</a>
         <small>${esc(sub(it))}</small>
@@ -668,9 +680,92 @@
     toast(r.ok ? "Комментарий сохранён" : r.data.detail || "Не сохранилось", 1500);
   });
 
+  // скрыть фото объявления от клиента / вернуть
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-ph-hide], [data-ph-unhide]");
+    if (!b) return;
+    const hide = b.hasAttribute("data-ph-hide");
+    const r = await call(`/api/picks/${b.dataset.pid}/items`, { listing_id: Number(b.dataset.lid),
+      [hide ? "photo_hide" : "photo_unhide"]: hide ? b.dataset.phHide : b.dataset.phUnhide });
+    toast(r.ok ? (hide ? "Фото скрыто от клиента" : "Фото снова видно клиенту") : r.data.detail || "Не получилось", 1800);
+    if (r.ok) await reload();
+  });
+  // ─── перетаскивание фото внутри объекта: мышь — после сдвига 6 px, палец — после удержания 0,3 с ───
+  // плитка едет за пальцем, соседние плавно расступаются (FLIP); отпустили — порядок сохраняется
+  let ph = null;
+  const phEnd = async (save) => {
+    const d = ph; ph = null;
+    if (!d) return;
+    clearTimeout(d.timer);
+    if (!d.on) return;
+    d.t.classList.remove("pk2-pt-drag"); d.strip.classList.remove("sorting");
+    d.t.style.transform = ""; d.t.style.zIndex = "";
+    if (!save) return;
+    const order = [...d.strip.querySelectorAll(".pk2-pt")].map((x) => x.dataset.u);
+    if (order.join("|") === d.before) return;
+    const box = d.strip.closest("[data-phs]");
+    const r = await call(`/api/picks/${box.dataset.pid}/items`, { listing_id: Number(box.dataset.phs), photo_order: order });
+    toast(r.ok ? "Порядок фото сохранён" : r.data.detail || "Не сохранилось", 1500);
+    await reload();
+  };
+  const phBegin = () => {
+    if (!ph) return;
+    ph.on = true;
+    try { ph.t.setPointerCapture(ph.id); } catch { /* */ }
+    ph.t.classList.add("pk2-pt-drag"); ph.strip.classList.add("sorting");
+    ph.t.style.zIndex = "5";
+    if (navigator.vibrate && ph.touch) navigator.vibrate(8);
+  };
+  document.addEventListener("pointerdown", (e) => {
+    const t = e.target.closest(".pk2-pt");
+    if (!t || e.target.closest("button") || e.button > 0) return;
+    const strip = t.parentElement;
+    ph = { t, strip, id: e.pointerId, x: e.clientX, y: e.clientY, on: false, touch: e.pointerType !== "mouse",
+      before: [...strip.querySelectorAll(".pk2-pt")].map((x) => x.dataset.u).join("|"), timer: 0 };
+    if (ph.touch) ph.timer = setTimeout(phBegin, 300);
+  });
+  document.addEventListener("pointermove", (e) => {
+    if (!ph || e.pointerId !== ph.id) return;
+    if (!ph.on) {
+      const dist = Math.hypot(e.clientX - ph.x, e.clientY - ph.y);
+      if (ph.touch) { if (dist > 10) phEnd(false); return; }   // палец поехал раньше — это прокрутка страницы
+      if (dist < 6) return;
+      phBegin();
+    }
+    e.preventDefault();
+    const t = ph.t;
+    t.style.transform = "";
+    t.style.pointerEvents = "none";
+    const over = document.elementFromPoint(e.clientX, e.clientY);
+    t.style.pointerEvents = "";
+    const o = over && over.closest(".pk2-pt");
+    if (o && o !== t && o.parentElement === ph.strip) {
+      const tiles = [...ph.strip.querySelectorAll(".pk2-pt")];
+      const was = new Map(tiles.map((x) => [x, x.getBoundingClientRect()]));
+      const r = o.getBoundingClientRect();
+      ph.strip.insertBefore(t, e.clientX > r.left + r.width / 2 ? o.nextSibling : o);
+      tiles.forEach((x) => {
+        if (x === t) return;
+        const a = was.get(x), b = x.getBoundingClientRect();
+        if (a.left !== b.left || a.top !== b.top) {
+          x.animate([{ transform: `translate(${a.left - b.left}px, ${a.top - b.top}px)` }, { transform: "none" }],
+            { duration: 220, easing: "cubic-bezier(.22,1,.36,1)" });
+        }
+      });
+    }
+    // плитка — под пальцем: центр плитки там, где палец (от её нового места в ряду)
+    const home = t.getBoundingClientRect();
+    t.style.transform = `translate(${e.clientX - (home.left + home.width / 2)}px, ${e.clientY - (home.top + home.height / 2)}px) scale(1.08)`;
+  }, { passive: false });
+  document.addEventListener("pointerup", (e) => { if (ph && e.pointerId === ph.id) phEnd(true); });
+  document.addEventListener("pointercancel", (e) => { if (ph && e.pointerId === ph.id) phEnd(false); });
+  document.addEventListener("touchmove", (e) => { if (ph && ph.on) e.preventDefault(); }, { passive: false });   // не листать страницу, пока тянем
+  document.addEventListener("contextmenu", (e) => { if (e.target.closest(".pk2-pt")) e.preventDefault(); });
+
   // перетаскивание карточек (мышь; на телефоне — стрелки)
   let drag = null;
   document.addEventListener("dragstart", (e) => {
+    if (e.target.closest && e.target.closest(".pk2-own")) { e.preventDefault(); return; }   // фото тянем своим способом
     const card = e.target.closest && e.target.closest(".pk2-obj");
     if (!card || e.target.closest("input")) return;
     drag = card; card.classList.add("drag");
