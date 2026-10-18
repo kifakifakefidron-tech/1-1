@@ -682,6 +682,11 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   допускает «&», «_», «*» и до 3 знаков («677 - 19 - 17»); parser.client_text вырезает номера ещё раз ПОСЛЕ чистки значков
   («677-19&17» собирался в номер). Документы (POLICY_DATE 18.10.2026): вход по номеру звонком (SMS.ru), Wappi, IP у Google Fonts /
   cdnjs / unpkg / OSM, данные клиентов агента из подборок, «НДС не облагается» в оферте. rail.js: «я на сайте» не чаще раза в 30 с.
+  СВОИ КОПИИ шрифтов и карты (18.10, согласие Артёма): web/vendor/fonts (Golos Text, Oswald — OFL, кириллица+латиница,
+  fonts.css?v=1) и web/vendor/leaflet (Leaflet 1.9.4, markercluster 1.5.3, Geoman 2.17.0). Google Fonts / cdnjs / unpkg на
+  страницах больше нет (тест test_no_third_party_scripts_or_fonts), CSP — script/style/font только 'self'; наружу браузер
+  ходит только за подложкой OSM. На PICK_DOMAIN Caddy отдаёт /static/vendor/*. Решения 18.10: шифрование клиентов НЕ делаем
+  (данные клиентов — на сервере, видит только агент), Google-таблицу с текстами НЕ делаем.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

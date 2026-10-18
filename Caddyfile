@@ -58,7 +58,7 @@
 		X-Robots-Tag "noindex"
 		-Server
 	}
-	@pickStatic path /static/style.css /static/motion.css /static/theme.css /static/glass.css /static/pick.css /static/pick.js /static/icons.js /static/icons.svg /static/pickers.js /static/max.js /static/house.svg /static/cookies.js
+	@pickStatic path /static/style.css /static/motion.css /static/theme.css /static/glass.css /static/pick.css /static/pick.js /static/icons.js /static/icons.svg /static/pickers.js /static/max.js /static/house.svg /static/cookies.js /static/vendor/*
 	handle @pickStatic {
 		uri strip_prefix /static
 		root * /srv/web
