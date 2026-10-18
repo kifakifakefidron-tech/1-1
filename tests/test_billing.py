@@ -20,3 +20,33 @@ def test_billing_reminders():
     assert st["timeweb"]["left"] == 1 and st["regru"]["period"] == 365
     titles = [r[0] for r in conn.execute("SELECT title FROM notices WHERE kind = 'billing'")]
     assert any("Timeweb" in t for t in titles)
+
+
+def test_skip_queue_old_or_all():
+    import time
+    from app import ingest
+    conn = db.connect(":memory:")
+    now = int(time.time())
+    for i, age_h in enumerate((1, 3, 10, 30)):
+        ingest.add_message(conn, source="wa", text=f"2к квартира {i}", chat_id="c", msg_id=f"q{i}", ts=now - age_h * 3600)
+    conn.commit()
+    assert ingest.skip_queue(conn, 6, now) == 2
+    assert conn.execute("SELECT COUNT(*) FROM messages WHERE status = 'new'").fetchone()[0] == 2
+    assert ingest.skip_queue(conn) == 2
+    assert conn.execute("SELECT COUNT(*) FROM messages WHERE status = 'new'").fetchone()[0] == 0
+
+
+def test_yookassa_error_is_understandable(monkeypatch):
+    import io
+    import urllib.error
+    import pytest
+    from app import accounts, payments
+    conn = db.connect(":memory:")
+    uid = accounts.create_promo_user(conn)["id"]
+
+    def boom(url, body=None):
+        raise urllib.error.HTTPError(url, 401, "Unauthorized", {}, io.BytesIO(b'{"code":"invalid_credentials","description":"Wrong key"}'))
+    monkeypatch.setattr(payments, "_request", boom)
+    with pytest.raises(payments.PayError):
+        payments.create(conn, uid, 7)
+    assert conn.execute("SELECT COUNT(*) FROM payments").fetchone()[0] == 0

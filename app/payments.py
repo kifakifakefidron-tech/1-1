@@ -72,19 +72,39 @@ def plans(conn: sqlite3.Connection | None = None, user_id: int | None = None) ->
     return out
 
 
+class PayError(Exception):
+    """Платёж не создан — текст для человека."""
+
+
 def create(conn: sqlite3.Connection, user_id: int, days: int | None = None) -> str:
     """Создать платёж по тарифу (дней); возвращает ссылку на страницу оплаты ЮKassa."""
     # цену считает сервер (первая неделя по 49 ₽ — только тем, кто ещё не платил)
     options = _price_list(conn, user_id)
     plan = next(((d, p) for d, p, _ in options if d == days), None) or (options[0][:2] if options else (config.SUB_DAYS, config.SUB_PRICE))
     days, price = plan
-    pay = _request(API, {
+    db.flush(conn)   # не держать базу, пока ждём ЮKassa
+    try:
+        pay = _request(API, {
         "amount": {"value": f"{price}.00", "currency": "RUB"},
         "capture": True,
         "confirmation": {"type": "redirect", "return_url": f"{config.SITE_URL}/pay?check=1"},
         "description": f"Доступ 1+1 на {days} дн.",
         "metadata": {"user_id": user_id, "days": days},
-    })
+        })
+    except urllib.error.HTTPError as e:   # 18.10: ЮKassa ответила ошибкой — причину админу, человеку понятный текст
+        try:
+            why = json.loads(e.read() or b"{}")
+        except (ValueError, OSError):
+            why = {}
+        text = f"ЮKassa {e.code}: {why.get('code', '')} {why.get('description', '')} {why.get('parameter', '')}".strip()
+        log.error("ЮKassa: не создан платёж: %s", text)
+        from . import notify
+        notify.alert(conn, "yookassa_create", f"Оплата не создаётся — {text}. Проверьте shopId/секретный ключ и чеки в ЮKassa.",
+                     every_s=3600)
+        raise PayError("Оплата сейчас не проходит — мы уже разбираемся. Попробуйте чуть позже.") from e
+    except (urllib.error.URLError, TimeoutError) as e:
+        log.error("ЮKassa недоступна: %s", e)
+        raise PayError("Платёжный сервис не отвечает — попробуйте ещё раз через минуту.") from e
     conn.execute("INSERT INTO payments (user_id, amount, days, provider_id, status, created) VALUES (?,?,?,?,?,?)",
                  (user_id, price, days, pay["id"], pay.get("status", "pending"), int(time.time())))
     conn.commit()
