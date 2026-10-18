@@ -1522,22 +1522,8 @@
     d.style.transform = "";
   }
 
-  function closeDlg(d) {
-    if (!d || !d.open || d.classList.contains("closing")) return;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) { d.close(); return; }
-    d.classList.add("closing");
-    let finished = false;
-    const done = () => {
-      if (finished) return;
-      finished = true;
-      d.removeEventListener("animationend", done);
-      d.classList.remove("closing");
-      d.style.transform = "";
-      d.close();
-    };
-    d.addEventListener("animationend", done);
-    setTimeout(done, 350);  // страховка: анимация могла не проиграться (свёрнутая вкладка, экономия энергии)
+  function closeDlg(d) {   // 18.10: плавный уход делает сам dialog.close() (pickers.js) — на всех страницах одинаково
+    if (d && d.open) d.close();
   }
 
   // Свайп вниз закрывает окно (телефон): тянем за верх, отпустили ниже 110px — закрыли
@@ -1580,9 +1566,9 @@
     }
     requestAnimationFrame(() => t.classList.add("show"));
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
+    toastTimer = setTimeout(() => {   // уход — плавно (glass.css: .toast[popover], allow-discrete)
       t.classList.remove("show");
-      setTimeout(() => { if (!t.classList.contains("show") && t.hidePopover) { try { t.hidePopover(); } catch { /* */ } } }, 450);
+      if (t.hidePopover) { try { t.hidePopover(); } catch { /* */ } }
     }, ms);
   }
 
