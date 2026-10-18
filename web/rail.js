@@ -50,7 +50,7 @@
     { href: "/settings", icon: "gear", tip: "Настройки", desc: "Профиль, вид подборок для клиентов, вход", user: true },
     { href: "/how", icon: "help", tip: "Как это работает", desc: "Коротко о сервисе и ответы на вопросы" },
     { sep: true, admin: true },
-    { href: "/requests", icon: "briefcase", tip: "Запросы покупателей", desc: "Кто что ищет — запросы агентов из чатов (видно только админу)", admin: true },
+    { href: "/requests", icon: "briefcase", tip: "Запросы покупателей", desc: "Кто что ищет — бюджет, районы, номер агента; под ваши объекты — отдельно", user: true },
     { href: "/learn", icon: "layers", tip: "Обучение и разбор", desc: "Очереди разбора, что выучил сервис", admin: true, also: ["/fix", "/admin/map"] },
     { href: "/admin", icon: "sliders", tip: "Админка", desc: "Пользователи, чаты, номера, статистика", admin: true },
   ];

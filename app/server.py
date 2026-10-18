@@ -1545,20 +1545,29 @@ def api_settings(request: Request, body: dict | None = None):
 
 
 def requests_page(request: Request, body: dict | None = None):
-    user = current_user(request)   # запросы покупателей — только админу (решение Артёма 13.10)
-    if not (user and user["is_admin"]):
-        return RedirectResponse("/", status_code=303)
+    # 19.10: страница открыта всем — без подписки на ней приглашение (число запросов есть, самих запросов нет)
     return _page("requests.html")
 
 
 def api_requests(request: Request, body: dict | None = None):
-    """Лента запросов покупателей — только админу (решение Артёма 13.10)."""
-    user, err = _need_admin(request)
-    if err:
-        return err
+    """Лента запросов покупателей. 19.10 (Артём): всем с подпиской (было — только админу); админ удаляет запрос
+    (POST {id, delete: true}). Без подписки — только число запросов и приглашение оформить доступ."""
+    user = current_user(request)
+    conn = db.get()
+    if request.method == "POST":
+        if not user or not user["is_admin"]:
+            return _err("Только для администратора.", 403)
+        rid = _num((body or {}).get("id"), int) or 0
+        return JSONResponse({"ok": buyers.remove(conn, rid)})
+    if not user or not accounts.has_access(user):
+        s = buyers.summary(conn, None)
+        return JSONResponse({"locked": True, "guest": not user, "total": s["total"], "new_24h": s["new_24h"],
+                             "items": [], "stale_days": buyers.STALE_DAYS})
     q = request.query_params
-    return JSONResponse(buyers.feed(db.get(), has_access(request, user), q.get("deal", ""), q.get("district", ""),
-                                    _num(q.get("rooms"), int), q.get("q", ""), _num(q.get("page"), int) or 1))
+    d = buyers.feed(conn, True, q.get("deal", ""), q.get("district", ""), _num(q.get("rooms"), int), q.get("q", ""),
+                    _num(q.get("page"), int) or 1, user_id=user["id"], mine=q.get("mine") == "1")
+    d["admin"] = bool(user["is_admin"])
+    return JSONResponse(d)
 
 
 def planner_page(request: Request, body: dict | None = None):
@@ -2792,7 +2801,7 @@ routes = [
     Route("/market", threaded(market_page)),
     Route("/planner", threaded(planner_page)),
     Route("/requests", threaded(requests_page)),
-    Route("/api/requests", threaded(api_requests)),
+    Route("/api/requests", threaded(api_requests), methods=["GET", "POST"]),
     Route("/picks", threaded(picks_page)),
     Route("/work", threaded(work_page)),
     Route("/compare", threaded(compare_page)),

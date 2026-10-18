@@ -18,7 +18,7 @@
 <link rel="stylesheet" href="/static/doc.css?v=3">
 <link rel="stylesheet" href="/static/theme.css?v=15">
 <link rel="stylesheet" href="/static/glass.css?v=78">
-<link rel="stylesheet" href="/static/cabinet.css?v=22">
+<link rel="stylesheet" href="/static/cabinet.css?v=23">
 </head>
 <body class="dash-body">
 <main class="dash">
@@ -47,17 +47,15 @@
 
       <div class="bento" id="bento">
         <!-- 17.10: без дублей — клиенты, избранное, уведомления, рынок, поиски и быстрые ссылки живут в своих разделах (меню слева) -->
-        <!-- погода -->
-        <section class="g w-weather" id="wWeather"><div class="g-skel"></div></section>
-        <!-- ключевая ставка -->
-        <section class="g w-rate" id="wRate"><div class="g-skel"></div></section>
-        <!-- ипотека в крае -->
-        <section class="g w-mort" id="wMort"><div class="g-skel"></div></section>
-        <!-- курсы -->
-        <section class="g w-fx" id="wFx"><div class="g-skel"></div></section>
 
         <!-- день -->
         <section class="g w-day span-2" id="wDay"><div class="g-skel"></div></section>
+        <!-- 19.10: запросы покупателей (всем с подпиской) -->
+        <section class="g w-req span-2" id="wReq"><div class="g-skel"></div></section>
+        <!-- погода -->
+        <section class="g w-weather" id="wWeather"><div class="g-skel"></div></section>
+        <!-- ипотека в крае -->
+        <section class="g w-mort" id="wMort"><div class="g-skel"></div></section>
         <!-- калькулятор -->
         <section class="g w-calc span-2" id="wCalc"></section>
 
@@ -67,6 +65,10 @@
         <section class="g w-rbc span-2" id="wRbc"><div class="g-skel"></div></section>
         <!-- приведи коллегу + промокод -->
         <section class="g w-ref" id="wRef"></section>
+
+        <!-- 19.10 (Артём): ключевая ставка и биржа — в самом низу -->
+        <section class="g w-rate" id="wRate"><div class="g-skel"></div></section>
+        <section class="g w-fx" id="wFx"><div class="g-skel"></div></section>
 
         <!-- админ -->
         <section class="g w-admin span-4" id="wAdmin" hidden></section>
@@ -115,8 +117,8 @@
 <script src="/static/icons.js?v=9"></script>
 <script src="/static/pickers.js?v=16"></script>
 <script src="/static/max.js?v=2"></script>
-<script src="/static/rail.js?v=24"></script>
-<script src="/static/cabinet.js?v=31"></script>
+<script src="/static/rail.js?v=25"></script>
+<script src="/static/cabinet.js?v=32"></script>
 <script src="/static/objview.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 </body>

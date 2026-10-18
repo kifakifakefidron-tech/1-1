@@ -194,6 +194,30 @@
         <a class="pill light" href="/planner?add=task">${ic("plus")}Задача</a></div>`, 4);
   }
 
+  // ─── 19.10: запросы покупателей — наверху кабинета ─────────────────
+  function requestsW() {
+    const q = dash.requests || {};
+    if (q.locked) {
+      put("wReq", `${head("briefcase", "Запросы покупателей")}
+        <p class="g-empty">Кто сейчас ищет объект — бюджет, районы и номер агента. Доступно с подпиской.</p>
+        <a class="pill" href="/pay">Оформить доступ</a>`, 5);
+      return;
+    }
+    const TYPES = { flat: "квартира", room: "комната", house: "дом", land: "участок", commercial: "коммерция" };
+    const rooms = (m) => [0, 1, 2, 3, 4].filter((i) => m & (1 << i)).map((i) => (i === 0 ? "студия" : i === 4 ? "4+" : `${i}к`)).join(", ");
+    const money = (p, deal) => (deal === "rent" ? `${Math.round(p / 1000)} тыс./мес` : `${(p / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} млн`);
+    const row = (r) => {
+      const what = [r.deal === "rent" ? "аренда" : "", rooms(r.rooms_mask) || TYPES[r.type] || "", r.price_max ? `до ${money(r.price_max, r.deal)}` : "",
+        (r.districts || [])[0] || ((r.complexes || [])[0] ? `ЖК ${r.complexes[0]}` : "")].filter(Boolean).join(" · ");
+      return `<a class="wq-row" href="/requests"><b>${esc(what || "Запрос")}</b><small>${esc((r.text || "").slice(0, 90))}</small></a>`;
+    };
+    put("wReq", `${head("briefcase", "Запросы покупателей", `<a class="g-link" href="/requests">Все →</a>`)}
+      <div class="wq-nums"><a href="/requests"><b>${q.total || 0}</b><span>сейчас ищут</span></a>
+        <a href="/requests"><b>${q.new_24h || 0}</b><span>новых за сутки</span></a>
+        <a href="/requests?mine=1" class="${q.mine ? "hot" : ""}"><b>${q.mine || 0}</b><span>под ваши объекты</span></a></div>
+      ${(q.latest || []).map(row).join("") || `<p class="g-empty">Пока запросов нет.</p>`}`, 5);
+  }
+
   // ─── клиенты (CRM) ───────────────────────────────────────────────
   const CL_C = { new: "#b8c8e4", search: "#8fd1cb", shows: "#e3cb8f", talks: "#d9b3e6", deposit: "#f0b77a", deal: "#a7d1b6", lost: "#e2a596" };
   function clientsW() {
@@ -434,7 +458,7 @@
     dash = r.data;
     const w = dash.widgets;
     weather(w.weather); rate(w.keyrate); mortgage(w.mortgage, w.banks); fx(w.currency, w.moex); rbc(w.news);
-    day(); clientsW(); crm(); news(); market(); calcHtml(); admin();
+    day(); requestsW(); clientsW(); crm(); news(); market(); calcHtml(); admin();
     layout();
     if (me.is_admin && new URLSearchParams(location.search).has("banks")) { openBanks(); history.replaceState(null, "", "/cabinet"); }
   }
@@ -681,8 +705,14 @@
     const order = (r.ok && r.data.settings.cabinet_order) || [];
     if (order.length) {   // сохранённый порядок; новые блоки, которых в нём нет, — в конце
       const byId = Object.fromEntries(sections().map((g) => [g.id, g]));
-      order.forEach((id) => { if (byId[id]) box.appendChild(byId[id]); });
-      sections().filter((g) => !order.includes(g.id) && g.id !== "wAdmin" && g.id !== "wAdd").forEach((g) => box.appendChild(g));
+      // 19.10 (Артём): ставка ЦБ и биржа — в самый низ; у тех, кто расставил блоки до этого, — один раз (нет wReq в порядке)
+      const old = !order.includes("wReq");
+      const ord = old ? order.filter((id) => id !== "wRate" && id !== "wFx").concat(["wRate", "wFx"]) : order;
+      ord.forEach((id) => { if (byId[id]) box.appendChild(byId[id]); });
+      // новые блоки, которых в сохранённом порядке нет, — наверх (новые возможности должно быть видно), после «Мой день»
+      const fresh = sections().filter((g) => !ord.includes(g.id) && g.id !== "wAdmin" && g.id !== "wAdd");
+      const day = byId.wDay && byId.wDay.parentElement === box ? byId.wDay : null;
+      fresh.reverse().forEach((g) => (day ? day.after(g) : box.prepend(g)));
       if (byId.wAdmin) box.appendChild(byId.wAdmin);
     }
     box.appendChild($("wAdd"));   // «+ Свой блок» — всегда последним
