@@ -542,15 +542,21 @@
     if (img.tagName === "IMG" && img.dataset.full && img.src !== img.dataset.full) img.src = img.dataset.full;
   }, true);
   // галочка согласия на обработку ПДн в окне входа (152-ФЗ): без неё сервер вход не пропустит — подсказываем заранее
+  // 18.10 (приёмка п. 9): две отдельные галочки — согласие на обработку ПДн отдельно от соглашения и оферты (закон с 01.09.2025)
   function consentOk() {
-    const c = $("consentChk");
-    if (c && !c.checked) {
-      const e = $("loginErr");
-      if (e) { e.textContent = "Отметьте согласие на обработку персональных данных — без него вход невозможен."; e.hidden = false; }
-      c.closest(".consent-chk").classList.add("need");
-      setTimeout(() => c.closest(".consent-chk").classList.remove("need"), 1600);
+    const boxes = [["consentChk", "Отметьте согласие на обработку персональных данных — без него вход невозможен."],
+      ["termsChk", "Отметьте, что принимаете пользовательское соглашение и оферту."]];
+    for (const [id, text] of boxes) {
+      const c = $(id);
+      if (c && !c.checked) {
+        const e = $("loginErr");
+        if (e) { e.textContent = text; e.hidden = false; }
+        c.closest(".consent-chk").classList.add("need");
+        setTimeout(() => c.closest(".consent-chk").classList.remove("need"), 1600);
+        return false;
+      }
     }
-    return !!(c && c.checked);
+    return true;
   }
   // «Пишите как в чате»: как сервис понял фразу из строки поиска — чипами; ✕ убирает эту часть из запроса
   function understoodHTML(u) {
@@ -1750,7 +1756,7 @@
     const btn = $("phoneForm").querySelector(".lg-go");
     btn.disabled = true; btn.textContent = "Готовим номер для звонка…";
     $("loginErr").hidden = true;
-    const r = await call("/api/auth/phone", { phone, consent: true });
+    const r = await call("/api/auth/phone", { phone, consent: true, terms: true });
     btn.disabled = false; btn.textContent = "Войти звонком";
     if (!r.ok) { loginError(r.data.detail || "Не получилось — попробуйте ещё раз или войдите по почте."); return; }
     const { tid, call_phone: to, call_pretty: pretty, phone: ph, ttl } = r.data;
@@ -1808,7 +1814,7 @@
   async function startTelegram(link) {
     if (!link && !consentOk()) return;
     const w = window.open("", "_blank");  // открываем сразу, иначе браузер заблокирует окно
-    const r = await call("/api/auth/tg/start", link ? { link: true } : { consent: true });
+    const r = await call("/api/auth/tg/start", link ? { link: true } : { consent: true, terms: true });
     if (!r.ok) {
       if (w) w.close();
       if (!$("loginDlg").open) openLogin();
@@ -2481,7 +2487,7 @@
       btn.disabled = true;
       btn.textContent = "Отправляем код…";
       $("loginErr").hidden = true;
-      const r = await call("/api/auth/email/start", { email, consent: consentOk() });
+      const r = await call("/api/auth/email/start", { email, consent: consentOk(), terms: true });
       btn.disabled = false;
       btn.textContent = label;
       if (!r.ok) { loginError(r.data.detail || `Не получилось отправить код (ошибка ${r.status}). Попробуйте ещё раз чуть позже.`); return; }
@@ -2505,7 +2511,7 @@
       e.preventDefault();
       const btn = $("codeForm").querySelector(".lg-go");
       btn.disabled = true; btn.textContent = "Проверяем…";
-      const r = await call("/api/auth/email/verify", { email: $("emailInput").value.trim(), code: $("codeInput").value.trim(), consent: consentOk() });
+      const r = await call("/api/auth/email/verify", { email: $("emailInput").value.trim(), code: $("codeInput").value.trim(), consent: consentOk(), terms: true });
       btn.disabled = false; btn.textContent = "Войти";
       if (!r.ok) { loginError(r.data.detail || "Код не подошёл."); $("codeInput").select(); $("codeForm").classList.add("shake"); setTimeout(() => $("codeForm").classList.remove("shake"), 500); return; }
       btn.textContent = "Входим…";
@@ -2515,7 +2521,7 @@
       e.preventDefault();
       const code = $("accessCode").value.trim();
       if (!code) return;
-      const r = await call("/api/login", { code, consent: consentOk() });
+      const r = await call("/api/login", { code, consent: consentOk(), terms: true });
       if (!r.ok) { loginError(r.data.detail || "Код не подошёл. Проверьте и введите ещё раз."); return; }
       await afterLogin();
     });
@@ -2560,13 +2566,16 @@
     if (!hero) return;
     let hidden = false;
     try { hidden = localStorage.getItem("heroHidden") === "1"; } catch { /* */ }
-    if (hidden) { hero.hidden = true; return; }
+    if (hidden && !hero.hidden) document.cookie = "hh=1; max-age=31536000; path=/; samesite=lax";   // дальше прячет сервер
+    if (hidden || hero.hidden) { hero.hidden = true; return; }
     $("heroX").addEventListener("click", () => {
       hero.style.transition = "opacity .35s, transform .35s"; hero.style.opacity = "0"; hero.style.transform = "translateY(-8px)";
       setTimeout(() => { hero.hidden = true; }, 340);
       try { localStorage.setItem("heroHidden", "1"); } catch { /* */ }
+      document.cookie = "hh=1; max-age=31536000; path=/; samesite=lax";   // 18.10: в следующий раз сервер сам не пришлёт приветствие
     });
     $("heroLogin").addEventListener("click", () => openLogin());
+    if (hero.querySelector("[data-ssr]")) return;   // 18.10: цифры уже пришли с сервера — без «докрутки» (страница не прыгает)
     try {
       const s = await getJSON("/api/stats");
       hero.querySelectorAll("[data-k]").forEach((b) => {

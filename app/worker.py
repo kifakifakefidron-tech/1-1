@@ -154,6 +154,9 @@ def tick(conn) -> dict:
     if not db.get_state(conn, "rent_rule_v1"):   # один раз: новое правило аренды («+ком платежи»)
         stats["rent_rule"] = ingest.fix_rent_rule(conn)
         db.set_state(conn, "rent_rule_v1", "1")
+    if not db.get_state(conn, "test_purge_v1"):   # один раз (приёмка 18.10): тестовые данные проверяющего
+        from . import clients as _cl
+        db.set_state(conn, "test_purge_v1", json.dumps(_cl.purge_test_data(conn)))
     if not db.get_state(conn, "sold_v1"):   # один раз (приёмка 18.10): «Квартира продана» — с сайта
         stats["sold"] = ingest.hide_sold(conn)
         db.set_state(conn, "sold_v1", str(stats["sold"]))

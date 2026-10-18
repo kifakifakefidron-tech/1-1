@@ -157,7 +157,32 @@ OPERATOR_NAME = _OP["OPERATOR_NAME"]            # ФИО самозанятог�
 OPERATOR_INN = _OP["OPERATOR_INN"]              # только цифры; пусто — ИНН в документах не пишем
 CONTACT_EMAIL = _OP["CONTACT_EMAIL"] or ALERT_EMAIL or next(iter(sorted(ADMIN_EMAILS)), "")
 OPERATOR_TEXT = (OPERATOR_NAME or "Администрация сервиса «1+1»") + (f", ИНН {OPERATOR_INN}" if OPERATOR_INN else "")
-POLICY_DATE = os.getenv("POLICY_DATE", "18.10.2026").strip()   # редакция документов (менять при правке текстов)
+
+
+def dative_fio(fio: str) -> str:
+    """«Никифоров Артём Андреевич» → «Никифорову Артёму Андреевичу» (кому? — для «даю согласие …»). Женские ФИО
+    (отчество на -на) — «Ивановой Анне Сергеевне». Необычное ФИО — OPERATOR_NAME_DAT в .env."""
+    parts = fio.split()
+    if len(parts) != 3:
+        return fio
+    fam, name, pat = parts
+    if pat.endswith("на"):   # женское
+        fam = (fam[:-1] + "ой" if fam.endswith(("ова", "ева", "ёва", "ина", "ына")) else
+               fam[:-2] + "ой" if fam.endswith(("ская", "цкая")) else fam)
+        name = name[:-1] + "и" if name.endswith("ия") else name[:-1] + "е" if name.endswith(("а", "я")) else name
+        pat = pat[:-1] + "е"
+    else:
+        fam = (fam[:-2] + "ому" if fam.endswith(("ий", "ой")) else fam + "у" if fam[-1:] not in "аяоеиыуюэ" else fam)
+        name = (name[:-1] + "ю" if name.endswith(("й", "ь")) else name[:-1] + "е" if name.endswith(("а", "я")) else
+                name + "у" if name[-1:] not in "аяоеиыуюэ" else name)
+        pat = pat + "у" if pat.endswith("ич") else pat
+    return f"{fam} {name} {pat}"
+
+
+# 18.10 (приёмка п. 10): «даю … согласие» — кому? (дательный падеж)
+OPERATOR_NAME_DAT = os.getenv("OPERATOR_NAME_DAT", "").strip() or (dative_fio(OPERATOR_NAME) if OPERATOR_NAME else "")
+OPERATOR_TEXT_DAT = (OPERATOR_NAME_DAT or "Администрации сервиса «1+1»") + (f", ИНН {OPERATOR_INN}" if OPERATOR_INN else "")
+POLICY_DATE = os.getenv("POLICY_DATE", "19.10.2026").strip()   # редакция документов (менять при правке текстов)
 
 # Оплата ЮKassa — подготовлена, но выключена, пока PAYMENTS_ENABLED не true
 PAYMENTS_ENABLED = _bool("PAYMENTS_ENABLED", False)

@@ -32,8 +32,8 @@ def test_public_sees_no_phones_until_login(client):
     lid = items[0]["id"]
     assert "phones" not in client.get(f"/api/listings/{lid}").json()
 
-    assert client.post("/api/login", json={"consent": True, "code": "не тот"}).status_code == 403
-    r = client.post("/api/login", json={"consent": True, "code": "секрет"}).json()
+    assert client.post("/api/login", json={"consent": True, "terms": True, "code": "не тот"}).status_code == 403
+    r = client.post("/api/login", json={"consent": True, "terms": True, "code": "секрет"}).json()
     assert r["ok"] and r["me"]["access"]  # вход по коду — обычный аккаунт с кабинетом
 
     d = client.get(f"/api/listings/{lid}").json()
@@ -52,7 +52,7 @@ def test_manual_add_needs_code(client):
 
 
 def test_promo_login_has_cabinet_and_logout(client):
-    me = client.post("/api/login", json={"consent": True, "code": "секрет"}).json()["me"]
+    me = client.post("/api/login", json={"consent": True, "terms": True, "code": "секрет"}).json()["me"]
     lid = client.get("/api/listings").json()["items"][0]["id"]
     assert client.post(f"/api/favorites/{lid}").json() == {"favorite": True}
     assert client.get("/api/me").json()["me"]["favorites"] == [lid]
@@ -182,10 +182,10 @@ def test_email_code_limit_is_per_address_not_shared(client, monkeypatch):
     monkeypatch.setattr(mailer, "available", lambda: True)
     monkeypatch.setattr(mailer, "send_code", lambda to, code: True)
     for i in range(8):   # восемь разных людей подряд — всем приходит код
-        assert client.post("/api/auth/email/start", json={"consent": True, "email": f"user{i}@example.ru"}).status_code == 200
+        assert client.post("/api/auth/email/start", json={"consent": True, "terms": True, "email": f"user{i}@example.ru"}).status_code == 200
     import time as _t
     from app import db
     db.get().execute("UPDATE email_codes SET created = created - 120")
     db.get().commit()
-    codes = [client.post("/api/auth/email/start", json={"consent": True, "email": "user0@example.ru"}).status_code for _ in range(6)]
+    codes = [client.post("/api/auth/email/start", json={"consent": True, "terms": True, "email": "user0@example.ru"}).status_code for _ in range(6)]
     assert 429 in codes   # один адрес — не больше 5 кодов в час

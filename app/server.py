@@ -183,12 +183,41 @@ def _price_text(price, deal) -> str:
     return f"{price / 1e6:.2f}".rstrip("0").rstrip(".").replace(".", ",") + " млн ₽"
 
 
+_stats_mem: dict = {"t": 0.0, "v": None}
+
+
+def _stats_fast() -> dict:
+    """Цифры первого экрана для страницы с сервера (раз в 2 минуты на процесс, как /api/stats)."""
+    if _stats_mem["v"] is None or time.time() - _stats_mem["t"] > 120:
+        try:
+            _stats_mem["v"], _stats_mem["t"] = _stats(), time.time()
+        except Exception:  # noqa: BLE001 — база занята: страница уйдёт с прочерками, скрипт докрутит
+            return _stats_mem["v"] or {}
+    return _stats_mem["v"]
+
+
+def _hero_ssr(request: Request, html_text: str) -> str:
+    """18.10 (приёмка п. 3, 6): первый экран — с сервера. Цифры сразу в HTML (превью и поисковики видят «8 486», а не «—»);
+    вошедшему или закрывшему приветствие (кука hh) блок не отправляем — раньше его прятал скрипт после загрузки и
+    страница на телефоне «прыгала» (CLS 0,93)."""
+    if request.cookies.get("hh") == "1" or (request.cookies.get(SESSION) and current_user(request)):
+        return html_text.replace('<section class="hero" id="hero"', '<section class="hero" id="hero" hidden', 1)
+    s = _stats_fast()
+    for k in ("sale", "rent", "new_24h", "districts"):
+        v = s.get(k)
+        old = f'<div><b data-k="{k}">—</b>'
+        html_text = html_text.replace(old, f'<div><b data-k="{k}" data-ssr="1">{v:,}</b>'.replace(",", " ") if v
+                                      else f'<div hidden><b data-k="{k}">0</b>', 1)
+    return html_text
+
+
 def index(request: Request, body: dict | None = None):
     # no-cache: после обновления сайта браузер сразу берёт новую страницу (и новые ?v= у стилей/скриптов)
     headers = {"Cache-Control": "no-cache"}
     oid = _num(request.query_params.get("open"), int)
     ref = re.sub(r"[^\w-]", "", request.query_params.get("ref", ""))[:20]
     html_text = (WEB / "index.html").read_text(encoding="utf-8").replace("{{SITE_URL}}", config.SITE_URL)
+    html_text = _hero_ssr(request, html_text)
     if not oid:
         resp = Response(html_text, media_type="text/html; charset=utf-8", headers=headers)
         if ref and request.cookies.get("ck") == "all":   # «Приведи коллегу» — только с согласием на необязательные cookie
@@ -202,7 +231,7 @@ def index(request: Request, body: dict | None = None):
         title = f"{r['title']} — {_price_text(r['price'], r['deal'])}"
         photos = json.loads(r["photos"] or "[]")
         # фото из чатов — чужие произведения: в превью ссылки только фото партнёра (фид СТРЕЛ), иначе значок 1+1
-        img = photos[0] if photos and r["source"] == "feed" else "/static/icon-192.png"
+        img = photos[0] if photos and r["source"] == "feed" else "/static/og-image.jpg"   # 18.10: превью 1200×630, а не иконка
         if img.startswith("/"):
             img = config.SITE_URL + img
         esc = lambda v: html.escape(str(v), quote=True)  # noqa: E731
@@ -262,7 +291,7 @@ def _page(name: str) -> Response:
     html = (WEB / name).read_text(encoding="utf-8")
     for key, val in {
         "OPERATOR_NAME": config.OPERATOR_NAME or "Администрация сервиса «1+1»", "OPERATOR_INN": config.OPERATOR_INN or "—",
-        "OPERATOR_TEXT": config.OPERATOR_TEXT,
+        "OPERATOR_TEXT": config.OPERATOR_TEXT, "OPERATOR_TEXT_DAT": config.OPERATOR_TEXT_DAT,
         "CONTACT_EMAIL": config.CONTACT_EMAIL or "почту из раздела «Контакты»", "POLICY_DATE": config.POLICY_DATE,
         "SITE_URL": config.SITE_URL, "TRIAL_DAYS": config.TRIAL_DAYS, "SUB_PRICE": config.SUB_PRICE, "PRICES": _prices_text(),
         "SUB_DAYS": config.SUB_DAYS, "STALE_DAYS": config.STALE_DAYS, "ARCHIVE_DAYS": config.ARCHIVE_DAYS, "KEEP_DAYS": config.KEEP_DAYS,
@@ -522,12 +551,13 @@ def _stats() -> dict:
 
 
 # ─── промокод для коллег (временный) ───────────────────────────────────────
-CONSENT_ERR = "Отметьте согласие на обработку персональных данных — без него вход невозможен."
+CONSENT_ERR = "Отметьте обе галочки — согласие на обработку персональных данных и пользовательское соглашение."
 
 
 def _no_consent(body: dict | None) -> bool:
     """152-ФЗ (с 01.09.2025): согласие — отдельный документ и отдельная галочка; без неё не входим."""
-    return not (body or {}).get("consent")
+    # 18.10 (приёмка п. 9): и согласие на ПДн, и соглашение — две отдельные галочки
+    return not ((body or {}).get("consent") and (body or {}).get("terms"))
 
 
 def _save_consent(conn, user_id: int) -> None:
@@ -1498,9 +1528,17 @@ def market_page(request: Request, body: dict | None = None):
 
 
 def api_market(request: Request, body: dict | None = None):
-    """Аналитика рынка: медианы по районам и ЖК, динамика. Открыта всем."""
-    return _cached(request, lambda: market.report(db.get(), request.query_params.get("deal", "sale"),
+    """Аналитика рынка: медианы по районам и ЖК, динамика. 18.10 (приёмка п. 11, решение Артёма — вариант Б): гостю и без
+    доступа — только районы и цена по городу; ЖК и динамика за неделю/месяц — с подпиской (так и обещано на /pay)."""
+    resp = _cached(request, lambda: market.report(db.get(), request.query_params.get("deal", "sale"),
                                                   rooms=_num(request.query_params.get("rooms"), int)))
+    if has_access(request):
+        return resp
+    d = json.loads(resp.body)
+    d["complexes"], d["locked"] = [], True
+    for row in [d.get("city") or {}] + (d.get("districts") or []):
+        row["ch7"] = row["ch30"] = None
+    return JSONResponse(d)
 
 
 def saved_off_page(request: Request, body: dict | None = None):

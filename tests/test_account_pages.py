@@ -23,7 +23,7 @@ def client(tmp_path, monkeypatch):
                              text="Продаётся 2-к квартира 58 м², 7/16 эт., ЖК Мозаика. 7,5 млн руб. 89181112233")
     ingest.process_message(conn, mid, use_llm=False)
     with TestClient(server.app) as c:
-        c.post("/api/login", json={"consent": True, "code": "секрет"})
+        c.post("/api/login", json={"consent": True, "terms": True, "code": "секрет"})
         yield c
     conn.close()
     db._local.conn = None

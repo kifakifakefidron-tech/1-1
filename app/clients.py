@@ -201,6 +201,34 @@ def set_stage(conn: sqlite3.Connection, user_id: int, cid: int, stage: str) -> d
     return {"ok": True}
 
 
+def purge_test_data(conn: sqlite3.Connection) -> dict:
+    """Один раз (state test_purge_v1, приёмка 18.10, п. 11): тестовые данные проверяющего — клиент «ТЕСТ Claude …»,
+    его события в планере и подборки, подборка №9 (только если в названии «тест»). Больше ничего не трогаем."""
+    from . import picks
+    rep = {"clients": 0, "events": 0, "picks": 0}
+    for c in conn.execute("SELECT id, user_id, name FROM clients").fetchall():
+        if not (c["name"] or "").upper().startswith("ТЕСТ CLAUDE"):
+            continue
+        for e in conn.execute("SELECT id FROM planner_events WHERE client_id = ?", (c["id"],)).fetchall():
+            conn.execute("DELETE FROM planner_events WHERE id = ?", (e["id"],))
+            rep["events"] += 1
+        for p in conn.execute("SELECT id FROM collections WHERE client_id = ?", (c["id"],)).fetchall():
+            picks.delete(conn, c["user_id"], p["id"])
+            rep["picks"] += 1
+        delete(conn, c["user_id"], c["id"])
+        rep["clients"] += 1
+    for e in conn.execute("SELECT id, title FROM planner_events").fetchall():
+        if "ТЕСТ CLAUDE" in (e["title"] or "").upper():
+            conn.execute("DELETE FROM planner_events WHERE id = ?", (e["id"],))
+            rep["events"] += 1
+    p9 = conn.execute("SELECT id, user_id, title, client_title FROM collections WHERE id = 9").fetchone()
+    if p9 and "тест" in f"{p9['title'] or ''} {p9['client_title'] or ''}".lower():
+        picks.delete(conn, p9["user_id"], 9)
+        rep["picks"] += 1
+    conn.commit()
+    return rep
+
+
 def delete(conn: sqlite3.Connection, user_id: int, cid: int) -> None:
     if _own(conn, user_id, cid):
         conn.execute("DELETE FROM client_items WHERE client_id = ?", (cid,))
