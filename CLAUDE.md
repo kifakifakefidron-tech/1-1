@@ -703,6 +703,19 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   kind 'queue_reset'; после перерыва Wappi ночной хвост можно не разбирать); ownmatch: архив своих копий — раз в 6 ч
   (state own_match_arch_ts, раньше каждую минуту); payments.create — db.flush до запроса, ошибка ЮKassa → PayError (человеку
   понятный текст, админу notify.alert с кодом ЮKassa). Подборки на vashapodborka.ru (PICK_DOMAIN): в DNS только A @ → 31.130.132.118.
+- 18.10 ПОДБОРКА v4 (ветка pick-v4; Артём: «супер стильно, как у Apple, вся страница, телефон»): pick.html/css/js — своя
+  страница БЕЗ стилей сайта (style/motion/theme/glass не подключаются): светлая (#f5f5f7, #1d1d1f), тёмная — prefers-color-scheme,
+  Golos (vendor), классы .pv-*. Шапка (обложка с маской, крупный заголовок, «N объектов · обновлено …», заметка, карточка агента:
+  фото/буква, номер «+7 918 …», «Позвонить» / «Написать в MAX»), переключатель «Объекты / На карте» (< 900 px, sticky, бегунок),
+  на компьютере — список + закреплённая карта (номера-метки, наведение на карточку подсвечивает метку, нажатие на метку — к карточке).
+  Карточка: фото 4:3 листаются пальцем (scroll-snap, точки, стрелки при наведении), цена + ₽/м², заголовок (ЖК → улица → район),
+  вид сделки, плитки характеристик, адрес + «На карте» (Яндекс), снят — плашка, комментарий агента, текст (.pk-desc — icons.js его
+  не трогает) с «Читать полностью», ответы 4 кнопки (2×2 на телефоне). Внизу — панель агента, когда шапка ушла (IntersectionObserver).
+  Фото на весь экран — dialog .pv-lb со свайпом. cookies.js/max.js оформлены в pick.css. Проверка «без следов сервиса» — test_pick_neutral.
+  ФОТО В ПОДБОРКЕ — ПЕРЕТАСКИВАНИЕМ (/picks, photosHTML): все фото (свои агента + объявления) по порядку клиента, первое — «Обложка»;
+  мышь — после 6 px, палец — удержание 0,3 с (touchmove preventDefault), соседи расступаются (FLIP); × у своего — удалить, у фото
+  объявления — скрыть («Скрыто от клиента» — вернуть). collection_items.photo_order {order, hidden}; picks.ordered_photos (новые — в
+  конец), item_photo(order|hide|unhide), POST /api/picks/{id}/items {photo_order|photo_hide|photo_unhide}; public отдаёт этот порядок.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

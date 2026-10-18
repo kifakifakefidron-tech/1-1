@@ -413,3 +413,20 @@
 .pk2-fph { position: relative; aspect-ratio: 1 / 1 !important; }
 .pk2-fph .ph-none small { font-size: 11px; }
 .pk2-fph .ph-none > img { width: 44% !important; }
+
+/* 18.10: фото для клиента — перетаскиванием (picks.js photosHTML) */
+.pk2-pt { cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  transition: box-shadow .2s var(--m-out, ease), opacity .2s; }
+.pk2-pt img { pointer-events: none; }
+.pk2-pt.first { outline: 2px solid var(--gold); outline-offset: -2px; }
+.pk2-pt em { position: absolute; left: 3px; bottom: 3px; padding: 1px 6px; border-radius: 6px; font: 600 9.5px/16px var(--body); font-style: normal;
+  color: #0f2f2e; background: var(--gold); letter-spacing: .02em; }
+.pk2-pt-drag { cursor: grabbing; box-shadow: 0 14px 30px rgba(0, 0, 0, .45); transition: none; }
+.pk2-own-list.sorting .pk2-pt:not(.pk2-pt-drag) { opacity: .85; }
+.pk2-hid { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; color: var(--ink-3); }
+.pk2-hid-ph { position: relative; width: 40px; height: 40px; padding: 0; border: 1px dashed var(--line-2); border-radius: 8px; overflow: hidden;
+  background: none; cursor: pointer; }
+.pk2-hid-ph img { width: 100%; height: 100%; object-fit: cover; opacity: .45; filter: grayscale(1); }
+.pk2-hid-ph i { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink); }
+.pk2-hid-ph i svg { width: 16px; height: 16px; }
+.pk2-hid-ph:hover img { opacity: .8; filter: none; }

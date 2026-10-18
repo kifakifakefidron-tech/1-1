@@ -5,36 +5,57 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Подборка</title>
 <meta name="robots" content="noindex">
-<meta name="theme-color" content="#035352">
+<meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <meta name="referrer" content="no-referrer">
 <link rel="icon" href="/static/house.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/vendor/fonts/fonts.css?v=1">
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.min.css">
-<link rel="stylesheet" href="/static/style.css?v=26">
-<link rel="stylesheet" href="/static/motion.css?v=35">
-<link rel="stylesheet" href="/static/pick.css?v=7">
-<link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=75">
+<link rel="stylesheet" href="/static/pick.css?v=22">
 </head>
 <body>
-<main class="pk">
-  <header class="pk-head" id="pkHead">
-    <div class="pk-cover" id="pkCover" hidden></div>
-    <p class="pk-brand" id="pkBrand">Подборка объектов</p>
-    <h1 id="pkTitle">Загружаем…</h1>
-    <p class="pk-note" id="pkNote" hidden></p>
-    <div class="pk-agent" id="pkAgent" hidden></div>
-  </header>
-  <div class="pk-map" id="pkMap" hidden></div>
-  <ol class="pk-list" id="pkList"></ol>
+<!-- Подборка для клиента (18.10 v4, «как у Apple»): светлая, крупная типографика, фото во всю ширину, карта рядом.
+     Никаких упоминаний сервиса — только агент и объекты. -->
+<header class="pv-hero" id="pkHead">
+  <div class="pv-cover" id="pkCover" hidden></div>
+  <div class="pv-hero-in">
+    <p class="pv-eyebrow" id="pkBrand">Подборка объектов</p>
+    <h1 id="pkTitle" class="pv-skel-line">Загружаем…</h1>
+    <p class="pv-meta" id="pkMeta"></p>
+    <p class="pv-note" id="pkNote" hidden></p>
+    <div class="pv-agent" id="pkAgent" hidden></div>
+  </div>
+</header>
+
+<div class="pv-switch" id="pkSwitch" hidden role="tablist" aria-label="Вид">
+  <button type="button" class="on" data-view="list" role="tab" aria-selected="true">Объекты <span id="pkCount"></span></button>
+  <button type="button" data-view="map" role="tab" aria-selected="false">На карте</button>
+  <i class="pv-switch-ind" aria-hidden="true"></i>
+</div>
+
+<main class="pv-main" id="pkMain">
+  <ol class="pv-list" id="pkList">
+    <li class="pv-card pv-skel" aria-hidden="true"><div class="pv-media"></div><div class="pv-body"><i></i><i></i><i></i></div></li>
+  </ol>
+  <aside class="pv-mapcol" id="pkMapCol" hidden><div class="pv-map" id="pkMap"></div></aside>
 </main>
-<div class="pk-agent-bar" id="pkBar" hidden></div>
-<dialog id="pkPhoto" class="pk-photo"><img id="pkPhotoImg" alt=""><button type="button" class="close" id="pkPhotoClose" aria-label="Закрыть">✕</button>
-  <button type="button" class="pk-nav prev" id="pkPrev" aria-label="Предыдущее фото">‹</button><button type="button" class="pk-nav next" id="pkNext" aria-label="Следующее фото">›</button></dialog>
+
+<footer class="pv-foot" id="pkFoot" hidden></footer>
+
+<div class="pv-bar" id="pkBar" hidden></div>
+
+<dialog id="pkPhoto" class="pv-lb" aria-label="Фото">
+  <div class="pv-lb-track" id="pkLbTrack"></div>
+  <div class="pv-lb-top"><span id="pkLbCount"></span><button type="button" class="pv-lb-x" id="pkPhotoClose" aria-label="Закрыть">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <button type="button" class="pv-lb-nav prev" id="pkPrev" aria-label="Предыдущее фото"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+  <button type="button" class="pv-lb-nav next" id="pkNext" aria-label="Следующее фото"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+</dialog>
+
 <script src="/static/vendor/leaflet/leaflet.min.js"></script>
 <script src="/static/icons.js?v=9"></script>
 <script src="/static/pickers.js?v=16"></script>
 <script src="/static/max.js?v=2"></script>
-<script src="/static/pick.js?v=11"></script>
+<script src="/static/pick.js?v=21"></script>
 </body>
 </html>

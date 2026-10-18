@@ -369,6 +369,7 @@ MIGRATIONS = [
     ("collection_items", "price", "INTEGER"),
     ("collection_items", "hide_price", "INTEGER NOT NULL DEFAULT 0"),
     ("collection_items", "photos", "TEXT"),
+    ("collection_items", "photo_order", "TEXT"),   # 18.10: {"order": [url…], "hidden": [url…]} — фото для клиента по порядку
     ("listings", "repair", "TEXT"),
     ("listings", "added_at", "INTEGER"),
     ("listings", "admin_fields", "TEXT"),   # 18.10: характеристики, поправленные админом (JSON) — повторы их не перетирают
