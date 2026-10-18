@@ -53,3 +53,6 @@
 .rq-lockbox b { font-size: 20px; } .rq-lockbox span { color: var(--ink-3); }
 .rq-lockbox .pill { margin-top: 6px; text-decoration: none; }
 .rq-minehint a { color: var(--gold); }
+.rq-agent { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; font: 600 12px var(--body);
+  color: var(--gold); border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent); }
+.rq-agent svg { width: 13px; height: 13px; }

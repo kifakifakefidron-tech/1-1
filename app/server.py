@@ -2523,6 +2523,20 @@ def api_client_action(request: Request, body: dict | None = None):
         # уже связанные с клиентом и «не подходит» в подбор не попадают — счётчик честный
         return JSONResponse({"items": res["items"], "total": res.get("total"), "linked": len(d["items"]),
                              "hidden": d["hidden"], "more": page * 60 < (res.get("total") or 0), "page": page})
+    if what == "publish":   # 19.10: запрос клиента — всем подписчикам (без имени и номера клиента, с контактом агента)
+        d = clients.detail(conn, user["id"], cid)
+        if "error" in d:
+            return _err(d["error"], 404)
+        if request.method == "GET":
+            return JSONResponse({"published": buyers.published(conn, user["id"], cid)})
+        if body.get("off"):
+            return JSONResponse({"ok": buyers.unpublish(conn, user["id"], cid), "published": None})
+        if not has_access(request, user):
+            return _err("Публиковать запросы можно с подпиской.", 403)
+        res = buyers.publish(conn, user["id"], d["client"], str(body.get("comment", ""))[:600])
+        if "error" in res:
+            return JSONResponse({"detail": res["error"], "need_verify": bool(res.get("need_verify"))}, status_code=400)
+        return JSONResponse({**res, "published": buyers.published(conn, user["id"], cid)})
     if what == "hidden":   # «Не подходит» — список, чтобы вернуть
         rows = conn.execute("""SELECT l.* , 0 AS verified FROM client_hidden h JOIN listings l ON l.id = h.listing_id
                                JOIN clients c ON c.id = h.client_id WHERE h.client_id = ? AND c.user_id = ?

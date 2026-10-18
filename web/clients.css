@@ -284,3 +284,10 @@ body.c-dragging .c-col { transition: background .2s, border-color .2s, transform
 .ci-acts a.chip { text-decoration: none; }
 .ci-stats span { font-size: 11.5px; overflow-wrap: anywhere; line-height: 1.25; }
 @media (max-width: 640px) { .c-tools { width: 100%; } .c-search { flex: 1 1 100%; } .c-search input { width: 100%; } }
+
+/* 19.10: «Запрос коллегам» в обзоре клиента */
+.ci-pub .ci-empty { line-height: 1.45; }
+.ci-pub-note { width: 100%; margin-top: 10px; min-height: 52px; padding: 10px 12px; border-radius: 12px; resize: vertical;
+  border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .04); color: var(--ink); font: inherit; font-size: 16px; }
+.ci-pub-on { color: var(--ok); font-size: 13px; margin-bottom: 6px !important; }
+.ci-pub-err { color: var(--bad); font-size: 13px; margin-top: 8px !important; }

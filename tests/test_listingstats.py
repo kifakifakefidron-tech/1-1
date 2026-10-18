@@ -5,6 +5,7 @@ from app import db, listingstats
 
 
 def test_views_dedup_and_counts():
+    listingstats._buf.clear(); listingstats._seen.clear()   # просмотры из других тестов этого процесса
     conn = db.connect(":memory:")
     lid = conn.execute("""INSERT INTO listings (type, deal, title, price, first_seen, last_seen, seen_count, is_active, source, search_text)
                           VALUES ('flat','sale','2-к', 6000000, 1, 1, 1, 1, 'chat', '')""").lastrowid

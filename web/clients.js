@@ -247,13 +247,68 @@
         <section class="ci-box"><h4>${ic("layers")}Последнее</h4>
           ${recent.length ? `<ul class="ci-list">${recent.map((x) => `<li><span>${esc(x.text)}</span><small>${esc(when(x.ts))}</small></li>`).join("")}</ul>
             <div class="ci-acts"><button type="button" class="chip" data-tab="log">Вся история</button></div>` : `<p class="ci-empty">Истории пока нет.</p>`}</section>
+        ${["buyer", "tenant"].includes(c.kind) ? `<section class="ci-box ci-pub" id="ciPub"><h4>${ic("users")}Запрос коллегам</h4>
+          <p class="ci-empty">Загружаем…</p></section>` : ""}
         <section class="ci-box ci-meta"><h4>${ic("user")}О клиенте</h4><dl class="ci-dl">
           <dt>Кто</dt><dd>${esc(data.kinds[c.kind] || "")}</dd>
           ${c.phone ? `<dt>Телефон</dt><dd><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></dd>` : ""}
           ${c.source ? `<dt>Откуда</dt><dd>${esc(c.source)}</dd>` : ""}
           ${c.created ? `<dt>Добавлен</dt><dd>${esc(new Date(c.created * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }))}</dd>` : ""}</dl></section>
       </div>`;
+    if ($("ciPub")) { if (pubCid === c.id) pubHTML(); else { pubCid = c.id; pubState = null; } pubLoad(); }
   }
+  // ─── 19.10: «Запрос коллегам» — пожелания клиента видят все агенты с подпиской (без имени и номера клиента),
+  // подтверждённым агентам с подходящими объектами приходит «Под ваш объект есть покупатель» ───
+  let pubState = null, pubCid = 0;
+  async function pubLoad() {
+    const box = $("ciPub");
+    if (!box || !cur) return;
+    const cid = cur.client.id;
+    const r = await call(`/api/clients/${cid}/publish`);
+    if (!cur || cur.client.id !== cid) return;
+    pubState = r.ok ? r.data.published : null;
+    pubHTML();
+  }
+  function pubHTML(err) {
+    const box = $("ciPub");
+    if (!box) return;
+    const p = pubState;
+    const head = `<h4>${ic("users")}Запрос коллегам</h4>`;
+    if (p) {
+      const d = new Date(p.last_seen * 1000), till = new Date((p.last_seen + 10 * 86400) * 1000);
+      const f = (x) => x.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+      box.innerHTML = `${head}<p class="ci-pub-on">Опубликован ${esc(f(d))} · виден до ${esc(f(till))}</p>
+        <p class="ci-note">${esc(p.text)}</p>
+        <div class="ci-acts"><a class="chip" href="/requests">${ic("search")}Смотреть в запросах</a>
+          <button type="button" class="chip" data-pub="go">Обновить по пожеланиям</button>
+          <button type="button" class="chip" data-pub="off">Снять</button></div>`;
+      return;
+    }
+    box.innerHTML = `${head}<p class="ci-empty">Покажите пожелания клиента всем агентам 1+1: у кого есть подходящий объект — получит
+      уведомление и позвонит вам. Имя и номер клиента не показываются, запрос живёт 10 дней.</p>
+      <textarea id="ciPubNote" class="ci-pub-note" rows="2" maxlength="500" data-grow
+        placeholder="Комментарий для коллег (необязательно): срочность, способ оплаты…"></textarea>
+      ${err ? `<p class="ci-pub-err">${esc(err)}</p>` : ""}
+      <div class="ci-acts"><button type="button" class="chip on" data-pub="go">${ic("share")}Опубликовать запрос</button></div>`;
+  }
+  $("dInfo").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-pub]");
+    if (!b || !cur) return;
+    e.stopPropagation();
+    b.disabled = true;
+    const off = b.dataset.pub === "off";
+    const note = $("ciPubNote");
+    const r = await call(`/api/clients/${cur.client.id}/publish`, off ? { off: true } : { comment: note ? note.value : "" });
+    b.disabled = false;
+    if (!r.ok) {
+      const msg = r.data.detail || "Не получилось — попробуйте ещё раз.";
+      pubHTML(r.data.need_verify ? `${msg} Подтвердить можно в «Настройках».` : msg);
+      return;
+    }
+    pubState = r.data.published;
+    pubHTML();
+    toast(off ? "Запрос снят" : "Запрос опубликован — коллеги с подходящими объектами получат уведомление");
+  });
   function tab(name) {
     $("dEdit").hidden = !cur || name === "card";
     $("dBackInfo").hidden = !cur || name !== "card";
