@@ -100,6 +100,11 @@ def tick(conn) -> dict:
         from . import autolearn as _al
         stats["unstacked"] = _al.maybe_unstack(conn) or None
         stats["repair"] = ingest.backfill_repair(conn) or None
+        stats["rules_fix"] = ingest.rules_fix(conn) or None   # 18.10: старые объекты — по исправленным правилам (разово)
+        from . import media as _media
+        stats["media_strict"] = _media.strict_cleanup(conn) or None   # фото «рядом по времени» без подписи — убрать (разово)
+        from . import billing
+        stats["billing"] = billing.remind(conn) or None       # напоминания об оплате сервисов (раз в сутки)
         from . import ownmatch   # 18.10: свои объекты (наш номер) — одна карточка: копии из чатов к карточке с сайта
         stats["own"] = ownmatch.maybe_run(conn) or None   # состояние «с ремонтом / без» — один раз после обновления правил
     except Exception:  # noqa: BLE001
@@ -123,6 +128,9 @@ def tick(conn) -> dict:
     if not db.get_state(conn, "rent_rule_v1"):   # один раз: новое правило аренды («+ком платежи»)
         stats["rent_rule"] = ingest.fix_rent_rule(conn)
         db.set_state(conn, "rent_rule_v1", "1")
+    if not db.get_state(conn, "rent_leak_v1"):   # один раз: продажи, ставшие арендой из-за соседнего объекта портянки
+        stats["rent_leak"] = ingest.fix_rent_leak(conn)
+        db.set_state(conn, "rent_leak_v1", "1")
     if not db.get_state(conn, "buyers_v2"):   # «запросить по номеру» — не запрос: удалить и разобрать заново
         from . import buyers
         stats["buyers_recheck"] = buyers.recheck(conn)

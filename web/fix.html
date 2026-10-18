@@ -21,7 +21,7 @@
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/fix.css?v=16">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=70">
+<link rel="stylesheet" href="/static/glass.css?v=71">
 </head>
 <body>
 <header class="nav"><div class="nav-in">
@@ -82,8 +82,29 @@
         </div>
         <div class="fx-block">
           <div class="fx-label" id="fxPriceLabel">Цена, млн ₽</div>
-          <input id="fxPrice" inputmode="decimal" autocomplete="off" placeholder="Если разобралась неверно — впишите верную">
+          <input id="fxPriceIn" inputmode="decimal" autocomplete="off" placeholder="Если разобралась неверно — впишите верную">
         </div>
+        <details class="fx-block fx-fields" id="fxFields" open>
+          <summary class="fx-label">Характеристики — поправьте, что разобралось неверно</summary>
+          <div class="adm-fgrid">
+            <label class="agent-field"><span>Тип</span><select name="f_type"><option value="flat">Квартира</option><option value="room">Комната</option>
+              <option value="house">Дом</option><option value="land">Участок</option><option value="commercial">Коммерция</option></select></label>
+            <label class="agent-field"><span>Сделка</span><select name="f_deal"><option value="sale">Продажа</option><option value="rent">Аренда</option></select></label>
+            <label class="agent-field"><span>Комнат</span><select name="f_rooms"><option value="">—</option><option value="0">Студия</option>
+              <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5+</option></select></label>
+            <label class="agent-field"><span>Планировка</span><select name="f_room_kind"><option value="">—</option><option value="classic">Обычная</option>
+              <option value="euro">Евро</option><option value="mini">Мини</option><option value="studio">Студия</option></select></label>
+            <label class="agent-field"><span>Площадь, м²</span><input name="f_area" inputmode="decimal" autocomplete="off"></label>
+            <label class="agent-field"><span>Участок, сот.</span><input name="f_land" inputmode="decimal" autocomplete="off"></label>
+            <label class="agent-field"><span>Этаж</span><input name="f_floor" inputmode="numeric" autocomplete="off"></label>
+            <label class="agent-field"><span>Этажей</span><input name="f_floors" inputmode="numeric" autocomplete="off"></label>
+            <label class="agent-field"><span>Улица</span><input name="f_street" autocomplete="off"></label>
+            <label class="agent-field"><span>Дом</span><input name="f_house" autocomplete="off"></label>
+            <label class="agent-field"><span>Населённый пункт</span><input name="f_settlement" autocomplete="off"></label>
+            <label class="agent-field"><span>Ремонт</span><select name="f_repair"><option value="none">не указано</option><option value="yes">С ремонтом</option>
+              <option value="no">Без ремонта</option></select></label>
+          </div>
+        </details>
         <div class="fx-block fx-learn" id="fxLearn"></div>
       </form>
 
@@ -127,6 +148,6 @@
 <script src="/static/combo.js?v=3"></script>
 <script src="/static/yasel.js?v=3"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/fix.js?v=23"></script>
+<script src="/static/fix.js?v=24"></script>
 </body>
 </html>

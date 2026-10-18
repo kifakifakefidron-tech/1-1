@@ -31,7 +31,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=70">
+<link rel="stylesheet" href="/static/glass.css?v=71">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -377,13 +377,34 @@
 <dialog id="placeDlg" class="small-dlg" aria-labelledby="placeTitle">
   <span class="grab" aria-hidden="true"></span>
   <div class="dlg-body">
-    <h2 id="placeTitle">ЖК, район и цена</h2>
+    <h2 id="placeTitle">Характеристики объекта</h2>
     <p class="note" id="placeInfo"></p>
     <p class="note"><a id="placeYa" class="ya-link" target="_blank" rel="noopener">🔎 Найти адрес в Яндекс Картах ↗</a></p>
     <form id="placeForm" class="agent-form">
       <label class="agent-field"><span>ЖК (пусто — без ЖК)</span><input name="complex" id="placeComplex" autocomplete="off" placeholder="Название ЖК"></label>
       <label class="agent-field"><span>Район</span><input name="district" id="placeDistrict" placeholder="Найти район…"></label>
       <label class="agent-field"><span id="placePriceLabel">Цена, млн ₽ (если разобралась неверно)</span><input name="price" id="placePrice" inputmode="decimal" autocomplete="off"></label>
+      <div class="adm-fields" id="placeFields">
+        <p class="adm-fields-h">Характеристики <small>— поправьте, что разобралось неверно; повторы объявления правку не перетрут</small></p>
+        <div class="adm-fgrid">
+          <label class="agent-field"><span>Тип</span><select name="f_type"><option value="flat">Квартира</option><option value="room">Комната</option>
+            <option value="house">Дом</option><option value="land">Участок</option><option value="commercial">Коммерция</option></select></label>
+          <label class="agent-field"><span>Сделка</span><select name="f_deal"><option value="sale">Продажа</option><option value="rent">Аренда</option></select></label>
+          <label class="agent-field"><span>Комнат</span><select name="f_rooms"><option value="">—</option><option value="0">Студия</option>
+            <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5+</option></select></label>
+          <label class="agent-field"><span>Планировка</span><select name="f_room_kind"><option value="">—</option><option value="classic">Обычная</option>
+            <option value="euro">Евро</option><option value="mini">Мини</option><option value="studio">Студия</option></select></label>
+          <label class="agent-field"><span>Площадь, м²</span><input name="f_area" inputmode="decimal" autocomplete="off"></label>
+          <label class="agent-field"><span>Участок, сот.</span><input name="f_land" inputmode="decimal" autocomplete="off"></label>
+          <label class="agent-field"><span>Этаж</span><input name="f_floor" inputmode="numeric" autocomplete="off"></label>
+          <label class="agent-field"><span>Этажей в доме</span><input name="f_floors" inputmode="numeric" autocomplete="off"></label>
+          <label class="agent-field"><span>Улица</span><input name="f_street" autocomplete="off"></label>
+          <label class="agent-field"><span>Дом</span><input name="f_house" autocomplete="off"></label>
+          <label class="agent-field"><span>Населённый пункт</span><input name="f_settlement" autocomplete="off" placeholder="если не Краснодар"></label>
+          <label class="agent-field"><span>Ремонт</span><select name="f_repair"><option value="none">не указано</option><option value="yes">С ремонтом</option>
+            <option value="no">Без ремонта (ПЧО, черновая…)</option></select></label>
+        </div>
+      </div>
       <div class="place-learn" id="placeLearn"></div>
       <p class="note" id="placeLeft"></p>
       <div class="dlg-actions">
@@ -408,7 +429,7 @@
 <script src="/static/yasel.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/app.js?v=120"></script>
+<script src="/static/app.js?v=122"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>

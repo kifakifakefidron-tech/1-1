@@ -207,7 +207,14 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
         otype = "flat"
     # Аренда — только если в тексте прямо написано «сдам», «аренда», «сдаётся»… (нейросеть иногда
     # ставила аренду обычным продажам). Шапка подборки «Сдаю:» относится ко всем объектам в ней.
-    deal = "rent" if r.deal == "rent" or rules.detect_deal(text) == "rent" else "sale"
+    # 18.10: в портянке «сдам … +КУ» у ОДНОГО объекта больше не делает арендой все остальные — общий текст сообщения
+    # считается, только если аренда в шапке (первые строки до объекта) или у самого объекта есть «сдам/аренда».
+    deal = "rent" if r.deal == "rent" or rules.detect_deal(fragment) == "rent" else "sale"
+    if deal == "sale" and rules.detect_deal(text) == "rent" and (single or rules.has_rent_words(fragment)
+                                                                 or rules.has_rent_words(text.split(fragment[:40])[0][:300])):
+        deal = "rent"
+    if deal == "rent" and rules.sale_markers(fragment, otype):
+        deal = "sale"
     # «Сдам», но без коммунальных платежей — не аренда; если и цена «арендная» (меньше 300 тыс.) — объект не берём
     rent_words = deal == "sale" and rules.has_rent_words(fragment)
 
@@ -294,7 +301,7 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
     return ParsedObject(
         type=otype, deal=deal, rooms=rooms, area=area, land=land, floor=floor, floors=floors,
         price=price, district=district, complex=complex_rec.name if complex_rec else None,
-        settlement=settlement, street=street, house=house,
+        settlement=settlement, street=street, house=(house or "").strip() or None,
         description=description, fragment=fragment.strip(), phones=phones, phone_roles=roles,
         room_kind=room_kind, article=rules.extract_article(fragment),
     )

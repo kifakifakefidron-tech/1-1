@@ -96,3 +96,30 @@ def test_photo_post_always_sticks_or_hides():
     rep = ownmatch.run(conn)
     assert rep == {"to_feed": 1, "merged": 0, "nopair": 1}
     assert [r[0] for r in conn.execute("SELECT id FROM listings WHERE is_active = 1")] == [fid]
+
+
+def test_admin_set_fields_sticks_and_learns():
+    conn = db.connect(":memory:")
+    text = "2к квартира ФМР ул. Красная 10, 54 м², этаж 4/9. Цена 6,2 млн. 89180001122"
+    lid = _add(conn, text)["results"][0]["listing_id"]
+    r = ingest.set_fields(conn, lid, {"area": "56,5", "floor": 5, "repair": "no", "room_kind": "euro"}, 1)
+    assert set(r["changed"]) == {"area", "floor", "repair", "room_kind"}
+    row = conn.execute("SELECT area, floor, repair, room_kind, admin_fixed FROM listings WHERE id = ?", (lid,)).fetchone()
+    assert tuple(row) == (56.5, 5, "no", "euro", 1)
+    _add(conn, text)   # повтор того же текста — правки не перетирает
+    row = conn.execute("SELECT area, floor, repair FROM listings WHERE id = ?", (lid,)).fetchone()
+    assert tuple(row) == (56.5, 5, "no")
+    assert ingest.set_fields(conn, lid, {"floor": 120})["error"].startswith("Этаж")
+
+
+def test_archived_own_copy_tied_to_site_card():
+    conn = db.connect(":memory:")
+    fid = _feed(conn)
+    conn.execute("""INSERT INTO listings (type, deal, rooms, area, floor, floors, price, street, house, title, phones, first_seen,
+                    last_seen, seen_count, is_active, source, search_text) VALUES ('flat','sale',2,54.5,4,9,6150000,'Гагарина','73',
+                    'архивная копия','["+79618571772"]',1,1,2,0,'chat','')""")
+    conn.commit()
+    ownmatch.run(conn)
+    r = conn.execute("SELECT is_active, hidden_reason FROM listings WHERE source = 'chat'").fetchone()
+    assert (r[0], r[1]) == (0, "strely")
+    assert conn.execute("SELECT seen_count FROM listings WHERE id = ?", (fid,)).fetchone()[0] == 3

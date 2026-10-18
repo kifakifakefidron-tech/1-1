@@ -10,7 +10,7 @@
   // вид → [название вкладки, иконка]
   const KINDS = {
     search: ["Поиски", "search"], price: ["Цена", "trend-down"], gone: ["Сняты", "x-circle"], client: ["Клиенты", "users"],
-    own: ["Мои объекты", "home"], plan: ["Планер", "calendar"], sub: ["Подписка", "card"],
+    own: ["Мои объекты", "home"], plan: ["Планер", "calendar"], sub: ["Подписка", "card"], billing: ["Оплаты", "coins"],
   };
   let data = null, filter = "";
   const unreadAtOpen = new Set();   // что было непрочитанным при открытии — подсвечиваем до ухода со страницы

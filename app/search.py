@@ -473,7 +473,7 @@ PUBLIC_FIELDS = ("id", "type", "deal", "rooms", "area", "land", "floor", "floors
                  "district", "complex", "settlement", "street", "house", "title", "description",
                  "first_seen", "last_seen", "lat", "lon", "source", "url", "room_kind", "article",
                  "is_active", "expires_at",
-                 "prev_price", "price_changed_at")
+                 "prev_price", "price_changed_at", "repair")
 
 
 def mask_phone(p: str) -> str:
