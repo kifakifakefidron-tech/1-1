@@ -57,6 +57,21 @@
   const isOn = (it) => (it.on ? it.on() : path === it.href || (it.also || []).includes(path) || (it.href !== "/" && path.startsWith(it.href + "/")));
   const tipHTML = (t, d) => `<span class="rail-tip" role="tooltip"><b>${t}</b>${d ? `<small>${d}</small>` : ""}</span>`;
 
+  // 18.10: на невысоком экране (у админа пунктов больше) профиль внизу «вылезал» из меню — пункты становятся компактнее
+  // ступенями (rail-t1…t3), пока всё не поместится; на телефоне меню — нижняя панель, там не нужно
+  function fitRail(rail) {
+    const fit = () => {
+      rail.classList.remove("rail-t1", "rail-t2", "rail-t3");
+      if (innerWidth <= 820) return;
+      for (const c of ["rail-t1", "rail-t2", "rail-t3"]) {
+        if (rail.scrollHeight <= rail.clientHeight + 1) return;
+        rail.classList.add(c);
+      }
+    };
+    fit();
+    let t = 0;
+    addEventListener("resize", () => { clearTimeout(t); t = setTimeout(fit, 120); });
+  }
   function build(me) {
     const rail = document.createElement("nav");
     rail.className = "rail rail-g";
@@ -82,6 +97,7 @@
       + (me ? `<a class="rail-ava${me.photo ? " has-photo" : ""}" href="/cabinet" aria-label="Профиль"${me.photo ? ` style="background-image:url('${encodeURI(String(me.photo)).replace(/['"()]/g, "")}')"` : ""}>${me.photo ? "" : ((me.name || me.email || "1").trim()[0] || "1").toUpperCase()}${tipHTML("Профиль и кабинет", who)}</a>`
         : `<a class="rail-a main" href="/?login=1" aria-label="Войти">${ic("user")}<span class="rail-lbl">Войти</span>${tipHTML("Войти", "Неделя бесплатно — без карты")}</a>`);
     document.body.prepend(rail);
+    fitRail(rail);
     document.body.classList.add("has-rail");
     if (document.querySelector(".tabbar")) document.body.classList.add("has-tabbar");
     if (window.__bellN) window.railBell(window.__bellN);

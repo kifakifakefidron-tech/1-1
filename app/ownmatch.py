@@ -188,8 +188,13 @@ def run(conn: sqlite3.Connection, now: int | None = None) -> dict:
     to_feed, merged, nopair, ex = 0, 0, 0, []
     # 18.10: и старые копии, уже ушедшие в архив (были «Снятые» в «Мои объекты»), — привязать к карточке с сайта
     # (в архиве и останутся, но с пометкой 'strely': не показываются как отдельный объект и не вернутся дублем)
-    for a in conn.execute("""SELECT * FROM listings WHERE source = 'chat' AND is_active = 0 AND hidden_reason IS NULL
-                             AND COALESCE(owner_user_id, 0) = 0""").fetchall():
+    # 18.10 (нагрузка): архив проверяем не каждую минуту, а раз в 6 часов — он меняется редко, а сравнение со всем фидом дорогое
+    arch = [] if now - int(db.get_state(conn, "own_match_arch_ts") or 0) < 6 * 3600 else conn.execute(
+        """SELECT * FROM listings WHERE source = 'chat' AND is_active = 0 AND hidden_reason IS NULL
+           AND COALESCE(owner_user_id, 0) = 0""").fetchall()
+    if arch or not db.get_state(conn, "own_match_arch_ts"):
+        db.set_state(conn, "own_match_arch_ts", str(now))
+    for a in arch:
         if not is_own(a["phones"], a["phone_roles"]):
             continue
         fid = best(feed, a) or (best(feed, a, loose) if photo_post(conn, a) else None)

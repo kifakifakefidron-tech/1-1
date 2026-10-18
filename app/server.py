@@ -818,7 +818,10 @@ def api_pay(request: Request, body: dict | None = None):
                              "last": payments.last_status(db.get(), user["id"]) if request.query_params.get("check") else None})
     if not payments.available():
         return _err("Оплата скоро появится.", 503)
-    return JSONResponse({"url": payments.create(db.get(), user["id"], _num((body or {}).get("days"), int))})
+    try:
+        return JSONResponse({"url": payments.create(db.get(), user["id"], _num((body or {}).get("days"), int))})
+    except payments.PayError as e:
+        return _err(str(e), 502)
 
 
 def pay_page(request: Request, body: dict | None = None):
@@ -910,6 +913,24 @@ def api_admin_billing(request: Request, body: dict | None = None):
     if not billing.mark_paid(db.get(), str(body.get("key", "")), _num(body.get("period"), int)):
         return _err("Нет такого сервиса.")
     return JSONResponse({"ok": True, "items": billing.status(db.get())})
+
+
+def api_admin_queue(request: Request, body: dict | None = None):
+    """18.10: сброс очереди сообщений — {older_h: 6} (старше 6 часов) или {all: true}."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    body = body or {}
+    conn = db.get()
+    if body.get("all"):
+        n = ingest.skip_queue(conn)
+    else:
+        h = _num(body.get("older_h"), float)
+        if not h or h <= 0:
+            return _err("Укажите, старше скольких часов пропустить.")
+        n = ingest.skip_queue(conn, h)
+    left = conn.execute("SELECT COUNT(*) FROM messages WHERE status = 'new'").fetchone()[0]
+    return JSONResponse({"ok": True, "skipped": n, "left": left})
 
 
 def api_admin_mailtest(request: Request, body: dict | None = None):
@@ -2584,6 +2605,7 @@ routes = [
     Route("/api/admin/overview", threaded(api_admin_overview)),
     Route("/api/admin/mailtest", threaded(api_admin_mailtest), methods=["POST"]),
     Route("/api/admin/billing", threaded(api_admin_billing), methods=["POST"]),
+    Route("/api/admin/queue", threaded(api_admin_queue), methods=["POST"]),
     Route("/api/admin/online", threaded(api_admin_online)),
     Route("/api/ping", threaded(api_ping), methods=["POST"]),
     Route("/api/admin/stats", threaded(api_admin_stats)),

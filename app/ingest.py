@@ -365,6 +365,19 @@ def process_pending(conn: sqlite3.Connection, limit: int = 200, use_llm: bool | 
     return done
 
 
+def skip_queue(conn: sqlite3.Connection, older_h: float | None = None, now: int | None = None) -> int:
+    """18.10 (Артём: «кнопку сброса на всякий случай»): очередь сообщений не разбирать — старше older_h часов или всю.
+    Сообщения не удаляются (status='skipped', kind='queue_reset'), объявления в них просто не разбираются."""
+    now = int(now or time.time())
+    if older_h:
+        cur = conn.execute("UPDATE messages SET status = 'skipped', kind = 'queue_reset' WHERE status = 'new' AND ts < ?",
+                           (now - int(older_h * 3600),))
+    else:
+        cur = conn.execute("UPDATE messages SET status = 'skipped', kind = 'queue_reset' WHERE status = 'new'")
+    conn.commit()
+    return cur.rowcount
+
+
 def learned_fix(conn: sqlite3.Connection, fh: str, d: dict) -> None:
     for kind, val in conn.execute("SELECT kind, value FROM learned_rules WHERE kind IN ('frag_price', 'frag_deal', 'frag_fields') AND key = ?", (fh,)):
         v = json.loads(val)

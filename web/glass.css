@@ -1153,3 +1153,17 @@ summary { transition: color .2s var(--m-out); }
   .toast[popover], .pk-panel, details::details-content { transition: none !important; }
   @view-transition { navigation: none; }
 }
+
+/* меню слева: компактные ступени, если пункты не помещаются по высоте (rail.js fitRail) — профиль не вылезает за край */
+@media (min-width: 821px) {
+  .rail-g.rail-t1 { gap: 2px; padding: 9px 0; }
+  .rail-g.rail-t1 .rail-a { height: 38px; } .rail-g.rail-t1 .rail-logo { height: 38px; margin-bottom: 2px; } .rail-g.rail-t1 .rail-sep { margin: 3px 0; }
+  .rail-g.rail-t2 { gap: 1px; padding: 7px 0; }
+  .rail-g.rail-t2 .rail-a { height: 33px; } .rail-g.rail-t2 .rail-a svg { width: 19px; height: 19px; }
+  .rail-g.rail-t2 .rail-logo { width: 36px; height: 34px; } .rail-g.rail-t2 .rail-logo img { width: 32px; height: 32px; }
+  .rail-g.rail-t2 .rail-ava { width: 34px; height: 34px; margin-top: 3px; font-size: 14px; } .rail-g.rail-t2 .rail-sep { margin: 2px 0; }
+  .rail-g.rail-t3 .rail-a { height: 29px; width: 42px; border-radius: 12px; } .rail-g.rail-t3 .rail-a svg { width: 18px; height: 18px; }
+  .rail-g.rail-t3 .rail-ava { width: 30px; height: 30px; font-size: 13px; } .rail-g.rail-t3 .rail-sep { margin: 1px 0; }
+}
+.adm-q-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.adm-q-btns .pill { padding: 6px 12px; font-size: 12.5px; }

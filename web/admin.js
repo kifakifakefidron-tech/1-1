@@ -35,7 +35,10 @@
       ...(o.repair ? [`<a class="adm-card" href="/?rep=yes" target="_blank"><b>${esc(o.repair.yes)}</b><span>с ремонтом (квартиры и дома) — проверить</span></a>`,
         `<a class="adm-card" href="/?rep=no" target="_blank"><b>${esc(o.repair.no)}</b><span>без ремонта: ПЧО, черновая, под ремонт — проверить</span></a>`,
         card(o.repair.none, "состояние в тексте не указано")] : []),
-      card(o.queue, "сообщений ждут разбора"), card(o.users, "пользователей"),
+      `<div class="adm-card"><b>${esc(o.queue)}</b><span>сообщений ждут разбора</span>${o.queue ? `<span class="adm-q-btns">
+        <button type="button" class="pill light" data-queue="6">Пропустить старше 6 ч</button>
+        <button type="button" class="pill light" data-queue="all">Сбросить всю очередь</button></span>` : ""}</div>`,
+      card(o.users, "пользователей"),
       card(o.users_access, "с открытым доступом"), card(o.users_paid, "оплатили подписку"),
       card(o.views_24h, "открытий номеров за сутки"), card(o.complaints_new, "новых жалоб"),
       card(o.optouts, "скрытых номеров"),
@@ -531,6 +534,19 @@
         <td>${day(o.ts)}</td><td class="acts"><button data-unban="${o.id}">Восстановить</button></td></tr>`).join("")}</tbody>`
       : `<tr><td class="note">Пока ничего не удалено. Удалить объект — в его окне: «⚙ Админ» → «🗑 Удалить навсегда».</td></tr>`;
   }
+  document.addEventListener("click", async (e) => {   // 18.10: сброс очереди сообщений (после перерыва Wappi — ночной хвост)
+    const b = e.target.closest("[data-queue]");
+    if (!b) return;
+    const all = b.dataset.queue === "all";
+    if (!confirm(all ? "Не разбирать ВСЕ сообщения, которые ждут в очереди? Объявления из них на сайт не попадут."
+      : "Не разбирать сообщения старше 6 часов? Свежие разберутся как обычно.")) return;
+    b.disabled = true;
+    try {
+      const r = await call("/api/admin/queue", all ? { all: true } : { older_h: Number(b.dataset.queue) });
+      alert(`Пропущено сообщений: ${r.skipped}. Осталось в очереди: ${r.left}.`);
+      overview();
+    } catch (err) { fail(err); b.disabled = false; }
+  });
   document.addEventListener("click", async (e) => {   // 18.10: «Оплатил сегодня» — следующее напоминание через период
     const b = e.target.closest("[data-bill]");
     if (!b) return;

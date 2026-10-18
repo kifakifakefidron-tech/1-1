@@ -698,6 +698,11 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   (interpolate-size, ::details-content); переходы между страницами — @view-transition (меню rail не мерцает, view-transition-name);
   меню въезжает только при первом заходе за сессию (rail-first, sessionStorage railSeen). prefers-reduced-motion — всё без движения.
   Проверка в браузере: в скрытой панели предпросмотра кадры не рисуются (rAF стоит, close-событие не приходит) — смотреть со скриншотом.
+- 18.10 (ветка fix-1810): меню слева на невысоком экране — rail.js fitRail (ступени .rail-t1…t3), профиль не вылезает;
+  админка «Обзор» — сброс очереди сообщений (POST /api/admin/queue {older_h}|{all}, ingest.skip_queue: status 'skipped',
+  kind 'queue_reset'; после перерыва Wappi ночной хвост можно не разбирать); ownmatch: архив своих копий — раз в 6 ч
+  (state own_match_arch_ts, раньше каждую минуту); payments.create — db.flush до запроса, ошибка ЮKassa → PayError (человеку
+  понятный текст, админу notify.alert с кодом ЮKassa). Подборки на vashapodborka.ru (PICK_DOMAIN): в DNS только A @ → 31.130.132.118.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
