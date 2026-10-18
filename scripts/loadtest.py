@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import statistics
 import sys
@@ -31,7 +32,8 @@ ids: list[int] = []
 def get(kind: str, path: str):
     t0 = time.perf_counter()
     try:
-        with urllib.request.urlopen(urllib.request.Request(BASE + path, headers={"User-Agent": "loadtest"}), timeout=30) as r:
+        hdr = {"User-Agent": "loadtest", "X-Loadtest": os.environ.get("LOADTEST_KEY", "")}   # 19.10: мимо лимитов (ключ из .env)
+        with urllib.request.urlopen(urllib.request.Request(BASE + path, headers=hdr), timeout=30) as r:
             body = r.read()
         ok = True
     except Exception as e:  # noqa: BLE001

@@ -424,7 +424,9 @@ def _hider(request: Request) -> int | None:
 
 
 GUEST_PAGES = 5          # 18.10 (приёмка п. 8, решение Артёма А+Б): гость листает первые 5 страниц выдачи, дальше — вход
-GUEST_LIST_RATE = (60, 600)    # и не больше 60 запросов выдачи за 10 минут с одного адреса (человеку хватает с запасом)
+# и не чаще 300 запросов выдачи за 10 минут с адреса: у мобильных операторов один адрес на многих абонентов (общий NAT),
+# поэтому лимит мягкий; главная защита — 5 страниц для гостя
+GUEST_LIST_RATE = (300, 600)
 USER_LIST_RATE = (600, 600)    # вошедшим — широкий предел: против скриптов под аккаунтом
 
 
@@ -432,6 +434,12 @@ def _ip_key(request: Request) -> str:
     """Гостя считаем по адресу (Caddy сам пишет настоящий адрес в X-Forwarded-For): иначе скрипт обходил бы лимит,
     подставляя каждый раз новую выдуманную куку сессии."""
     return "ip:" + request.headers.get("x-forwarded-for", request.client.host if request.client else "?").split(",")[0].strip()
+
+
+def _loadtest(request: Request) -> bool:
+    """Нагрузочный тест (scripts/loadtest.py) идёт с одного адреса — с ключом из .env (LOADTEST_KEY) лимиты частоты его не режут."""
+    k = config.LOADTEST_KEY
+    return bool(k) and hmac.compare_digest(request.headers.get("x-loadtest", ""), k)
 
 
 def _is_guest(request: Request) -> bool:
@@ -442,7 +450,7 @@ def api_listings(request: Request, body: dict | None = None):
     # В списке телефонов нет никогда — только в карточке, по одному объекту
     guest = _is_guest(request)
     lim = GUEST_LIST_RATE if guest else USER_LIST_RATE
-    if _too_often(request, "list", lim[0], lim[1], who=_ip_key(request) if guest else None):
+    if not _loadtest(request) and _too_often(request, "list", lim[0], lim[1], who=_ip_key(request) if guest else None):
         return _err("Слишком много запросов подряд. Подождите пару минут" + (" или войдите — неделя бесплатно." if guest else "."), 429)
     if guest and (_num(request.query_params.get("page"), int) or 1) > GUEST_PAGES:
         return JSONResponse({"items": [], "total": 0, "page": GUEST_PAGES + 1, "pages": GUEST_PAGES, "guest_limit": True})
@@ -560,7 +568,7 @@ _map_full: dict = {}
 def _guest_map(request: Request) -> Response:
     """18.10 (приёмка п. 8, вариант А): гость не выкачивает все точки одним ответом. Без области или в большой области —
     только кружки «N объектов» по сетке; приблизил карту (≤ 300 объектов в видимой области) — метки с ценой в этой области."""
-    if _too_often(request, "gmap", 120, 600, who=_ip_key(request)):
+    if not _loadtest(request) and _too_often(request, "gmap", 300, 600, who=_ip_key(request)):
         return _err("Слишком много запросов подряд. Подождите пару минут или войдите — неделя бесплатно.", 429)
     qp = request.query_params
     key = "&".join(f"{k}={v}" for k, v in sorted(qp.multi_items()) if k != "bbox")
