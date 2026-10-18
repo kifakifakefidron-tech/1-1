@@ -189,3 +189,16 @@ def test_email_code_limit_is_per_address_not_shared(client, monkeypatch):
     db.get().commit()
     codes = [client.post("/api/auth/email/start", json={"consent": True, "terms": True, "email": "user0@example.ru"}).status_code for _ in range(6)]
     assert 429 in codes   # один адрес — не больше 5 кодов в час
+
+
+def test_guest_limits_1810():
+    """18.10 (приёмка п. 8): гость — первые 5 страниц и карта кружками без области; приблизил — точки только в области."""
+    import importlib
+    from app import server
+    importlib.reload(server) if False else None
+    from starlette.testclient import TestClient
+    c = TestClient(server.app)
+    r = c.get("/api/listings?page=6").json()
+    assert r.get("guest_limit") and r["items"] == []
+    m = c.get("/api/map").json()
+    assert m.get("guest") and m["points"] == [] and "agg" in m

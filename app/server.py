@@ -411,8 +411,29 @@ def _hider(request: Request) -> int | None:
     return None
 
 
+GUEST_PAGES = 5          # 18.10 (приёмка п. 8, решение Артёма А+Б): гость листает первые 5 страниц выдачи, дальше — вход
+GUEST_LIST_RATE = (60, 600)    # и не больше 60 запросов выдачи за 10 минут с одного адреса (человеку хватает с запасом)
+USER_LIST_RATE = (600, 600)    # вошедшим — широкий предел: против скриптов под аккаунтом
+
+
+def _ip_key(request: Request) -> str:
+    """Гостя считаем по адресу (Caddy сам пишет настоящий адрес в X-Forwarded-For): иначе скрипт обходил бы лимит,
+    подставляя каждый раз новую выдуманную куку сессии."""
+    return "ip:" + request.headers.get("x-forwarded-for", request.client.host if request.client else "?").split(",")[0].strip()
+
+
+def _is_guest(request: Request) -> bool:
+    return not (request.cookies.get(SESSION) and current_user(request))
+
+
 def api_listings(request: Request, body: dict | None = None):
     # В списке телефонов нет никогда — только в карточке, по одному объекту
+    guest = _is_guest(request)
+    lim = GUEST_LIST_RATE if guest else USER_LIST_RATE
+    if _too_often(request, "list", lim[0], lim[1], who=_ip_key(request) if guest else None):
+        return _err("Слишком много запросов подряд. Подождите пару минут" + (" или войдите — неделя бесплатно." if guest else "."), 429)
+    if guest and (_num(request.query_params.get("page"), int) or 1) > GUEST_PAGES:
+        return JSONResponse({"items": [], "total": 0, "page": GUEST_PAGES + 1, "pages": GUEST_PAGES, "guest_limit": True})
     hider = _hider(request)
 
     def compute():
@@ -510,7 +531,54 @@ def api_facets(request: Request, body: dict | None = None):
     return _cached(request, lambda: search.facets(db.get(), query_from(request), int(time.time())), ttl=60)
 
 
+GUEST_MAP_POINTS = 300   # гостю — точные метки с ценой, только если в видимой области не больше стольких; иначе — кружки с числом
+_map_full: dict = {}
+
+
+def _guest_map(request: Request) -> Response:
+    """18.10 (приёмка п. 8, вариант А): гость не выкачивает все точки одним ответом. Без области или в большой области —
+    только кружки «N объектов» по сетке; приблизил карту (≤ 300 объектов в видимой области) — метки с ценой в этой области."""
+    if _too_often(request, "gmap", 120, 600, who=_ip_key(request)):
+        return _err("Слишком много запросов подряд. Подождите пару минут или войдите — неделя бесплатно.", 429)
+    qp = request.query_params
+    key = "&".join(f"{k}={v}" for k, v in sorted(qp.multi_items()) if k != "bbox")
+    hit = _map_full.get(key)
+    if not hit or time.time() - hit[0] > 45:
+        if len(_map_full) > 300:
+            _map_full.clear()
+        hit = _map_full[key] = (time.time(), search.map_points(db.get(), query_from(request), int(time.time())))
+    full = hit[1]
+    try:
+        la1, lo1, la2, lo2 = (float(x) for x in qp.get("bbox", "").split(","))
+        box = (min(la1, la2), min(lo1, lo2), max(la1, la2), max(lo1, lo2))
+    except ValueError:
+        box = None
+    inside = (lambda o: box[0] <= o["lat"] <= box[2] and box[1] <= o["lon"] <= box[3]) if box else (lambda o: True)
+    pts = [p for p in full.get("points", []) if inside(p)]
+    cxs = [c for c in full.get("complexes", []) if inside(c)]
+    out = {k: v for k, v in full.items() if k not in ("points", "complexes")}
+    out["guest"] = True
+    if box and len(pts) + sum(c.get("n", 1) for c in cxs) <= GUEST_MAP_POINTS:
+        out["points"], out["complexes"], out["agg"] = pts, cxs, []
+        return JSONResponse(out)
+    # кружки по сетке: шаг — 1/10 видимой области (или ~2 км на весь город)
+    step = max((box[2] - box[0]) / 10, (box[3] - box[1]) / 14, 0.002) if box else 0.02
+    cells: dict = {}
+    for o in pts + cxs:
+        k = (round(o["lat"] / step), round(o["lon"] / step))
+        c = cells.setdefault(k, [0.0, 0.0, 0])
+        n = o.get("n", 1)
+        c[0] += o["lat"] * n
+        c[1] += o["lon"] * n
+        c[2] += n
+    out["points"], out["complexes"] = [], []
+    out["agg"] = [{"lat": round(a / n, 5), "lon": round(b / n, 5), "n": n} for a, b, n in cells.values()]
+    return JSONResponse(out)
+
+
 def api_map(request: Request, body: dict | None = None):
+    if _is_guest(request):
+        return _guest_map(request)
     hider = _hider(request)
     if hider:
         qr = query_from(request)
