@@ -260,6 +260,27 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
     return lid, why
 
 
+def fix_settlement_districts(conn: sqlite3.Connection) -> int:
+    """Один раз (state settle_v1, приёмка 18.10, п. 12): станицам и посёлкам вне Краснодара раньше ставился район города по
+    улице («Ст. Марьянская, ул. Красная» → «Горгаз»). Снимаем такой район, если он взят по улице и в тексте его нет.
+    Правленное админом и фид не трогаем; журнал «проверка района»."""
+    from . import geo
+    n, now = 0, int(time.time())
+    for r in conn.execute("""SELECT id, district, street, settlement, fragment, description FROM listings
+                             WHERE settlement IS NOT NULL AND district IS NOT NULL AND street IS NOT NULL
+                             AND source = 'chat' AND COALESCE(admin_fixed, 0) = 0""").fetchall():
+        if geo.canonical_district(r["settlement"]) or geo.district_by_street(r["street"]) != r["district"]:
+            continue
+        if geo.find_district_in_text(r["fragment"] or r["description"] or "") == r["district"]:
+            continue
+        conn.execute("UPDATE listings SET district = NULL WHERE id = ?", (r["id"],))
+        conn.execute("""INSERT INTO listing_edits (listing_id, user_id, ts, field, old, new, src)
+                        VALUES (?, 0, ?, 'district', ?, NULL, 'проверка района')""", (r["id"], now, r["district"]))
+        n += 1
+    conn.commit()
+    return n
+
+
 def hide_sold(conn: sqlite3.Connection) -> int:
     """Один раз (state sold_v1, приёмка 18.10): уже собранные «Квартира продана / снята с продажи» — снять с сайта."""
     from .rules import is_sold

@@ -175,7 +175,9 @@ _AREA_LABEL_RE = re.compile(
     r"(?:площадь|пл\.|s\s*=|общая)\s*(?:дома|квартиры|помещения|общая)?\s*[:=-]?\s*(?P<num>\d+(?:[.,]\d+)?)(?!\s*(?:сот|га))",
     re.IGNORECASE,
 )
-_LAND_RE = re.compile(r"(?P<num>\d+(?:[.,]\d+)?)\s*(?P<unit>сот\w*|сот\.?|га\b|гектар\w*)", re.IGNORECASE)
+# 18.10 (приёмка, 6787): «160 700 сот» — тысячи через пробел (было: 700 соток)
+_LAND_RE = re.compile(r"(?<![\d.,])(?P<num>\d{1,3}(?:[  ]\d{3})+|\d+(?:[.,]\d+)?)\s*(?P<unit>сот\w*|сот\.?|га\b|гектар\w*)",
+                      re.IGNORECASE)
 _AREA_SPLIT_RE = re.compile(
     r"(?<![\d/])(?P<num>\d+(?:[.,]\d+)?)\s*/\s*\d+(?:[.,]\d+)?(?:\s*/\s*\d+(?:[.,]\d+)?)?\s*(?:м2|м²|кв\.?\s?м\.?|квм|м\b)",
     re.IGNORECASE)
@@ -204,7 +206,7 @@ def extract_areas(text: str) -> tuple[float | None, float | None]:
             continue
         if m.group("unit").lower().startswith(("га", "гект")):
             v *= 100
-        if 0.5 <= v <= 100_000:
+        if 0.5 <= v <= 1_000_000:   # до 10 000 га — сельхозземля бывает огромной
             land = v
             break
     area = None
@@ -313,8 +315,17 @@ _ADDR_BEFORE = re.compile(r"(?:\bул\b|\bулиц|\bпр-?к?т\b|\bпер\b|\b
 
 def _is_address_fraction(text: str, m: re.Match) -> bool:
     """«Домбайская 17/25», «39/2к7», «1/4к15» — номер дома, а не этаж."""
+    # 18.10 (приёмка п. 13): «Атарбекова 1/2, 14/16 этаж» — дробь, за которой «этаж/эт.», — всегда этаж
+    if re.match(r"[ \t]*эт", text[m.end(): m.end() + 6], re.IGNORECASE):
+        return False
     line_start = text.rfind("\n", 0, m.start()) + 1
-    if _ADDR_BEFORE.search(text[line_start: m.start()]):
+    before = text[line_start: m.start()]
+    hits = list(_ADDR_BEFORE.finditer(before))
+    if hits:
+        # номер дома уже стоит после названия улицы («ул. Атарбекова 1/2, …») — следующая дробь в строке не дом
+        tail = before[hits[-1].end():]
+        if re.search(r"\d[\w/]*\s*[,;]\s*\S", tail):
+            return False
         return True
     return bool(re.match(r"\s?(?:[кk]\s?\d|лит|корп|стр)", text[m.end(): m.end() + 6], re.IGNORECASE))
 

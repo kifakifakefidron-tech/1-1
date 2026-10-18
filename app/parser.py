@@ -289,11 +289,13 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
         district = geo.canonical_district(obj.get("district"))
     if not district and complex_rec and complex_rec.district:
         district = complex_rec.district
-    if not district and street:
-        district = geo.district_by_street(street)
-
     settlement = obj.get("settlement") if _in_text(obj.get("settlement"), text_words) else None
     settlement = settlement or lines_place.get("settlement")
+    # 18.10 (приёмка п. 12): улица → район — только для Краснодара. «Ст. Марьянская, ул. Красная» — это станица, а не «Горгаз»
+    # (населённые пункты внутри города — «п. Российский», «Знаменский» — сами районы справочника, им можно)
+    out_of_city = bool(settlement) and not geo.canonical_district(settlement)
+    if not district and street and not out_of_city:
+        district = geo.district_by_street(street)
 
     phones = r.phones or rules.extract_phones(text)
     sender = rules.normalize_phone(sender_phone) if sender_phone else None

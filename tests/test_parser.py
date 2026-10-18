@@ -255,3 +255,14 @@ def test_sold_text():
     assert not rules.is_sold("Квартира не продана, торг")
     assert not rules.is_sold("Будет продана быстро")
     assert not rules.is_sold("Продам 2к квартиру 60 м²")
+
+
+def test_acceptance_parse_fixes_1810():
+    _, [o] = parse("1к квартира ЦМР, ул. Атарбекова 1/2, 40 м², 14/16 этаж. Цена 5,2 млн. 89181112233")
+    assert (o.floor, o.floors) == (14, 16) and o.house == "1/2"
+    _, [o] = parse("Ст. Марьянская, ул. Красная 15, дом 120 м², 6 соток. Цена 6 млн. 89181112233")
+    assert o.settlement == "Марьянская" and o.district is None
+    _, [o] = parse("Продам землю сельхозназначения 160 700 сот, Динской район. Цена 1 100 000 000. 89181112233")
+    assert o.land == 160_700
+    from app import geoaudit
+    assert geoaudit.is_junk_complex("Вишняковский рынок") and not geoaudit.is_junk_complex("Самолёт")

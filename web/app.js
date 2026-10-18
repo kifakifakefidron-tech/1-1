@@ -1029,7 +1029,8 @@
           ? `<p class="dv-vague">Адрес уточняется — в объявлении ${o.geo_level === "street" ? "указана только улица" : "указан только район"}, поэтому на карте объекта нет.</p>` : ""}
         ${o.lat && o.lon && !o.loading && !["street", "district"].includes(o.geo_level) ? `<div class="dv-map-wrap"><div class="dv-map" id="dvMap" aria-label="Объект на карте"></div>
           ${o.geo_approx ? `<p class="note dv-map-note">Место примерное — в объявлении нет точного адреса</p>` : ""}</div>` : ""}
-        ${o.description ? `<div class="dv-desc clamp"><p>${esc(o.description)}</p><button type="button" class="dv-desc-more" data-desc-more>Читать полностью</button></div>` : ""}
+        ${o.description ? `<div class="dv-desc clamp"><p>${esc(o.description)}</p><button type="button" class="dv-desc-more" data-desc-more>Читать полностью</button></div>`
+          : `<p class="dv-desc-none">Описание — у агента: в объявлении только параметры и цена.</p>`}
         <div class="dv-accs">
           ${acc("📈", "Цена и рынок", priceHint, priceBody)}
           ${acc(ic("users"), "Клиенты и заметки", [pairs.length ? `у клиентов: ${pairs.length}` : "", fit.length ? `подходит: ${fit.length}` : "",

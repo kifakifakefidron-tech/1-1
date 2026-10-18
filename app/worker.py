@@ -157,6 +157,8 @@ def tick(conn) -> dict:
     if not db.get_state(conn, "test_purge_v1"):   # один раз (приёмка 18.10): тестовые данные проверяющего
         from . import clients as _cl
         db.set_state(conn, "test_purge_v1", json.dumps(_cl.purge_test_data(conn)))
+    if not db.get_state(conn, "settle_v1"):   # один раз (приёмка 18.10): станицам — без района города по улице
+        db.set_state(conn, "settle_v1", str(ingest.fix_settlement_districts(conn)))
     if not db.get_state(conn, "sold_v1"):   # один раз (приёмка 18.10): «Квартира продана» — с сайта
         stats["sold"] = ingest.hide_sold(conn)
         db.set_state(conn, "sold_v1", str(stats["sold"]))
