@@ -50,3 +50,24 @@ def test_yookassa_error_is_understandable(monkeypatch):
     with pytest.raises(payments.PayError):
         payments.create(conn, uid, 7)
     assert conn.execute("SELECT COUNT(*) FROM payments").fetchone()[0] == 0
+
+
+def test_operator_dative():
+    from app.config import dative_fio
+    assert dative_fio("Никифоров Артём Андреевич") == "Никифорову Артёму Андреевичу"
+    assert dative_fio("Иванова Анна Сергеевна") == "Ивановой Анне Сергеевне"
+    assert dative_fio("Петровский Андрей Ильич") == "Петровскому Андрею Ильичу"
+    assert dative_fio("Кузнецов Илья Петрович") == "Кузнецову Илье Петровичу"
+
+
+def test_purge_test_data_only_marked():
+    from app import accounts, clients
+    conn = db.connect(":memory:")
+    uid = accounts.create_promo_user(conn)["id"]
+    a = clients.save(conn, uid, {"name": "ТЕСТ Claude 2 (удалить)"})
+    b = clients.save(conn, uid, {"name": "Анна"})
+    ida = a.get("id") or a["client"]["id"]
+    idb = b.get("id") or b["client"]["id"]
+    rep = clients.purge_test_data(conn)
+    left = {r[0] for r in conn.execute("SELECT id FROM clients")}
+    assert rep["clients"] == 1 and ida not in left and idb in left

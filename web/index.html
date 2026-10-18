@@ -13,7 +13,7 @@
 <meta property="og:title" content="1+1 — вся база риелторских чатов Краснодара">
 <meta property="og:description" content="Квартиры, дома, участки и коммерция из десятков риелторских чатов: без повторов, на карте районов, с ценой за метр.">
 <meta property="og:url" content="{{SITE_URL}}/">
-<meta property="og:image" content="{{SITE_URL}}/static/icon-192.png"><!--/og-->
+<meta property="og:image" content="{{SITE_URL}}/static/og-image.jpg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><!--/og-->
 <link rel="icon" href="/favicon.ico" sizes="any">
 <meta name="theme-color" content="#035352">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
@@ -297,8 +297,9 @@
       <p class="lg-lead" id="loginLead">Номера агентов открываются после входа.</p>
       <div class="login-opts">
         <label class="consent-chk"><input type="checkbox" id="consentChk">
-          <span>Даю <a href="/consent" target="_blank">согласие на обработку персональных данных</a>
-            и принимаю <a href="/terms" target="_blank">пользовательское соглашение</a></span></label>
+          <span>Даю <a href="/consent" target="_blank">согласие на обработку персональных данных</a></span></label>
+        <label class="consent-chk"><input type="checkbox" id="termsChk">
+          <span>Принимаю <a href="/terms" target="_blank">пользовательское соглашение</a> и <a href="/offer" target="_blank">оферту</a></span></label>
         <div class="lg-tabs" id="lgTabs" role="tablist" hidden>
           <button type="button" role="tab" data-lt="phone">По номеру телефона</button>
           <button type="button" role="tab" data-lt="email">По почте</button></div>
@@ -436,7 +437,7 @@
 <script src="/static/yasel.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/app.js?v=124"></script>
+<script src="/static/app.js?v=125"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>

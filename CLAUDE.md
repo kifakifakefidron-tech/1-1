@@ -731,6 +731,14 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   rent_v2, журнал «аренда v2», отчёт rent_v2_report; rent_rule — обратно на сайт). ПРОДАНО: rules.is_sold («продана», «снята с
   продажи», «сделка закрыта»; не «не продана», «будет продана») → is_active 0, hidden_reason 'sold_text', sold_at; новый пост без
   «продана» возвращает; разово ingest.hide_sold (state sold_v1).
+- 18.10 ПРИЁМКА-2, продолжение: превью ссылок — web/og-image.jpg 1200×630 (главная, карточки без фото фида, /market, /how);
+  первый экран с сервера (server._hero_ssr: цифры /api/stats сразу в HTML, data-ssr — app.js не «докручивает»; вошедшему или с
+  кукой hh=1 «скрыть приветствие» блок приходит hidden — CLS на телефоне 0 вместо 0,93). Вход — ДВЕ галочки (consentChk ПДн,
+  termsChk соглашение+оферта; сервер _no_consent требует consent И terms). Согласие — «даю {{OPERATOR_TEXT_DAT}}»
+  (config.dative_fio: «Никифорову Артёму Андреевичу», переопределение OPERATOR_NAME_DAT). /api/market без доступа — только
+  районы и цена города (complexes пусто, ch7/ch30 null, locked) — «ЖК и динамика — с подпиской». Политика называет DeepSeek
+  (КНР), POLICY_DATE 19.10.2026; фразу «уведомил РКН» добавить ПОСЛЕ подачи уведомления. Разово clients.purge_test_data
+  (state test_purge_v1): клиенты «ТЕСТ Claude…», их события и подборки, подборка №9 — если в названии «тест».
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

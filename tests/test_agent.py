@@ -212,7 +212,7 @@ def test_referral_bonus_after_phone_confirmed(env, monkeypatch):
     c.post("/api/c/consent", json={"choice": "all", "ref": code})   # «Принять все» — приглашение запомнили
     assert c.cookies.get("ref") == code
     monkeypatch.setattr(accounts, "check_email_code", lambda *a: (True, ""))   # вход по почте без письма
-    c.post("/api/auth/email/verify", json={"consent": True, "email": "new@example.ru", "code": "1"})
+    c.post("/api/auth/email/verify", json={"consent": True, "terms": True, "email": "new@example.ru", "code": "1"})
     new = conn.execute("SELECT * FROM users WHERE email = 'new@example.ru'").fetchone()
     assert new["referred_by"] == inviter["id"]
     server._hits.clear()   # лимит «подтверждений в час» общий для всех тестов
@@ -304,7 +304,7 @@ def test_login_by_phone_call(env, monkeypatch):
     with TestClient(server.app) as g:
         assert g.get("/api/meta").json().get("phone_login") is True
         assert g.post("/api/auth/phone", json={"phone": "+7 918 555-44-33"}).status_code == 400   # без согласия
-        r = g.post("/api/auth/phone", json={"phone": "+7 918 555-44-33", "consent": True}).json()
+        r = g.post("/api/auth/phone", json={"phone": "+7 918 555-44-33", "consent": True, "terms": True}).json()
         tid = r["tid"]
         assert g.get(f"/api/auth/phone?tid={tid}").json()["status"] == "pending"
         st["s"] = "401"
@@ -316,7 +316,7 @@ def test_login_by_phone_call(env, monkeypatch):
         assert g.get(f"/api/auth/phone?tid={tid}").json()["status"] == "used"   # повторно по той же метке не войти
         uid = me["id"]
     with TestClient(server.app) as g2:   # второй вход тем же номером — тот же аккаунт
-        tid = g2.post("/api/auth/phone", json={"phone": "89185554433", "consent": True}).json()["tid"]
+        tid = g2.post("/api/auth/phone", json={"phone": "89185554433", "consent": True, "terms": True}).json()["tid"]
         conn.execute("UPDATE phone_codes SET checked_at = NULL"); conn.commit()
         assert g2.get(f"/api/auth/phone?tid={tid}").json()["status"] == "ok"
         assert g2.get("/api/me").json()["me"]["id"] == uid

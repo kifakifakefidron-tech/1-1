@@ -31,7 +31,7 @@ def env(tmp_path, monkeypatch):
 
 
 def _tg_login(c, conn, tg_id=555, username="buyer", phone="+79001234567"):
-    token = c.post("/api/auth/tg/start", json={"consent": True}).json()["token"]
+    token = c.post("/api/auth/tg/start", json={"consent": True, "terms": True}).json()["token"]
     msg = {"chat": {"id": tg_id, "type": "private"}, "from": {"id": tg_id, "username": username, "first_name": "Иван"}}
     bot.handle(conn, {"message": {**msg, "text": f"/start login_{token}"}})
     bot.handle(conn, {"message": {**msg, "contact": {"user_id": tg_id, "phone_number": phone}}})
@@ -63,7 +63,7 @@ def test_telegram_login_gives_trial_week_once_per_phone(env):
 
 def test_foreign_contact_rejected(env):
     c, conn, _, said = env
-    token = c.post("/api/auth/tg/start", json={"consent": True}).json()["token"]
+    token = c.post("/api/auth/tg/start", json={"consent": True, "terms": True}).json()["token"]
     msg = {"chat": {"id": 1, "type": "private"}, "from": {"id": 1, "username": "x"}}
     bot.handle(conn, {"message": {**msg, "text": f"/start login_{token}"}})
     bot.handle(conn, {"message": {**msg, "contact": {"user_id": 999, "phone_number": "+79001112233"}}})
@@ -133,9 +133,9 @@ def test_email_login(env, monkeypatch):
     from app import mailer
     monkeypatch.setattr(mailer, "available", lambda: True)
     monkeypatch.setattr(mailer, "send_code", lambda to, code: sent.update(to=to, code=code) or True)
-    assert c.post("/api/auth/email/start", json={"consent": True, "email": "Agent@Mail.ru"}).json() == {"ok": True}
-    assert c.post("/api/auth/email/verify", json={"consent": True, "email": "agent@mail.ru", "code": "000000"}).status_code in (400,)
-    r = c.post("/api/auth/email/verify", json={"consent": True, "email": "agent@mail.ru", "code": sent["code"]}).json()
+    assert c.post("/api/auth/email/start", json={"consent": True, "terms": True, "email": "Agent@Mail.ru"}).json() == {"ok": True}
+    assert c.post("/api/auth/email/verify", json={"consent": True, "terms": True, "email": "agent@mail.ru", "code": "000000"}).status_code in (400,)
+    r = c.post("/api/auth/email/verify", json={"consent": True, "terms": True, "email": "agent@mail.ru", "code": sent["code"]}).json()
     assert r["ok"] and r["me"]["email"] == "agent@mail.ru"
     assert r["me"]["access"] and r["me"]["trial_until"] > time.time() + 6 * 86400  # неделя бесплатно при первом входе
     # Повторный вход тем же адресом — вторую неделю не даёт
@@ -149,7 +149,7 @@ def test_telegram_button_hidden_when_bot_offline(env):
     c, conn, _, _ = env
     db.set_state(conn, "tg_ok", "0")
     assert c.get("/api/meta").json()["tg_login"] is False
-    assert c.post("/api/auth/tg/start", json={"consent": True}).status_code == 503
+    assert c.post("/api/auth/tg/start", json={"consent": True, "terms": True}).status_code == 503
 
 
 def test_admin_actions(env):

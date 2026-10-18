@@ -720,13 +720,13 @@
       $("admLoginBtn").disabled = true;
       try {
         if (step === "email") {
-          await call("/api/auth/email/start", { email, consent: true });   // администратор — оператор сервиса
+          await call("/api/auth/email/start", { email, consent: true, terms: true });   // администратор — оператор сервиса
           step = "code";
           $("admCode").hidden = false; $("admCode").focus();
           $("admLoginNote").textContent = `Код отправлен на ${email}. Нет письма — проверьте «Спам».`;
           $("admLoginBtn").textContent = "Войти";
         } else {
-          const r = await call("/api/auth/email/verify", { email, code: $("admCode").value.trim(), consent: true });
+          const r = await call("/api/auth/email/verify", { email, code: $("admCode").value.trim(), consent: true, terms: true });
           if (!r.me || !r.me.is_admin) { err("Вход выполнен, но у этой почты нет прав администратора."); return; }
           location.reload();
         }

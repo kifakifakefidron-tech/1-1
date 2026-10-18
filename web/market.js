@@ -48,6 +48,14 @@
         <small>${deal === "sale" ? `${n0(r.median)} ₽/м² · ` : ""}${n0(r.n)} шт.</small></div>`).join("")}`
       : `<p class="note">Пока мало объявлений ${deal === "rent" ? "об аренде" : "о продаже"} — статистика появится, когда их станет больше.</p>`;
     $("mkNote").textContent = rooms !== "" ? "Динамика считается по всем квартирам — выберите «Все квартиры», чтобы её увидеть." : data.since7 ? "" : `Динамика появится через неделю: каждый день сохраняем цены${data.first_day ? ` (с ${data.first_day.split("-").reverse().join(".")})` : ""}.`;
+    if (data.locked) {   // 18.10: без доступа — районы и цена по городу; ЖК и динамика — с подпиской
+      $("mkNote").innerHTML = `Цены по каждому ЖК и динамика за неделю и месяц — с подпиской. <a href="/pay">Оформить доступ</a> или <a href="/?login=1">войти</a> — неделя бесплатно.`;
+      if (kind === "complexes") {
+        $("mkTable").innerHTML = `<tr><td class="note">Цена квадратного метра по каждому ЖК — с подпиской.
+          <a href="/pay">Оформить доступ</a> или <a href="/?login=1">войти</a> — неделя бесплатно.</td></tr>`;
+        return;
+      }
+    }
 
     const q = ($("mkQ").value || "").trim().toLowerCase().replace(/ё/g, "е");
     let rows = (data[kind] || []).filter((x) => !q || x.name.toLowerCase().replace(/ё/g, "е").includes(q));
