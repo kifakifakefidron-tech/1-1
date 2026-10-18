@@ -515,6 +515,14 @@ def api_listing(request: Request, body: dict | None = None):
         if d.get("fragment"):
             d["fragment"] = parser.strip_phones(d["fragment"])
     row = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
+    # 19.10: просмотр карточки — в статистику агента (не роботы-превью и не сам агент со своим номером)
+    if not _PREVIEW_BOT.search(request.headers.get("user-agent", "")):
+        own_view = bool(user and conn.execute(
+            f"SELECT 1 FROM agent_phones WHERE user_id = ? AND phone IN ({','.join('?' * len(json.loads(row['phones'] or '[]')) or '?')})",
+            [user["id"], *(json.loads(row["phones"] or "[]") or [""])]).fetchone())
+        if not own_view:
+            from . import listingstats
+            listingstats.record(conn, lid, _who(request))
     if access and phones:   # 19.10: выбор агента (согласие на /agent) — подтверждён ли номер, без имени, без кнопки MAX
         from . import consent
         pf = consent.prefs(conn)
@@ -1662,10 +1670,14 @@ def saved_off_page(request: Request, body: dict | None = None):
 
 # ─── кабинет агента ────────────────────────────────────────────────────────
 def _agent_items(conn, user) -> list[dict]:
+    from . import listingstats
+    rows = agent.my_listings(conn, user["id"])
+    stats = listingstats.for_listings(conn, [r for r in rows if r["is_active"]][:300])   # 19.10: просмотры, номер, подборки
     out = []
-    for r in agent.my_listings(conn, user["id"]):
+    for r in rows:
         it = search.row_to_item(r, True)
         it["can_edit"] = agent.can_edit(conn, user, r)[0]
+        it["stats"] = stats.get(r["id"])
         out.append(it)
     return out
 

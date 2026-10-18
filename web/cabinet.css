@@ -449,3 +449,6 @@ body.d-arranging .g:not(.lifting) { opacity: .85; }
 .wq-nums a.hot { border-color: rgba(227, 203, 143, .55); background: rgba(227, 203, 143, .1); }
 .wq-row { display: grid; gap: 2px; padding: 8px 0; border-top: 1px solid var(--glass-line); text-decoration: none; color: var(--ink); }
 .wq-row small { color: var(--ink-3); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wa-warn { display: flex; gap: 6px; align-items: center; margin: 0 0 8px; padding: 8px 10px; border-radius: 12px; font-size: 13px;
+  background: rgba(240, 194, 123, .1); color: #f0c27b; }
+.wa-warn .ic { width: 16px; height: 16px; } .wa-warn a { color: inherit; }
