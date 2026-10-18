@@ -81,6 +81,16 @@ def tick(conn) -> dict:
     reminded = planner.remind(conn, _mail(conn))   # показы и созвоны: напомнить заранее
     if reminded:
         stats["reminders"] = reminded
+    # 19.10: «Под ваш объект есть покупатель» — раз в 15 минут; при первом запуске старые запросы не рассылаем
+    if not db.get_state(conn, "buyers_notify_v1"):
+        conn.execute("UPDATE buyer_requests SET notified = 1")
+        db.set_state(conn, "buyers_notify_v1", "1")
+    if time.time() - float(db.get_state(conn, "buyer_notify_at") or 0) > 900:
+        db.set_state(conn, "buyer_notify_at", str(int(time.time())))
+        from . import buyers as _b
+        n = _b.notify_matches(conn)
+        if n:
+            stats["buyer_notices"] = n
     # «Новое под клиента» — раз в 15 минут
     if time.time() - float(db.get_state(conn, "client_match_at") or 0) > 900:
         db.set_state(conn, "client_match_at", str(int(time.time())))

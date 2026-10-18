@@ -255,7 +255,8 @@ def for_agent(conn: sqlite3.Connection, user_id: int, limit: int = 300) -> dict[
     if not mine:
         return {}
     out: dict[int, list[int]] = {}
-    for r in conn.execute("SELECT * FROM buyer_requests WHERE is_active = 1 AND removed = 0 ORDER BY last_seen DESC LIMIT 2000"):
+    for r in conn.execute("""SELECT * FROM buyer_requests WHERE is_active = 1 AND removed = 0 AND COALESCE(user_id, 0) != ?
+                             ORDER BY last_seen DESC LIMIT 2000""", (user_id,)):   # свой запрос — не «под мои объекты»
         req = _req(r)
         hit = [o["id"] for o in mine if matches(req, o)]
         if hit:
@@ -395,3 +396,119 @@ def summary(conn: sqlite3.Connection, user_id: int | None) -> dict:
             "new_24h": one("SELECT COUNT(*) FROM buyer_requests WHERE is_active = 1 AND removed = 0 AND first_seen > ?",
                            int(time.time()) - 86400),
             "mine": len(fits), "latest": [{**_row(r, False), "search": search_url(_req(r))} for r in rows]}
+
+
+# ─── 19.10: запрос клиента от агента сайта и «под ваш объект есть покупатель» ─────────────────────────────────
+def _rooms_from_list(rooms: list) -> int:
+    m = 0
+    for r in rooms or []:
+        try:
+            m |= 1 << max(0, min(int(r), 4))
+        except (TypeError, ValueError):
+            pass
+    return m
+
+
+def publish(conn: sqlite3.Connection, user_id: int, client: dict, comment: str = "") -> dict:
+    """Агент публикует пожелания клиента (БЕЗ имени и телефона клиента) — запрос виден всем подписчикам с контактом агента.
+    Повтор — продлевает запрос на 10 дней. Нужен подтверждённый номер агента (чтобы не было подставных запросов)."""
+    phones = [r[0] for r in conn.execute("SELECT phone FROM agent_phones WHERE user_id = ? ORDER BY verified_at", (user_id,))]
+    if not phones:
+        return {"error": "Чтобы публиковать запросы, подтвердите свой номер — «Ваш номер на 1+1».", "need_verify": True}
+    if client.get("kind") in ("seller", "landlord"):
+        return {"error": "Запрос публикуют для покупателя или арендатора — у продавца объект, его добавляют в «Мои объекты»."}
+    w = client.get("wishes") or {}
+    deal = "rent" if client.get("deal") == "rent" or client.get("kind") == "tenant" else "sale"
+    types = [t for t in (w.get("types") or []) if t in ("flat", "room", "house", "land", "commercial")]
+    mask = _rooms_from_list(client.get("rooms"))
+    districts = [d for d in (client.get("districts") or []) if d][:8]
+    cxs = [c for c in (w.get("complexes") or []) if c][:6]
+    pmin, pmax = client.get("budget_min") or None, client.get("budget_max") or None
+    rooms_t = ", ".join("студия" if i == 0 else ("4+" if i == 4 else str(i)) for i in range(5) if mask & (1 << i))
+
+    def money(v: int) -> str:
+        return f"{v // 1000} тыс. ₽/мес" if deal == "rent" else f"{v / 1e6:g} млн ₽".replace(".", ",")
+    names = {"flat": "квартиру", "room": "комнату", "house": "дом", "land": "участок", "commercial": "коммерцию"}
+    parts = [("Сниму" if deal == "rent" else "Ищу") + " " + (", ".join(names[t] for t in types) or "квартиру")]
+    if rooms_t:
+        parts.append(f"{rooms_t} комн.")
+    if districts:
+        parts.append(", ".join(districts))
+    if cxs:
+        parts.append("ЖК " + ", ".join(cxs))
+    if pmin and pmax:
+        parts.append(f"{money(pmin)} – {money(pmax)}")
+    elif pmax:
+        parts.append(f"до {money(pmax)}")
+    if "mortgage" in (w.get("pay") or []):
+        parts.append("ипотека")
+    if w.get("not_first"):
+        parts.append("не первый этаж")
+    extra = parser.strip_phones(comment.strip())[:500] if comment.strip() else ""
+    text = " · ".join(parts) + (f"\n{extra}" if extra else "")
+    now = int(time.time())
+    old = conn.execute("SELECT id FROM buyer_requests WHERE source = 'agent' AND user_id = ? AND client_id = ? AND removed = 0",
+                       (user_id, client["id"])).fetchone()
+    vals = (text, deal, types[0] if len(types) == 1 else None, mask, pmin, pmax, json.dumps(districts, ensure_ascii=False),
+            json.dumps(cxs, ensure_ascii=False), json.dumps(phones[:1]))
+    if old:
+        conn.execute("""UPDATE buyer_requests SET text = ?, deal = ?, type = ?, rooms_mask = ?, price_min = ?, price_max = ?,
+                        districts = ?, complexes = ?, phones = ?, last_seen = ?, is_active = 1, notified = 0 WHERE id = ?""",
+                     (*vals, now, old[0]))
+        rid = old[0]
+    else:
+        rid = conn.execute("""INSERT INTO buyer_requests (text, text_hash, chat_name, deal, type, rooms_mask, price_min, price_max,
+                              districts, complexes, phones, first_seen, last_seen, seen_count, is_active, source, user_id, client_id)
+                              VALUES (?, NULL, 'Агент на сайте', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 'agent', ?, ?)""",
+                           (text, *vals[1:], now, now, user_id, client["id"])).lastrowid
+    conn.commit()
+    return {"ok": True, "id": rid, "text": text}
+
+
+def unpublish(conn: sqlite3.Connection, user_id: int, client_id: int) -> bool:
+    n = conn.execute("UPDATE buyer_requests SET is_active = 0 WHERE source = 'agent' AND user_id = ? AND client_id = ? AND is_active = 1",
+                     (user_id, client_id)).rowcount
+    conn.commit()
+    return bool(n)
+
+
+def published(conn: sqlite3.Connection, user_id: int, client_id: int) -> dict | None:
+    r = conn.execute("""SELECT id, text, last_seen FROM buyer_requests WHERE source = 'agent' AND user_id = ? AND client_id = ?
+                        AND is_active = 1 AND removed = 0""", (user_id, client_id)).fetchone()
+    return dict(r) if r else None
+
+
+NOTIFY_PER_DAY = 10   # не больше стольких «под ваш объект есть покупатель» одному агенту в сутки
+
+
+def notify_matches(conn: sqlite3.Connection) -> int:
+    """Раз в 15 мин (worker): новые запросы (из чатов и от агентов сайта) → подтверждённым агентам с подходящими объектами —
+    уведомление «Под ваш объект есть покупатель». Свой же запрос себе не шлём; не больше NOTIFY_PER_DAY в сутки."""
+    from . import notices
+    reqs = conn.execute("SELECT * FROM buyer_requests WHERE is_active = 1 AND removed = 0 AND notified = 0 LIMIT 300").fetchall()
+    if not reqs:
+        return 0
+    agents = [r[0] for r in conn.execute("SELECT DISTINCT user_id FROM agent_phones")]
+    mine = {u: agent_listings(conn, u) for u in agents}
+    day_ago = int(time.time()) - 86400
+    sent = 0
+    for r in reqs:
+        req = _req(r)
+        for uid, lst in mine.items():
+            if uid == r["user_id"] or not lst:
+                continue
+            hit = [o for o in lst if matches(req, o)]
+            if not hit:
+                continue
+            n_today = conn.execute("SELECT COUNT(*) FROM notices WHERE user_id = ? AND kind = 'buyer' AND ts > ?", (uid, day_ago)).fetchone()[0]
+            if n_today >= NOTIFY_PER_DAY:
+                continue
+            o = hit[0]
+            what = (o.get("complex") and f"ЖК {o['complex']}") or o.get("title") or "ваш объект"
+            src = "запрос агента на 1+1" if r["source"] == "agent" else "запрос из чатов"
+            if notices.add(conn, uid, "buyer", f"Под ваш объект есть покупатель — {what}", f"{(r['text'] or '')[:160]} ({src})",
+                           url="/requests?mine=1", listing_id=o["id"], dedup_s=7 * 86400):
+                sent += 1
+        conn.execute("UPDATE buyer_requests SET notified = 1 WHERE id = ?", (r["id"],))
+    conn.commit()
+    return sent

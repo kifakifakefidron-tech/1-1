@@ -45,11 +45,11 @@
     const mine = (r.mine || []).length ? `<p class="rq-mine">${ic("check-circle")}Подходит под ${r.mine.length > 1 ? "ваши объекты" : "ваш объект"}:
       ${r.mine.map((id, k) => `<a href="/?open=${id}">№${k + 1}</a>`).join(", ")}</p>` : "";
     return `<li class="rq-item${fresh ? " fresh" : ""}" style="--d:${Math.min(i, 12) * 40}ms">
-      <div class="rq-chips">${fresh ? `<span class="rq-new">Новый</span>` : ""}${chips.map((c) => `<span class="chip on">${esc(c)}</span>`).join("")}</div>
+      <div class="rq-chips">${fresh ? `<span class="rq-new">Новый</span>` : ""}${r.source === "agent" ? `<span class="rq-agent">${ic("check-circle")}Запрос агента 1+1</span>` : ""}${chips.map((c) => `<span class="chip on">${esc(c)}</span>`).join("")}</div>
       <p class="rq-text clamp">${esc(r.text)}</p>
       <button type="button" class="rq-more" data-more hidden>Полностью</button>
       ${mine}
-      <div class="rq-foot"><span class="note">${esc(ago(r.last_seen))}${r.seen_count > 1 ? ` · присылали ${r.seen_count} раз` : ""}</span></div>
+      <div class="rq-foot"><span class="note">${esc(ago(r.last_seen))}${r.source === "agent" ? " · опубликовал агент на сайте" : r.seen_count > 1 ? ` · присылали ${r.seen_count} раз` : ""}</span></div>
       ${phones ? `<div class="rq-phones">${phones}</div>` : ""}
       <div class="rq-acts"><a class="chip" href="${esc(r.search)}">${ic("search")}Подходящие объекты</a>
         <a class="chip" href="${esc(clientLink(r))}">${ic("users")}Сохранить как клиента</a>
