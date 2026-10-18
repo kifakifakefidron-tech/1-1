@@ -1167,3 +1167,4 @@ summary { transition: color .2s var(--m-out); }
 }
 .adm-q-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .adm-q-btns .pill { padding: 6px 12px; font-size: 12.5px; }
+.dv-desc-none { margin: 10px 0 0; color: var(--ink-3); font-size: 14px; }

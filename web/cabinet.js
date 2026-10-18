@@ -265,6 +265,7 @@
   function calcHtml() {
     // по умолчанию — лучшая рыночная ставка банков на вторичку (средняя ЦБ включает льготные программы и занижает платёж)
     if (!rateSet && mortRates.best != null) { calc.rate = mortRates.best; rateSet = true; }
+    else if (!rateSet && mortRates.avg != null) { calc.rate = mortRates.avg; rateSet = true; }   // банков нет — средняя по рынку
     // 17.10 (Артём): ставка — из списка банков (раскрывающийся список), без «средней ЦБ»
     const banks = mortRates.banks || [];
     const opts = banks.map((x, i) => `<option value="b${i}" data-rate="${x.rate}">${esc(x.bank)} — ${pct(x.rate)}</option>`).join("")
