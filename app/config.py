@@ -116,7 +116,10 @@ SUB_PLANS = sorted((int(d), int(p)) for d, p in (x.split(":") for x in
 SUB_DAYS, SUB_PRICE = SUB_PLANS[0]                       # самый короткий тариф (для коротких надписей)
 _first = os.getenv("SUB_FIRST", "7:49").strip()
 SUB_FIRST = tuple(int(x) for x in _first.split(":")) if ":" in _first else None   # (дней, цена) — только первая оплата
-PHONE_VIEWS_PER_DAY = int(os.getenv("PHONE_VIEWS_PER_DAY", "0"))  # 0 = без лимита (пока выключен)  # защита от выкачивания номеров
+# защита от выкачивания номеров: новых объектов с открытым номером в сутки (0 = без лимита). 18.10, перед выходом на
+# рынок — 300 (номер открывается при каждом просмотре карточки; риелтору хватает с запасом, скрипту — нет);
+# админу лимита нет, объекты партнёра (фид) в лимит не считаются
+PHONE_VIEWS_PER_DAY = int(os.getenv("PHONE_VIEWS_PER_DAY", "300"))
 PROMO_LOGIN_DAYS = int(os.getenv("PROMO_LOGIN_DAYS", "30"))  # доступ после входа по коду коллег
 # Пробная неделя при первом входе по почте (раз на адрес) — пока Telegram в России недоступен
 TRIAL_BY_EMAIL = _bool("TRIAL_BY_EMAIL", True)

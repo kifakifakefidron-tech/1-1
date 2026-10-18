@@ -253,8 +253,8 @@ def fix_wrong_points(conn: sqlite3.Connection) -> int:
             conn.execute("DELETE FROM geocache WHERE query = ?", (q["query"],))
     for r in conn.execute("""SELECT id, lat, lon, settlement, geo_status FROM listings
                              WHERE lat IS NOT NULL AND source != 'feed' AND geo_status NOT IN ('manual', 'learned')""").fetchall():
-        wrong = (not r["settlement"] and not in_city(r["lat"], r["lon"])) or \
-                (r["settlement"] and _km(CENTER, (r["lat"], r["lon"])) > MAX_KM)
+        wrong = bool((not r["settlement"] and not in_city(r["lat"], r["lon"])) or
+                     (r["settlement"] and _km(CENTER, (r["lat"], r["lon"])) > MAX_KM))   # без bool: None → падал «bad += None»
         if wrong or r["geo_status"] == "approx":
             conn.execute("UPDATE listings SET lat = NULL, lon = NULL, geo_status = 'pending' WHERE id = ?", (r["id"],))
             bad += wrong
