@@ -2,7 +2,8 @@
 
 Агенты присылают объявление альбомом: текст (часто — подписью к первой картинке) и несколько фото подряд.
   * wappi._store запоминает каждую картинку из групп в chat_media (кто, в каком чате, когда);
-  * attach() (из worker) — СТРОГО (18.10): фото с подписью или альбом с подписью того же агента (±ALBUM_GAP с) и,
+  * attach() (из worker) — СТРОГО (18.10, Артём: «никаких 20 секунд — только сразу»): только фото с подписью-объявлением
+    (картинка и текст — ОДНО сообщение) и,
     если из этого сообщения получился ровно один объект, скачивает фото через Wappi
     (GET {api}/message/media/download → file_link, ссылка живёт ~10 дней; WhatsApp хранит файлы 20 дней)
     и добавляет в карточку (до MAX_PHOTOS). «Портянки» с несколькими объектами — не трогаем (чьё фото — непонятно).
@@ -56,25 +57,15 @@ def remember(conn: sqlite3.Connection, source: str, profile_id: str, chat_id: st
                     VALUES (?,?,?,?,?,?, 'new')""", (source, profile_id, chat_id, sender, msg_id, ts or int(time.time())))
 
 
-ALBUM_GAP = 20   # фото альбома приходят пачкой за секунды
-
-
 def _listing_for(conn: sqlite3.Connection, r) -> tuple[str, int | None]:
     """Объявление, к которому относится фото: ('ok', id) | ('wait', None) | ('skip', None).
 
     18.10 (Артём: «должно подтягиваться, только если фото отправлено вместе с текстом — фото и описание; если просто
     текст — никакое фото не подгружается»). Поэтому фото берём ТОЛЬКО:
-      * если текст объявления — подпись к этой самой картинке (сообщение с тем же msg_id);
-      * или картинка из того же альбома: подписанное фото того же агента в том же чате — в пределах ALBUM_GAP секунд.
-    Отдельное текстовое сообщение и картинки, присланные отдельно (через минуту, без подписи), — не связываем."""
+      * если текст объявления — подпись к этой самой картинке (сообщение с тем же msg_id).
+    Картинки без подписи (в том числе остальные фото альбома) и отдельное текстовое сообщение — не связываем."""
     m = conn.execute("SELECT id, ts FROM messages WHERE source = ? AND msg_id = ?", (r["source"], r["msg_id"])).fetchone()
-    if m is None:
-        m = conn.execute(
-            """SELECT m.id, m.ts FROM messages m JOIN chat_media c ON c.source = m.source AND c.msg_id = m.msg_id
-               WHERE m.source = ? AND m.chat_id = ? AND COALESCE(m.sender, '') = COALESCE(?, '') AND ABS(m.ts - ?) <= ?
-               ORDER BY ABS(m.ts - ?) LIMIT 1""",
-            (r["source"], r["chat_id"], r["sender"], r["ts"], ALBUM_GAP, r["ts"])).fetchone()
-    if m is None:   # подпись альбома могла ещё не дойти — подождём чуть-чуть, потом — «сирота»
+    if m is None:   # подпись к фото сохраняется тем же опросом — подождём чуть-чуть, потом — «сирота»
         return ("wait", None) if time.time() - r["ts"] < 120 else ("skip", None)
     lids = [x[0] for x in conn.execute("SELECT DISTINCT listing_id FROM listing_events WHERE message_id = ?", (m["id"],))]
     if len(lids) == 1:
@@ -85,9 +76,9 @@ def _listing_for(conn: sqlite3.Connection, r) -> tuple[str, int | None]:
 
 
 def strict_cleanup(conn: sqlite3.Connection) -> int:
-    """Один раз (state media_strict_v1): у объявлений из чатов убрать фото, привязанные по старому правилу «рядом по
-    времени», если по новому (подпись / альбом с подписью) оно к этому объявлению не относится."""
-    if db.get_state(conn, "media_strict_v1") == "1":
+    """Один раз (state media_strict_v2): у объявлений из чатов убрать фото, привязанные по старым правилам («рядом по
+    времени», «альбом ±20 с»), если по новому (только подпись к этому фото) оно к этому объявлению не относится."""
+    if db.get_state(conn, "media_strict_v2") == "1":
         return 0
     n = 0
     for r in conn.execute("""SELECT c.* FROM chat_media c JOIN listings l ON l.id = c.listing_id
@@ -101,7 +92,7 @@ def strict_cleanup(conn: sqlite3.Connection) -> int:
         conn.execute("UPDATE listings SET photos = ? WHERE id = ?", (json.dumps(photos), r["listing_id"]))
         conn.execute("UPDATE chat_media SET status = 'skip' WHERE id = ?", (r["id"],))
         n += 1
-    db.set_state(conn, "media_strict_v1", "1")
+    db.set_state(conn, "media_strict_v2", "1")
     db.set_state(conn, "media_strict_report", str(n))
     conn.commit()
     return n

@@ -31,7 +31,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=71">
+<link rel="stylesheet" href="/static/glass.css?v=72">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -405,6 +405,15 @@
             <option value="no">Без ремонта (ПЧО, черновая…)</option></select></label>
         </div>
       </div>
+      <div class="adm-fields adm-map">
+        <p class="adm-fields-h">Точка на карте <small>— перетащите метку, нажмите на карту или вставьте координаты / ссылку из Яндекс Карт</small></p>
+        <div class="inline-form geo-find">
+          <input id="placeCoords" autocomplete="off" placeholder="45.0355, 38.9753 или ссылка с Яндекс/Google Карт" aria-label="Координаты">
+          <button type="button" class="pill light" id="placeCoordsGo">Найти</button>
+        </div>
+        <p class="note geo-now" id="placeGeoNow"></p>
+        <div id="placeMap" class="geo-map adm-geo-map"></div>
+      </div>
       <div class="place-learn" id="placeLearn"></div>
       <p class="note" id="placeLeft"></p>
       <div class="dlg-actions">
@@ -429,7 +438,7 @@
 <script src="/static/yasel.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/app.js?v=122"></script>
+<script src="/static/app.js?v=123"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>

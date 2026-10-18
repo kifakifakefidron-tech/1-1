@@ -1289,6 +1289,42 @@
 
   // ─── админ: поправить ЖК и район и научить сервис ──────────────────────
   let placeId = 0, placeQueue = "";
+  // 18.10: карта — в том же окне «Все характеристики»; точка сохраняется, только если её двигали
+  let placeMap = null, placeMarker = null, placeGeoDirty = false;
+  function placeGeoNow() {
+    const ll = placeMarker.getLatLng(), o = known.get(placeId) || {};
+    $("placeGeoNow").textContent = placeGeoDirty ? `Новая точка: ${ll.lat.toFixed(6)}, ${ll.lng.toFixed(6)} — сохранится вместе с остальным`
+      : o.lat ? `Сейчас: ${(+o.lat).toFixed(6)}, ${(+o.lon).toFixed(6)}${o.geo_status === "approx" ? " (примерно)" : ""}` : "Точки пока нет — поставьте метку";
+  }
+  function placeMove(ll, zoom) {
+    placeMarker.setLatLng(ll);
+    placeGeoDirty = true;
+    if (zoom) placeMap.setView(ll, zoom);
+    placeGeoNow();
+  }
+  function openPlaceMap(o) {
+    placeGeoDirty = false;
+    $("placeCoords").value = "";
+    if (!window.L) { $("placeGeoNow").textContent = "Карта не загрузилась"; return; }
+    const start = o.lat ? [o.lat, o.lon] : [45.035, 38.975];
+    if (!placeMap) {
+      placeMap = L.map("placeMap", { zoomControl: true, attributionControl: false });
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(placeMap);
+      const icon = L.divIcon({ className: "geo-pin-wrap", iconSize: [36, 46], iconAnchor: [18, 44], html: `<div class="geo-pin">${LOGO}</div>` });
+      placeMarker = L.marker(start, { draggable: true, icon }).addTo(placeMap);
+      placeMap.on("click", (e) => placeMove(e.latlng));
+      placeMarker.on("dragend", () => placeMove(placeMarker.getLatLng()));
+    }
+    placeMarker.setLatLng(start);
+    placeGeoNow();
+    const fit = () => { placeMap.invalidateSize(); placeMap.setView(start, o.lat ? 16 : 12); };
+    fit(); setTimeout(fit, 120); setTimeout(fit, 500);
+  }
+  function placeCoordsGo() {
+    const ll = parseCoords($("placeCoords").value);
+    if (!ll) { toast("Не понял координаты. Пример: 45.0355, 38.9753"); return; }
+    placeMove(ll, 17);
+  }
   const placeSkipped = new Set();   // разобранные и пропущенные — в конец очереди
   function openPlaceEdit(id) {
     const o = known.get(id) || {};
@@ -1312,6 +1348,7 @@
     $("placeLeft").textContent = "";
     renderPlaceLearn();
     openDlg($("placeDlg"));
+    openPlaceMap(o);
   }
   // Чему научить сервис — галочки зависят от того, что есть в объявлении и что поменяли
   function renderPlaceLearn() {
@@ -1343,6 +1380,13 @@
     if (!r.ok) { toast(r.data.detail || "Не получилось сохранить"); return; }
     const o = known.get(placeId);
     if (o) Object.assign(o, { complex: r.data.complex, district: r.data.district, admin_fixed: 1, price: r.data.price });
+    if (placeGeoDirty && placeMarker) {   // точку двигали — сохраняем её тем же путём, что и окно «Поправить точку»
+      const ll = placeMarker.getLatLng();
+      const g = await call(`/api/admin/listings/${placeId}/geo`, { lat: ll.lat, lon: ll.lng });
+      if (!g.ok) toast(g.data.detail || "Характеристики сохранены, а точку сохранить не получилось");
+      else if (o) Object.assign(o, { lat: g.data.lat, lon: g.data.lon, geo_status: g.data.geo_status });
+      placeGeoDirty = false;
+    }
     closeDlg($("placeDlg"));
     toast(`✓ Сохранено${r.data.learned.length ? `. Выучено: ${r.data.learned.join("; ")}` : ""}`
       + (r.data.applied ? `. Поправлено ещё объектов: ${r.data.applied}` : ""), 6000);
@@ -2398,6 +2442,8 @@
     });
     $("geoHide").addEventListener("click", () => saveGeo({ hide: true }));
     $("placeForm").addEventListener("submit", (e) => { e.preventDefault(); savePlace(); });
+    $("placeCoordsGo").addEventListener("click", placeCoordsGo);
+    $("placeCoords").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); placeCoordsGo(); } });
     $("placeForm").addEventListener("input", (e) => { if (e.target.name === "complex" || e.target.name === "district") renderPlaceLearn(); });
     $("placeForm").addEventListener("change", (e) => { if (e.target.name === "district" || e.target.name === "complex") renderPlaceLearn(); });
     $("placeSkip").addEventListener("click", () => { closeDlg($("placeDlg")); nextPlace(); });
