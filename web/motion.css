@@ -1,4 +1,4 @@
-/* 1+1 · плавность и мобильная версия (подключается после style.css) */
+/* Плавность и мобильная версия (подключается после style.css) */
 :root {
   --ease: cubic-bezier(.2, .9, .25, 1);        /* быстрый старт, мягкая остановка */
   --ease-in: cubic-bezier(.4, 0, 1, 1);
@@ -255,7 +255,7 @@ dialog::backdrop { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px
 .nav-cta:hover { background: var(--hover); transform: translateY(-1px); }
 .nav-cta.on { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-2); }
 
-/* ─── логотип: стены «прорисовываются», затем появляется 1+1 ──────────── */
+/* ─── логотип: стены «прорисовываются», затем появляется надпись ──────────── */
 .logo .walls path { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 1s var(--ease) forwards; }
 .logo .walls path:nth-child(2) { animation-delay: .35s; }
 .logo .walls path:nth-child(3) { animation-delay: .45s; }

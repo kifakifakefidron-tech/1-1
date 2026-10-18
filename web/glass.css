@@ -1,4 +1,4 @@
-/* 1+1 · «Стекло» — общий слой поверх theme.css (подключается ПОСЛЕДНИМ на всех страницах).
+/* «Стекло» — общий слой поверх theme.css (подключается ПОСЛЕДНИМ на всех страницах).
    Фон-сияние (бирюза + шампань), шапка-капсула, матовые карточки и окна, первый экран главной.
    Размытие (backdrop-filter) — только у шапки, окон и виджетов: на сотне карточек оно тормозило бы телефоны. */
 :root {
@@ -157,7 +157,7 @@ html.lb-open { overflow: hidden; }
 .dv-gal.one a { width: min(340px, 100%); height: auto; aspect-ratio: 1 / 1; }
 @media (max-width: 640px) { .dv-gal a { width: 138px; height: 138px; } }
 
-/* ─── «СТРЕЛЫ» — агентство-партнёр: фирменная капсула и ссылка на их сайт ─── */
+/* ─── агентство-партнёр: фирменная капсула и ссылка на его сайт ─── */
 .mark.partner { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px 3px 7px; border: 0; border-radius: 999px;
   font: 700 10.5px/1.4 var(--body); letter-spacing: .12em; color: #0f2f2e;
   background: linear-gradient(135deg, #f3e8bc, #e3cb8f 50%, #c9a85c); box-shadow: 0 3px 10px rgba(201, 168, 92, .3), inset 0 1px 0 rgba(255, 255, 255, .5); }

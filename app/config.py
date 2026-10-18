@@ -154,7 +154,7 @@ OPERATOR_NAME = _OP["OPERATOR_NAME"]            # ФИО самозанятог�
 OPERATOR_INN = _OP["OPERATOR_INN"]              # только цифры; пусто — ИНН в документах не пишем
 CONTACT_EMAIL = _OP["CONTACT_EMAIL"] or ALERT_EMAIL or next(iter(sorted(ADMIN_EMAILS)), "")
 OPERATOR_TEXT = (OPERATOR_NAME or "Администрация сервиса «1+1»") + (f", ИНН {OPERATOR_INN}" if OPERATOR_INN else "")
-POLICY_DATE = os.getenv("POLICY_DATE", "07.10.2026").strip()
+POLICY_DATE = os.getenv("POLICY_DATE", "18.10.2026").strip()   # редакция документов (менять при правке текстов)
 
 # Оплата ЮKassa — подготовлена, но выключена, пока PAYMENTS_ENABLED не true
 PAYMENTS_ENABLED = _bool("PAYMENTS_ENABLED", False)

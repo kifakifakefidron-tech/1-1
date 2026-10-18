@@ -20,6 +20,13 @@
   const yandex = (o) => `https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(
     o.street ? `${o.settlement || "Краснодар"}, ${o.street} ${o.house || ""}` : o.complex ? `ЖК ${o.complex}, Краснодар` : place(o))}`;
 
+  // «+79180000000» → «+7 918 000-00-00» (как пишут номера люди)
+  function prettyPhone(p) {
+    let d = String(p || "").replace(/\D/g, "");
+    if (d.length === 11 && d[0] === "8") d = "7" + d.slice(1);
+    if (d.length === 10) d = "7" + d;
+    return d.length === 11 && d[0] === "7" ? `+7 ${d.slice(1, 4)} ${d.slice(4, 7)}-${d.slice(7, 9)}-${d.slice(9)}` : p;
+  }
   function agentHTML(d, compact) {
     if (!d.contact_name && !d.contact_phone) return "";
     const digits = (d.contact_phone || "").replace(/\D/g, "");
@@ -27,7 +34,7 @@
     if (!compact && photo) {
       return `<span class="pk-agent-photo" style="background-image:url('${esc(photo)}')"></span>
         <span class="pk-agent-who"><span class="pk-agent-label">Ваш агент</span><b>${esc(d.contact_name || "Агент")}</b>
-        ${digits ? `<a class="pk-agent-tel" href="tel:${esc(d.contact_phone)}">${esc(d.contact_phone)}</a>` : ""}</span>
+        ${digits ? `<a class="pk-agent-tel" href="tel:${esc(d.contact_phone)}">${esc(prettyPhone(d.contact_phone))}</a>` : ""}</span>
         ${digits ? `<span class="pk-agent-btns"><a class="pill" href="tel:${esc(d.contact_phone)}">Позвонить</a>
           <button type="button" class="pill light" data-max="${esc(d.contact_phone)}">Написать в MAX</button></span>` : ""}`;
     }
@@ -96,7 +103,8 @@
       <div class="pk-react-b">${RE.map(([k, t]) => `<button type="button" class="pk-rb r-${k}${o.reaction === k ? " on" : ""}" data-re="${k}">${t}</button>`).join("")}</div>
       <form class="pk-q" hidden><textarea name="text" rows="2" maxlength="1000" placeholder="Ваш вопрос об этом объекте" required></textarea>
         <input name="phone" inputmode="tel" maxlength="30" placeholder="Телефон для ответа (необязательно)">
-        <button type="submit" class="pk-send">Отправить вопрос</button></form>
+        <button type="submit" class="pk-send">Отправить вопрос</button>
+        <p class="pk-q-note">Вопрос и номер увидит только агент, который прислал подборку, — чтобы ответить вам.</p></form>
       <p class="pk-react-ok"${o.reaction ? "" : " hidden"}>${o.reaction ? RE_OK[o.reaction] : ""}</p></div>`;
   }
   const asAgent = new URLSearchParams(location.search).get("as") === "agent";

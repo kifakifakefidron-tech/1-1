@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
-<!-- 1+1 · тонкие линейные иконки (24×24, линия 1.5, скруглённые концы). Подключаются через <use href="/static/icons.svg#i-имя"> -->
+<!-- Тонкие линейные иконки (24×24, линия 1.5, скруглённые концы). Подключаются через <use href="/static/icons.svg#i-имя"> -->
 <defs><style>symbol{overflow:visible}</style></defs>
 <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
 <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></symbol>

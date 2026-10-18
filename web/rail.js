@@ -18,8 +18,9 @@
       try { g = localStorage.getItem("pg") || ""; if (!g) { g = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem("pg", g); } } catch { /* */ }
       return g;
     };
-    const ping = () => { if (!document.hidden && statsOk()) fetch("/api/ping", { method: "POST", credentials: "same-origin",
-      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, g: gid() }), keepalive: true }).catch(() => {}); };
+    let lastPing = 0;   // не чаще раза в 30 с (вкладку часто прячут/показывают — без этого были пачки запросов)
+    const ping = () => { if (Date.now() - lastPing < 30000) return; if (!document.hidden && statsOk()) { lastPing = Date.now(); fetch("/api/ping", { method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, g: gid() }), keepalive: true }).catch(() => {}); } };
     setTimeout(ping, 1500);
     setInterval(ping, 60000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) ping(); });

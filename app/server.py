@@ -1619,11 +1619,12 @@ def agent_confirm_page(request: Request, body: dict | None = None):
 
 
 def photo_file(request: Request, body: dict | None = None):
-    """Фото, загруженные агентами (data/photos/<объект>/<имя>). Имя — хеш содержимого, кэшируем надолго."""
-    name = request.path_params["name"]
-    if not re.fullmatch(r"[0-9a-f]{16}\.(?:jpg|png|webp)", name):
+    """Фото, загруженные агентами (data/photos/<объект>/<имя>; свои фото агента в подборках — data/photos/pk/<имя>).
+    Имя — хеш содержимого, кэшируем надолго."""
+    name, folder = request.path_params["name"], request.path_params["folder"]
+    if not re.fullmatch(r"[0-9a-f]{16}\.(?:jpg|png|webp)", name) or not re.fullmatch(r"[0-9]{1,10}|pk", folder):
         return _err("не найдено", 404)
-    f = Path(config.PHOTOS_DIR) / str(request.path_params["id"]) / name
+    f = Path(config.PHOTOS_DIR) / folder / name
     if not f.is_file():
         return _err("не найдено", 404)
     return FileResponse(f, headers={"Cache-Control": "public, max-age=31536000, immutable"})
@@ -2654,7 +2655,7 @@ routes = [
     Route("/sitemap.xml", threaded(sitemap_xml)),
     Route("/favicon.ico", threaded(favicon_ico)),
     Mount("/static", StaticFiles(directory=WEB), name="static"),
-    Route("/photos/{id:int}/{name}", threaded(photo_file)),
+    Route("/photos/{folder}/{name}", threaded(photo_file)),
 ]
 
 async def _server_error(request: Request, exc: Exception):
