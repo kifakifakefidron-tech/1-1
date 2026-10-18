@@ -222,8 +222,8 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
         deal = "rent"
     if deal == "rent" and rules.sale_markers(fragment, otype):
         deal = "sale"
-    # «Сдам», но без коммунальных платежей — не аренда; если и цена «арендная» (меньше 300 тыс.) — объект не берём
-    rent_words = deal == "sale" and rules.has_rent_words(fragment)
+    # 18.10: «сдам» теперь всегда аренда — прежнего «сдам без коммуналки → продажа / не берём» больше нет
+    rent_words = False
 
     area = _num(obj.get("area_m2"))
     land = _num(obj.get("land_sotki"))
