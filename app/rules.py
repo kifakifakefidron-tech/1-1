@@ -345,6 +345,20 @@ def under_deposit(text: str | None) -> bool:
     return bool(_DEPOSIT.search(text or ""))
 
 
+# 18.10 (приёмка, п. 5): «Квартира продана», «снята с продажи», «сделка закрыта» — объект с сайта убираем
+_SOLD = re.compile(r"\b(?:продан[аоы]?|уже продан\w*|снят[аоы]? с продажи|сделка (?:закрыта|состоялась|прошла)|объект продан)\b", re.I)
+
+
+def is_sold(text: str | None) -> bool:
+    t = text or ""
+    for m in _SOLD.finditer(t):
+        before = t[max(0, m.start() - 12):m.start()].lower()
+        if re.search(r"(?:\bне|будет|может быть|быстро)\s*$", before):   # «не продана», «будет продана»
+            continue
+        return True
+    return False
+
+
 def extract_floor(text: str) -> tuple[int | None, int | None]:
     # Сначала явное «этаж 5/9», «5 этаж из 9», потом просто «5/9» (но не номер дома)
     for rx in (_FLOOR3_RE, _FLOOR2_RE, _FLOOR_OF_RE):
@@ -534,19 +548,34 @@ def has_communal(text: str) -> bool:
     return bool(_COMMUNAL.search(norm(text).replace("ё", "е")))
 
 
+# 18.10 (Артём, приёмка: «сдам / сдаю / аренда тоже делаем арендой»): прямые слова сдачи — аренда без условий
+# (раньше нужна была ещё коммуналка — «Сдаю студию 18 тр» становилась продажей за 18 млн); «сдаётся» бывает
+# сроком сдачи дома («сдаётся в 2026») — аренда, только если есть коммуналка или «в месяц».
+_RENT_STRONG = re.compile(r"\b(?:сдам|сдаю|сдаем|сдаём|сдадим|в аренду|аренда|арендa|аренде|посуточн\w*|долгосрочн\w* аренд\w*)\b")
+_RENT_WEAK = re.compile(r"\b(?:сдается|сдаётся|сдаются)\b")
+_RENT_MONTH = re.compile(r"на длительный срок|помесячно|в месяц|в мес\b|/\s*мес|руб\.?\s*/\s*мес|т\.?\s*р\.?\s*/\s*мес")
+_NOT_RENT = re.compile(r"\bарендн\w* (?:бизнес|поток|доход)|\bарендатор|\bс арендатор|\bсдан[аоы]? в аренду|\bдоход\w* от аренды|"
+                       r"\bпод аренду|\bсда[её]тся в эксплуатац|\bсдача (?:дома|объекта|в эксплуатац)")
+_RENT_I_DO = re.compile(r"\b(?:сдам|сдаю|сдаем|сдаём)\b")
+
+
 def has_rent_words(text: str) -> bool:
-    return detect_deal(text, need_communal=False) == "rent"
-
-
-def detect_deal(text: str, need_communal: bool = True) -> str:
-    """Аренда — только если «сдам/сдаётся/аренда…» И упомянуты коммунальные платежи (решение Артёма 07.10:
-    без этого в аренду попадало много лишнего — «дом сдаётся в 2026», продажи с арендатором и т.п.)."""
     t = norm(text)
-    if need_communal and not has_communal(text):
+    return bool((_RENT_STRONG.search(t) or _RENT_WEAK.search(t)) and (_RENT_I_DO.search(t) or not _NOT_RENT.search(t)))
+
+
+def detect_deal(text: str, need_communal: bool = True) -> str:   # need_communal — прежний параметр, больше не действует
+    """Аренда: «сдам / сдаю / аренда / в аренду…» — всегда (кроме «арендный бизнес», «с арендатором», «сдано в аренду»,
+    если нет «сдам/сдаю»); «сдаётся» — только с коммуналкой или ценой «в месяц»."""
+    t = norm(text)
+    if _NOT_RENT.search(t) and not _RENT_I_DO.search(t):
         return "sale"
-    if (re.search(r"\b(?:сдам|сдается|сдаётся|сдаю|сдаем|сдаём|сдаются|в аренду|аренда|арендa|посуточн|долгосрочн\w* аренд|"
-                  r"на длительный срок|помесячно|в месяц|/мес|руб\.?/мес|т\.?р\.?/мес)", t)
-            and not re.search(r"\bарендн\w* бизнес|\bарендатор\w* (?:есть|оплачива)|\bс арендатор", t)):
+    if _RENT_STRONG.search(t):
+        return "rent"
+    if _RENT_WEAK.search(t) and (has_communal(text) or _RENT_MONTH.search(t)):
+        return "rent"
+    # «Оплата 30 тр, ком. услуги входят» — без слова «сдам», но это аренда: оплата + коммуналка, и ни слова о продаже
+    if re.search(r"\bоплата\b", t) and has_communal(text) and not _SALE_WORDS.search(t.replace("ё", "е")):
         return "rent"
     return "sale"
 
@@ -560,6 +589,8 @@ def sale_markers(text: str, otype: str | None = None) -> bool:
     """Явная продажа у самого объекта: «продам», «#продам», «в ДКП», ипотека, задаток… или цена продажи (≥ 1,5 млн у
     квартир/домов/участков — аренда столько не стоит). Тогда «аренда» из соседнего объявления сообщения не берётся."""
     t = norm(text).replace("ё", "е")
+    if _RENT_STRONG.search(t) and (_RENT_I_DO.search(t) or not _NOT_RENT.search(t)):   # 18.10: «сдам/аренда» у самого объекта
+        return False
     if _SALE_WORDS.search(t) and not re.search(r"\b(?:сдам|сдаю|сда[её]тся|в аренду)\b", t):
         return True
     p = extract_price(text)

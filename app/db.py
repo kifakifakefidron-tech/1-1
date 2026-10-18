@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS ix_messages_status ON messages(status);
 CREATE INDEX IF NOT EXISTS ix_messages_hash ON messages(text_hash);
 CREATE INDEX IF NOT EXISTS ix_messages_chat ON messages(source, chat_id);
+-- 18.10: поиск сообщения по его номеру (фото с подписью, свои объекты) — без индекса каждый поиск перебирал всю таблицу
+CREATE INDEX IF NOT EXISTS ix_messages_msgid ON messages(source, msg_id);
 
 CREATE TABLE IF NOT EXISTS listings (
     id          INTEGER PRIMARY KEY,
@@ -201,6 +203,7 @@ CREATE TABLE IF NOT EXISTS chat_media (
     ts INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'new', listing_id INTEGER, url TEXT, UNIQUE (source, msg_id)
 );
 CREATE INDEX IF NOT EXISTS ix_chat_media_status ON chat_media (status, ts);
+CREATE INDEX IF NOT EXISTS ix_chat_media_chat ON chat_media (source, chat_id, ts);
 -- Справочник адресов из OpenStreetMap (app/osmaddr.py): дом → точка
 CREATE TABLE IF NOT EXISTS osm_addr (
     street_key TEXT NOT NULL, street TEXT NOT NULL, house_key TEXT NOT NULL, city TEXT NOT NULL DEFAULT '',

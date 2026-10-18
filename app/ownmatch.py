@@ -138,14 +138,15 @@ def photo_post(conn: sqlite3.Connection, row) -> bool:
     же чате (±3 мин) или фото уже привязано. Строки портянки (в сообщении несколько объектов) — не считаем."""
     if row["source"] == "chat" and json.loads(row["photos"] or "[]"):
         return True
-    for m in conn.execute("""SELECT m.id, m.source, m.chat_id, m.sender, m.ts, m.msg_id FROM listing_events e
+    # 18.10: «пост с фото» — только фото с подписью (то же сообщение), как и привязка фото (media._listing_for);
+    # поиск по UNIQUE (source, msg_id) у chat_media — по индексу (раньше «±3 мин» с OR перебирало всю таблицу)
+    for m in conn.execute("""SELECT m.id, m.source, m.msg_id FROM listing_events e
                              JOIN messages m ON m.id = e.message_id WHERE e.listing_id = ?""", (row["id"],)).fetchall():
+        if not conn.execute("SELECT 1 FROM chat_media WHERE source = ? AND msg_id = ? LIMIT 1", (m["source"], m["msg_id"])).fetchone():
+            continue
         if conn.execute("SELECT COUNT(DISTINCT listing_id) FROM listing_events WHERE message_id = ?", (m["id"],)).fetchone()[0] > 1:
             continue   # портянка
-        if conn.execute("""SELECT 1 FROM chat_media WHERE source = ? AND (msg_id = ? OR (chat_id = ? AND COALESCE(sender, '') = COALESCE(?, '')
-                           AND ts BETWEEN ? AND ?)) LIMIT 1""",
-                        (m["source"], m["msg_id"], m["chat_id"], m["sender"], m["ts"] - 5, m["ts"] + 180)).fetchone():
-            return True
+        return True
     return False
 
 
@@ -202,12 +203,21 @@ def run(conn: sqlite3.Connection, now: int | None = None) -> dict:
             _move(conn, a["id"], fid)
             conn.execute("UPDATE listings SET hidden_reason = 'strely' WHERE id = ?", (a["id"],))
             to_feed += 1
-    rest = []
-    for a in own:
+    # 18.10 (нагрузка: «уборка/свои объекты» — 103 с процессора за цикл): каждую минуту — только свои объявления, пришедшие
+    # с прошлой проверки; все сразу — раз в 6 часов (фид меняется редко) и при первом запуске
+    since = int(db.get_state(conn, "own_match_since") or 0)
+    full = not since or now - int(db.get_state(conn, "own_match_full_ts") or 0) >= 6 * 3600
+    if full:
+        db.set_state(conn, "own_match_full_ts", str(now))
+    db.set_state(conn, "own_match_since", str(now))
+    check = own if full else [r for r in own if max(r["last_seen"] or 0, r["first_seen"] or 0) >= since - 300]
+    rest, done = [], set()
+    for a in check:
         pp = photo_post(conn, a)
         fid = best(feed, a) or (best(feed, a, loose) if pp else None)
         if not fid and pp:   # пост с фото — точно есть на сайте, но пару не нашли: скрываем, админу — списком на проверку
             conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'strely_photo' WHERE id = ?", (a["id"],))
+            done.add(a["id"])
             nopair += 1
             if len(ex) < 30:
                 ex.append({"id": a["id"], "to": None, "title": a["title"], "why": "пост с фото — пары на сайте не нашли, скрыт"})
@@ -215,28 +225,32 @@ def run(conn: sqlite3.Connection, now: int | None = None) -> dict:
         if fid:
             _move(conn, a["id"], fid)
             conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'strely' WHERE id = ?", (a["id"],))
+            done.add(a["id"])
             to_feed += 1
             if len(ex) < 30:
                 ex.append({"id": a["id"], "to": fid, "title": a["title"], "why": "сайт"})
         else:
             rest.append(a)
-    # свои объекты без пары на сайте: одиночный пост + строка из портянки → одна карточка (больше фото и данных)
+    # свои объекты без пары на сайте: одиночный пост + строка из портянки → одна карточка (больше фото и данных).
+    # Проверенные сейчас сравниваем со всеми своими (не только между собой); остаётся карточка «богаче» (фото, адрес, свежесть)
     rank = lambda r: (len(json.loads(r["photos"] or "[]")), sum(1 for f in ("street", "house", "complex", "floor", "area") if r[f]), r["last_seen"])  # noqa: E731
+    pool = [r for r in own if r["id"] not in done]
     gone: set[int] = set()
     for a in sorted(rest, key=rank, reverse=True):
         if a["id"] in gone:
             continue
-        for b in rest:
-            if b["id"] == a["id"] or b["id"] in gone:
+        for b in pool:
+            if b["id"] == a["id"] or b["id"] in gone or a["id"] in gone:
                 continue
             sc = score(b, a)
             if sc is not None and sc >= 6:
-                _move(conn, b["id"], a["id"])
-                conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'own_dup' WHERE id = ?", (b["id"],))
-                gone.add(b["id"])
+                keep, drop = (a, b) if rank(a) >= rank(b) else (b, a)
+                _move(conn, drop["id"], keep["id"])
+                conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'own_dup' WHERE id = ?", (drop["id"],))
+                gone.add(drop["id"])
                 merged += 1
                 if len(ex) < 30:
-                    ex.append({"id": b["id"], "to": a["id"], "title": b["title"], "why": "дубль из чатов"})
+                    ex.append({"id": drop["id"], "to": keep["id"], "title": drop["title"], "why": "дубль из чатов"})
     conn.commit()
     if to_feed or merged or nopair:
         prev = json.loads(db.get_state(conn, "own_match_report") or "{}")

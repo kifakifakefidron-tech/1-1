@@ -243,16 +243,35 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         d["search_text"] = merged["search_text"]
     _reindex(conn, lid, d["search_text"])
     # «Под задатком», «забронирована» — с продажи снят сразу; новый пост без задатка возвращает объект
-    from .rules import under_deposit
-    if under_deposit(o.fragment):
+    from .rules import under_deposit, is_sold
+    if is_sold(o.fragment):   # 18.10: «Квартира продана» — с сайта сразу (новый пост без «продана» вернёт объект)
+        conn.execute("""UPDATE listings SET is_active = 0, hidden_reason = 'sold_text', sold_at = COALESCE(sold_at, ?)
+                        WHERE id = ? AND source NOT IN ('own', 'feed')""", (int(time.time()), lid))
+    elif under_deposit(o.fragment):
         conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'deposit' WHERE id = ? AND source NOT IN ('own', 'feed')", (lid,))
     else:
-        conn.execute("UPDATE listings SET hidden_reason = NULL WHERE id = ? AND hidden_reason = 'deposit'", (lid,))
+        conn.execute("""UPDATE listings SET hidden_reason = NULL,
+                        sold_at = CASE WHEN hidden_reason = 'sold_text' THEN NULL ELSE sold_at END
+                        WHERE id = ? AND hidden_reason IN ('deposit', 'sold_text')""", (lid,))
     conn.execute(
         "INSERT INTO listing_events (listing_id, message_id, ts, price, phones, fragment_hash, match) VALUES (?,?,?,?,?,?,?)",
         (lid, message_id, ts, d["price"], json.dumps(d["phones"]), fh, why),
     )
     return lid, why
+
+
+def hide_sold(conn: sqlite3.Connection) -> int:
+    """Один раз (state sold_v1, приёмка 18.10): уже собранные «Квартира продана / снята с продажи» — снять с сайта."""
+    from .rules import is_sold
+    n, now = 0, int(time.time())
+    for r in conn.execute("""SELECT id, fragment, description FROM listings WHERE is_active = 1
+                             AND source NOT IN ('own', 'feed') AND COALESCE(admin_fixed, 0) = 0""").fetchall():
+        if is_sold(r["fragment"] or r["description"]):
+            conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'sold_text', sold_at = COALESCE(sold_at, ?) WHERE id = ?",
+                         (now, r["id"]))
+            n += 1
+    conn.commit()
+    return n
 
 
 def hide_deposits(conn: sqlite3.Connection) -> int:
@@ -657,6 +676,42 @@ def fix_rent_leak(conn: sqlite3.Connection) -> dict:
     conn.commit()
     rep = {"moved": moved, "examples": ex, "ts": int(time.time())}
     db.set_state(conn, "rent_leak_report", json.dumps(rep, ensure_ascii=False))
+    return rep
+
+
+def fix_rent_v2(conn: sqlite3.Connection) -> dict:
+    """18.10, один раз (state rent_v2): новое правило аренды («сдам / сдаю / аренда» — аренда без условий). Продажи из чатов,
+    у которых в своём тексте «сдам/аренда», — в аренду, цена — помесячная из текста (или «18 млн» → 18 тыс.);
+    скрытые прежним правилом (rent_rule) — обратно на сайт арендой. Правленное админом не трогаем. Журнал «аренда v2»."""
+    from . import db
+    moved, restored, ex = 0, 0, []
+    now = int(time.time())
+    for r in conn.execute("""SELECT * FROM listings WHERE source = 'chat' AND deal_fixed = 0 AND COALESCE(admin_fixed, 0) = 0
+                             AND (deal = 'sale' OR hidden_reason = 'rent_rule')""").fetchall():
+        frag = r["fragment"] or r["description"] or ""
+        if not frag or rules.detect_deal(frag) != "rent" or rules.sale_markers(frag, r["type"]):
+            continue
+        row = dict(r)
+        price = rules.extract_price(frag, "rent")
+        if not price and r["price"]:
+            p = r["price"] / 1000 if r["price"] >= 1_000_000 else r["price"]
+            price = int(p) if 3_000 <= p <= 3_000_000 else None
+        row.update(deal="rent", price=price)
+        row["title"] = make_title(row)
+        back = r["hidden_reason"] == "rent_rule"
+        conn.execute("""UPDATE listings SET deal = 'rent', price = ?, price_m2 = NULL, title = ?,
+                        is_active = CASE WHEN hidden_reason = 'rent_rule' THEN 1 ELSE is_active END,
+                        hidden_reason = CASE WHEN hidden_reason = 'rent_rule' THEN NULL ELSE hidden_reason END WHERE id = ?""",
+                     (price, row["title"], r["id"]))
+        conn.execute("""INSERT INTO listing_edits (listing_id, user_id, ts, field, old, new, src)
+                        VALUES (?, 0, ?, 'deal', ?, 'rent', 'аренда v2')""", (r["id"], now, r["deal"]))
+        moved += 1
+        restored += back
+        if len(ex) < 30:
+            ex.append({"id": r["id"], "title": row["title"], "was": r["price"]})
+    conn.commit()
+    rep = {"moved": moved, "restored": restored, "examples": ex, "ts": now}
+    db.set_state(conn, "rent_v2_report", json.dumps(rep, ensure_ascii=False))
     return rep
 
 

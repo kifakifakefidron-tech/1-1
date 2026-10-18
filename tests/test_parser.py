@@ -193,12 +193,17 @@ def test_rent_only_with_explicit_words():
     assert o.deal == "rent"          # шапка «Сдаю» относится ко всем объектам подборки
 
 
-def test_rent_needs_communal_payments():
-    """Решение Артёма: аренда — только «сдам/аренда» + коммунальные платежи; иначе в аренду попадало лишнее."""
-    kind, objs = parse("Сдам 1-к квартиру, 40 м2, 5/9 эт., ФМР. 25 000 руб/мес. 89184445566")
-    assert objs == []                # «сдам» без коммуналки и с арендной ценой — не объект
+def test_rent_words_mean_rent():
+    """Решение Артёма 18.10 (приёмка): «сдам / сдаю / аренда» — аренда без условий (раньше нужна была коммуналка);
+    «дом сдаётся в 2026» — по-прежнему продажа; «с арендатором» — продажа."""
+    _, [o] = parse("Сдам 1-к квартиру, 40 м2, 5/9 эт., ФМР. 25 000 руб/мес. 89184445566")
+    assert o.deal == "rent" and o.price == 25_000
+    _, [o] = parse("Сдаю студию ЖК Самолёт 25 м², 7/16 этаж. 18 тр. 89184445566")
+    assert o.deal == "rent" and o.price == 18_000
     _, [o] = parse("Новостройка, дом сдаётся в 2026. 2к 58 м², 7/16 эт., ФМР. 6,5 млн. 89184445566")
     assert o.deal == "sale" and o.price == 6_500_000
+    _, [o] = parse("Продам помещение с арендатором 120 м² ул. Красная 1, 25 млн. 89184445566")
+    assert o.deal == "sale"
 
 
 def test_place_written_as_separate_lines():
@@ -241,3 +246,12 @@ def test_street_type_after_name_and_date_streets():
         assert (street.lower(), house) == (want[0].lower(), want[1]), addr
     _, objs = parser.parse(base.format(addr="Калинина 350/6"), use_llm=False)
     assert objs[0].area == 38 and objs[0].street == "Калинина" and objs[0].house == "350/6"
+
+
+def test_sold_text():
+    from app import rules
+    assert rules.is_sold("2к ФМР 60 м². Квартира продана!")
+    assert rules.is_sold("Снята с продажи")
+    assert not rules.is_sold("Квартира не продана, торг")
+    assert not rules.is_sold("Будет продана быстро")
+    assert not rules.is_sold("Продам 2к квартиру 60 м²")
