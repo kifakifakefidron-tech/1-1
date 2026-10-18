@@ -22,7 +22,7 @@
   const state = {
     q: "", deal: "sale", types: [], rooms: [],
     priceMin: "", priceMax: "", areaMin: "", areaMax: "", landMin: "", landMax: "",
-    notFirst: false, notLast: false, fresh: "", hot: false, districts: [], complexes: [], repair: "",
+    notFirst: false, notLast: false, fresh: "", hot: false, districts: [], complexes: [], repair: "", street: "", house: "",
     sort: "new", view: "list",
   };
   const DEFAULTS = JSON.parse(JSON.stringify(state));
@@ -103,6 +103,7 @@
     q: "q", deal: "deal", types: "type", rooms: "rooms", priceMin: "pmin", priceMax: "pmax",
     areaMin: "amin", areaMax: "amax", landMin: "lmin", landMax: "lmax", notFirst: "nf", repair: "rep",
     notLast: "nl", fresh: "fresh", hot: "hot", districts: "district", complexes: "complex", sort: "sort", view: "view",
+    street: "street", house: "house",   // 19.10: «следить за этим домом»
   };
   function readUrl() {
     const sp = new URLSearchParams(location.search);
@@ -151,6 +152,7 @@
     else if (state.fresh) p.set("fresh_days", state.fresh);
     for (const d of state.districts) p.append("district", d);
     for (const c of state.complexes) p.append("complex", c);
+    if (state.street) { p.set("street", state.street); if (state.house) p.set("house", state.house); }
     p.set("sort", state.sort);
     if (hitSince) p.set("hl", hitSince);
     for (const [k, v] of Object.entries(extra)) p.set(k, v);
@@ -213,7 +215,15 @@
   const fmtDay = (ts) => new Date(ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
 
   // ─── отрисовка фильтров ─────────────────────────────────────────────────
+  function houseChip() {   // 19.10: фильтр «только этот дом» (из «Следить за этим домом») — видно и снимается крестиком
+    const c = $("houseChip");
+    if (!c) return;
+    c.hidden = !state.street;
+    if (state.street) c.innerHTML = `${ic("home")}Только дом: ул. ${esc(state.street)}${state.house ? `, ${esc(state.house)}` : ""}
+      <button type="button" class="chip" data-house-clear aria-label="Убрать фильтр дома">✕</button>`;
+  }
   function syncControls() {
+    houseChip();
     $("q").value = state.q;
     document.querySelectorAll("[data-deal]").forEach((b) => b.classList.toggle("on", b.dataset.deal === state.deal));
     document.querySelectorAll("[data-view]").forEach((b) => b.classList.toggle("on", b.dataset.view === state.view));
@@ -960,6 +970,7 @@
       u ? `<a class="dv-act" href="/planner?add=show&listing=${o.id}"><i>${ic("calendar")}</i><span data-s="В планер">Запланировать</span></a>` : "",
       `<button type="button" class="dv-act${inCmp ? " on" : ""}" data-cmp="${o.id}"><i>${ic("scale")}</i><span>${inCmp ? "В сравнении" : "Сравнить"}</span></button>`,
       `<button type="button" class="dv-act" data-share="${o.id}"><i>${ic("share")}</i><span data-s="Ссылка">Поделиться</span></button>`,
+      `<button type="button" class="dv-act" data-watch-open="${o.id}"><i>${ic("bell")}</i><span>Следить</span></button>`,
       u ? `<button type="button" class="dv-act" data-hide-open="${o.id}"><i>${ic("eye")}</i><span>Скрыть</span></button>` : "",
     ].join("");
 
@@ -1999,6 +2010,60 @@
     toast(next ? `Статус: ${STATUSES[next]}` : "Статус снят", 1800);
   }
 
+  // ─── 19.10: «Следить» из карточки — за ЖК, за этим домом или за ценой этого объекта ─────────────
+  let watchId = 0;
+  function openWatch(id) {
+    if (!me()) { openLogin("Чтобы следить за ЖК или домом, войдите."); return; }
+    const o = known.get(id) || {};
+    watchId = id;
+    const rent = o.deal === "rent";
+    const opts = [];
+    if (o.complex) opts.push(["cx", `Новые объекты в ЖК ${o.complex}`]);
+    if (o.street && o.house) opts.push(["house", `Новые объекты в этом доме — ул. ${o.street}, ${o.house}`]);
+    else if (o.street) opts.push(["street", `Новые объекты на улице ${o.street}`]);
+    opts.push(["price", "Цена этого объекта — сообщить, когда снизят"]);
+    $("watchInfo").textContent = o.title || "";
+    $("watchOpts").innerHTML = opts.map(([k, t], i) => `<label class="watch-opt"><input type="radio" name="scope" value="${k}"${i ? "" : " checked"}><span>${esc(t)}</span></label>`).join("");
+    const f = $("watchForm");
+    $("watchRoomsT").textContent = o.room_kind === "studio" || o.rooms === 0 ? "Только студии" : o.rooms ? `Только ${o.rooms}-комнатные` : "Только такие же по комнатам";
+    f.same_rooms.parentElement.hidden = o.rooms == null;
+    $("watchPriceT").textContent = rent ? "Цена до, тыс. ₽/мес (пусто — любая)" : "Цена до, млн ₽ (пусто — любая)";
+    f.price.value = o.price ? String(+(o.price / (rent ? 1000 : 1e6)).toFixed(rent ? 0 : 2)).replace(".", ",") : "";
+    const sync = () => { $("watchMore").hidden = f.scope.value === "price"; };
+    f.onchange = sync; sync();
+    openDlg($("watchDlg"));
+  }
+  async function saveWatch() {
+    const o = known.get(watchId) || {};
+    const f = $("watchForm");
+    const scope = f.scope.value;
+    if (scope === "price") {   // за ценой конкретного объекта — это избранное: снижение цены приходит уведомлением
+      closeDlg($("watchDlg"));
+      if (!(me().favorites || []).includes(watchId)) await toggleFavorite(watchId);
+      toast("Следим за ценой — сообщим, когда её снизят (объект в «Избранном»).", 4000);
+      return;
+    }
+    const p = new URLSearchParams();
+    p.set("deal", o.deal || "sale");
+    if (o.type) p.set("type", o.type === "new" ? "flat" : o.type);
+    if (f.same_rooms.checked && o.rooms != null && !f.same_rooms.parentElement.hidden) p.set("rooms", String(Math.min(o.rooms, 4)));
+    const pv = toNum(f.price.value);
+    if (pv != null) p.set("price_max", Math.round(pv * (o.deal === "rent" ? 1000 : 1e6)));
+    if (scope === "cx") p.set("complex", o.complex);
+    if (scope === "house" || scope === "street") { p.set("street", o.street); if (scope === "house") p.set("house", o.house); }
+    // адрес страницы для «Показать» в уведомлении — те же фильтры, что понимает главная
+    const page = new URLSearchParams();
+    if (o.deal === "rent") page.set("deal", "rent");
+    if (p.get("type")) page.set("type", p.get("type"));
+    if (p.get("rooms")) page.set("rooms", p.get("rooms"));
+    if (pv != null) page.set("pmax", String(pv));
+    if (scope === "cx") page.set("complex", o.complex);
+    if (p.get("street")) { page.set("street", p.get("street")); if (p.get("house")) page.set("house", p.get("house")); }
+    const r = await call("/api/saved", { query: p.toString(), page: `?${page}` });
+    toast(r.data.text || r.data.detail || "Не получилось.", 4000);
+    if (r.ok) { closeDlg($("watchDlg")); reloadMeta(); loadSavedSearches(); }
+  }
+
   async function toggleFavorite(id) {
     if (!me()) { openLogin("Чтобы сохранять объекты в избранное, войдите."); return; }
     const r = await call(`/api/favorites/${id}`, {});
@@ -2106,7 +2171,9 @@
         g.scrollBy({ left: Number(t.dataset.galStep) * g.clientWidth * .8, behavior: "smooth" });
         return;
       }
-      if (t.hasAttribute("data-desc-more")) { const box = t.closest(".dv-desc"); box.classList.toggle("clamp");
+      if (t.dataset.watchOpen) { openWatch(Number(t.dataset.watchOpen)); return; }
+      if (t.hasAttribute("data-house-clear")) { state.street = state.house = ""; houseChip(); refresh(); return; }
+    if (t.hasAttribute("data-desc-more")) { const box = t.closest(".dv-desc"); box.classList.toggle("clamp");
         t.textContent = box.classList.contains("clamp") ? "Читать полностью" : "Свернуть"; return; }
       if (t.dataset.adminAct) { adminAction(Number(t.dataset.id), t.dataset.adminAct, t.dataset.deal); return; }
       if (t.dataset.banPhone) { banPhone(t.dataset.banPhone); return; }
@@ -2464,6 +2531,7 @@
     });
     $("geoHide").addEventListener("click", () => saveGeo({ hide: true }));
     $("placeForm").addEventListener("submit", (e) => { e.preventDefault(); savePlace(); });
+    $("watchForm").addEventListener("submit", (e) => { e.preventDefault(); saveWatch(); });
     $("placeCoordsGo").addEventListener("click", placeCoordsGo);
     $("placeCoords").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); placeCoordsGo(); } });
     $("placeForm").addEventListener("input", (e) => { if (e.target.name === "complex" || e.target.name === "district") renderPlaceLearn(); });

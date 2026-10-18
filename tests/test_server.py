@@ -202,3 +202,13 @@ def test_guest_limits_1810():
     assert r.get("guest_limit") and r["items"] == []
     m = c.get("/api/map").json()
     assert m.get("guest") and m["points"] == [] and "agg" in m
+
+
+def test_watch_house_filter_1810():
+    """19.10: «следить за этим домом» — фильтр улица + дом (регистр буквы дома не важен) и название подписки."""
+    from app import hooks, search
+    from app.rules import TYPE_LABELS
+    q = search.Query(street="Красная", house="10б")
+    w, p = search._where(q, 0)
+    assert "l.street = ?" in w and "10Б" in p and "10б" in p
+    assert "ул. Красная, 10Б" in hooks.describe("deal=sale&street=Красная&house=10Б", TYPE_LABELS)

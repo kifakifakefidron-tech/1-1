@@ -218,6 +218,27 @@
       ${(q.latest || []).map(row).join("") || `<p class="g-empty">Пока запросов нет.</p>`}`, 5);
   }
 
+  // ─── 19.10: мои объекты — статистика за неделю (главная «морковка» подтверждения номера) ─────────
+  function agentW() {
+    const a = dash.agent || {};
+    if (!a.verified) {
+      put("wAgent", `${head("home-edit", "Мои объекты")}
+        <p class="g-empty">Подтвердите свой номер — увидите, сколько раз смотрели ваши объекты, открывали номер и добавляли в подборки
+          клиентам, и не дешевле ли такой же объект у других агентов. Плюс «Проверенный агент» и 30 дней бесплатно.</p>
+        <a class="pill" href="/agent">Подтвердить номер</a>`, 6);
+      return;
+    }
+    const money = (v, deal) => (deal === "rent" ? `${Math.round(v / 1000)} тыс./мес` : `${(v / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} млн`);
+    put("wAgent", `${head("home-edit", "Мои объекты", `<a class="g-link" href="/my">Все ${a.listings || 0} →</a>`)}
+      <div class="wq-nums wa-nums"><a href="/my"><b>${a.views7 || 0}</b><span>просмотров за неделю</span></a>
+        <a href="/my"><b>${a.phone || 0}</b><span>открыли номер (30 дн.)</span></a>
+        <a href="/my"><b>${a.picks || 0}</b><span>в подборках клиентам</span></a></div>
+      ${a.cheaper ? `<p class="wa-warn">${ic("alert")}У ${a.cheaper} ${a.cheaper === 1 ? "объекта" : "объектов"} такой же есть у других агентов дешевле — <a href="/my">посмотреть</a></p>` : ""}
+      ${(a.top || []).map((o) => `<a class="wq-row" href="/?open=${o.id}"><b>${esc(o.complex ? `ЖК ${o.complex}` : o.title)} · ${esc(money(o.price || 0, o.deal))}</b>
+        <small>${o.views || 0} просмотров · номер открыли ${o.phone || 0} · в подборках ${o.picks || 0}${o.cheaper ? ` · у другого агента дешевле на ${esc(money(o.cheaper.diff, o.deal))}` : ""}</small></a>`).join("")
+        || `<p class="g-empty">Объявлений с вашим номером на сайте пока нет.</p>`}`, 6);
+  }
+
   // ─── клиенты (CRM) ───────────────────────────────────────────────
   const CL_C = { new: "#b8c8e4", search: "#8fd1cb", shows: "#e3cb8f", talks: "#d9b3e6", deposit: "#f0b77a", deal: "#a7d1b6", lost: "#e2a596" };
   function clientsW() {
@@ -458,7 +479,7 @@
     dash = r.data;
     const w = dash.widgets;
     weather(w.weather); rate(w.keyrate); mortgage(w.mortgage, w.banks); fx(w.currency, w.moex); rbc(w.news);
-    day(); requestsW(); clientsW(); crm(); news(); market(); calcHtml(); admin();
+    day(); requestsW(); agentW(); clientsW(); crm(); news(); market(); calcHtml(); admin();
     layout();
     if (me.is_admin && new URLSearchParams(location.search).has("banks")) { openBanks(); history.replaceState(null, "", "/cabinet"); }
   }

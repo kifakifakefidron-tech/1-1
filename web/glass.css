@@ -1177,3 +1177,11 @@ summary { transition: color .2s var(--m-out); }
   background: rgba(243, 232, 188, .95); color: #0f2f2e; box-shadow: 0 0 0 6px rgba(243, 232, 188, .22), 0 6px 16px rgba(0, 0, 0, .3); }
 .dv-unconf { margin: -2px 0 8px; font-size: 12.5px; color: var(--ink-3); }
 .dv-unconf a { color: var(--gold); }
+/* 19.10: «Следить» из карточки */
+.watch-opts { display: grid; gap: 8px; margin: 6px 0 12px; }
+.watch-opt { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--glass-line); cursor: pointer; }
+.watch-opt:has(input:checked) { border-color: var(--gold); background: rgba(227, 203, 143, .08); }
+.watch-opt input { accent-color: var(--gold); margin-top: 3px; }
+.watch-more { display: grid; gap: 10px; margin-bottom: 10px; }
+.house-chip { display: flex; align-items: center; gap: 8px; }
+.house-chip .ic { width: 16px; height: 16px; color: var(--gold); }
