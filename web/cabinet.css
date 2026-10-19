@@ -379,7 +379,7 @@ body.d-arranging .g:not(.lifting) { opacity: .85; }
 .w-add > .g-grip { display: none; }
 
 /* новости недвижимости (РБК) */
-.wr-list { max-height: 330px; overflow-y: auto; margin-right: -10px; padding-right: 10px; scrollbar-width: thin;
+.wr-list { max-height: 230px; overflow-y: auto; margin-right: -10px; padding-right: 10px; scrollbar-width: thin;
   -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent); }
 .wr-it { display: block; padding: 12px 0; border-top: 1px solid var(--glass-line); text-decoration: none; color: inherit; }
 .wr-it:first-of-type { border-top: 0; padding-top: 2px; }
@@ -441,7 +441,7 @@ body.d-arranging .g:not(.lifting) { opacity: .85; }
 .d-promo button { flex: none; }
 .wq-presets .pk-btn, .wq-presets select { width: 100%; }
 /* 19.10: запросы покупателей */
-.wq-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 4px 0 10px; }
+.wq-nums { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 4px 0 10px; }
 .wq-nums a { display: grid; gap: 2px; padding: 10px 12px; border-radius: 14px; background: rgba(255, 255, 255, .04); border: 1px solid var(--glass-line);
   text-decoration: none; color: var(--ink); transition: background .2s; }
 .wq-nums a:hover { background: rgba(255, 255, 255, .08); }

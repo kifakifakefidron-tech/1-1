@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/doc.css?v=3">
-<link rel="stylesheet" href="/static/requests.css?v=5">
+<link rel="stylesheet" href="/static/requests.css?v=6">
 <link rel="stylesheet" href="/static/theme.css?v=15">
 <link rel="stylesheet" href="/static/glass.css?v=79">
 </head>
@@ -34,19 +34,6 @@
     Запрос держится 10 дней, пока его повторяют; рекламу выкупа и услуг не показываем.</p>
   <p class="rq-stat" id="rqCount"></p>
   <section class="rq-lockbox" id="rqLocked" hidden></section>
-  <div class="rq-tools" id="rqTools" hidden>
-    <div class="rq-tabs" role="tablist"><button type="button" class="on" data-tab="all">Все</button>
-      <button type="button" data-tab="mine">Под мои объекты <b id="rqMineN"></b></button></div>
-    <div class="rq-chipsbar">
-      <button type="button" class="chip" data-deal="sale">Покупка</button><button type="button" class="chip" data-deal="rent">Аренда</button>
-      <span class="rq-sep"></span>
-      <button type="button" class="chip" data-rooms="0">Студия</button><button type="button" class="chip" data-rooms="1">1</button>
-      <button type="button" class="chip" data-rooms="2">2</button><button type="button" class="chip" data-rooms="3">3</button>
-      <button type="button" class="chip" data-rooms="4">4+</button>
-      <input class="rq-search" id="rqQ" type="search" placeholder="Поиск: ЖК, район, «ипотека»…" aria-label="Поиск по запросам">
-    </div>
-    <p class="note rq-minehint" id="rqMineHint" hidden></p>
-  </div>
   <ul class="rq-list" id="rqList"></ul>
   <div class="more-results"><button type="button" id="rqMore" class="pill" hidden>Показать ещё</button></div>
 </main>
@@ -55,7 +42,7 @@
 <script src="/static/pickers.js?v=16"></script>
 <script src="/static/max.js?v=2"></script>
 <script src="/static/rail.js?v=26"></script>
-<script src="/static/requests.js?v=8"></script>
+<script src="/static/requests.js?v=9"></script>
 <script src="/static/objview.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 </body>

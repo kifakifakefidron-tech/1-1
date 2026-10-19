@@ -288,6 +288,7 @@ def _price_cards() -> str:
 
 def _page(name: str) -> Response:
     """Текстовая страница с подстановкой данных оператора и условий подписки."""
+    from . import consent
     html = (WEB / name).read_text(encoding="utf-8")
     for key, val in {
         "OPERATOR_NAME": config.OPERATOR_NAME or "Администрация сервиса «1+1»", "OPERATOR_INN": config.OPERATOR_INN or "—",
@@ -295,7 +296,8 @@ def _page(name: str) -> Response:
         "CONTACT_EMAIL": config.CONTACT_EMAIL or "почту из раздела «Контакты»", "POLICY_DATE": config.POLICY_DATE,
         "SITE_URL": config.SITE_URL, "TRIAL_DAYS": config.TRIAL_DAYS, "SUB_PRICE": config.SUB_PRICE, "PRICES": _prices_text(),
         "SUB_DAYS": config.SUB_DAYS, "STALE_DAYS": config.STALE_DAYS, "ARCHIVE_DAYS": config.ARCHIVE_DAYS, "KEEP_DAYS": config.KEEP_DAYS,
-        "PRICE_CARDS": _price_cards(),
+        "PRICE_CARDS": _price_cards(), "REF_DAYS": config.REF_DAYS, "OWN_DAYS": config.OWN_LISTING_DAYS,
+        "AGENT_BONUS_DAYS": consent.BONUS_DAYS,
     }.items():
         html = html.replace("{{" + key + "}}", str(val))
     return Response(html, media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
@@ -1573,7 +1575,7 @@ def api_requests(request: Request, body: dict | None = None):
                              "items": [], "stale_days": buyers.STALE_DAYS})
     q = request.query_params
     d = buyers.feed(conn, True, q.get("deal", ""), q.get("district", ""), _num(q.get("rooms"), int), q.get("q", ""),
-                    _num(q.get("page"), int) or 1, user_id=user["id"], mine=q.get("mine") == "1")
+                    _num(q.get("page"), int) or 1, user_id=user["id"], first=_num(q.get("id"), int))
     d["admin"] = bool(user["is_admin"])
     return JSONResponse(d)
 

@@ -194,3 +194,33 @@
   .hw-flow, .hw-core-glow { animation: none; }
 }
 .hw-nw { white-space: nowrap; }
+
+/* 19.10: подробная инструкция — оглавление и раскрывающиеся разделы */
+.hw-toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 22px; }
+.hw-toc a, .hw-toc button { padding: 7px 13px; border-radius: 999px; border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .03);
+  color: var(--ink-2); font: 500 13.5px var(--body); text-decoration: none; cursor: pointer; transition: background .2s, border-color .2s, color .2s; }
+.hw-toc a:hover, .hw-toc button:hover { background: rgba(255, 255, 255, .08); color: var(--ink); }
+.hw-toc .hw-toc-all { border-color: var(--gold); color: var(--gold); background: transparent; }
+.hw-g { margin: 0 0 10px; border: 1px solid var(--glass-line); border-radius: 20px; background: rgba(255, 255, 255, .03); scroll-margin-top: 90px; }
+.hw-g[open] { background: rgba(255, 255, 255, .05); border-color: var(--glass-line-2, var(--glass-line)); }
+.hw-g summary { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 14px; align-items: center;
+  padding: 14px 18px; cursor: pointer; list-style: none; }
+.hw-g summary::-webkit-details-marker { display: none; }
+.hw-g summary::after { content: "+"; grid-column: 3; grid-row: 1 / span 2; color: var(--gold); font-size: 24px; line-height: 1; transition: transform .3s var(--ease); }
+.hw-g[open] summary::after { transform: rotate(45deg); }
+.hw-gi { grid-row: 1 / span 2; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: rgba(227, 203, 143, .12); color: var(--gold); }
+.hw-gi .ic { width: 20px; height: 20px; }
+.hw-g summary b { font-size: 16.5px; font-weight: 600; }
+.hw-g summary small { color: var(--ink-3); font-size: 13.5px; }
+.hw-gb { padding: 0 22px 18px 72px; color: var(--ink-2); font-size: 15px; line-height: 1.6; }
+.hw-gb ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.hw-gb ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+.hw-gb b { color: var(--ink); font-weight: 600; }
+.hw-gb a { color: var(--ink); }
+.hw-tip { margin: 14px 0 0; padding: 12px 14px; border-radius: 14px; border-left: 3px solid var(--gold); background: rgba(227, 203, 143, .07); font-size: 14px; }
+@media (max-width: 760px) {
+  .hw-g summary { padding: 12px 14px; grid-template-columns: 34px minmax(0, 1fr) auto; column-gap: 12px; }
+  .hw-gi { width: 34px; height: 34px; }
+  .hw-gb { padding: 0 16px 16px 16px; font-size: 14.5px; }
+  .hw-toc a, .hw-toc button { font-size: 13px; padding: 6px 11px; }
+}

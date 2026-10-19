@@ -56,3 +56,4 @@
 .rq-agent { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; font: 600 12px var(--body);
   color: var(--gold); border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent); }
 .rq-agent svg { width: 13px; height: 13px; }
+.rq-item.pinned { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }

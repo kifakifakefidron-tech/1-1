@@ -4,7 +4,7 @@
    window.ic("calendar") — иконка для шаблонов. */
 (() => {
   "use strict";
-  const SPRITE = "/static/icons.svg?v=5";
+  const SPRITE = "/static/icons.svg?v=6";
   // согласие на cookie — на всех страницах (icons.js подключён везде первым), см. cookies.js
   if (!document.querySelector('script[src*="cookies.js"]')) {
     const ck = document.createElement("script");
