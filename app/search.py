@@ -46,6 +46,8 @@ class Query:
     land_max: float | None = None
     districts: list[str] = field(default_factory=list)
     complexes: list[str] = field(default_factory=list)
+    cx_family: bool = False   # 19.10: ЖК из строки поиска без номера («самолет») — все его очереди («Самолет 1…6»)
+    cx_text: str = ""         # 19.10: …и любое упоминание этого названия в тексте объявления (FTS)
     street: str = ""   # 19.10: «следить за этим домом» — улица и дом (точное совпадение, регистр буквы дома не важен)
     house: str = ""
     not_first: bool = False
@@ -226,7 +228,7 @@ def parse_phrase(q: str, deal: str = "sale") -> dict:
     w = f" {norm(q)} "
     out: dict = {"deal": None, "types": [], "rooms": [], "price_min": None, "price_max": None, "area_min": None,
                  "area_max": None, "districts": [], "complexes": [], "not_first": False, "not_last": False,
-                 "cond": [], "chips": []}
+                 "cond": [], "chips": [], "cx_fts": []}
     chip = lambda label, frag: out["chips"].append({"label": label, "drop": " ".join(frag.split())})  # noqa: E731
 
     def take(rx, fn):
@@ -318,7 +320,11 @@ def parse_phrase(q: str, deal: str = "sale") -> dict:
             if j < len(toks) and re.fullmatch(r"\d{1,2}", toks[j]) and 0 < int(toks[j]) < 30:
                 name, j = f"{name} {toks[j]}", j + 1
             out["complexes"].append(name)
-            chip(f"ЖК {name}", " ".join(toks[i:j]))
+            chip(f"ЖК {name}" + ("" if name[-1:].isdigit() else " (все очереди)"), " ".join(toks[i:j]))
+            # то же название в тексте объявления: «самолет» — по началу слова, с номером — подряд («самолет 2»)
+            ws = [x for x in toks[start:j] if re.fullmatch(r"[0-9a-zа-я]+", x)]
+            if ws:
+                out["cx_fts"].append(f'"{" ".join(ws)}"' if ws[-1].isdigit() else " AND ".join(f'"{x}"*' for x in ws))
             used.update(range(i, j))
             i = j
         else:
@@ -365,6 +371,9 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
         ph = parse_phrase(qr.q, qr.deal)
         fts = ph["fts"]
         upd = {k: ph[k] for k in ("types", "rooms", "districts", "complexes", "cond") if ph[k] and not getattr(qr, k)}
+        if ph["complexes"] and not qr.complexes:
+            upd["cx_family"] = True
+            upd["cx_text"] = " OR ".join(f"({x})" for x in ph["cx_fts"])
         upd |= {k: ph[k] for k in ("price_min", "price_max", "area_min", "area_max") if ph[k] is not None and getattr(qr, k) is None}
         upd |= {k: True for k in ("not_first", "not_last") if ph[k]}
         if ph["deal"]:
@@ -396,7 +405,14 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
         p += qr.districts + qr.districts
     if qr.complexes:
         keys = sorted({geo.complex_key(c) for c in qr.complexes if geo.complex_key(c)})
-        w.append(f"cxkey(l.complex) IN ({','.join('?' * len(keys))})"); p += keys
+        # строка поиска «самолет» (без номера) — и «Самолет», и все очереди «Самолет 1…99»; фильтр ЖК и «самолет 2» — точно
+        fam = [k for k in keys if qr.cx_family and not k[-1:].isdigit()]
+        cond = [f"cxkey(l.complex) IN ({','.join('?' * len(keys))})"]; p += keys
+        for k in fam:
+            cond.append("cxkey(l.complex) GLOB ? OR cxkey(l.complex) GLOB ?"); p += [f"{k}[0-9]", f"{k}[0-9][0-9]"]
+        if qr.cx_text:
+            cond.append("l.id IN (SELECT rowid FROM listings_fts WHERE listings_fts MATCH ?)"); p.append(qr.cx_text)
+        w.append("(" + " OR ".join(cond) + ")")
     if qr.street:
         w.append("l.street = ?"); p.append(qr.street)
         if qr.house:   # «10Б» = «10б» = «10 Б» (SQLite не меняет регистр кириллицы — варианты готовим здесь)

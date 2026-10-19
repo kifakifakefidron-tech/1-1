@@ -105,3 +105,22 @@ def test_delete_phone_objects_but_keep_accepting_new():
     ingest.ban_phone(conn, "89180000961")
     m = ingest.add_message(conn, source="wa", text="Студия 25 м², 2/9 эт., ЖК Облака. 3 млн. 89180000961", chat_id="c", msg_id="b3", ts=now + 20)
     assert all(r["match"] == "banned" for r in ingest.process_message(conn, m, use_llm=False)["results"])
+
+
+def test_phrase_complex_finds_all_queues_and_mentions():
+    """19.10 (Артём): «самолет» в строке поиска — не меньше, чем «самоле»: все очереди ЖК и любое упоминание в тексте;
+    «самолет 2» — только вторая очередь (и текст «самолет 2»); фильтр ЖК в «Ещё фильтры» — по-прежнему точно."""
+    conn = db.connect(":memory:")
+    now = int(time.time())
+    _add(conn, "2-к квартира 50 м², 3/9 эт., ЖК Самолёт. 6,5 млн. 89180000901", "c1", now)
+    b = _add(conn, "1-к квартира 38 м², 5/9 эт., ЖК Самолёт-2. 4,5 млн. 89180000902", "c2", now)
+    c = _add(conn, "1-к квартира 39 м², 6/9 эт., ЖК Самолёт 3. 4,6 млн. 89180000903", "c3", now)
+    conn.execute("UPDATE listings SET complex = 'Самолет 2' WHERE id = ?", (b,))   # очереди — как на живой базе
+    conn.execute("UPDATE listings SET complex = 'Самолет 3' WHERE id = ?", (c,))
+    conn.commit()
+    _add(conn, "2-к квартира 55 м², 7/16 эт., ФМР, ул. Тургенева 10, рядом самолётная площадка. 7 млн. 89180000904", "c4", now)
+    total = lambda **kw: search.search(conn, search.Query(**kw), now, False)["total"]  # noqa: E731
+    assert total(q="самолет") == total(q="самолёт") >= total(q="самоле") >= 3
+    assert total(q="самолет 2") == 1
+    assert total(q="1к самолет") == 2
+    assert total(complexes=["Самолет"]) == 1
