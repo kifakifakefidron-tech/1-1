@@ -452,3 +452,12 @@ body.d-arranging .g:not(.lifting) { opacity: .85; }
 .wa-warn { display: flex; gap: 6px; align-items: center; margin: 0 0 8px; padding: 8px 10px; border-radius: 12px; font-size: 13px;
   background: rgba(240, 194, 123, .1); color: #f0c27b; }
 .wa-warn .ic { width: 16px; height: 16px; } .wa-warn a { color: inherit; }
+
+/* 19.10: новости — вкладки «Краснодар» / «Законы и рынок» */
+.wr-tabs { display: flex; gap: 6px; margin: 0 0 12px; flex-wrap: wrap; }
+.wr-tabs button { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--glass-line); background: transparent;
+  color: var(--ink-2, var(--ink)); font: 500 13px var(--body); cursor: pointer; transition: background .2s, color .2s, border-color .2s; }
+.wr-tabs button small { color: var(--ink-3); font-size: 11px; margin-left: 2px; }
+.wr-tabs button.on { background: var(--gold); border-color: var(--gold); color: #0f2f2e; }
+.wr-tabs button.on small { color: #0f2f2e; opacity: .7; }
+.wr-foot a { color: inherit; }

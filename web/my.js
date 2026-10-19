@@ -48,17 +48,15 @@
       <div><h2>Шаг 1 · подтвердите свой номер</h2><p>Так мы поймём, какие объявления из чатов — ваши. Никто другой не сможет их изменить.
         ${(data.verify_methods || []).includes("call") ? "Проще всего — позвонить с этого номера: звонок бесплатный и сбросится сам." : "Подтверждение — сообщением с кодом в MAX."}</p></div></div>${form}</section>`;
   }
-  // 19.10: статистика объекта за 30 дней — просмотры, номер, избранное, подборки, «у других агентов дешевле»
+  // 19.10: статистика объекта за 30 дней — просмотры, номер, избранное, подборки
   function statsHTML(o) {
     const s = o.stats;
     if (!s || o.is_active === 0) return "";
-    const money = (v) => (o.deal === "rent" ? `${Math.round(v / 1000)} тыс.` : v >= 1e6 ? `${(v / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} млн` : `${Math.round(v / 1000)} тыс.`);
     return `<div class="my-stats" title="За последние 30 дней">
       <span><b>${s.views}</b>просмотров${s.views7 ? ` · ${s.views7} за неделю` : ""}</span>
       <span><b>${s.phone}</b>открыли номер</span>
       <span><b>${s.fav}</b>в избранном</span>
       <span><b>${s.picks}</b>в подборках клиентам</span>
-      ${s.cheaper ? `<span class="warn">у ${s.cheaper.n > 1 ? `${s.cheaper.n} других агентов` : "другого агента"} дешевле на <b>${esc(money(s.cheaper.diff))} ₽</b></span>` : ""}
     </div>`;
   }
   function itemCard(o) {

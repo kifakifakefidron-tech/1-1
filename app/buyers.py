@@ -184,7 +184,7 @@ def recheck(conn: sqlite3.Connection) -> dict:
     """После уточнения правила: «запросить по номеру», «цена по запросу» — это объявления. Такие запросы
     удаляем, а их сообщения разбираем заново (как объявления)."""
     removed = reparse = 0
-    for r in conn.execute("SELECT id, message_id, text, text_hash FROM buyer_requests").fetchall():
+    for r in conn.execute("SELECT id, message_id, text, text_hash FROM buyer_requests WHERE source != 'agent'").fetchall():   # запросы агентов сайта — не из чатов
         if rules.is_buyer_request(r["text"]):
             continue
         conn.execute("DELETE FROM buyer_requests WHERE id = ?", (r["id"],))

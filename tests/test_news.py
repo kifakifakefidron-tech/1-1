@@ -21,3 +21,17 @@ def test_parse_rbc_keeps_only_headline_lead_link():
     assert first["lead"] == "Банки снизили ставки на вторичное жильё."
     assert "ПОЛНЫЙ" not in str(items)
     assert items[0]["ts"] == 1791873942
+
+
+def test_sort_news_tabs():
+    """19.10: «Краснодар» — 93.ru (недвижимость) и упоминания края; «Законы и рынок» — законы/ипотека/налоги; шум 93.ru — нет."""
+    it = lambda src, title, url, tag="": {"src": src, "title": title, "url": url, "tag": tag, "lead": "", "ts": 1}  # noqa: E731
+    res = widgets.sort_news([
+        it("93.ru", "Брал квартиру, а получил суды", "https://93.ru/text/realty/2026/1/", "Недвижимость"),
+        it("93.ru", "Убили в квартире бойфренда", "https://93.ru/text/incidents/2026/2/", "Происшествия"),
+        it("93.ru", "Не заправляйте кровать сразу", "https://93.ru/text/home/2026/3/", "Мой дом"),
+        it("РБК Недвижимость", "Госдума уточнила налог при мене жилья", "https://realty.rbc.ru/news/1"),
+        it("РБК Недвижимость", "В Краснодаре выросли цены на новостройки", "https://realty.rbc.ru/news/2"),
+    ])
+    assert [x["title"][:12] for x in res["local"]] == ["Брал квартир", "В Краснодаре"]
+    assert [x["title"][:12] for x in res["laws"]] == ["Госдума уточ"]

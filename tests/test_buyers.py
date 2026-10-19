@@ -58,3 +58,16 @@ def test_agent_publishes_request_and_owner_notified(conn, add):
     assert buyers.unpublish(conn, buyer_agent, cid) and buyers.published(conn, buyer_agent, cid) is None
     seller = clients.save(conn, buyer_agent, {"name": "Пётр", "kind": "seller"})["client"]["id"]
     assert "error" in buyers.publish(conn, buyer_agent, clients.detail(conn, buyer_agent, seller)["client"])
+
+
+def test_listings_with_po_zaprosu_are_not_requests():
+    """19.10 (Артём): «сейф / прайс по запросу», портянки объектов, «продам» — объявления, а не запросы покупателей."""
+    from app import rules
+    yes = ["Куплю 2к в ФМР до 6,5 млн, наличка. 89184445566", "Запрос! 1к ЮМР до 5 млн", "Есть клиент на 2к в центре до 8 млн",
+           "Запросы: 1) 2к до 5 млн 2) 1к ФМР до 4 млн", "Запрос: 2к 50-60 м2, 3-9 этаж, ФМР, до 7 млн", "Нужна 2к в аренду ФМР до 40 тыс"]
+    no = ["Продам 2к 50 м2 3/9 эт ФМР 6,5 млн. Сейф по запросу",
+          "1к 38 м2 5/9 эт ЖК Самолёт 4,5 млн\n\n2к 55 м2 7/16 эт ФМР 7 млн\n\nСейф, прайс по запросу",
+          "Квартира 40 м2, 3/9. Цена по вашему запросу. Подберу под любой запрос",
+          "Студия 25 м2 2/5 эт Гидрострой. Прайс - по запросу. Ищу покупателя", "Сдам 1к, 30 тыс + КУ. Запрос на фото в лс"]
+    assert all(rules.is_buyer_request(t) for t in yes), [t for t in yes if not rules.is_buyer_request(t)]
+    assert not any(rules.is_buyer_request(t) for t in no), [t for t in no if rules.is_buyer_request(t)]

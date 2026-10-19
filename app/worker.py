@@ -182,6 +182,11 @@ def tick(conn) -> dict:
         from . import buyers
         stats["buyers_recheck"] = buyers.recheck(conn)
         db.set_state(conn, "buyers_v2", "1")
+    if not db.get_state(conn, "buyers_v3"):   # 19.10: «сейф/прайс по запросу», портянки, «продам» — объявления, не запросы
+        from . import buyers
+        res = buyers.recheck(conn)
+        stats["buyers_recheck_v3"] = res
+        db.set_state(conn, "buyers_v3", json.dumps(res))
     if not db.get_state(conn, "buyers_ads_v1"):   # один раз (19.10): явная реклама — с ленты запросов
         from . import buyers
         db.set_state(conn, "buyers_ads_v1", str(buyers.hide_ads(conn)))

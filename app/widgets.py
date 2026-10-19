@@ -384,10 +384,28 @@ def moex(conn: sqlite3.Connection, force: bool = False) -> dict | None:
 
 
 RBC_RSS = "https://rssexport.rbc.ru/realty/news/30/full.rss"
-NEWS_MAX = 12
-# 17.10 (Артём): только новости про Краснодар и край — московские стадионы и Турция агентам не нужны.
-# Ещё ленты (через запятую) — NEWS_RSS в .env, например региональная лента РБК Кубань, если она есть.
+NEWS_MAX = 15
+# 19.10 (Артём: «новости ничего не показывают»): общероссийская лента РБК почти не пишет про Краснодар, а оставляли только
+# Краснодар — блок был пустой. Теперь три ОФИЦИАЛЬНЫЕ RSS-ленты (сами издания раздают их для читалок и сайтов) и две вкладки:
+# «Краснодар» — 93.ru (раздел недвижимости/ЖКХ) + упоминания края у РБК и РИА; «Законы и рынок» — законы, ипотека, налоги,
+# ДДУ, ЖКХ из РБК и РИА. Берём ТОЛЬКО заголовок, первую фразу анонса и ссылку — читать полностью на сайте источника.
+# ЦИАН (закрыт защитой от роботов, правила запрещают сбор) и krasdom.ru (нет RSS) — НЕ берём.
+NEWS_FEEDS = [
+    ("РБК Недвижимость", RBC_RSS, "rbc.ru", "https://realty.rbc.ru/"),
+    ("РИА Недвижимость", "https://realty.ria.ru/export/rss2/index.xml", "ria.ru", "https://realty.ria.ru/"),
+    ("93.ru", "https://93.ru/rss-feeds/rss.xml", "93.ru", "https://93.ru/text/realty/"),
+]
 NEWS_KEYWORDS = re.compile(r"(?i)краснодар|кубан|краснодарск|анап|новороссийск|сочи|геленджик|армавир|юг[а-я]* росси|юфо")
+NEWS_REALTY = re.compile(r"(?i)недвижим|квартир|жиль|жилищ|ипотек|новострой|застрой|девелоп|\bжк\b|аренд|жку|жкх|коммунал|"
+                         r"капремонт|земельн|участ(?:ок|ки|ков)|\bижс\b|риелтор|риэлтор|долев|\bдду\b|эскроу|росреестр|кадастр|"
+                         r"строительств|многоэтаж|микрорайон|\bметр[а-я]*\b|квадратн")
+NEWS_LAWS = re.compile(r"(?i)закон|госдум|совфед|совет[а-я]* федерац|правительств|минстро|минфин|минэконом|постановлен|указ\b|"
+                       r"ипотек|ключев[а-я]* ставк|льгот|налог|вычет|\bдду\b|эскроу|долев|росреестр|кадастр|жкх|жку|капремонт|"
+                       r"маткапитал|материнск|субсиди|госпрограмм|нов[а-я]+ правил|запрет|обязател|штраф|с 1 (?:январ|феврал|март|"
+                       r"апрел|ма[яй]|июн|июл|август|сентябр|октябр|ноябр|декабр)")
+REGIONAL_REALTY_TAGS = {"недвижимость", "жкх", "строительство"}
+REGIONAL_MAYBE_TAGS = {"экономика", "город", "бизнес", "политика", "мой дом"}
+_RBC_NS = "{https://www.rbc.ru}"
 
 
 def _lead(text: str, limit: int = 200) -> str:
@@ -398,49 +416,85 @@ def _lead(text: str, limit: int = 200) -> str:
     return t if len(t) <= limit else t[:limit].rsplit(" ", 1)[0] + "…"
 
 
-def parse_rbc(raw: bytes) -> list[dict]:
+def parse_feed(raw: bytes, domain: str = "rbc.ru", source: str = "РБК Недвижимость") -> list[dict]:
+    """Обычная RSS 2.0 (и поля РБК): заголовок, ссылка только на сайт этого издания, первая фраза, рубрика, время."""
     import xml.etree.ElementTree as ET
-    ns = "{https://www.rbc.ru}"
+    from email.utils import parsedate_to_datetime
+    ns = _RBC_NS
+    link_ok = re.compile(r"^https://([a-z0-9-]+\.)*" + re.escape(domain) + r"/")
     out = []
     for it in ET.fromstring(raw).iter("item"):
-        title = (it.findtext("title") or "").strip()
+        title = re.sub(r"\s+", " ", it.findtext("title") or "").strip()
         link = (it.findtext("link") or "").strip()
-        if not title or not re.match(r"^https://([a-z0-9-]+\.)*rbc\.ru/", link):
+        if not title or not link_ok.match(link):
             continue
         ts = it.findtext(f"{ns}newsDate_timestamp") or ""
         if not ts.isdigit():
             try:
-                from email.utils import parsedate_to_datetime
                 ts = str(int(parsedate_to_datetime(it.findtext("pubDate") or "").timestamp()))
             except (TypeError, ValueError):
                 ts = "0"
-        out.append({"title": title[:200], "url": link, "ts": int(ts),
+        out.append({"title": title[:200], "url": link, "ts": int(ts), "src": source,
                     "lead": _lead(it.findtext(f"{ns}anons") or it.findtext("description") or ""),
                     "tag": (it.findtext(f"{ns}tag") or it.findtext("category") or "").strip()[:40]})
+        if out[-1]["tag"].lower() in ("лента новостей", "новости"):   # у РИА рубрика всегда одна — не показываем
+            out[-1]["tag"] = ""
     out.sort(key=lambda x: -x["ts"])
     return out
 
 
+def parse_rbc(raw: bytes) -> list[dict]:
+    return parse_feed(raw, "rbc.ru", "РБК Недвижимость")
+
+
+def sort_news(items: list[dict]) -> dict:
+    """Раскладка по вкладкам: local — Краснодар и край, laws — законы и рынок (одна новость может быть в обеих)."""
+    local, laws = [], []
+    for x in items:
+        text = f"{x['title']} {x['lead']} {x['tag']}"
+        regional = x["src"] == "93.ru"
+        if regional:   # городской сайт обо всём: рубрика недвижимости целиком, «Экономика/Город…» — если про жильё в заголовке
+            tag = x["tag"].lower()
+            realty = ("/text/realty/" in x["url"] or tag in REGIONAL_REALTY_TAGS
+                      or (tag in REGIONAL_MAYBE_TAGS and bool(NEWS_REALTY.search(x["title"]))))
+        else:
+            realty = True   # РБК Недвижимость и РИА Недвижимость — и так только недвижимость
+        if not realty:
+            continue
+        if regional or NEWS_KEYWORDS.search(text):
+            local.append(x)
+        if NEWS_LAWS.search(text):
+            laws.append(x)
+
+    def top(lst):
+        seen, out = set(), []
+        for x in sorted(lst, key=lambda x: -x["ts"]):
+            if x["url"] not in seen:
+                seen.add(x["url"]); out.append(x)
+        return out[:NEWS_MAX]
+    return {"local": top(local), "laws": top(laws)}
+
+
 def _news_fetch() -> dict:
     import os
-    urls = [RBC_RSS] + [u.strip() for u in os.getenv("NEWS_RSS", "").split(",") if u.strip().startswith("https://")]
+    feeds = list(NEWS_FEEDS) + [(u.split("/")[2], u, u.split("/")[2].removeprefix("www."), u)
+                                for u in (x.strip() for x in os.getenv("NEWS_RSS", "").split(",")) if u.startswith("https://")]
     items: list[dict] = []
-    for u in urls:
+    used = []
+    for name, url, domain, home in feeds:
         try:
-            items += parse_rbc(_http(u))
+            got = parse_feed(_http(url), domain, name)
         except Exception:  # noqa: BLE001 — одна лента не ответила, остальные показываем
             continue
-    local = [x for x in items if NEWS_KEYWORDS.search(f"{x['title']} {x['lead']} {x['tag']}")]
-    local.sort(key=lambda x: -x["ts"])
-    seen, out = set(), []
-    for x in local:
-        if x["url"] not in seen:
-            seen.add(x["url"]); out.append(x)
-    return {"items": out[:NEWS_MAX], "source": "РБК", "source_url": "https://realty.rbc.ru/", "region": "Краснодарский край"}
+        items += got
+        used.append({"name": name, "url": home})
+    res = sort_news(items)
+    return {**res, "items": res["local"], "sources": used, "source": ", ".join(s["name"] for s in used) or "РБК",
+            "source_url": "https://realty.rbc.ru/", "region": "Краснодарский край"}
 
 
 def news(conn: sqlite3.Connection, force: bool = False) -> dict | None:
-    return _cached(conn, "news", 1800, _news_fetch, force)
+    return _cached(conn, "news2", 1800, _news_fetch, force)   # news2 — новый вид (вкладки), старый кэш не берём
 
 
 def all_widgets(conn: sqlite3.Connection) -> dict:

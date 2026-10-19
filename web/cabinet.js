@@ -224,7 +224,7 @@
     if (!a.verified) {
       put("wAgent", `${head("home-edit", "Мои объекты")}
         <p class="g-empty">Подтвердите свой номер — увидите, сколько раз смотрели ваши объекты, открывали номер и добавляли в подборки
-          клиентам, и не дешевле ли такой же объект у других агентов. Плюс «Проверенный агент» и 30 дней бесплатно.</p>
+          клиентам и в избранное. Плюс «Проверенный агент» и 30 дней бесплатно.</p>
         <a class="pill" href="/agent">Подтвердить номер</a>`, 6);
       return;
     }
@@ -233,9 +233,8 @@
       <div class="wq-nums wa-nums"><a href="/my"><b>${a.views7 || 0}</b><span>просмотров за неделю</span></a>
         <a href="/my"><b>${a.phone || 0}</b><span>открыли номер (30 дн.)</span></a>
         <a href="/my"><b>${a.picks || 0}</b><span>в подборках клиентам</span></a></div>
-      ${a.cheaper ? `<p class="wa-warn">${ic("alert")}У ${a.cheaper} ${a.cheaper === 1 ? "объекта" : "объектов"} такой же есть у других агентов дешевле — <a href="/my">посмотреть</a></p>` : ""}
       ${(a.top || []).map((o) => `<a class="wq-row" href="/?open=${o.id}"><b>${esc(o.complex ? `ЖК ${o.complex}` : o.title)} · ${esc(money(o.price || 0, o.deal))}</b>
-        <small>${o.views || 0} просмотров · номер открыли ${o.phone || 0} · в подборках ${o.picks || 0}${o.cheaper ? ` · у другого агента дешевле на ${esc(money(o.cheaper.diff, o.deal))}` : ""}</small></a>`).join("")
+        <small>${o.views || 0} просмотров · номер открыли ${o.phone || 0} · в подборках ${o.picks || 0}</small></a>`).join("")
         || `<p class="g-empty">Объявлений с вашим номером на сайте пока нет.</p>`}`, 6);
   }
 
@@ -281,15 +280,25 @@
   }
 
   // ─── новости недвижимости: заголовок + первая фраза + ссылка на РБК; список листается внутри блока ─
+  // 19.10: три официальные RSS-ленты (РБК, РИА, 93.ru), вкладки «Краснодар» и «Законы и рынок»
+  let newsTab = "";
   function rbc(n) {
-    if (!n) { put("wRbc", `${head("news", "Новости · Краснодарский край")}<p class="g-empty">Загрузятся через несколько минут.</p>`, 8); return; }
-    if (!n.data.items.length) { put("wRbc", `${head("news", "Новости · Краснодарский край")}<p class="g-empty">Свежих новостей недвижимости про Краснодар и край пока нет — покажем, как только появятся.</p>`, 8); return; }
+    if (!n) { put("wRbc", `${head("news", "Новости недвижимости")}<p class="g-empty">Загрузятся через несколько минут.</p>`, 8); return; }
     const d = n.data;
-    put("wRbc", `${head("news", "Новости · Краснодарский край", `<a class="g-link" href="${esc(d.source_url)}" target="_blank" rel="noopener">${esc(d.source)} ${ic("external")}</a>`)}
-      <div class="wr-list">${d.items.map((x) => `<a class="wr-it" href="${esc(x.url)}" target="_blank" rel="noopener">
-        <span class="wr-meta">${x.tag ? `<i>${esc(x.tag)}</i>` : ""}<small>${ago(x.ts)}</small></span>
-        <b>${esc(x.title)}</b>${x.lead ? `<p>${esc(x.lead)}</p>` : ""}</a>`).join("")}</div>
-      <div class="wr-foot"><small>Источник: ${esc(d.source)}. Читать полностью — на сайте РБК.</small></div>`, 8);
+    const tabs = [["local", "Краснодар", d.local || d.items || []], ["laws", "Законы и рынок", d.laws || []]];
+    if (!newsTab) newsTab = tabs[0][2].length ? "local" : "laws";
+    const cur = tabs.find((t) => t[0] === newsTab) || tabs[0];
+    const list = cur[2];
+    const srcs = (d.sources || []).map((s) => `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.name)}</a>`).join(", ");
+    put("wRbc", `${head("news", "Новости недвижимости")}
+      <div class="wr-tabs" role="tablist">${tabs.map(([k, label, l]) => `<button type="button" role="tab" data-ntab="${k}"
+        class="${k === cur[0] ? "on" : ""}" aria-selected="${k === cur[0]}">${label}${l.length ? ` <small>${l.length}</small>` : ""}</button>`).join("")}</div>
+      ${list.length ? `<div class="wr-list">${list.map((x) => `<a class="wr-it" href="${esc(x.url)}" target="_blank" rel="noopener">
+        <span class="wr-meta">${x.src ? `<i>${esc(x.src)}</i>` : ""}${x.tag && x.tag !== x.src ? `<i>${esc(x.tag)}</i>` : ""}<small>${ago(x.ts)}</small></span>
+        <b>${esc(x.title)}</b>${x.lead ? `<p>${esc(x.lead)}</p>` : ""}</a>`).join("")}</div>`
+        : `<p class="g-empty">${cur[0] === "local" ? "Свежих новостей недвижимости про Краснодар пока нет" : "Свежих новостей о законах и рынке пока нет"} — покажем, как только появятся.</p>`}
+      <div class="wr-foot"><small>Источники: ${srcs || "РБК"}. Заголовок и первая фраза — читать полностью на сайте источника.</small></div>`, 8);
+    $("wRbc").querySelectorAll("[data-ntab]").forEach((b) => b.addEventListener("click", () => { newsTab = b.dataset.ntab; rbc(n); }));
   }
 
   // ─── рынок ────────────────────────────────────────────────────────
