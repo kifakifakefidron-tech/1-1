@@ -48,6 +48,7 @@ class Query:
     complexes: list[str] = field(default_factory=list)
     cx_family: bool = False   # 19.10: ЖК из строки поиска без номера («самолет») — все его очереди («Самолет 1…6»)
     cx_text: str = ""         # 19.10: …и любое упоминание этого названия в тексте объявления (FTS)
+    dist_text: str = ""       # 19.10: район из строки поиска — и любое его название в тексте объявления (FTS)
     street: str = ""   # 19.10: «следить за этим домом» — улица и дом (точное совпадение, регистр буквы дома не важен)
     house: str = ""
     not_first: bool = False
@@ -222,6 +223,21 @@ def _fuzzy_district(tok: str) -> str | None:
     return hits.pop() if len(hits) == 1 else None
 
 
+def _district_fts(canon: str) -> str:
+    """Все написания района для поиска по тексту: «ФМР» → (фмр OR фестивальный* OR …)."""
+    names = {norm(canon)} | {al for al, c in geo._ALIASES if c == canon}
+    out = []
+    for n in sorted(names):
+        ws = [w for w in re.split(r"[^0-9a-zа-я]+", n) if w]
+        if not ws:
+            continue
+        if len(ws) > 1:
+            out.append('"' + " ".join(ws) + '"')
+        else:
+            out.append(f'"{ws[0]}"' if len(ws[0]) <= 3 else f'"{_stem(ws[0])}"*')
+    return " OR ".join(out)
+
+
 def parse_phrase(q: str, deal: str = "sale") -> dict:
     """«2к фмр до 7 млн», «однушка юмр до 5», «3к не первый этаж», «аренда 1к», «самолет 1» → фильтры.
     Что не поняли — ищется по тексту объявлений (fts). chips — как поняли (для показа над выдачей)."""
@@ -349,6 +365,7 @@ def parse_phrase(q: str, deal: str = "sale") -> dict:
     tokens = [t for t in tokens if (len(t) >= 2 or t.isdigit()) and t not in _STOP and t not in _NOISE]
     out["fts"] = " AND ".join(f'"{_stem(t)}"*' for t in tokens) or None
     out["text"] = " ".join(tokens)
+    out["tokens"] = tokens
     return out
 
 
@@ -367,10 +384,14 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
          "(l.district IS NOT NULL OR l.complex IS NOT NULL OR l.street IS NOT NULL OR l.settlement IS NOT NULL)"]
     p: list = [qr.deal]
     fts = None
+    toks: list[str] = []
     if qr.q:   # «2к фмр до 7 млн» — фраза как фильтры; что поставлено фильтрами явно — главнее
         ph = parse_phrase(qr.q, qr.deal)
         fts = ph["fts"]
+        toks = ph.get("tokens") or []
         upd = {k: ph[k] for k in ("types", "rooms", "districts", "complexes", "cond") if ph[k] and not getattr(qr, k)}
+        if ph["districts"] and not qr.districts:   # район из строки — и упоминание в тексте («любое попадание»)
+            upd["dist_text"] = " OR ".join(f"({x})" for x in (_district_fts(d) for d in ph["districts"]) if x)
         if ph["complexes"] and not qr.complexes:
             upd["cx_family"] = True
             upd["cx_text"] = " OR ".join(f"({x})" for x in ph["cx_fts"])
@@ -401,8 +422,11 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
             w.append("l.price_doubt IS NOT 1")   # цена под вопросом — в ценовой фильтр не попадает
     if qr.districts:   # основной район или один из дополнительных (объект на границе районов)
         q = ",".join("?" * len(qr.districts))
-        w.append(f"(l.district IN ({q}) OR EXISTS (SELECT 1 FROM json_each(l.extra_districts) j WHERE j.value IN ({q})))")
+        cond = f"l.district IN ({q}) OR EXISTS (SELECT 1 FROM json_each(l.extra_districts) j WHERE j.value IN ({q}))"
         p += qr.districts + qr.districts
+        if qr.dist_text:
+            cond += " OR l.id IN (SELECT rowid FROM listings_fts WHERE listings_fts MATCH ?)"; p.append(qr.dist_text)
+        w.append(f"({cond})")
     if qr.complexes:
         keys = sorted({geo.complex_key(c) for c in qr.complexes if geo.complex_key(c)})
         # строка поиска «самолет» (без номера) — и «Самолет», и все очереди «Самолет 1…99»; фильтр ЖК и «самолет 2» — точно
@@ -447,7 +471,25 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
         w.append(f"""l.price_doubt IS NOT 1 AND ((l.prev_price >= l.price * 1.03 AND l.prev_price < l.price * 1.5 AND l.price_changed_at >= ?)
                      OR (l.market_diff BETWEEN {HOT_FLOOR} AND {HOT_MARKET} AND l.last_seen >= ?))""")
         p += [now - 7 * 86400, now - 7 * 86400]
-    if fts:
+    # 19.10 (Артём: «находится то, что совпадает в тексте, описании, ЖК и т. п.»): каждое слово, которое не стало фильтром,
+    # находит объект по началу слова в тексте объявления (там же заголовок, ЖК, район, улица, дом, посёлок) ИЛИ по началу
+    # названия района / ЖК — недописанное «фестивальн» находит то же, что «фестивальный», «самоле» — что «самолет»
+    for tk in toks:
+        cond = ["l.id IN (SELECT rowid FROM listings_fts WHERE listings_fts MATCH ?)"]; p.append(f'"{_stem(tk)}"*')
+        if len(tk) >= 4 and not tk.isdigit():
+            canons = sorted({c for al, c in geo._ALIASES if any(x.startswith(tk) for x in al.split())})
+            if canons:
+                q = ",".join("?" * len(canons))
+                cond.append(f"l.district IN ({q}) OR EXISTS (SELECT 1 FROM json_each(l.extra_districts) j WHERE j.value IN ({q}))")
+                p += canons + canons
+                dt = " OR ".join(f"({x})" for x in (_district_fts(c) for c in canons) if x)
+                if dt:   # и другие написания этого района в тексте («фестивальн» → и «ФМР» в объявлении)
+                    cond.append("l.id IN (SELECT rowid FROM listings_fts WHERE listings_fts MATCH ?)"); p.append(dt)
+            k = geo.complex_key(tk)
+            if k and len(k) >= 4 and re.fullmatch(r"[0-9a-zа-я]+", k):
+                cond.append("cxkey(l.complex) GLOB ?"); p.append(f"{k}*")
+        w.append("(" + " OR ".join(cond) + ")")
+    if fts and not toks:
         w.append("l.id IN (SELECT rowid FROM listings_fts WHERE listings_fts MATCH ?)"); p.append(fts)
     if qr.hide_user:
         w.append("NOT EXISTS (SELECT 1 FROM hidden_listings h WHERE h.user_id = ? AND h.listing_id = l.id)"); p.append(qr.hide_user)

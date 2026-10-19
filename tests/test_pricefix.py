@@ -124,3 +124,18 @@ def test_phrase_complex_finds_all_queues_and_mentions():
     assert total(q="самолет 2") == 1
     assert total(q="1к самолет") == 2
     assert total(complexes=["Самолет"]) == 1
+
+
+def test_partial_word_finds_same_as_full():
+    """19.10 (Артём): весь поиск — «любое попадание»: недописанное название района/ЖК находит то же, что полное,
+    а район из строки находит и объекты, где он только упомянут в тексте."""
+    conn = db.connect(":memory:")
+    now = int(time.time())
+    _add(conn, "2-к квартира 50 м², 3/9 эт., ФМР, ул. Тургенева 10. 6,5 млн. 89180000911", "p1", now)
+    _add(conn, "1-к квартира 38 м², 5/9 эт., ЮМР, ул. Ставропольская 5, 10 минут до Фестивального. 4,5 млн. 89180000912", "p2", now)
+    _add(conn, "1-к квартира 39 м², 6/9 эт., ЖК Самолёт. 4,6 млн. 89180000913", "p3", now)
+    total = lambda q: search.search(conn, search.Query(q=q), now, False)["total"]  # noqa: E731
+    assert total("фмр") == total("фестивальный") == total("фестивальн") == 2   # район + упоминание в тексте
+    assert total("самоле") == total("самолет") == 1
+    assert total("тургенев") == total("тургенева") == 1
+    assert total("2к фестивальн") == 1
