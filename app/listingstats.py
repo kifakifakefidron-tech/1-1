@@ -1,6 +1,5 @@
 """Статистика объектов для подтверждённого агента (19.10, приёмка п. 2 — «морковка» для подтверждения номера):
-сколько раз открывали карточку, открывали номер, добавляли в избранное и подборки клиентам, и не дешевле ли такой же
-объект у других агентов.
+сколько раз открывали карточку, открывали номер, добавляли в избранное и подборки клиентам.
 
 Просмотры: каждый процесс сайта копит их в памяти (один человек — один просмотр объекта в день) и раз в 30 с одним
 запросом дописывает в listing_views (объект, день, число). Так сайт не пишет в базу на каждое открытие карточки.
@@ -71,9 +70,8 @@ def flush(conn: sqlite3.Connection) -> None:
 
 
 def for_listings(conn: sqlite3.Connection, rows: list) -> dict[int, dict]:
-    """По объектам агента: просмотры за 30 и 7 дней, открытия номера за 30 дней, в избранном, в подборках клиентам,
-    и разница с самым дешёвым таким же объектом у других агентов (hooks.same_elsewhere — строгое сравнение)."""
-    from . import hooks
+    """По объектам агента: просмотры за 30 и 7 дней, открытия номера за 30 дней, в избранном, в подборках клиентам.
+    («у других агентов дешевле» убрано 19.10 по решению Артёма — сравнение ошибалось.)"""
     _ensure(conn)
     ids = [r["id"] for r in rows]
     if not ids:
@@ -82,7 +80,7 @@ def for_listings(conn: sqlite3.Connection, rows: list) -> dict[int, dict]:
     d30 = (datetime.now(MSK) - timedelta(days=30)).strftime("%Y-%m-%d")
     d7 = (datetime.now(MSK) - timedelta(days=7)).strftime("%Y-%m-%d")
     now = int(time.time())
-    out = {i: {"views": 0, "views7": 0, "phone": 0, "fav": 0, "picks": 0, "cheaper": None} for i in ids}
+    out = {i: {"views": 0, "views7": 0, "phone": 0, "fav": 0, "picks": 0} for i in ids}
     for lid, n30, n7 in conn.execute(f"""SELECT listing_id, SUM(n), SUM(CASE WHEN day >= ? THEN n ELSE 0 END) FROM listing_views
                                          WHERE listing_id IN ({q}) AND day >= ? GROUP BY listing_id""", [d7, *ids, d30]):
         out[lid]["views"], out[lid]["views7"] = n30, n7
@@ -93,16 +91,6 @@ def for_listings(conn: sqlite3.Connection, rows: list) -> dict[int, dict]:
         out[lid]["fav"] = n
     for lid, n in conn.execute(f"SELECT listing_id, COUNT(*) FROM collection_items WHERE listing_id IN ({q}) GROUP BY 1", ids):
         out[lid]["picks"] = n
-    for r in rows:
-        if not r["is_active"] or not r["price"] or r["source"] == "feed":
-            continue
-        try:
-            same = hooks.same_elsewhere(conn, r)
-        except Exception:  # noqa: BLE001 — сравнение — подсказка, без него статистика всё равно нужна
-            same = []
-        prices = [s["price"] for s in same if s.get("price")]
-        if prices and min(prices) < r["price"]:
-            out[r["id"]]["cheaper"] = {"diff": r["price"] - min(prices), "n": len(prices)}
     return out
 
 
@@ -119,6 +107,5 @@ def summary(conn: sqlite3.Connection, user_id: int) -> dict:
     return {"verified": verified, "listings": len(rows),
             "views7": sum(s["views7"] for s in st.values()), "views": sum(s["views"] for s in st.values()),
             "phone": sum(s["phone"] for s in st.values()), "picks": sum(s["picks"] for s in st.values()),
-            "cheaper": sum(1 for s in st.values() if s["cheaper"]),
             "top": [{"id": r["id"], "title": r["title"], "complex": r["complex"], "price": r["price"], "deal": r["deal"],
                      **st.get(r["id"], {})} for r in top]}
