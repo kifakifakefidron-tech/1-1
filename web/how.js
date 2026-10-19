@@ -55,6 +55,27 @@
     document.querySelectorAll(".hw-sec, .hw-final").forEach((s) => { s.classList.add("rv"); io.observe(s); });
   }
 
+  // 19.10: инструкция — ссылка #g-… раскрывает свой раздел; «Раскрыть всё / Свернуть всё»
+  function openFromHash() {
+    const id = decodeURIComponent(location.hash.slice(1));
+    const d = id && document.getElementById(id);
+    if (d && d.matches("details.hw-g")) {
+      d.open = true;
+      d.closest(".rv")?.classList.add("in");
+      requestAnimationFrame(() => d.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" }));
+    }
+  }
+  addEventListener("hashchange", openFromHash);
+  document.querySelectorAll(".hw-toc a").forEach((a) => a.addEventListener("click", () => setTimeout(openFromHash, 0)));   // тот же раздел второй раз — hashchange не придёт
+  openFromHash();
+  const all = $("hwAll");
+  if (all) all.addEventListener("click", () => {
+    const gs = [...document.querySelectorAll("details.hw-g")];
+    const open = !gs.every((g) => g.open);
+    gs.forEach((g) => { g.open = open; });
+    all.textContent = open ? "Свернуть всё" : "Раскрыть всё";
+  });
+
   live();
   market();
 })();

@@ -351,16 +351,12 @@ def search_url(r: dict) -> str:
 
 
 def feed(conn: sqlite3.Connection, with_contacts: bool, deal: str = "", district: str = "", rooms: int | None = None,
-         q: str = "", page: int = 1, size: int = 32, user_id: int | None = None, mine: bool = False) -> dict:
-    """Лента запросов. 19.10: всем с подпиской; mine — только подходящие под объекты агента (по подтверждённым номерам);
-    у каждого запроса — ссылка «подходящие объекты» и (для агента) какие его объекты подходят."""
-    fits = for_agent(conn, user_id) if user_id else {}
+         q: str = "", page: int = 1, size: int = 32, user_id: int | None = None, mine: bool = False,
+         first: int | None = None) -> dict:
+    """Лента запросов — всем с подпиской. 19.10 (Артём): на странице без фильтров, без «под мои объекты» и «искать объекты» —
+    просто лента от свежих. first — этот запрос первым (ссылка из уведомления «Под ваш объект есть покупатель»).
+    deal/district/rooms/q/mine остались для совместимости API."""
     where, params = ["is_active = 1", "removed = 0"], []
-    if mine:
-        if not fits:
-            return {"total": 0, "items": [], "page": 1, "pages": 0, "stale_days": STALE_DAYS, "access": with_contacts,
-                    "mine_total": 0, "has_listings": bool(user_id and agent_listings(conn, user_id)), "new_24h": 0}
-        where.append(f"id IN ({','.join(str(int(i)) for i in fits)})")
     if deal in ("sale", "rent"):
         where.append("deal = ?"); params.append(deal)
     if district:
@@ -371,31 +367,31 @@ def feed(conn: sqlite3.Connection, with_contacts: bool, deal: str = "", district
         where.append("text LIKE ?"); params.append(f"%{q.strip()[:60]}%")
     w = " AND ".join(where)
     total = conn.execute(f"SELECT COUNT(*) FROM buyer_requests WHERE {w}", params).fetchone()[0]
-    rows = conn.execute(f"SELECT * FROM buyer_requests WHERE {w} ORDER BY last_seen DESC LIMIT ? OFFSET ?",
+    order = "ORDER BY last_seen DESC"
+    if first:
+        order = f"ORDER BY (id = {int(first)}) DESC, last_seen DESC"
+    rows = conn.execute(f"SELECT * FROM buyer_requests WHERE {w} {order} LIMIT ? OFFSET ?",
                         params + [size, (max(1, page) - 1) * size]).fetchall()
     items = []
     for r in rows:
         d = _row(r, with_contacts)
-        d["search"] = search_url(d)
-        d["mine"] = fits.get(r["id"], [])[:5]
         d["source"] = r["source"]
+        d["pinned"] = bool(first and r["id"] == first)
         items.append(d)
     new_24h = conn.execute("SELECT COUNT(*) FROM buyer_requests WHERE is_active = 1 AND removed = 0 AND first_seen > ?",
                            (int(time.time()) - 86400,)).fetchone()[0]
     return {"total": total, "items": items, "page": page, "pages": (total + size - 1) // size, "stale_days": STALE_DAYS,
-            "access": with_contacts, "mine_total": len(fits), "new_24h": new_24h,
-            "has_listings": bool(fits) or bool(user_id and agent_listings(conn, user_id))}
+            "access": with_contacts, "new_24h": new_24h}
 
 
 def summary(conn: sqlite3.Connection, user_id: int | None) -> dict:
-    """Для кабинета: сколько запросов, новых за сутки, под объекты агента и 3 свежих."""
-    fits = for_agent(conn, user_id) if user_id else {}
+    """Для кабинета: сколько запросов, новых за сутки и 3 свежих (19.10: «под ваши объекты» убрано вместе с вкладкой)."""
     rows = conn.execute("SELECT * FROM buyer_requests WHERE is_active = 1 AND removed = 0 ORDER BY last_seen DESC LIMIT 3").fetchall()
     one = lambda sql, *a: conn.execute(sql, a).fetchone()[0]  # noqa: E731
     return {"total": one("SELECT COUNT(*) FROM buyer_requests WHERE is_active = 1 AND removed = 0"),
             "new_24h": one("SELECT COUNT(*) FROM buyer_requests WHERE is_active = 1 AND removed = 0 AND first_seen > ?",
                            int(time.time()) - 86400),
-            "mine": len(fits), "latest": [{**_row(r, False), "search": search_url(_req(r))} for r in rows]}
+            "latest": [_row(r, False) for r in rows]}
 
 
 # ─── 19.10: запрос клиента от агента сайта и «под ваш объект есть покупатель» ─────────────────────────────────
@@ -507,7 +503,7 @@ def notify_matches(conn: sqlite3.Connection) -> int:
             what = (o.get("complex") and f"ЖК {o['complex']}") or o.get("title") or "ваш объект"
             src = "запрос агента на 1+1" if r["source"] == "agent" else "запрос из чатов"
             if notices.add(conn, uid, "buyer", f"Под ваш объект есть покупатель — {what}", f"{(r['text'] or '')[:160]} ({src})",
-                           url="/requests?mine=1", listing_id=o["id"], dedup_s=7 * 86400):
+                           url=f"/requests?id={r['id']}", listing_id=o["id"], dedup_s=7 * 86400):
                 sent += 1
         conn.execute("UPDATE buyer_requests SET notified = 1 WHERE id = ?", (r["id"],))
     conn.commit()

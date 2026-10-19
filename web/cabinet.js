@@ -213,8 +213,7 @@
     };
     put("wReq", `${head("briefcase", "Запросы покупателей", `<a class="g-link" href="/requests">Все →</a>`)}
       <div class="wq-nums"><a href="/requests"><b>${q.total || 0}</b><span>сейчас ищут</span></a>
-        <a href="/requests"><b>${q.new_24h || 0}</b><span>новых за сутки</span></a>
-        <a href="/requests?mine=1" class="${q.mine ? "hot" : ""}"><b>${q.mine || 0}</b><span>под ваши объекты</span></a></div>
+        <a href="/requests" class="${q.new_24h ? "hot" : ""}"><b>${q.new_24h || 0}</b><span>новых за сутки</span></a></div>
       ${(q.latest || []).map(row).join("") || `<p class="g-empty">Пока запросов нет.</p>`}`, 5);
   }
 
@@ -747,6 +746,35 @@
     }
     box.appendChild($("wAdd"));   // «+ Свой блок» — всегда последним
   }
+  // 19.10 (Артём: «чтобы никогда не было пустых мест»): блоки идут в вашем порядке; если следующему не хватает места
+  // в ряду — последний блок ряда растягивается до края; последний ряд тоже. Порядок не меняем (его задают перетаскиванием).
+  function pack() {
+    const box = $("bento");
+    if (!box) return;
+    const gs = [...box.children].filter((g) => g.classList.contains("g") && !g.hidden && getComputedStyle(g).display !== "none");
+    gs.forEach((g) => {
+      if (!g.dataset.span) g.dataset.span = g.classList.contains("span-4") ? 4 : g.classList.contains("span-2") ? 2 : 1;
+      g.style.gridColumn = "span 1";
+    });
+    // колонки считаем, пока все блоки в одну колонку: растяжки (старые или span-4) добавили бы сетке лишние колонки
+    const cols = getComputedStyle(box).gridTemplateColumns.split(" ").filter(Boolean).length;
+    gs.forEach((g) => { g.style.gridColumn = ""; });
+    if (cols <= 1) return;
+    let used = 0, last = null;
+    const grow = () => { if (last && used < cols) last.style.gridColumn = `span ${Number(last.style.gridColumn.replace(/\D/g, "") || last.dataset.span) + cols - used}`; };
+    for (const g of gs) {
+      const s = Math.min(cols, Number(g.dataset.span));
+      if (used && used + s > cols) { grow(); used = 0; }
+      g.style.gridColumn = `span ${s}`;
+      used += s; last = g;
+      if (used === cols) { used = 0; last = null; }
+    }
+    grow();
+  }
+  let packT = 0;
+  const packSoon = () => { cancelAnimationFrame(packT); packT = requestAnimationFrame(pack); };
+  addEventListener("resize", packSoon);
+  new MutationObserver(packSoon).observe($("bento"), { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });
   let drag = null;
   function flip(box, move) {   // плавно: соседи переезжают, а не прыгают
     const before = new Map([...box.children].map((el) => [el, el.getBoundingClientRect()]));
