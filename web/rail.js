@@ -32,27 +32,27 @@
   const params = new URLSearchParams(location.search);
   // все разделы сайта: название + коротко, зачем (подсказка при наведении; на телефоне — меню «Ещё»)
   const ITEMS = [
-    { href: "/", icon: "search", tip: "Поиск объектов", short: "Объекты", desc: "Все объекты из чатов: фильтры, карта, районы", main: true,
+    { href: "/", icon: "search", tip: "Поиск объектов", short: "Объекты", desc: "Все объекты из чатов, карта, районы", main: true,
       on: () => path === "/" && !params.has("fav") && !params.has("agent") },
-    { href: "/cabinet", icon: "dashboard", tip: "Кабинет", desc: "Ваш день: дела, ставки, курсы и биржа, новости", user: true },
-    { href: "/my", icon: "home-edit", tip: "Мои объекты", desc: "Свои объявления: добавить, изменить, снять", user: true, also: ["/my/edit"] },
-    { href: "/clients", icon: "users", tip: "Клиенты", desc: "Клиенты по этапам, их подборки и журнал: что кому показали", main: true, user: true },
-    { href: "/requests", icon: "briefcase", tip: "Запросы покупателей", short: "Запросы", desc: "Кто что ищет: бюджет, районы, номер агента", main: true, user: true },
-    { href: "/work", icon: "heart", tip: "Избранное", desc: "Сохранённые объекты и каким клиентам они отправлены", main: true, user: true,
+    { href: "/cabinet", icon: "dashboard", tip: "Кабинет", desc: "Дела, ставки, курсы, новости", user: true },
+    { href: "/my", icon: "home-edit", tip: "Мои объекты", desc: "Свои объявления и их статистика", user: true, also: ["/my/edit"] },
+    { href: "/clients", icon: "users", tip: "Клиенты", desc: "Этапы, подборки, что кому показали", main: true, user: true },
+    { href: "/requests", icon: "briefcase", tip: "Запросы покупателей", short: "Запросы", desc: "Кто что ищет и номер агента", main: true, user: true },
+    { href: "/work", icon: "heart", tip: "Избранное", desc: "Сохранённые объекты и клиенты", main: true, user: true,
       count: (c) => c.work, countTip: (n) => `в избранном: ${n}` },
-    { href: "/planner", icon: "calendar", tip: "Планер", desc: "Показы, звонки и встречи с напоминаниями", user: true,
+    { href: "/planner", icon: "calendar", tip: "Планер", desc: "Показы, звонки, встречи", user: true,
       count: (c) => c.plan_today + c.plan_overdue, countTip: (n) => `дел на сегодня и просроченных: ${n}`, hot: (c) => c.plan_overdue > 0 },
-    { href: "/picks", icon: "stack", tip: "Подборки", desc: "Ссылка с объектами для клиента — только ваш контакт", user: true },
-    { href: "/compare", icon: "scale", tip: "Сравнение", desc: "До 10 объектов рядом: цена, метр, площадь — лучшее подсвечено" },
-    { href: "/market", icon: "chart", tip: "Аналитика рынка", short: "Аналитика", desc: "Цена за метр по районам и ЖК, динамика" },
-    { href: "/notifications", icon: "bell", tip: "Уведомления", desc: "Новые объекты по поискам, снижение цен", user: true, bell: true },
+    { href: "/picks", icon: "stack", tip: "Подборки", desc: "Ссылка для клиента с вашим контактом", user: true },
+    { href: "/compare", icon: "scale", tip: "Сравнение", desc: "До 10 объектов рядом" },
+    { href: "/market", icon: "chart", tip: "Аналитика рынка", short: "Аналитика", desc: "Цена метра по районам и ЖК" },
+    { href: "/notifications", icon: "bell", tip: "Уведомления", desc: "Новые объекты и снижение цен", user: true, bell: true },
     { sep: true },
-    { href: "/pay", icon: "card", tip: "Подписка", desc: "Доступ к номерам агентов и тарифы" },
-    { href: "/settings", icon: "gear", tip: "Настройки", desc: "Профиль, вид подборок для клиентов, вход", user: true },
-    { href: "/how", icon: "help", tip: "Как это работает", desc: "Коротко о сервисе и ответы на вопросы" },
+    { href: "/pay", icon: "card", tip: "Подписка", desc: "Тарифы и доступ к номерам" },
+    { href: "/settings", icon: "gear", tip: "Настройки", desc: "Профиль, подборки, вход, почта", user: true },
+    { href: "/how", icon: "help", tip: "Как это работает", desc: "Инструкция и ответы на вопросы" },
     { sep: true, admin: true },
-    { href: "/learn", icon: "layers", tip: "Обучение и разбор", desc: "Очереди разбора, что выучил сервис", admin: true, also: ["/fix", "/admin/map"] },
-    { href: "/admin", icon: "sliders", tip: "Админка", desc: "Пользователи, чаты, номера, статистика", admin: true },
+    { href: "/learn", icon: "layers", tip: "Обучение и разбор", desc: "Очереди разбора и правила", admin: true, also: ["/fix", "/admin/map"] },
+    { href: "/admin", icon: "sliders", tip: "Админка", desc: "Пользователи, чаты, статистика", admin: true },
   ];
   const isOn = (it) => (it.on ? it.on() : path === it.href || (it.also || []).includes(path) || (it.href !== "/" && path.startsWith(it.href + "/")));
   const tipHTML = (t, d) => `<span class="rail-tip" role="tooltip"><b>${t}</b>${d ? `<small>${d}</small>` : ""}</span>`;
@@ -88,8 +88,7 @@
       return `<b class="rail-c${hot ? " hot" : ""}" title="${it.countTip ? it.countTip(n) : n}">${n > 99 ? "99+" : n}</b>`;
     };
     const who = me ? (me.name || me.email || "").replace(/[<>"]/g, "") : "";
-    // 24.10b: знак «1+1» — светлая рамка (как в образцах Артёма), в раскрытом меню рядом название
-    rail.innerHTML = `<a class="rail-logo" href="/" aria-label="1+1 — к поиску"><span class="rail-mark">1+1</span><span class="rail-word"><b>1+1</b><small>поиск объектов Краснодара</small></span></a>`
+    rail.innerHTML = `<a class="rail-logo" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="38" height="38"><span class="rail-word"><b>1+1</b><small>поиск объектов Краснодара</small></span></a>`
       // компьютер — все разделы слева; телефон — Объекты, Клиенты, Запросы, Избранное и «Ещё» (остальное, сверху — Кабинет)
       + items.map((it) => it.sep ? `<span class="rail-sep"></span>`
         : `<a class="rail-a${isOn(it) ? " on" : ""}${it.main ? " main" : ""}" href="${it.href}" aria-label="${it.tip}">${ic(it.icon)}<span class="rail-lbl">${it.short || it.tip}</span>${it.bell ? `<b class="rail-n" hidden></b>` : badge(it)}${tipHTML(it.tip, badge(it) ? `${it.desc} · ${it.countTip(it.count(counts))}` : it.desc)}</a>`).join("")

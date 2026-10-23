@@ -17,11 +17,13 @@ from . import geo, rules
 KINDS = {"buyer": "Покупатель", "seller": "Продавец", "tenant": "Арендатор", "landlord": "Арендодатель"}
 STAGES = {"new": "Новый", "search": "Подбор", "shows": "Показы", "talks": "Переговоры", "deposit": "Задаток",
           "deal": "Сделка", "lost": "Отказ"}
-PAIR = {"matched": "Подобран", "sent": "Отправлен", "opened": "Открыл", "liked": "Понравился", "rejected": "Не подходит",
+# 24.10b (Артём): первый статус в подборке — «Добавлен» (объект в подборке, ссылку ещё не отправляли); «Отправлен» —
+# когда агент скопировал / отправил ссылку (picks.mark_sent); дальше — «Открыл» (клиент открыл ссылку) и по шагам
+PAIR = {"matched": "Подобран", "added": "Добавлен", "sent": "Отправлен", "opened": "Открыл", "liked": "Понравился", "rejected": "Не подходит",
         "show": "Показ", "talks": "Переговоры", "deal": "Сделка", "lost": "Отказ"}
 ITEM_STATUS = PAIR   # прежнее имя (страницы, тесты)
-RANK = {"matched": 0, "sent": 1, "opened": 2, "liked": 3, "rejected": 3, "show": 4, "talks": 5, "deal": 6, "lost": 6}
-PICK_STATUSES = ("sent", "opened", "liked", "rejected")   # ставятся подборкой — уходят вместе с ней
+RANK = {"matched": 0, "added": 1, "sent": 2, "opened": 3, "liked": 4, "rejected": 4, "show": 5, "talks": 6, "deal": 7, "lost": 7}
+PICK_STATUSES = ("added", "sent", "opened", "liked", "rejected")   # ставятся подборкой — уходят вместе с ней
 OLD_STATUS = {"offered": "matched", "shown": "show", "refused": "rejected"}
 REACTIONS = {"like": "Нравится", "no": "Не подходит", "want_show": "Хочет посмотреть", "question": "Вопрос"}
 REACTION_STATUS = {"like": "liked", "no": "rejected", "want_show": "show"}   # акт 14.10, С5: «хочу посмотреть» = показ
@@ -306,7 +308,7 @@ def set_pair(conn: sqlite3.Connection, user_id: int, cid: int, listing_id: int, 
     # этап клиента — сам, если агент не двигал его руками
     if not c["stage_manual"]:
         stage = c["stage"]
-        if new_status in ("sent", "opened", "liked", "rejected") and stage == "new":
+        if new_status in ("added", "sent", "opened", "liked", "rejected") and stage == "new":
             stage = "search"
         elif new_status in ("show", "talks") and stage in ("new", "search"):
             stage = "shows"

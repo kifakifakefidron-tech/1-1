@@ -155,7 +155,22 @@ def _sync_client(conn: sqlite3.Connection, cid: int, listing_id: int | None = No
     ids = [listing_id] if listing_id else [r[0] for r in conn.execute(
         "SELECT listing_id FROM collection_items WHERE collection_id = ?", (cid,))]
     for lid in ids:
-        clients.set_pair(conn, row["user_id"], row["client_id"], lid, "sent", pick_id=cid, auto=True, commit=False)
+        clients.set_pair(conn, row["user_id"], row["client_id"], lid, "added", pick_id=cid, auto=True, commit=False)
+
+
+def mark_sent(conn: sqlite3.Connection, user_id: int, token: str) -> int:
+    """24.10b: агент скопировал / отправил ссылку подборки — объекты «Добавлен» → «Отправлен» (только вперёд)."""
+    from . import clients
+    k = conn.execute("SELECT id, client_id FROM collections WHERE token = ? AND user_id = ?", (token, user_id)).fetchone()
+    if not k or not k["client_id"]:
+        return 0
+    n = 0
+    for (lid,) in conn.execute("SELECT listing_id FROM client_items WHERE client_id = ? AND pick_id = ? AND status = 'added'",
+                               (k["client_id"], k["id"])).fetchall():
+        clients.set_pair(conn, user_id, k["client_id"], lid, "sent", pick_id=k["id"], auto=True, commit=False)
+        n += 1
+    conn.commit()
+    return n
 
 
 def delete(conn: sqlite3.Connection, user_id: int, cid: int) -> None:
@@ -335,7 +350,7 @@ def _opened(conn: sqlite3.Connection, cid: int) -> None:
     if c is None:
         return
     if c["client_id"]:
-        for (lid,) in conn.execute("SELECT listing_id FROM client_items WHERE client_id = ? AND pick_id = ? AND status = 'sent'",
+        for (lid,) in conn.execute("SELECT listing_id FROM client_items WHERE client_id = ? AND pick_id = ? AND status IN ('added', 'sent')",
                                    (c["client_id"], cid)).fetchall():
             clients.set_pair(conn, c["user_id"], c["client_id"], lid, "opened", auto=True, commit=False)
     who = c["name"] or "Клиент"

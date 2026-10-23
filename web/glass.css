@@ -1291,14 +1291,12 @@ summary { transition: color .2s var(--m-out); }
 /* 24.10b (Артём): меню при наведении раскрывается вширь, а строки НЕ меняют высоту — курсор остаётся на том же значке.
    У каждого пункта справа название и описание в одну строку. Класс .rail-open ставит rail.js через 0,12 с наведения. */
 .rail-g .rail-logo { text-decoration: none; }
-.rail-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; border: 2px solid var(--gold-100);
-  color: var(--gold-100); font: 700 14px/1 var(--head, var(--body)); letter-spacing: .02em; transition: transform .45s var(--spring); }
-.rail-g .rail-logo:hover .rail-mark { transform: rotate(-6deg) scale(1.05); }
 .rail-word { display: none; }
 @media (hover: hover) and (min-width: 821px) {
   .rail-g .rail-a .rail-tip, .rail-g .rail-ava .rail-tip { display: none; }
+  /* фон раскрытого меню — цвета квадрата логотипа (#035352): логотип не выделяется пятном */
   .rail-g.rail-open { width: 350px; align-items: stretch; padding-left: 12px; padding-right: 12px; overflow-y: auto;
-    background: rgba(3, 52, 51, .97); box-shadow: var(--glass-sh), 0 24px 60px rgba(0, 0, 0, .35); }
+    background: rgba(3, 83, 82, .98); box-shadow: var(--glass-sh), 0 24px 60px rgba(0, 0, 0, .35); }
   .rail-g.rail-open .rail-logo { width: auto; justify-content: start; display: flex; gap: 12px; align-items: center; padding-left: 2px; }
   .rail-g.rail-open .rail-word { display: grid; gap: 2px; animation: railTipIn .22s var(--ease) both; }
   .rail-word b { font: 700 17px/1 var(--head, var(--body)); color: var(--gold-100); }

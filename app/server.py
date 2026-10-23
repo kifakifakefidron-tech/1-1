@@ -1394,6 +1394,8 @@ def api_picks(request: Request, body: dict | None = None):
     if request.method == "POST":
         if _too_often(request, "picks", 300, 3600):
             return _err("Слишком часто — попробуйте позже.", 429)
+        if body.get("sent_token"):   # 24.10b: ссылку скопировали / отправили — «Добавлен» → «Отправлен»
+            return JSONResponse({"ok": True, "sent": picks.mark_sent(conn, user["id"], str(body["sent_token"])[:40])})
         if "client_name" in body and not body.get("id"):   # 24.10: новая подборка = клиент (есть — его подборка)
             res = picks.for_client_name(conn, user, body.get("client_name"))
         else:
