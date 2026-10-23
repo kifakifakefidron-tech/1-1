@@ -37,7 +37,7 @@
     { href: "/cabinet", icon: "dashboard", tip: "Кабинет", desc: "Ваш день: дела, ставки, курсы и биржа, новости", user: true },
     { href: "/my", icon: "home-edit", tip: "Мои объекты", desc: "Свои объявления: добавить, изменить, снять", user: true, also: ["/my/edit"] },
     { href: "/clients", icon: "users", tip: "Клиенты", desc: "Клиенты по этапам, их подборки и журнал: что кому показали", main: true, user: true },
-    { href: "/requests", icon: "briefcase", tip: "Запросы покупателей", short: "Запросы", desc: "Кто что ищет — бюджет, районы, номер агента; под ваши объекты — отдельно", main: true, user: true },
+    { href: "/requests", icon: "briefcase", tip: "Запросы покупателей", short: "Запросы", desc: "Кто что ищет: бюджет, районы, номер агента", main: true, user: true },
     { href: "/work", icon: "heart", tip: "Избранное", desc: "Сохранённые объекты и каким клиентам они отправлены", main: true, user: true,
       count: (c) => c.work, countTip: (n) => `в избранном: ${n}` },
     { href: "/planner", icon: "calendar", tip: "Планер", desc: "Показы, звонки и встречи с напоминаниями", user: true,
@@ -98,6 +98,11 @@
         : `<a class="rail-a main" href="/?login=1" aria-label="Войти">${ic("user")}<span class="rail-lbl">Войти</span>${tipHTML("Войти", "Неделя бесплатно — без карты")}</a>`);
     document.body.prepend(rail);
     fitRail(rail);
+    // 24.10: компьютер — навели на меню (0,12 с) → раскрывается целиком: все разделы с описанием; ушла мышь — сворачивается
+    const wide = matchMedia("(hover: hover) and (min-width: 821px)");
+    let openT = 0;
+    rail.addEventListener("mouseenter", () => { if (!wide.matches) return; clearTimeout(openT); openT = setTimeout(() => rail.classList.add("rail-open"), 120); });
+    rail.addEventListener("mouseleave", () => { clearTimeout(openT); rail.classList.remove("rail-open"); });
     document.body.classList.add("has-rail");
     if (document.querySelector(".tabbar")) document.body.classList.add("has-tabbar");
     if (window.__bellN) window.railBell(window.__bellN);

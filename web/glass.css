@@ -1287,3 +1287,26 @@ summary { transition: color .2s var(--m-out); }
   .dv-tile { min-height: 74px; padding: 10px 12px; } .dv-tile b { font-size: 21px; }
   .dv3 .dv-acts { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
 }
+
+/* 24.10 (Артём): на компьютере меню при наведении раскрывается целиком — все разделы с названием и описанием сразу,
+   а не подсказка у одного пункта. Класс .rail-open ставит rail.js через 0,12 с наведения (не мигает при проводке мышью);
+   поверх страницы (меню fixed) — содержимое не сдвигается; ушла мышь — снова узкое. Одиночные подсказки больше не нужны. */
+@media (hover: hover) and (min-width: 821px) {
+  .rail-g .rail-a .rail-tip, .rail-g .rail-ava .rail-tip { display: none; }
+  .rail-g.rail-open { width: 310px; align-items: stretch; padding: 12px; overflow-y: auto;
+    background: rgba(3, 52, 51, .96); box-shadow: var(--glass-sh), 0 24px 60px rgba(0, 0, 0, .35); }
+  .rail-g.rail-open .rail-logo { align-self: flex-start; margin-left: 0; }
+  .rail-g.rail-open .rail-a { width: 100%; height: auto !important; min-height: 44px; display: grid; grid-template-columns: 22px minmax(0, 1fr);
+    column-gap: 12px; place-items: center start; padding: 7px 12px; }
+  .rail-g.rail-open .rail-a .rail-tip { position: static; display: grid; gap: 1px; width: auto; max-width: none; padding: 0; border: 0;
+    background: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; pointer-events: none;
+    opacity: 1; transform: none; filter: none; transition: none; animation: railTipIn .22s var(--ease) both; }
+  .rail-g.rail-open .rail-tip::before { display: none; }
+  .rail-g.rail-open .rail-tip b { white-space: normal; font-size: 14px; }
+  .rail-g.rail-open .rail-tip small { white-space: normal; font-size: 12px; }
+  .rail-g.rail-open .rail-a.on .rail-tip b, .rail-g.rail-open .rail-a.on .rail-tip small { color: #0f2f2e; }
+  .rail-g.rail-open .rail-sep { width: 100%; }
+  .rail-g.rail-open .rail-ava { align-self: flex-start; margin-left: 4px; }
+  .rail-g.rail-open .rail-c, .rail-g.rail-open .rail-n { top: 50%; right: 10px; translate: 0 -50%; }
+}
+@keyframes railTipIn { from { opacity: 0; transform: translateX(-6px); } }
