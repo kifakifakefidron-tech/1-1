@@ -50,6 +50,7 @@
   }
   function fill() {
     const s = st.settings;
+    if ($("stMailOn")) $("stMailOn").checked = !s.mail_off;
     $("stBrand").value = s.pick_brand;
     $("stPickName").value = s.pick_name;
     $("stPickPhone").value = s.pick_phone;
@@ -62,6 +63,10 @@
     preview();
   }
 
+  if ($("stMailOn")) $("stMailOn").addEventListener("change", (e) => {   // 24.10: письма-уведомления вкл/выкл
+    save({ mail_off: !e.target.checked });
+    toast(e.target.checked ? "Уведомления будут приходить и на почту" : "Письма-уведомления выключены — останутся на сайте");
+  });
   let timer = 0, pending = {};
   function save(patch) {
     Object.assign(st.settings, patch);

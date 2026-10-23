@@ -43,7 +43,7 @@ def send(conn: sqlite3.Connection, text: str) -> bool:
         return True
     to = config.ALERT_EMAIL or next(iter(sorted(config.ADMIN_EMAILS)), "")
     if to and mailer.available():
-        return mailer.send_text(to, "1+1: " + text.splitlines()[0][:80], text)
+        return mailer.send_text(to, "1+1: " + text.splitlines()[0][:80], text, force=True)   # сбои — всегда
     return False
 
 
