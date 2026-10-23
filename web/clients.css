@@ -291,3 +291,8 @@ body.c-dragging .c-col { transition: background .2s, border-color .2s, transform
   border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .04); color: var(--ink); font: inherit; font-size: 16px; }
 .ci-pub-on { color: var(--ok); font-size: 13px; margin-bottom: 6px !important; }
 .ci-pub-err { color: var(--bad); font-size: 13px; margin-top: 8px !important; }
+
+/* 24.10b: новые объекты для клиента — наверху вкладки «Объекты» */
+.c-fresh-box { margin: 0 0 18px; padding: 14px; border-radius: 20px; border: 1px solid var(--gold); background: rgba(227, 203, 143, .08);
+  animation: riseIn .35s var(--ease) both; }
+.c-fresh-box .c-fresh { margin: 0 0 10px; }

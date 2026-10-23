@@ -19,7 +19,7 @@
 <link rel="stylesheet" href="/static/theme.css?v=16">
 <link rel="stylesheet" href="/static/glass.css?v=90">
 <link rel="stylesheet" href="/static/cabinet.css?v=27">
-<link rel="stylesheet" href="/static/clients.css?v=15">
+<link rel="stylesheet" href="/static/clients.css?v=16">
 </head>
 <body class="dash-body">
 <main class="dash">
@@ -108,6 +108,8 @@
     </form>
 
     <div class="c-pane" data-pane="items" hidden>
+      <!-- 24.10b: из уведомления «Новое под клиента» — новые объекты сразу наверху, а не внизу подбора -->
+      <section class="c-fresh-box" id="dFresh" hidden></section>
       <div class="c-report" id="dReport"></div>
       <div class="c-picks" id="dPicks"></div>
       <div class="c-items" id="dItems"></div>
@@ -141,7 +143,7 @@
 <script src="/static/max.js?v=2"></script>
 <script src="/static/rail.js?v=30"></script>
 <script src="/static/pickers.js?v=18"></script>
-<script src="/static/clients.js?v=24"></script>
+<script src="/static/clients.js?v=25"></script>
 <script src="/static/objview.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 </body>

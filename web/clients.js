@@ -577,12 +577,21 @@ ${lines.join("\n")}`;
       hb.textContent = showHidden ? "← К подбору" : `Скрытые · ${hn}`;
       box.innerHTML = d.items.length ? "" : `<p class="g-empty">${wish(cur.client) ? "Сейчас подходящих нет — уточните пожелания или загляните позже." : "Укажите в карточке комнаты, бюджет или районы — и сервис подберёт объекты."}</p>`;
     }
-    if (matchSince && !more) {   // новые с прошлой проверки — плашкой сверху, «всё в подборку» одной кнопкой
-      box.insertAdjacentHTML("afterbegin", `<div class="c-fresh">${ic("sparkle")}<span><b>Новые с ${new Date(matchSince * 1000).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}: ${d.items.length}</b>
-        <small>Объекты, появившиеся под пожелания клиента</small></span>
-        ${d.items.length ? `<button type="button" class="pill" data-topick>Всё в подборку</button>` : ""}
-        <button type="button" class="chip" data-all-match>Все подходящие</button></div>`);
+    const fb = $("dFresh");
+    if (matchSince && !more && !showHidden) {   // 24.10b: новые с прошлой проверки — отдельным блоком В САМОМ ВЕРХУ вкладки
+      const when = new Date(matchSince * 1000).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+      fb.hidden = false;
+      fb.innerHTML = `<div class="c-fresh">${ic("sparkle")}<span><b>Новые объекты для ${esc(cur.client.name)}: ${d.items.length}</b>
+          <small>Появились с ${esc(when)} и подходят под пожелания клиента</small></span>
+          ${d.items.length ? `<button type="button" class="pill" data-topick>Всё в подборку</button>` : ""}
+          <button type="button" class="chip" data-all-match>Показать все подходящие</button></div>
+        <div class="c-items">${d.items.map(matchItem).join("") || `<p class="g-empty">Новых пока нет — все подходящие ниже.</p>`}</div>`;
+      box.innerHTML = `<p class="g-empty">Новые объекты — наверху. «Показать все подходящие» — весь подбор здесь.</p>`;
+      requestAnimationFrame(() => fb.scrollIntoView({ block: "start", behavior: "smooth" }));
+      selBar();
+      return;
     }
+    if (!matchSince && fb) { fb.hidden = true; fb.innerHTML = ""; }
     box.insertAdjacentHTML("beforeend", d.items.map(matchItem).join(""));
     if (d.more) box.insertAdjacentHTML("beforeend", `<button type="button" class="pill light c-more" data-match-more>Показать ещё</button>`);
     selBar();
