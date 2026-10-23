@@ -1189,3 +1189,22 @@ summary { transition: color .2s var(--m-out); }
 /* 24.10: подсказка под полем цены — как сервис понял число */
 .money-hint { display: block; margin-top: 4px; font-size: 12.5px; color: var(--ink-3); line-height: 1.35; }
 .money-hint.ok { color: var(--gold); }
+
+/* 24.10 (Артём): строка поиска и кнопка «Найти» — светлые, всегда заметны на бирюзовом фоне */
+.search .q-wrap { position: relative; }
+.search #q { background-color: var(--gold-100); border: 1px solid var(--gold-200); color: #0f2f2e; padding-right: 118px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .18); }
+.search #q::placeholder { color: rgba(15, 47, 46, .58); }
+.search #q:focus { border-color: var(--gold-400); box-shadow: 0 0 0 4px rgba(243, 232, 188, .28), 0 6px 22px rgba(0, 0, 0, .18); }
+.search .q-ico { color: #0f2f2e; stroke: #0f2f2e; opacity: .7; }
+.search .q-go { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; gap: 6px;
+  height: calc(100% - 10px); min-height: 36px; padding: 0 16px; border: 0; border-radius: 999px; cursor: pointer;
+  background: #0f2f2e; color: var(--gold-100); font: 600 14px var(--body); transition: background .2s, transform .15s; }
+.search .q-go:hover { background: #164443; }
+.search .q-go:active { transform: translateY(-50%) scale(.97); }
+.search .q-go svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.search #q::-webkit-search-cancel-button { filter: invert(.3); }
+@media (max-width: 640px) {
+  .search #q { padding-right: 52px; }
+  .search .q-go { padding: 0 11px; } .search .q-go span { display: none; }
+}
