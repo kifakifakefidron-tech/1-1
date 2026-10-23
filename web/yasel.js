@@ -34,8 +34,27 @@
     bar.querySelector(".ya-bar-q").textContent = `«${t.length > 60 ? t.slice(0, 60) + "…" : t}»`;
     bar.querySelector(".ya-bar-go").href = url(t);
     closed = "";
+    place(sel);
     requestAnimationFrame(() => bar.classList.add("in"));
   }
+
+  // 24.10 (Артём): плашка — сразу под выделенным текстом, а не внизу страницы; нет места снизу — над текстом
+  function place(sel) {
+    if (!bar || !sel || !sel.rangeCount) return;
+    const r = sel.getRangeAt(0).getBoundingClientRect();
+    if (!r.width && !r.height) return;
+    bar.classList.add("at");
+    const host = bar.parentNode;
+    // окно (dialog) с transform — для fixed-элемента внутри него точка отсчёта — само окно
+    const hr = host !== document.body && getComputedStyle(host).transform !== "none" ? host.getBoundingClientRect() : { left: 0, top: 0 };
+    const w = bar.offsetWidth || 320, h = bar.offsetHeight || 48;
+    const x = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+    const below = r.bottom + 10 + h < innerHeight;
+    const y = below ? r.bottom + 10 : Math.max(8, r.top - h - 10);
+    bar.style.left = `${x - hr.left}px`;
+    bar.style.top = `${y - hr.top}px`;
+  }
+  addEventListener("scroll", () => { if (bar && bar.classList.contains("in")) place(window.getSelection()); }, { passive: true, capture: true });
 
   let timer = 0;
   document.addEventListener("selectionchange", () => { clearTimeout(timer); timer = setTimeout(show, 300); });

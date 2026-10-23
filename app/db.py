@@ -72,6 +72,11 @@ CREATE TABLE IF NOT EXISTS listings (
 );
 CREATE INDEX IF NOT EXISTS ix_listings_main ON listings(is_active, type, deal, price);
 CREATE INDEX IF NOT EXISTS ix_listings_last ON listings(last_seen);
+CREATE INDEX IF NOT EXISTS ix_listings_first ON listings(first_seen);
+-- 24.10: «Недавно смотрели» в кабинете — последние открытые объекты человека (до 40, на всех устройствах)
+CREATE TABLE IF NOT EXISTS recent_views (user_id INTEGER NOT NULL, listing_id INTEGER NOT NULL, ts INTEGER NOT NULL,
+    PRIMARY KEY (user_id, listing_id));
+CREATE INDEX IF NOT EXISTS ix_recent_user ON recent_views(user_id, ts);
 CREATE INDEX IF NOT EXISTS ix_listings_district ON listings(district);
 CREATE INDEX IF NOT EXISTS ix_listings_complex ON listings(complex);
 
@@ -380,6 +385,7 @@ MIGRATIONS = [
     ("collection_items", "photos", "TEXT"),
     ("collection_items", "photo_order", "TEXT"),   # 18.10: {"order": [url…], "hidden": [url…]} — фото для клиента по порядку
     ("listings", "repair", "TEXT"),
+    ("listings", "repair_doubt", "INTEGER"),   # 24.10: ремонт «под вопросом» — очередь разбора «Ремонт»
     ("listings", "added_at", "INTEGER"),
     ("listings", "admin_fields", "TEXT"),   # 18.10: характеристики, поправленные админом (JSON) — повторы их не перетирают
     ("phone_codes", "method", "TEXT"),       # 17.10: NULL/'max' — код в MAX, 'call' — звонок (SMS.ru callcheck)

@@ -525,6 +525,9 @@ def api_listing(request: Request, body: dict | None = None):
         if not own_view:
             from . import listingstats
             listingstats.record(conn, lid, _who(request))
+        if user:   # 24.10: «Недавно смотрели» в кабинете
+            from . import listingstats as _ls
+            _ls.remember(conn, user["id"], lid)
     if access and phones:   # 19.10: выбор агента (согласие на /agent) — подтверждён ли номер, без имени, без кнопки MAX
         from . import consent
         pf = consent.prefs(conn)
@@ -1139,14 +1142,55 @@ def api_admin_stats(request: Request, body: dict | None = None):
 
 
 def api_admin_users(request: Request, body: dict | None = None):
+    """24.10 (Артём: «в админке должны быть видны все пользователи, дата последнего захода и все данные»): все аккаунты
+    страницами по 100, сортировка — по последнему заходу (sort=last) или по регистрации (sort=new), сводка сверху."""
     _, err = _need_admin(request)
     if err:
         return err
-    q = f"%{request.query_params.get('q', '').strip().lower()}%"
-    rows = db.get().execute(
-        """SELECT * FROM users WHERE lower(COALESCE(tg_username,'') || ' ' || COALESCE(email,'') || ' ' ||
-               COALESCE(phone,'') || ' ' || COALESCE(name,'')) LIKE ? ORDER BY id DESC LIMIT 200""", (q,)).fetchall()
-    return JSONResponse({"items": [accounts.user_public_row(r) for r in rows]})
+    conn = db.get()
+    qp = request.query_params
+    q = f"%{qp.get('q', '').strip().lower()}%"
+    order = "COALESCE(u.last_seen, u.created) DESC" if qp.get("sort", "last") == "last" else "u.id DESC"
+    page = max(1, _num(qp.get("page"), int) or 1)
+    size = 100
+    where = """lower(COALESCE(u.tg_username,'') || ' ' || COALESCE(u.email,'') || ' ' || COALESCE(u.phone,'') || ' ' ||
+               COALESCE(u.name,'') || ' ' || u.id) LIKE ?"""
+    total = conn.execute(f"SELECT COUNT(*) FROM users u WHERE {where}", (q,)).fetchone()[0]
+    rows = conn.execute(f"""SELECT u.*,
+            (SELECT group_concat(phone, ', ') FROM agent_phones a WHERE a.user_id = u.id) AS verified_phones,
+            (SELECT COUNT(*) FROM clients c WHERE c.user_id = u.id) AS n_clients,
+            (SELECT COUNT(*) FROM collections k WHERE k.user_id = u.id) AS n_picks,
+            (SELECT COUNT(*) FROM favorites f WHERE f.user_id = u.id) AS n_fav,
+            (SELECT COUNT(*) FROM saved_searches s WHERE s.user_id = u.id) AS n_saved,
+            (SELECT COUNT(*) FROM planner_events e WHERE e.user_id = u.id) AS n_events,
+            (SELECT COUNT(*) FROM sessions se WHERE se.user_id = u.id) AS n_sessions,
+            (SELECT COALESCE(SUM(amount), 0) FROM payments p WHERE p.user_id = u.id AND p.status = 'succeeded') AS paid_sum,
+            (SELECT COUNT(*) FROM listings l WHERE l.owner_user_id = u.id AND l.source = 'own') AS n_own,
+            (SELECT r.email FROM users r WHERE r.id = u.referred_by) AS ref_email
+        FROM users u WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?""", (q, size, (page - 1) * size)).fetchall()
+    now = int(time.time())
+    one = lambda sql, *a: conn.execute(sql, a).fetchone()[0]  # noqa: E731
+    summary = {"total": one("SELECT COUNT(*) FROM users"),
+               "new_1d": one("SELECT COUNT(*) FROM users WHERE created > ?", now - 86400),
+               "new_7d": one("SELECT COUNT(*) FROM users WHERE created > ?", now - 7 * 86400),
+               "seen_1d": one("SELECT COUNT(*) FROM users WHERE last_seen > ?", now - 86400),
+               "seen_7d": one("SELECT COUNT(*) FROM users WHERE last_seen > ?", now - 7 * 86400),
+               "access": one("SELECT COUNT(*) FROM users WHERE MAX(trial_until, paid_until) > ?", now),
+               "paid": one("SELECT COUNT(*) FROM users WHERE paid_until > ?", now),
+               "verified": one("SELECT COUNT(DISTINCT user_id) FROM agent_phones")}
+    items = []
+    for r in rows:
+        d = accounts.user_public_row(r)
+        try:
+            st = json.loads(r["settings"] or "{}")
+        except (TypeError, ValueError):
+            st = {}
+        d.update({k: r[k] for k in ("verified_phones", "n_clients", "n_picks", "n_fav", "n_saved", "n_events", "n_sessions",
+                                    "paid_sum", "n_own", "ref_email", "consent_at")},
+                 mail_off=bool(st.get("mail_off")), login="телефон" if r["phone"] and not r["email"] else
+                 "почта" if r["email"] else "Telegram" if r["tg_id"] else "промокод")
+        items.append(d)
+    return JSONResponse({"items": items, "total": total, "page": page, "pages": (total + size - 1) // size, "summary": summary})
 
 
 def api_admin_user_action(request: Request, body: dict | None = None):
@@ -1350,7 +1394,10 @@ def api_picks(request: Request, body: dict | None = None):
     if request.method == "POST":
         if _too_often(request, "picks", 300, 3600):
             return _err("Слишком часто — попробуйте позже.", 429)
-        res = picks.save(conn, user, body)
+        if "client_name" in body and not body.get("id"):   # 24.10: новая подборка = клиент (есть — его подборка)
+            res = picks.for_client_name(conn, user, body.get("client_name"))
+        else:
+            res = picks.save(conn, user, body)
         return _err(res["error"]) if "error" in res else JSONResponse({"pick": res})
     lid = _num(request.query_params.get("listing"), int)
     return JSONResponse({"items": picks.mine(conn, user["id"]),
@@ -1918,17 +1965,10 @@ _VISIBLE = "l.is_active = 1 AND (l.district IS NOT NULL OR l.complex IS NOT NULL
 
 
 def _parse_admin_price(v, deal: str) -> int | None:
-    """«3,2» → 3 200 000 (продажа, млн); «35» → 35 000 (аренда, тыс.); «3 200 000» — как есть."""
-    s = re.sub(r"[^\d,.]", "", str(v or "")).replace(",", ".")
-    try:
-        x = float(s)
-    except ValueError:
-        return None
-    if deal == "rent":
-        x = x * 1000 if x < 1000 else x
-    else:
-        x = x * 1e6 if x < 1000 else x * 1000 if x < 100_000 else x
-    return int(round(x)) if 1000 <= x <= 5_000_000_000 else None
+    """«3,2» → 3 200 000 (продажа, млн); «35» → 35 000 (аренда, тыс.); «3200» → 3,2 млн; «3 200 000» — как есть."""
+    from . import money
+    x = money.to_rub(v, deal)
+    return x if x and 1000 <= x <= 5_000_000_000 else None
 
 
 def api_admin_place(request: Request, body: dict | None = None):

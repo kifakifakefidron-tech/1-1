@@ -212,3 +212,27 @@ def test_watch_house_filter_1810():
     w, p = search._where(q, 0)
     assert "l.street = ?" in w and "10Б" in p and "10б" in p
     assert "ул. Красная, 10Б" in hooks.describe("deal=sale&street=Красная&house=10Б", TYPE_LABELS)
+
+
+def test_admin_users_list_all_with_last_visit(tmp_path, monkeypatch):
+    """24.10: админка «Пользователи» — все аккаунты, последний заход, сводка, сортировка по заходу."""
+    from starlette.testclient import TestClient
+
+    from app import accounts, config, db, server
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "t.db"))
+    monkeypatch.setattr(db._local, "conn", None, raising=False)
+    conn = db.get()
+    boss = accounts.upsert_email_user(conn, "boss@example.ru")
+    conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (boss["id"],))
+    for i in range(3):
+        u = accounts.upsert_email_user(conn, f"agent{i}@example.ru")
+        conn.execute("UPDATE users SET last_seen = ? WHERE id = ?", (1000 + i, u["id"]))
+    conn.commit()
+    with TestClient(server.app) as c:
+        assert c.get("/api/admin/users").status_code == 403
+        c.cookies.set(server.SESSION, accounts.create_session(conn, boss["id"]))
+        d = c.get("/api/admin/users?sort=last").json()
+        assert d["summary"]["total"] == 4 and d["total"] == 4
+        assert all("last_seen" in x and "n_clients" in x and "login" in x for x in d["items"])
+        emails = [x["email"] for x in d["items"]]
+        assert emails.index("agent2@example.ru") < emails.index("agent0@example.ru")   # недавно заходившие — выше

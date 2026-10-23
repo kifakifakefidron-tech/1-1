@@ -217,6 +217,20 @@
       ${(q.latest || []).map(row).join("") || `<p class="g-empty">Пока запросов нет.</p>`}`, 5);
   }
 
+  // ─── 24.10: недавно смотрели — последние открытые объекты, плиткой с фото ─────────────────────────
+  function recentW() {
+    const list = dash.recent || [];
+    const money = (p, deal) => (!p ? "цена не указана" : deal === "rent" ? `${Math.round(p / 1000).toLocaleString("ru-RU")} тыс./мес`
+      : p >= 1e6 ? `${(p / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} млн ₽` : `${Math.round(p / 1000)} тыс. ₽`);
+    const where = (o) => (o.complex ? `ЖК ${o.complex}` : o.street ? `${o.street}${o.house ? ", " + o.house : ""}` : o.district || "");
+    put("wRecent", `${head("eye", "Недавно смотрели", list.length ? `<a class="g-link" href="/work">Избранное →</a>` : "")}
+      ${list.length ? `<div class="wrc-grid">${list.map((o) => `<a class="wrc-it${o.is_active ? "" : " gone"}" href="/?open=${o.id}">
+          <span class="wrc-ph">${o.photo ? `<img src="${esc(o.photo)}" alt="" loading="lazy">` : `<i>Фото у агента</i>`}${o.is_active ? "" : "<em>снят</em>"}</span>
+          <b>${o.price_doubt ? "Цена уточняется" : esc(money(o.price, o.deal))}</b>
+          <small>${esc(where(o) || o.title)}</small></a>`).join("")}</div>`
+        : `<p class="g-empty">Здесь появятся объекты, которые вы открывали, — на всех ваших устройствах. <a href="/">К поиску →</a></p>`}`, 6);
+  }
+
   // ─── 19.10: мои объекты — статистика за неделю (главная «морковка» подтверждения номера) ─────────
   function agentW() {
     const a = dash.agent || {};
@@ -487,7 +501,7 @@
     dash = r.data;
     const w = dash.widgets;
     weather(w.weather); rate(w.keyrate); mortgage(w.mortgage, w.banks); fx(w.currency, w.moex); rbc(w.news);
-    day(); requestsW(); agentW(); clientsW(); crm(); news(); market(); calcHtml(); admin();
+    day(); requestsW(); agentW(); recentW(); clientsW(); crm(); news(); market(); calcHtml(); admin();
     layout();
     if (me.is_admin && new URLSearchParams(location.search).has("banks")) { openBanks(); history.replaceState(null, "", "/cabinet"); }
   }

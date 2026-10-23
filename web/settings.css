@@ -77,3 +77,9 @@
 .st-ava.has, .sp-ava.has { border-color: var(--gold); }
 .sp-ava { width: 34px; height: 34px; }
 .sp-ava:not(.has) { display: none; }
+
+/* 24.10: письма-уведомления вкл/выкл */
+.st-mailon { display: flex; gap: 12px; align-items: flex-start; margin-top: 14px; padding: 12px 14px; border-radius: 14px;
+  border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .03); cursor: pointer; }
+.st-mailon input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--gold); flex: none; }
+.st-mailon span { display: grid; gap: 3px; } .st-mailon small { color: var(--ink-3); font-size: 13px; line-height: 1.45; }

@@ -47,8 +47,28 @@ def available() -> bool:
     return bool(config.SMTP_USER and config.SMTP_PASSWORD)
 
 
-def send_text(to: str, subject: str, body: str) -> bool:
-    """Обычное письмо (уведомления владельцу)."""
+_off: dict = {"t": 0.0, "set": set()}
+
+
+def mail_off(to: str) -> bool:
+    """24.10: человек выключил письма-уведомления в «Настройках» (users.settings.mail_off). Список — раз в минуту."""
+    import time
+    if time.time() - _off["t"] > 60:
+        try:
+            from . import db
+            _off["set"] = {(r[0] or "").lower() for r in db.get().execute(
+                "SELECT email FROM users WHERE email IS NOT NULL AND json_extract(settings, '$.mail_off') = 1")}
+        except Exception:  # noqa: BLE001 — не смогли прочитать — письмо уйдёт как раньше
+            pass
+        _off["t"] = time.time()
+    return (to or "").lower() in _off["set"]
+
+
+def send_text(to: str, subject: str, body: str, force: bool = False) -> bool:
+    """Обычное письмо (уведомления владельцу). force — служебное (сбои админу): уходит, даже если письма выключены."""
+    if not force and mail_off(to):
+        log.info("Письмо на %s не отправлено — уведомления на почту выключены в настройках", to)
+        return False
     msg = EmailMessage()
     _headers(msg, to, subject)
     msg.set_content(body + f"\n\n{config.SITE_URL}\n")

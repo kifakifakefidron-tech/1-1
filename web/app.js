@@ -966,9 +966,8 @@
     const st = o.status || myStatus(o.id);
     const inCmp = cmp.includes(o.id);
     const actions = [   // 17.10 (Артём): «Клиенту» — первой и главной, «Сравнить» — на её прежнем месте
-      u ? `<button type="button" class="dv-act main" data-client-open="${o.id}"><i>${ic("users")}</i><span>Клиенту</span></button>` : "",
-      u ? `<a class="dv-act" href="/planner?add=show&listing=${o.id}"><i>${ic("calendar")}</i><span data-s="В планер">Запланировать</span></a>` : "",
-      `<button type="button" class="dv-act${inCmp ? " on" : ""}" data-cmp="${o.id}"><i>${ic("scale")}</i><span>${inCmp ? "В сравнении" : "Сравнить"}</span></button>`,
+      u ? `<a class="dv-act" href="/planner?add=show&listing=${o.id}"><i>${ic("calendar")}</i><span>Показ</span></a>` : "",
+      `<button type="button" class="dv-act${inCmp ? " on" : ""}" data-cmp="${o.id}"><i>${ic("scale")}</i><span data-s="${inCmp ? "В сравн." : "Сравнить"}">${inCmp ? "В сравнении" : "Сравнить"}</span></button>`,
       `<button type="button" class="dv-act" data-share="${o.id}"><i>${ic("share")}</i><span data-s="Ссылка">Поделиться</span></button>`,
       `<button type="button" class="dv-act" data-watch-open="${o.id}"><i>${ic("bell")}</i><span>Следить</span></button>`,
       u ? `<button type="button" class="dv-act" data-hide-open="${o.id}"><i>${ic("eye")}</i><span>Скрыть</span></button>` : "",
@@ -1041,39 +1040,67 @@
     const gone = o.is_active === 0 || o.is_active === false;
     const similarQ = new URLSearchParams({ deal: o.deal || "sale", ...(o.rooms != null ? { rooms: o.rooms } : {}),
       ...(o.complex ? { complex: o.complex } : o.district ? { district: o.district } : {}) }).toString();
+    // 24.10 (Артём, образец «Постер + бенто»): фото → ЖК → крупная цена → плитки → описание целиком → контакт → действия →
+    // раскрывающиеся плитки; внизу закреплены «Клиенту» и «Позвонить»
+    const bigPrice = (() => {
+      if (o.price_doubt) return `<b class="dv-big">Цена уточняется</b>`;
+      if (o.price == null) return `<b class="dv-big sm">Цена не указана</b>`;
+      const [v, unit] = o.deal === "rent" ? [num(o.price / 1000, 1), "тыс. ₽/мес"]
+        : o.price >= 1e6 ? [num(o.price / 1e6, 2), "млн ₽"] : [num(o.price / 1000), "тыс. ₽"];
+      return `<b class="dv-big">${esc(v)}</b><span class="dv-unit"><b>${unit}</b>${o.price_m2 && o.deal !== "rent" ? `<small>${esc(num(o.price_m2))} ₽/м²</small>` : ""}</span>`;
+    })();
+    const tile = (label, value, cls = "", href = "") => value == null || value === "" ? "" : href
+      ? `<a class="dv-tile ${cls}" href="${esc(href)}" target="_blank" rel="noopener"><small>${esc(label)}</small><b>${esc(value)}<i>↗</i></b></a>`
+      : `<div class="dv-tile ${cls}"><small>${esc(label)}</small><b>${esc(value)}</b></div>`;
+    const short = o.street ? `${o.street}${o.house ? ", " + o.house : ""}` : o.complex ? `ЖК ${o.complex}` : o.district || o.settlement || "";
+    const drop = o.prev_price && o.price && o.prev_price > o.price && o.price_changed_at > (Date.now() / 1000 - 30 * 86400) ? o.prev_price - o.price : 0;
+    const tiles = [
+      o.type === "land" ? tile("Участок", o.land ? `${num(o.land, 1)} сот.` : null)
+        : tile(o.type === "commercial" ? "Тип" : "Комнаты", o.type === "commercial" ? "Коммерция" : rooms),
+      tile("Площадь", o.area ? `${num(o.area, 1)} м²` : null),
+      o.type === "land" ? tile("Тип", (meta.types || {})[o.type]) : tile("Этаж", o.floor ? (o.floors ? `${o.floor}/${o.floors}` : String(o.floor)) : null),
+      o.type === "house" && o.land ? tile("Участок", `${num(o.land, 1)} сот.`) : "",
+      m ? tile("К рынку", m.diff <= -3 ? `−${-m.diff}%` : m.diff >= 3 ? `+${m.diff}%` : "по рынку", m.diff <= -3 ? "good" : m.diff >= 3 ? "high" : "") : "",
+      drop ? tile("Цена", `↓ ${fmtShortPrice(drop, o.deal)}`, "down") : days != null ? tile("На 1+1", days < 1 ? "сегодня" : daysText(days)) : "",
+      short ? tile("На карте", short, "place", `https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(yaQuery(o))}`) : "",
+    ].filter(Boolean).join("");
+    const firstPhone = (o.phones || [])[0];
+    const callBtn = firstPhone ? `<a class="dv-bar-b call" href="tel:${esc(firstPhone)}">${ic("phone")}Позвонить</a>`
+      : o.phones_masked && o.phones_masked.length ? (u ? `<button type="button" class="dv-bar-b call" data-pay>${ic("phone")}Позвонить</button>`
+        : `<button type="button" class="dv-bar-b call" data-login>${ic("phone")}Позвонить</button>`) : "";
+    const bar = gone || o.loading ? "" : (u || callBtn) ? `<div class="dv-bar">${u ? `<button type="button" class="dv-bar-b client" data-client-open="${o.id}">${ic("users")}Клиенту</button>` : ""}${callBtn}</div>` : "";
     return `
       ${gone ? `<div class="dv-gone">${ic("alert")}<span><b>Объект снят с продажи</b>
         <small>Его больше не присылают в чаты${o.last_seen ? ` — последний раз ${esc(new Date(o.last_seen * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }))}` : ""}. Скорее всего, продан.</small></span>
         <a class="pill" href="/?${similarQ}" target="_top">Похожие объекты</a></div>` : ""}
-      <div class="${gone ? "dv-gone-gal" : ""}">${gallery}</div>
-      <div class="dv">
+      <div class="dv-hero${gone ? " dv-gone-gal" : ""}">${gallery}${photos.length > 1 ? `<span class="dv-count">${photos.length} фото</span>` : ""}</div>
+      <div class="dv dv3">
         <div class="dv-head">
+          <p class="dv-eyebrow" id="dTitle">${esc(headline(o) || o.title)}</p>
           ${badgesHTML(o)}
-          <h2 class="dv-title" id="dTitle">${esc(headline(o) || o.title)}</h2>
-          <p class="dv-subt">${esc([...new Set([headline(o) ? o.title : "", address(o)].filter(Boolean))].join(" · "))}
-            ${address(o) ? `<a class="ya-link" href="https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(yaQuery(o))}" target="_blank" rel="noopener">на карте ↗</a>` : ""}</p>
-          <div class="dv-price"><b>${o.price_doubt ? "Цена уточняется" : esc(fmtPrice(o.price, o.deal))}</b>
-            ${o.price_m2 && o.deal !== "rent" ? `<span>${esc(num(o.price_m2))} ₽/м²</span>` : ""}${marketTag}</div>
+          <div class="dv-price">${bigPrice}</div>
+          <p class="dv-subt">${esc([...new Set([headline(o) ? o.title : "", address(o)].filter(Boolean))].join(" · "))}</p>
           ${o.text_price ? `<p class="dv-tp">${ic("alert")}<span>В тексте объявления (от ${esc(new Date(o.text_price.ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }))})
             другая цена — ${esc(fmtPrice(o.text_price.price, o.deal))}. В карточке — <b>${esc(fmtPrice(o.price, o.deal))}</b> (из более свежего сообщения). Уточните у агента.</span></p>` : ""}
           ${o.price_doubt ? `<p class="dv-tp">${ic("alert")}<span>Цена записана в объявлении неоднозначно (например, «5400» без «тыс.» или «млн»). Уточните у агента —
             в сортировках по цене и фильтрах этот объект не участвует.</span></p>` : ""}
         </div>
-        ${gone ? "" : `<div class="dv-acts">${actions}</div>`}
+        ${tiles ? `<div class="dv-tiles">${tiles}</div>` : ""}
+        <section class="dv-sec"><p class="dv-sec-h">Описание</p>
+          ${o.description ? `<div class="dv-desc"><p>${esc(o.description)}</p></div>`
+            : `<p class="dv-desc-none">Описание — у агента: в объявлении только параметры и цена.</p>`}</section>
         ${contactHTML(o)}
-        ${facts ? `<dl class="dv-facts">${facts}</dl>` : ""}
+        ${gone ? "" : `<div class="dv-acts">${actions}</div>`}
         ${o.lat && o.lon && !o.loading && ["street", "district"].includes(o.geo_level)
           ? `<p class="dv-vague">Адрес уточняется — в объявлении ${o.geo_level === "street" ? "указана только улица" : "указан только район"}, поэтому на карте объекта нет.</p>` : ""}
         ${o.lat && o.lon && !o.loading && !["street", "district"].includes(o.geo_level) ? `<div class="dv-map-wrap"><div class="dv-map" id="dvMap" aria-label="Объект на карте"></div>
           ${o.geo_approx ? `<p class="note dv-map-note">Место примерное — в объявлении нет точного адреса</p>` : ""}</div>` : ""}
-        ${o.description ? `<div class="dv-desc clamp"><p>${esc(o.description)}</p><button type="button" class="dv-desc-more" data-desc-more>Читать полностью</button></div>`
-          : `<p class="dv-desc-none">Описание — у агента: в объявлении только параметры и цена.</p>`}
         <div class="dv-accs">
           ${acc("📈", "Цена и рынок", priceHint, priceBody)}
-          ${acc(ic("users"), "Клиенты и заметки", [pairs.length ? `у клиентов: ${pairs.length}` : "", fit.length ? `подходит: ${fit.length}` : "",
-            (o.work || []).length ? `записей: ${o.work.length}` : o.note ? "есть заметка" : ""].filter(Boolean).join(" · "), notesBody, { cls: fit.length ? "good" : "" })}
+          ${acc(ic("users"), "Клиенты", [pairs.length ? `у клиентов: ${pairs.length}` : "", fit.length ? `подходит ${fit.length}` : "",
+            (o.work || []).length ? `записей: ${o.work.length}` : o.note ? "есть заметка" : ""].filter(Boolean).join(" · ") || "заметки и журнал", notesBody, { cls: fit.length ? "good" : "" })}
           ${acc("📅", "В планере", plans.length ? `${plans.length}` : "", plansBody)}
-          ${acc("👥", "Похожие у других агентов", `${same.length}`, sameBody)}
+          ${acc("👥", "Похожие", `у других агентов: ${same.length}`, sameBody)}
           ${acc("🕓", "История", hist ? `${o.history_total || H.length} ${plural(o.history_total || H.length, "сообщение", "сообщения", "сообщений")}` : "", histBody)}
           ${o.can_edit ? `<a class="dv-acc-btn" href="/my/edit?id=${o.id}" target="_top"><span class="dv-acc-ic">✎</span>Изменить моё объявление</a>` : ""}
           ${acc("⚙", "Админ", "", adminBody, { cls: "admin" })}
@@ -1081,7 +1108,8 @@
         </div>
         <p class="dv-foot">Появилось на 1+1: ${esc(fmtAgo(o.first_seen))} · последний раз присылали: ${esc(fmtAgo(o.last_seen))}</p>
         ${brandLine("поиск объектов Краснодара из риелторских чатов")}
-      </div>`;
+      </div>
+      ${bar}`;
   }
 
 
@@ -1381,6 +1409,8 @@
     $("placePriceLabel").textContent = rent ? "Цена, тыс. ₽/мес (если разобралась неверно)" : "Цена, млн ₽ (если разобралась неверно)";
     f.price.value = o.price ? String(+(o.price / (rent ? 1000 : 1e6)).toFixed(rent ? 0 : 3)).replace(".", ",") : "";
     f.price.dataset.orig = f.price.value;
+    f.price.dataset.money = rent ? "rent" : "sale";
+    if (window.moneyHints) window.moneyHints(document);
     // 18.10: все характеристики — в этом же окне
     const FV = { type: o.type === "new" ? "flat" : o.type, deal: o.deal || "sale", rooms: o.rooms == null ? "" : String(Math.min(o.rooms, 5)),
       room_kind: o.room_kind || "", area: o.area ?? "", land: o.land ?? "", floor: o.floor ?? "", floors: o.floors ?? "",
@@ -1514,13 +1544,14 @@
       const pretty = (p) => { const d = p.replace(/\D/g, ""); return d.length === 11 ? `+7 ${d.slice(1, 4)} ${d.slice(4, 7)}-${d.slice(7, 9)}-${d.slice(9)}` : p; };
       // 19.10: выбор агента на /agent — без кнопки MAX; номер не подтверждён агентом — честная пометка и «Это мой номер»
       const pm = o.phones_meta || {};
-      return `<div class="dv-contacts"><span class="dv-contacts-h">${o.phones.length > 1 ? "Контакты агентов" : "Контакт агента"}</span>${o.phones.map((p) => {
+      return `<div class="dv-contacts"><span class="dv-contacts-h">${o.phones.length > 1 ? "Контакты агентов" : "Контакт агента"}</span>${o.phones.map((p, i) => {
         const m = pm[p] || {};
-        return `<div class="dv-phone"><a class="dv-phone-num" href="tel:${esc(p)}">${esc(pretty(p))}</a>
-          <a class="dv-ic-btn" href="tel:${esc(p)}" aria-label="Позвонить" title="Позвонить">${ic("phone")}</a>
-          ${m.no_max ? "" : `<button type="button" class="dv-ic-btn dv-max" data-max="${esc(p)}" aria-label="Написать в MAX" title="Написать в MAX">MAX</button>`}</div>
-          ${o.phones_meta && !m.confirmed ? `<p class="dv-unconf">Номер из объявления в чате — агент его ещё не подтвердил · <a href="/agent" target="_top">Это мой номер</a></p>` : ""}`;
-      }).join("")}${o.sender_phone ? `<p class="dv-sender">Прислал в чат: <a href="tel:${esc(o.sender_phone)}">${esc(pretty(o.sender_phone))}</a></p>` : ""}${o.url ? `<a class="dv-site${o.source === "feed" ? " strely" : ""}" href="${esc(o.url)}" target="_blank" rel="noopener">${o.source === "feed"
+        const sub = [o.phones_meta && !m.confirmed ? `не подтверждён · <a href="/agent" target="_top">это мой</a>` : (m.confirmed ? "проверенный агент" : ""),
+          i === 0 && o.sender_phone ? `прислал <a href="tel:${esc(o.sender_phone)}">${esc(pretty(o.sender_phone))}</a>` : ""].filter(Boolean).join(" · ");
+        return `<div class="dv-phone"><div class="dv-phone-l"><a class="dv-phone-num" href="tel:${esc(p)}">${esc(pretty(p))}</a>
+          ${sub ? `<small class="dv-phone-s">${sub}</small>` : ""}</div>
+          ${m.no_max ? "" : `<button type="button" class="dv-ic-btn dv-max" data-max="${esc(p)}" aria-label="Написать в MAX" title="Написать в MAX">MAX</button>`}</div>`;
+      }).join("")}${o.url ? `<a class="dv-site${o.source === "feed" ? " strely" : ""}" href="${esc(o.url)}" target="_blank" rel="noopener">${o.source === "feed"
         ? `${STRELY}<span>Объект партнёра «СТРЕЛЫ» — смотреть на arrowsrealty.ru</span>${ic("external")}` : `${ic("link")}Объявление на сайте агентства`}</a>` : ""}</div>`;
     }
     if (o.phones_limit) {
@@ -1545,7 +1576,7 @@
   }
 
   function reportHTML(o) {
-    return `<details class="dv-acc d-report"><summary><span class="dv-acc-ic">⚠</span><span class="dv-acc-t">Сообщить об ошибке</span></summary>
+    return `<details class="dv-acc d-report"><summary><span class="dv-acc-ic">⚠</span><span class="dv-acc-t">Ошибка?</span><span class="dv-acc-h">сообщить</span></summary>
       <form class="report-form" data-report="${o.id}">
         <select name="reason">
           <option value="sold">Объект продан или неактуален</option>
@@ -2028,6 +2059,7 @@
     $("watchRoomsT").textContent = o.room_kind === "studio" || o.rooms === 0 ? "Только студии" : o.rooms ? `Только ${o.rooms}-комнатные` : "Только такие же по комнатам";
     f.same_rooms.parentElement.hidden = o.rooms == null;
     $("watchPriceT").textContent = rent ? "Цена до, тыс. ₽/мес (пусто — любая)" : "Цена до, млн ₽ (пусто — любая)";
+    f.price.dataset.money = rent ? "rent" : "sale";
     f.price.value = o.price ? String(+(o.price / (rent ? 1000 : 1e6)).toFixed(rent ? 0 : 2)).replace(".", ",") : "";
     const sync = () => { $("watchMore").hidden = f.scope.value === "price"; };
     f.onchange = sync; sync();
@@ -2047,8 +2079,8 @@
     p.set("deal", o.deal || "sale");
     if (o.type) p.set("type", o.type === "new" ? "flat" : o.type);
     if (f.same_rooms.checked && o.rooms != null && !f.same_rooms.parentElement.hidden) p.set("rooms", String(Math.min(o.rooms, 4)));
-    const pv = toNum(f.price.value);
-    if (pv != null) p.set("price_max", Math.round(pv * (o.deal === "rent" ? 1000 : 1e6)));
+    const pv = window.moneyRub ? window.moneyRub(f.price.value, o.deal) : null;   // «5», «5000», «5000000» — одно и то же
+    if (pv != null) p.set("price_max", pv);
     if (scope === "cx") p.set("complex", o.complex);
     if (scope === "house" || scope === "street") { p.set("street", o.street); if (scope === "house") p.set("house", o.house); }
     // адрес страницы для «Показать» в уведомлении — те же фильтры, что понимает главная

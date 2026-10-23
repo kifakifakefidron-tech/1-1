@@ -158,3 +158,43 @@ def test_detect_repair_phrases():
     assert [t for t in no if rules.detect_repair(t) != "no"] == []
     assert [t for t in yes if rules.detect_repair(t) != "yes"] == []
     assert rules.detect_repair("2к 54 м 6 млн") is None
+
+
+def test_repair_stricter_and_doubt():
+    """24.10 (Артём): одно слово «ремонт» — не «с ремонтом»; «ремонт под себя», «можно сделать ремонт» — без ремонта;
+    сомнительные тексты — в очередь «Ремонт»."""
+    from app import rules
+    assert rules.detect_repair("2к, ремонт, мебель, техника") == "yes"           # пункт списка
+    assert rules.detect_repair("Состояние: ремонт") == "yes"
+    assert rules.detect_repair("можно сделать ремонт по своему вкусу") == "no"
+    assert rules.detect_repair("мебель и техника остаются") is None
+    assert rules.detect_repair("стоимость ремонта обсуждаем") is None and rules.repair_doubt("стоимость ремонта обсуждаем")
+    assert not rules.repair_doubt("2к 54 м 6 млн") and not rules.repair_doubt("евроремонт")
+
+
+def test_admin_repair_answer_teaches_same_text():
+    """24.10: ответ в очереди «Ремонт» снимает «под вопросом» и запоминается для того же текста."""
+    import time
+
+    from app import db, ingest
+    conn = db.connect(":memory:")
+    text = "2-к квартира 50 м², 3/9 эт., ФМР, ул. Тургенева 10. Стоимость ремонта обсуждаем. 6 млн. 89180000931"
+    m = ingest.add_message(conn, source="wa", text=text, chat_id="c", msg_id="r1", ts=int(time.time()))
+    lid = ingest.process_message(conn, m, use_llm=False)["results"][0]["listing_id"]
+    assert conn.execute("SELECT repair, repair_doubt FROM listings WHERE id = ?", (lid,)).fetchone()[:] == (None, 1)
+    assert ingest.set_fields(conn, lid, {"repair": "no"}, 1)["ok"]
+    assert conn.execute("SELECT repair, repair_doubt FROM listings WHERE id = ?", (lid,)).fetchone()[:] == ("no", 0)
+    assert conn.execute("SELECT COUNT(*) FROM learned_rules WHERE kind = 'frag_repair'").fetchone()[0] >= 1
+
+
+def test_new_pick_is_client():
+    """24.10 (Артём): подборка всегда для клиента — имя создаёт клиента и его подборку; то же имя ещё раз — та же подборка."""
+    from app import accounts, db, picks
+    conn = db.connect(":memory:")
+    u = accounts.upsert_email_user(conn, "a@x.ru")
+    a = picks.for_client_name(conn, u, "Жора")
+    assert a["made_client"] and a["client_name"] == "Жора"
+    b = picks.for_client_name(conn, u, "  жора ")
+    assert b["id"] == a["id"] and not b["made_client"]
+    assert conn.execute("SELECT COUNT(*) FROM clients WHERE user_id = ?", (u["id"],)).fetchone()[0] == 1
+    assert "error" in picks.for_client_name(conn, u, "  ")

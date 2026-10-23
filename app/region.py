@@ -23,13 +23,26 @@ def _rx() -> re.Pattern | None:
     places = [words(p) for p in config.BLOCKED_PLACES if words(p)]
     if not places:
         return None
-    return re.compile(r"(?:^|\s)(?:" + "|".join(re.escape(p) for p in places) + r")")
+    return re.compile(r"(?:^|\s)(?:" + "|".join(re.escape(p) for p in places) + r")([а-яa-z]*)")
+
+
+# 24.10: «Ставропольская», «Ростовское шоссе», «Новороссийская», «Анапская», «Крымская», «Сочинская» — улицы и районы
+# Краснодара, а не другой город: прилагательное («-ская/-ское…») чат и объект не отсекает (чат «ЮМР Ставропольская аренда»)
+_ADJ = re.compile(r"(?:с|ск|ьск|инск|овск|ийск)?(?:ая|ой|ое|ого|ую|ий|им|их|ие|ом|ей|ую)$")
 
 
 def is_foreign(name: str | None) -> bool:
     """Название чата или населённого пункта относится к другому городу/побережью."""
     rx = _rx()
-    return bool(name and rx and rx.search(words(name)))
+    if not (name and rx):
+        return False
+    for m in rx.finditer(words(name)):
+        rest = m.group(1)
+        word = m.group(0).strip()
+        if rest and _ADJ.search(word) and re.search(r"ск(?:ая|ой|ое|ого|ую|ий|им|их|ие|ом)$", word):
+            continue   # прилагательное — улица/шоссе Краснодара
+        return True
+    return False
 
 
 _blocked: dict = {"t": 0.0, "set": set()}
@@ -237,3 +250,25 @@ def purge_blocked(conn: sqlite3.Connection, now: int | None = None) -> dict:
         done["chats"] += 1
     conn.commit()
     return done
+
+
+def unhide_streets(conn: sqlite3.Connection) -> dict:
+    """24.10, один раз: чаты/посёлки с названием-улицей Краснодара («Ставропольская», «Ростовское шоссе») раньше считались
+    чужим городом. Вернуть такие чаты, их пропущенные сообщения (на разбор) и объекты, скрытые только из-за них."""
+    blocked = blocked_set(conn, fresh=True)
+    conn.create_function("excluded_chat", 3, lambda s, cid, n: int(is_foreign(n) or (s, cid or "") in blocked),
+                         deterministic=True)
+    chats = conn.execute("UPDATE chats SET foreign_place = 0 WHERE foreign_place = 1 AND excluded_chat(source, chat_id, name) = 0").rowcount
+    msgs = conn.execute("""UPDATE messages SET status = 'new', error = NULL
+                           WHERE status = 'skipped' AND error = 'чат исключён' AND excluded_chat(source, chat_id, chat_name) = 0""").rowcount
+    back = 0
+    for r in conn.execute("SELECT id, settlement FROM listings WHERE is_active = 0 AND hidden_reason = 'chat' AND source = 'chat'").fetchall():
+        if r["settlement"] and is_foreign(r["settlement"]):
+            continue
+        bad = conn.execute("""SELECT 1 FROM listing_events e JOIN messages m ON m.id = e.message_id
+                              WHERE e.listing_id = ? AND excluded_chat(m.source, m.chat_id, m.chat_name) = 0 LIMIT 1""", (r["id"],)).fetchone()
+        if bad:   # есть сообщение из «своего» чата — объект возвращается
+            conn.execute("UPDATE listings SET is_active = 1, hidden_reason = NULL WHERE id = ?", (r["id"],))
+            back += 1
+    conn.commit()
+    return {"chats": chats, "messages": msgs, "listings": back}

@@ -122,6 +122,30 @@ def save(conn: sqlite3.Connection, user, body: dict) -> dict:
     return next(c for c in mine(conn, user["id"]) if c["id"] == int(cid))
 
 
+def for_client_name(conn: sqlite3.Connection, user, name: str) -> dict:
+    """24.10 (Артём: «подборка связана с клиентом — без двойной работы»): новая подборка = имя клиента. Такой клиент уже
+    есть — открываем его подборку (дубля нет); нет — создаём карточку клиента и его подборку разом."""
+    from . import clients
+    name = re.sub(r"\s+", " ", str(name or "")).strip()[:80]
+    if not name:
+        return {"error": "Напишите имя клиента — подборка будет для него."}
+    low = name.lower().replace("ё", "е")
+    found = next((r["id"] for r in conn.execute("SELECT id, name FROM clients WHERE user_id = ? AND archived = 0", (user["id"],))
+                  if (r["name"] or "").strip().lower().replace("ё", "е") == low), None)
+    made_client = False
+    if found is None:
+        res = clients.save(conn, user["id"], {"name": name, "kind": "buyer"}, user)
+        if "error" in res:
+            return res
+        found = res["client"]["id"]
+        made_client = True
+    pid = clients.ensure_pick(conn, user, found)
+    if pid is None:
+        return {"error": "Не получилось создать подборку."}
+    pick = next(c for c in mine(conn, user["id"]) if c["id"] == pid)
+    return {**pick, "made_client": made_client}
+
+
 def _sync_client(conn: sqlite3.Connection, cid: int, listing_id: int | None = None) -> None:
     """Объекты подборки клиента — у клиента со статусом «Отправлен» (вперёд только: «показ» не откатывается)."""
     from . import clients

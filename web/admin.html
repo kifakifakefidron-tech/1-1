@@ -16,9 +16,9 @@
 <link rel="stylesheet" href="/static/vendor/fonts/fonts.css?v=1">
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
-<link rel="stylesheet" href="/static/admin.css?v=16">
-<link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=79">
+<link rel="stylesheet" href="/static/admin.css?v=17">
+<link rel="stylesheet" href="/static/theme.css?v=16">
+<link rel="stylesheet" href="/static/glass.css?v=86">
 </head>
 <body>
 <header class="top">
@@ -61,11 +61,14 @@
       <div class="st" id="stats"></div></section>
 
     <section data-pane="users" hidden>
+      <div class="adm-usum" id="userSum"></div>
       <form class="inline-form adm-search" id="userSearch">
-        <input id="userQ" placeholder="Поиск: ник, почта, телефон, имя">
+        <input id="userQ" placeholder="Поиск: ник, почта, телефон, имя, №">
+        <select id="userSort" aria-label="Порядок"><option value="last">Сначала заходившие недавно</option><option value="new">Сначала новые регистрации</option></select>
         <button class="pill light">Найти</button>
       </form>
-      <div class="adm-table-wrap"><table class="adm-table" id="users"></table></div>
+      <div class="adm-table-wrap"><table class="adm-table adm-users" id="users"></table></div>
+      <div class="adm-pager" id="userPager"></div>
     </section>
 
     <section data-pane="promos" hidden>
@@ -152,10 +155,10 @@
 </main>
 <div class="chat-toast" id="chatToast" hidden></div>
 <script src="/static/icons.js?v=9"></script>
-<script src="/static/pickers.js?v=16"></script>
+<script src="/static/pickers.js?v=17"></script>
 <script src="/static/max.js?v=2"></script>
-<script src="/static/rail.js?v=26"></script>
+<script src="/static/rail.js?v=28"></script>
 <script src="/static/combo.js?v=3"></script>
-<script src="/static/admin.js?v=46"></script>
+<script src="/static/admin.js?v=47"></script>
 </body>
 </html>

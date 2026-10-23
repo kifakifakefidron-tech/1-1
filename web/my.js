@@ -183,11 +183,9 @@
   function updatePreview() {
     const v = formVals();
     const deal = v.deal || o.deal || "sale";
-    const raw = String(v.price || "").replace(/\s/g, "").replace(",", ".");
-    const n = Number(raw);
-    let price = 0;
-    if (n > 0) price = deal === "rent" ? n : n < 1000 ? n * 1e6 : n;
-    $("myPriceHint").textContent = price ? `= ${Math.round(price).toLocaleString("ru-RU")} ₽${deal === "rent" ? " в месяц" : ""}` : (deal === "rent" ? "Например: 35000" : "В миллионах: 6,5 = 6 500 000 ₽");
+    // 24.10: общее правило цены (pickers.js moneyRub, на сервере app/money.py): «6,5», «6500», «6500000» — одно и то же
+    const price = (window.moneyRub && window.moneyRub(v.price, deal)) || 0;
+    $("myPriceHint").textContent = price ? `= ${Math.round(price).toLocaleString("ru-RU")} ₽${deal === "rent" ? " в месяц" : ""}` : (deal === "rent" ? "Например: 40 (тыс.) или 40000" : "Например: 6,5 — это миллионы ₽");
     $("myUnit").textContent = deal === "rent" ? "₽ в месяц" : "млн ₽";
     const desc = $("myForm").description.value;
     $("myLen").textContent = desc.length;

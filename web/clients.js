@@ -379,6 +379,8 @@
     const rent = ["tenant", "landlord"].includes(form.kind);
     $("fBudgetL").textContent = rent ? "Бюджет от, тыс ₽/мес" : "Бюджет от, млн ₽";
     $("fBudgetH").textContent = rent ? "Бюджет до, тыс ₽/мес" : "Бюджет до, млн ₽";
+    document.querySelectorAll('#pCard [name="budget_min"], #pCard [name="budget_max"]').forEach((i) => { i.dataset.money = rent ? "rent" : "sale"; i.placeholder = rent ? "например, 40" : "например, 5"; });
+    if (window.moneyHints) window.moneyHints(document);
     $("fKind").innerHTML = Object.entries(data.kinds).map(([k, t]) => `<button type="button" class="chip${form.kind === k ? " on" : ""}" data-fkind="${k}">${esc(t)}</button>`).join("");
     $("fRooms").innerHTML = ROOMS.map(([k, t]) => `<button type="button" class="chip${form.rooms.includes(k) ? " on" : ""}" data-froom="${k}">${t}</button>`).join("");
     $("fDistricts").innerHTML = "";   // выбранные районы видны в самой кнопке списка — без дублей чипами

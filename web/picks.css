@@ -430,3 +430,74 @@
 .pk2-hid-ph i { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink); }
 .pk2-hid-ph i svg { width: 16px; height: 16px; }
 .pk2-hid-ph:hover img { opacity: .8; filter: none; }
+
+/* ═══ 24.10 ПОДБОРКИ v5 (образец «максимально просто»): объект — строка, настройки раскрываются ═══ */
+.pk5-hero h2 { margin: 0 0 6px; font-size: clamp(26px, 3vw, 36px); }
+.pk5-hero .pk2-hero-m { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.pk5-cl { color: var(--gold); text-decoration: underline; text-underline-offset: 3px; font-weight: 600; background: none; border: 0; padding: 0;
+  font: 600 14px var(--body); cursor: pointer; }
+.pk5-cl.warn { color: #ffb4a3; }
+.pk5-upd { color: var(--ink-3); font-size: 13px; }
+.pk5-share { position: relative; }
+.pk5-more { position: relative; }
+.pk5-more > summary { list-style: none; cursor: pointer; }
+.pk5-more > summary::-webkit-details-marker { display: none; }
+.pk5-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; display: grid; min-width: 250px; padding: 6px; border-radius: 16px;
+  background: rgba(4, 44, 43, .98); border: 1px solid var(--glass-line); box-shadow: 0 18px 40px rgba(0, 0, 0, .35); }
+.pk5-menu button { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 0; border-radius: 10px; background: none;
+  color: var(--ink); font: 500 14px var(--body); text-align: left; cursor: pointer; }
+.pk5-menu button:hover { background: rgba(255, 255, 255, .06); }
+.pk5-menu button.danger { color: #ffb4a3; border-top: 1px solid var(--glass-line); border-radius: 0 0 10px 10px; margin-top: 4px; }
+.pk5-menu svg { width: 16px; height: 16px; }
+.pk2-grid.pk5-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.pk5-row { padding: 0 !important; border-radius: 18px; border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .035);
+  transition: border-color .2s, background .2s; min-width: 0; }
+.pk5-row.on { border-color: var(--gold-300, var(--gold)); background: rgba(255, 255, 255, .05); }
+.pk5-row.drag { opacity: .5; }
+.pk5-line { display: flex; align-items: center; gap: 12px; padding: 10px 14px; min-width: 0; cursor: grab; }
+.pk5-grip { color: var(--ink-3); font-size: 18px; line-height: 1; user-select: none; }
+.pk5-n { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font: 700 13px var(--body);
+  background: var(--gold); color: #0f2f2e; }
+.pk5-ph { flex: none; width: 56px; height: 48px; border-radius: 10px; overflow: hidden; background: rgba(255, 255, 255, .06);
+  display: grid; place-items: center; color: var(--ink-3); }
+.pk5-ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pk5-t { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.pk5-t a { color: var(--ink); text-decoration: none; }
+.pk5-t b { display: block; font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk5-t small { color: var(--ink-3); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk5-price { flex: none; font: 600 20px var(--head, var(--body)); color: var(--gold-100, var(--ink)); }
+.pk5-price.off { font: 500 13px var(--body); color: var(--ink-3); }
+.pk5-st { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font: 600 12px var(--body);
+  border: 1px solid var(--glass-line); color: var(--ink-2); }
+.pk5-st i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pk5-st.open, .pk5-st.ok { background: #b7e4c7; border-color: #b7e4c7; color: #0d3b26; }
+.pk5-st.sent { color: var(--gold); border-color: rgba(227, 203, 143, .5); }
+.pk5-st.bad { color: #ffb4a3; border-color: rgba(255, 180, 163, .4); }
+.pk5-tog { flex: none; padding: 8px 14px; border-radius: 12px; border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .04);
+  color: var(--ink); font: 600 13px var(--body); cursor: pointer; }
+.pk5-tog.on { background: var(--gold); border-color: var(--gold); color: #0f2f2e; }
+.pk5-body { padding: 4px 16px 14px; border-top: 1px solid var(--glass-line); animation: riseIn .28s var(--ease) both; }
+.pk5-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-top: 12px; }
+.pk5-col { display: grid; gap: 12px; align-content: start; min-width: 0; }
+.pk5-col .pk2-pin { display: grid; gap: 6px; } .pk5-col .pk2-pin > span small { color: var(--ink-3); }
+.pk5-pin { display: flex; align-items: center; gap: 8px; }
+.pk5-pin input { flex: 1; min-width: 0; }
+.pk5-pin em { font-style: normal; color: var(--ink-3); font-size: 13px; }
+.pk5-com { display: grid; gap: 6px; } .pk5-com span { font-size: 13px; color: var(--ink-2); }
+.pk5-acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--glass-line); }
+.pk5-acts .chip { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.pk5-acts .chip svg { width: 15px; height: 15px; }
+.pk5-acts .chip.danger { color: #ffb4a3; }
+.pk5-sp { flex: 1; }
+.pk5-addbtn { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; margin: 12px 0 0; padding: 14px; border-radius: 16px;
+  border: 1.5px dashed var(--glass-line-2, var(--glass-line)); background: none; color: var(--ink-2); font: 600 14px var(--body); cursor: pointer; }
+.pk5-addbtn:hover, .pk5-addbtn.on { border-color: var(--gold); color: var(--gold); }
+.pk5-addbtn svg { width: 16px; height: 16px; }
+@media (max-width: 760px) {
+  .pk5-cols { grid-template-columns: minmax(0, 1fr); }
+  .pk5-line { flex-wrap: wrap; gap: 8px 10px; padding: 10px 12px; cursor: default; }
+  .pk5-grip { display: none; }
+  .pk5-t { flex-basis: calc(100% - 110px); }
+  .pk5-price { margin-left: 40px; font-size: 18px; }
+  .pk5-tog { margin-left: auto; }
+}

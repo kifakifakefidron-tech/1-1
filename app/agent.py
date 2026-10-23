@@ -287,14 +287,11 @@ def _too_many_edits(conn, user_id: int) -> bool:
                         (user_id, int(time.time()) - 3600)).fetchone()[0] >= 60
 
 
-def _clean_price(v) -> int | None:
-    """Цена в рублях; «6,5» — это миллионы."""
-    try:
-        x = float(re.sub(r"[\s ₽]", "", str(v)).replace(",", "."))
-    except (TypeError, ValueError):
-        return None
-    n = int(round(x * 1_000_000 if x < 1000 else x))
-    return n if 5_000 <= n <= 3_000_000_000 else None
+def _clean_price(v, deal: str | None = "sale") -> int | None:
+    """Цена в рублях по общему правилу (app/money.py): продажа «6,5» — млн, «6500» — тыс.; аренда «35» — тыс./мес."""
+    from . import money
+    n = money.to_rub(v, deal)
+    return n if n and 5_000 <= n <= 3_000_000_000 else None
 
 
 def edit_listing(conn: sqlite3.Connection, user: sqlite3.Row, listing_id: int, data: dict) -> tuple[bool, str]:
@@ -312,7 +309,7 @@ def edit_listing(conn: sqlite3.Connection, user: sqlite3.Row, listing_id: int, d
             continue
         v = data[k]
         if k == "price":
-            v = _clean_price(v)
+            v = _clean_price(v, data.get("deal") or row["deal"])
             if v is None:
                 return False, "Проверьте цену."
         elif k in ("rooms", "floor", "floors"):
@@ -379,7 +376,7 @@ def create_own(conn: sqlite3.Connection, user: sqlite3.Row, data: dict) -> tuple
                     (user["id"], int(time.time()) - DAY)).fetchone()[0] >= 20:
         return None, "Не больше 20 новых объектов в сутки."
     t = data.get("type") if data.get("type") in ("flat", "room", "house", "land", "commercial") else None
-    price = _clean_price(data.get("price"))
+    price = _clean_price(data.get("price"), "rent" if data.get("deal") == "rent" else "sale")
     if not t or not price:
         return None, "Укажите тип объекта и цену."
     if not any(str(data.get(k) or "").strip() for k in ("district", "complex", "street")):
