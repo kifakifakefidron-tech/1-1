@@ -175,8 +175,8 @@
       <div class="pk2-ob">
         <b class="pk2-price${it.hide_price ? " off" : ""}">${it.hide_price ? "Цена скрыта от клиента" : esc(money(it.my_price || it.price, it.deal))}</b>
         <div class="pk2-prow">
-          <label class="pk2-pin"><span>Цена для клиента</span>
-            <input data-pprice="${it.listing_id}" data-pid="${p.id}" data-deal="${it.deal}" inputmode="decimal" autocomplete="off"
+          <label class="pk2-pin money-wrap"><span>Цена для клиента</span>
+            <input data-pprice="${it.listing_id}" data-pid="${p.id}" data-deal="${it.deal}" data-money="${it.deal === "rent" ? "rent" : "sale"}" inputmode="decimal" autocomplete="off"
               value="${it.my_price ? esc(priceIn(it.my_price, it.deal)) : ""}" placeholder="${esc(priceIn(it.price, it.deal) || "впишите")}"
               aria-label="Цена для клиента"${it.hide_price ? " disabled" : ""}><em>${it.deal === "rent" ? "тыс. ₽/мес" : "млн ₽"}</em></label>
           <label class="pk2-phide"><input type="checkbox" data-phide="${it.listing_id}" data-pid="${p.id}"${it.hide_price ? " checked" : ""}>Скрыть цену</label>

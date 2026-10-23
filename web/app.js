@@ -1381,6 +1381,8 @@
     $("placePriceLabel").textContent = rent ? "Цена, тыс. ₽/мес (если разобралась неверно)" : "Цена, млн ₽ (если разобралась неверно)";
     f.price.value = o.price ? String(+(o.price / (rent ? 1000 : 1e6)).toFixed(rent ? 0 : 3)).replace(".", ",") : "";
     f.price.dataset.orig = f.price.value;
+    f.price.dataset.money = rent ? "rent" : "sale";
+    if (window.moneyHints) window.moneyHints(document);
     // 18.10: все характеристики — в этом же окне
     const FV = { type: o.type === "new" ? "flat" : o.type, deal: o.deal || "sale", rooms: o.rooms == null ? "" : String(Math.min(o.rooms, 5)),
       room_kind: o.room_kind || "", area: o.area ?? "", land: o.land ?? "", floor: o.floor ?? "", floors: o.floors ?? "",
@@ -2028,6 +2030,7 @@
     $("watchRoomsT").textContent = o.room_kind === "studio" || o.rooms === 0 ? "Только студии" : o.rooms ? `Только ${o.rooms}-комнатные` : "Только такие же по комнатам";
     f.same_rooms.parentElement.hidden = o.rooms == null;
     $("watchPriceT").textContent = rent ? "Цена до, тыс. ₽/мес (пусто — любая)" : "Цена до, млн ₽ (пусто — любая)";
+    f.price.dataset.money = rent ? "rent" : "sale";
     f.price.value = o.price ? String(+(o.price / (rent ? 1000 : 1e6)).toFixed(rent ? 0 : 2)).replace(".", ",") : "";
     const sync = () => { $("watchMore").hidden = f.scope.value === "price"; };
     f.onchange = sync; sync();
@@ -2047,8 +2050,8 @@
     p.set("deal", o.deal || "sale");
     if (o.type) p.set("type", o.type === "new" ? "flat" : o.type);
     if (f.same_rooms.checked && o.rooms != null && !f.same_rooms.parentElement.hidden) p.set("rooms", String(Math.min(o.rooms, 4)));
-    const pv = toNum(f.price.value);
-    if (pv != null) p.set("price_max", Math.round(pv * (o.deal === "rent" ? 1000 : 1e6)));
+    const pv = window.moneyRub ? window.moneyRub(f.price.value, o.deal) : null;   // «5», «5000», «5000000» — одно и то же
+    if (pv != null) p.set("price_max", pv);
     if (scope === "cx") p.set("complex", o.complex);
     if (scope === "house" || scope === "street") { p.set("street", o.street); if (scope === "house") p.set("house", o.house); }
     // адрес страницы для «Показать» в уведомлении — те же фильтры, что понимает главная

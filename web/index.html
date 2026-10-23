@@ -29,7 +29,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=15">
-<link rel="stylesheet" href="/static/glass.css?v=79">
+<link rel="stylesheet" href="/static/glass.css?v=80">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -385,7 +385,7 @@
     <form id="placeForm" class="agent-form">
       <label class="agent-field"><span>ЖК (пусто — без ЖК)</span><input name="complex" id="placeComplex" autocomplete="off" placeholder="Название ЖК"></label>
       <label class="agent-field"><span>Район</span><input name="district" id="placeDistrict" placeholder="Найти район…"></label>
-      <label class="agent-field"><span id="placePriceLabel">Цена, млн ₽ (если разобралась неверно)</span><input name="price" id="placePrice" inputmode="decimal" autocomplete="off"></label>
+      <label class="agent-field"><span id="placePriceLabel">Цена, млн ₽ (если разобралась неверно)</span><input name="price" id="placePrice" data-money="sale" inputmode="decimal" autocomplete="off"></label>
       <div class="adm-fields" id="placeFields">
         <p class="adm-fields-h">Характеристики <small>— поправьте, что разобралось неверно; повторы объявления правку не перетрут</small></p>
         <div class="adm-fgrid">
@@ -436,7 +436,7 @@
       <div class="watch-opts" id="watchOpts"></div>
       <div class="watch-more" id="watchMore">
         <label class="check"><input type="checkbox" name="same_rooms" checked> <span id="watchRoomsT">Только такие же по комнатам</span></label>
-        <label class="agent-field"><span id="watchPriceT">Цена до, млн ₽ (пусто — любая)</span><input name="price" inputmode="decimal" autocomplete="off"></label>
+        <label class="agent-field"><span id="watchPriceT">Цена до, млн ₽ (пусто — любая)</span><input name="price" data-money="sale" inputmode="decimal" autocomplete="off"></label>
       </div>
       <p class="note">Новые объекты придут в «Уведомления» — и на почту, если она привязана.</p>
       <div class="dlg-actions"><button type="button" class="ghost" data-close>Отмена</button><button type="submit" class="pill">Следить</button></div>
@@ -450,14 +450,14 @@
 </dialog>
 
 <script src="/static/icons.js?v=9"></script>
-<script src="/static/pickers.js?v=16"></script>
+<script src="/static/pickers.js?v=17"></script>
 <script src="/static/max.js?v=2"></script>
 <script src="/static/rail.js?v=26"></script>
 <script src="/static/combo.js?v=3"></script>
 <script src="/static/yasel.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/app.js?v=129"></script>
+<script src="/static/app.js?v=130"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>

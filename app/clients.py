@@ -94,17 +94,9 @@ def _clean(body: dict) -> dict:
     stage = body.get("stage") if body.get("stage") in STAGES else "new"
     deal = "rent" if body.get("deal") == "rent" or kind in ("tenant", "landlord") else "sale"
 
-    def money(v):
-        s = re.sub(r"[^\d,.]", "", str(v or "")).replace(",", ".")
-        try:
-            x = float(s)
-        except ValueError:
-            return None
-        if deal == "sale":
-            x = x * 1e6 if x < 1000 else x
-        else:
-            x = x * 1000 if x < 1000 else x
-        return int(x) if x > 0 else None
+    def money(v):   # общее правило (app/money.py): «5» = 5 млн, «5000» = 5 млн, «5000000» — рубли; аренда «40» = 40 тыс.
+        from . import money as _m
+        return _m.to_rub(v, deal)
     rooms = sorted({int(x) for x in (body.get("rooms") or []) if str(x).isdigit() and 0 <= int(x) <= 5})
     districts = []
     for d in body.get("districts") or []:

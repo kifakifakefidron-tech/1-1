@@ -1185,3 +1185,7 @@ summary { transition: color .2s var(--m-out); }
 .watch-more { display: grid; gap: 10px; margin-bottom: 10px; }
 .house-chip { display: flex; align-items: center; gap: 8px; }
 .house-chip .ic { width: 16px; height: 16px; color: var(--gold); }
+
+/* 24.10: подсказка под полем цены — как сервис понял число */
+.money-hint { display: block; margin-top: 4px; font-size: 12.5px; color: var(--ink-3); line-height: 1.35; }
+.money-hint.ok { color: var(--gold); }

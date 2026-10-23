@@ -9,6 +9,49 @@
    если код меняет значение поля сам (sel.value = …, новые варианты, form.reset) — кнопка обновится сама.
    Панель открывается ВНУТРИ открытого окна (dialog): иначе браузер считает её «за окном» и не даёт нажимать. */
 
+// ─── 24.10: ЦЕНА В ПОЛЕ ВВОДА — одно правило на всём сайте (как app/money.py на сервере) ─────────────────────
+// Продажа: до 1000 — миллионы («5», «6,5»), до 100 000 — тысячи («5000» = 5 млн), больше — рубли («5000000»).
+// Аренда: до 1000 — тысячи в месяц («40»), больше — рубли («40000»). Полям цены — data-money="sale|rent":
+// под полем живая подсказка «= 5 млн ₽» (как сервис понял число), пустое — «Например: 5 или 6,5 — это миллионы».
+(() => {
+  window.moneyRub = (v, deal) => {
+    let s = String(v ?? "").replace(/[^\d,.]/g, "").replace(",", ".");
+    if ((s.match(/\./g) || []).length > 1) s = s.replace(/\./g, "");
+    const x = Number(s);
+    if (!s || !(x > 0)) return null;
+    if (deal === "rent") return Math.round(x < 1000 ? x * 1000 : x);
+    return Math.round(x < 1000 ? x * 1e6 : x < 100000 ? x * 1000 : x);
+  };
+  const fmt = (r, deal) => {
+    const n = (v, d) => v.toLocaleString("ru-RU", { maximumFractionDigits: d });
+    const s = r >= 1e6 ? `${n(r / 1e6, 2)} млн ₽` : r >= 1000 ? `${n(r / 1000, 0)} тыс. ₽` : `${n(r, 0)} ₽`;
+    return deal === "rent" ? `${s} в месяц` : s;
+  };
+  function hint(inp) {
+    const deal = inp.dataset.money === "rent" ? "rent" : "sale";
+    let h = inp.__moneyHint;
+    if (!h || !h.isConnected) {
+      h = document.createElement("small");
+      h.className = "money-hint";
+      (inp.closest(".money-wrap, .my-price") || inp).after(h);
+      inp.__moneyHint = h;
+    }
+    const r = window.moneyRub(inp.value, deal);
+    h.classList.toggle("ok", !!r);
+    h.textContent = r ? `= ${fmt(r, deal)}` : (deal === "rent" ? "Например: 40 — это 40 тыс. ₽ в месяц" : "Например: 5 или 6,5 — это миллионы ₽");
+  }
+  const scan = (root) => (root.querySelectorAll ? root : document).querySelectorAll("input[data-money]").forEach(hint);
+  document.addEventListener("input", (e) => { if (e.target.matches && e.target.matches("input[data-money]")) hint(e.target); });
+  document.addEventListener("focusin", (e) => { if (e.target.matches && e.target.matches("input[data-money]")) hint(e.target); });
+  window.moneyHints = scan;
+  const start = () => {
+    scan(document);
+    new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1 && (n.matches("input[data-money]") || n.querySelector("input[data-money]"))) scan(n.parentNode || n); })
+      .observe(document.body, { childList: true, subtree: true });
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
+})();
+
 // ─── 18.10: ЛЮБОЕ окно на ЛЮБОЙ странице закрывается плавно ────────────────────────────────────────────────
 // Раньше плавно закрывались только крестик/свайп/Esc, а ~30 мест в коде (сохранить, отмена, «Изменить»…) звали
 // dialog.close() — окно исчезало рывком. Теперь close() сам проигрывает анимацию ухода (.closing из motion/glass.css)

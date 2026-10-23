@@ -145,6 +145,8 @@
     $("fxPriceLabel").textContent = rent ? "Цена, тыс. ₽/мес" : "Цена, млн ₽";
     $("fxPriceIn").value = it.price ? String(+(it.price / (rent ? 1000 : 1e6)).toFixed(rent ? 0 : 3)).replace(".", ",") : "";
     $("fxPriceIn").dataset.orig = $("fxPriceIn").value;
+    $("fxPriceIn").dataset.money = rent ? "rent" : "sale";
+    if (window.moneyHints) window.moneyHints(document);
     // 18.10: все характеристики — здесь же
     const FV = { type: it.type === "new" ? "flat" : it.type, deal: it.deal || "sale", rooms: it.rooms == null ? "" : String(Math.min(it.rooms, 5)),
       room_kind: it.room_kind || "", area: it.area ?? "", land: it.land ?? "", floor: it.floor ?? "", floors: it.floors ?? "",

@@ -1918,17 +1918,10 @@ _VISIBLE = "l.is_active = 1 AND (l.district IS NOT NULL OR l.complex IS NOT NULL
 
 
 def _parse_admin_price(v, deal: str) -> int | None:
-    """«3,2» → 3 200 000 (продажа, млн); «35» → 35 000 (аренда, тыс.); «3 200 000» — как есть."""
-    s = re.sub(r"[^\d,.]", "", str(v or "")).replace(",", ".")
-    try:
-        x = float(s)
-    except ValueError:
-        return None
-    if deal == "rent":
-        x = x * 1000 if x < 1000 else x
-    else:
-        x = x * 1e6 if x < 1000 else x * 1000 if x < 100_000 else x
-    return int(round(x)) if 1000 <= x <= 5_000_000_000 else None
+    """«3,2» → 3 200 000 (продажа, млн); «35» → 35 000 (аренда, тыс.); «3200» → 3,2 млн; «3 200 000» — как есть."""
+    from . import money
+    x = money.to_rub(v, deal)
+    return x if x and 1000 <= x <= 5_000_000_000 else None
 
 
 def api_admin_place(request: Request, body: dict | None = None):
