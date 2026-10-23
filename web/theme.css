@@ -331,3 +331,7 @@ dialog .close .ic { width: 17px; height: 17px; margin: 0; }
   box-shadow: 0 1px 4px rgba(3, 40, 39, .18); }
 .dz-label-wrap.show .dz-label { display: inline-block; }
 .dz-label-wrap.on .dz-label { background: #e3cb8f; color: #12302f; }
+
+/* 24.10: плашка «В Яндекс Картах» — у выделенного текста (left/top ставит yasel.js) */
+.ya-bar.at { bottom: auto; transform: translateY(6px); max-width: min(560px, calc(100vw - 16px)); }
+.ya-bar.at.in { transform: none; }
