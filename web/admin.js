@@ -215,15 +215,34 @@
   }
 
   // ─── пользователи ───────────────────────────────────────────────────────
+  // 24.10: все пользователи — последний заход, регистрация, как входит, номера, доступ, оплаты и что делает на сайте
+  let userPage = 1;
   async function users() {
-    const { items } = await call(`/api/admin/users?q=${encodeURIComponent($("userQ").value)}`);
-    $("users").innerHTML = `<tr><th>#</th><th>Telegram</th><th>Почта</th><th>Телефон</th><th>Доступ до</th><th>Зарегистрирован</th><th></th></tr>` +
-      items.map((u) => {
+    const d = await call(`/api/admin/users?q=${encodeURIComponent($("userQ").value)}&sort=${$("userSort").value}&page=${userPage}`);
+    const s = d.summary || {};
+    $("userSum").innerHTML = [["Всего", s.total], ["Новых за сутки", s.new_1d], ["Новых за неделю", s.new_7d], ["Заходили за сутки", s.seen_1d],
+      ["Заходили за неделю", s.seen_7d], ["С доступом сейчас", s.access], ["Оплатили", s.paid], ["Подтвердили номер", s.verified]]
+      .map(([k, v]) => `<span><b>${v ?? 0}</b>${k}</span>`).join("");
+    const ago = (ts) => {
+      if (!ts) return "—";
+      const m = Math.round((now() - ts) / 60);
+      return m < 2 ? "сейчас" : m < 60 ? `${m} мин назад` : m < 1440 ? `${Math.round(m / 60)} ч назад` : `${day(ts)}`;
+    };
+    $("users").innerHTML = `<tr><th>#</th><th>Кто</th><th>Последний заход</th><th>Регистрация</th><th>Доступ</th><th>Работа на сайте</th><th></th></tr>` +
+      d.items.map((u) => {
         const until = Math.max(u.trial_until, u.paid_until);
         const status = u.blocked ? `<span class="bad">заблокирован</span>`
-          : u.is_admin ? "админ" : until > now() ? `<span class="ok">${day(until)}</span>${u.paid_until > now() ? " (оплачен)" : " (пробный)"}` : "нет";
-        return `<tr><td>${u.id}</td><td>${u.tg_username ? "@" + esc(u.tg_username) : "—"}<br><small>${esc(u.name || "")}</small></td>
-          <td>${esc(u.email || "—")}</td><td>${esc(u.phone || "—")}</td><td>${status}</td><td>${day(u.created)}</td>
+          : u.is_admin ? "админ" : until > now() ? `<span class="ok">до ${day(until)}</span>${u.paid_until > now() ? " · оплачен" : " · пробный"}` : "нет";
+        const work = [[u.n_clients, "клиентов"], [u.n_picks, "подборок"], [u.n_fav, "в избранном"], [u.n_saved, "поисков"],
+          [u.n_events, "в планере"], [u.n_own, "своих объектов"]].filter(([n]) => n).map(([n, t]) => `${n} ${t}`).join(" · ") || "—";
+        return `<tr><td>${u.id}</td>
+          <td><b>${esc(u.name || u.email || u.phone || (u.tg_username ? "@" + u.tg_username : "—"))}</b>
+            <small>${[u.email, u.phone, u.tg_username ? "@" + u.tg_username : ""].filter(Boolean).map(esc).join(" · ")}</small>
+            <small>вход: ${esc(u.login)}${u.verified_phones ? ` · подтверждён ${esc(u.verified_phones)}` : ""}${u.mail_off ? " · письма выкл." : ""}${u.ref_email ? ` · пригласил ${esc(u.ref_email)}` : ""}</small></td>
+          <td>${ago(u.last_seen)}<small>${u.n_sessions || 0} устр.</small></td>
+          <td>${day(u.created)}<small>${u.consent_at ? "согласие есть" : "без согласия"}</small></td>
+          <td>${status}${u.paid_sum ? `<small>оплачено ${u.paid_sum.toLocaleString("ru-RU")} ₽</small>` : ""}</td>
+          <td><small>${work}</small></td>
           <td class="acts">
             <button data-u="${u.id}" data-a="extend" data-days="7">+7 дн.</button>
             <button data-u="${u.id}" data-a="extend" data-days="30">+30 дн.</button>
@@ -232,7 +251,17 @@
             <button data-u="${u.id}" data-a="${u.is_admin ? "unadmin" : "admin"}">${u.is_admin ? "Снять админа" : "Сделать админом"}</button>
           </td></tr>`;
       }).join("");
+    $("userPager").innerHTML = d.pages > 1 ? `<button class="chip" data-upage="-1"${userPage <= 1 ? " disabled" : ""}>← Назад</button>
+      <span>стр. ${userPage} из ${d.pages} · найдено ${d.total}</span>
+      <button class="chip" data-upage="1"${userPage >= d.pages ? " disabled" : ""}>Дальше →</button>` : `<span>найдено ${d.total}</span>`;
   }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-upage]");
+    if (!b) return;
+    userPage = Math.max(1, userPage + Number(b.dataset.upage));
+    users();
+  });
+  document.addEventListener("change", (e) => { if (e.target.id === "userSort") { userPage = 1; users(); } });
 
   // ─── промокоды ──────────────────────────────────────────────────────────
   async function promos() {
@@ -675,7 +704,7 @@
     } catch (err) { fail(err); }
   });
 
-  $("userSearch").addEventListener("submit", (e) => { e.preventDefault(); users().catch(fail); });
+  $("userSearch").addEventListener("submit", (e) => { e.preventDefault(); userPage = 1; users().catch(fail); });
   $("chatSearch").addEventListener("submit", (e) => e.preventDefault());
   $("chatQ").addEventListener("input", renderChats);
   $("spQ").addEventListener("input", spRenderList);
