@@ -70,26 +70,43 @@ def make_search_text(o: dict) -> str:
     return norm(" ".join(str(b) for b in bits if b))
 
 
+def _learned_repair(conn: sqlite3.Connection, listing_id: int) -> str | None:
+    """24.10: этот же текст админ уже разбирал в очереди «Ремонт» — его ответ ('yes' / 'no' / '' = не указано)."""
+    r = conn.execute("""SELECT r.value FROM learned_rules r WHERE r.kind = 'frag_repair' AND r.key IN
+                        (SELECT fragment_hash FROM listing_events WHERE listing_id = ? AND fragment_hash IS NOT NULL)
+                        ORDER BY r.ts DESC LIMIT 1""", (listing_id,)).fetchone()
+    if not r:
+        return None
+    try:
+        return str(json.loads(r[0]).get("repair") or "")
+    except (TypeError, ValueError):
+        return None
+
+
 def _reindex(conn: sqlite3.Connection, listing_id: int, text: str) -> None:
     conn.execute("DELETE FROM listings_fts WHERE rowid = ?", (listing_id,))
     conn.execute("INSERT INTO listings_fts(rowid, search_text) VALUES (?, ?)", (listing_id, text))
-    # состояние «с ремонтом / без ремонта» — по тому же тексту (фильтр «Ремонт»)
+    # состояние «с ремонтом / без ремонта» — по тому же тексту (фильтр «Ремонт»); тот же текст админ уже разбирал — его ответ
+    learned = _learned_repair(conn, listing_id)
+    rep = (learned or None) if learned is not None else rules.detect_repair(text)
+    doubt = 0 if learned is not None else int(rules.repair_doubt(text))
     conn.execute("""UPDATE listings SET repair = CASE WHEN json_type(admin_fields, '$.repair') IS NOT NULL
-                    THEN NULLIF(json_extract(admin_fields, '$.repair'), '') ELSE ? END WHERE id = ?""",
-                 (rules.detect_repair(text), listing_id))   # ремонт, поправленный админом, не пересчитываем
+                    THEN NULLIF(json_extract(admin_fields, '$.repair'), '') ELSE ? END,
+                    repair_doubt = CASE WHEN json_type(admin_fields, '$.repair') IS NOT NULL THEN 0 ELSE ? END WHERE id = ?""",
+                 (rep, doubt, listing_id))   # ремонт, поправленный админом, не пересчитываем
 
 
-REPAIR_V = "4"
+REPAIR_V = "5"   # 24.10: правило строже («ремонт» одним словом — не «с ремонтом»), отметка «под вопросом», ответы админа
 
 
 def backfill_repair(conn: sqlite3.Connection) -> int:
-    """Один раз после обновления правил (state repair_v): проставить состояние всем объектам."""
+    """Один раз после обновления правил (state repair_v): проставить состояние всем объектам (поправленные админом — как есть)."""
     from . import db
     if db.get_state(conn, "repair_v") == REPAIR_V:
         return 0
     n = 0
     for r in conn.execute("SELECT id, search_text FROM listings").fetchall():
-        conn.execute("UPDATE listings SET repair = ? WHERE id = ?", (rules.detect_repair(r["search_text"]), r["id"]))
+        _reindex(conn, r["id"], r["search_text"] or "")
         n += 1
     db.set_state(conn, "repair_v", REPAIR_V)
     conn.commit()
@@ -503,7 +520,7 @@ def set_fields(conn: sqlite3.Connection, listing_id: int, fields: dict, user_id:
         cur = r["repair"] if k == "repair" else r[k]
         if k == "repair":
             val = None if val in (None, "none") else val
-        if val != cur:
+        if val != cur or (k == "repair" and r["repair_doubt"]):   # ответ в очереди «Ремонт» — даже если совпал с догадкой
             ch[k] = val
     if not ch:
         return {"ok": True, "changed": {}}
@@ -529,6 +546,9 @@ def set_fields(conn: sqlite3.Connection, listing_id: int, fields: dict, user_id:
     _reindex(conn, listing_id, st)
     learn_listing_fix(conn, listing_id, "frag_fields", {k: v for k, v in adm.items() if k != "repair"},
                       "характеристики: " + ", ".join(FIELD_SPEC[k][1] for k in ch))
+    if "repair" in ch:   # 24.10: ответ по ремонту — тот же текст в других сообщениях сразу с этим ответом
+        learn_listing_fix(conn, listing_id, "frag_repair", {"repair": ch["repair"] or ""},
+                          f"{r['title']}: ремонт — {dict(yes='с ремонтом', no='без ремонта').get(ch['repair'] or '', 'не указано')}")
     conn.commit()
     return {"ok": True, "changed": ch}
 

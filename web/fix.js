@@ -123,6 +123,12 @@
       it.settlement ? esc(it.settlement) : "",
     ].filter(Boolean).join(" · ");
     $("fxText").textContent = it.text;
+    // 24.10: очередь «Ремонт» — слова о состоянии подсвечены, ответ — одной кнопкой под текстом
+    $("fxRepair").hidden = kind !== "repair";
+    if (kind === "repair") {
+      $("fxText").innerHTML = esc(it.text || "").replace(/(ремонт\S*|отделк\S*|чистов\S*|предчистов\S*|пчо|п\/чо|white\s*box|чернов\S*|состояни\S*|бетон\S*)/gi, "<mark>$1</mark>");
+      $("fxRepairGuess").textContent = `сервис думает: ${{ yes: "с ремонтом", no: "без ремонта" }[it.repair] || "не указано"}`;
+    }
     $("fxOpen").href = `/?open=${it.id}`;
     $("fxYaAll").href = yaHref(it);
     $("fxPhoto").hidden = !it.photo;
@@ -362,7 +368,15 @@
   }
 
   // ─── сохранение ───────────────────────────────────────────────────────
-  let busy = false;
+  let busy = false, repairPick = null;
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-repair-pick]");
+    if (!b || !item) return;
+    repairPick = b.dataset.repairPick;
+    const sel = document.querySelector('#fxFields [name="f_repair"]');
+    if (sel) sel.value = repairPick;
+    submit();
+  });
   async function submit(extra) {
     if (!item || busy) return;
     busy = true;
@@ -372,6 +386,8 @@
     const priceChanged = !!$("fxPriceIn").value.trim() && $("fxPriceIn").value !== $("fxPriceIn").dataset.orig;
     const fields = {};
     document.querySelectorAll("#fxFields [name^='f_']").forEach((el) => { if (el.value !== el.dataset.orig) fields[el.name.slice(2)] = el.value; });
+    if (kind === "repair" && repairPick) fields.repair = repairPick;   // ответ засчитываем, даже если совпал с догадкой
+    repairPick = null;
     const fieldsChanged = Object.keys(fields).length > 0;
     const placeChanged = (chosenDistrict || null) !== (item.district || null) || $("fxComplex").value.trim() !== (item.complex || "")
       || extraDistricts.join("|") !== (item.extra_districts || []).join("|") || priceChanged || fieldsChanged;

@@ -61,6 +61,10 @@ QUEUES: list[dict] = [
                   ORDER BY (l.id * 7919 + CAST(strftime('%Y%j', 'now') AS INTEGER) * 104729) % 1000003) AS rn
                   FROM listings l WHERE {VISIBLE} AND {_AUTO_ALL}
                   AND NOT EXISTS (SELECT 1 FROM auto_reviews a WHERE a.listing_id = l.id)) WHERE rn <= {SAMPLE_PER_SOURCE})"""},
+    {"key": "repair", "mode": "place", "label": "Ремонт: проверьте",
+     "hint": "В тексте говорят о состоянии, но сервис не уверен: с ремонтом, без ремонта или не указано. Ваш ответ — правило "
+             "для этого текста во всех чатах, по ответам видно, где правило ошибается",
+     "where": "l.repair_doubt = 1 AND json_type(l.admin_fields, '$.repair') IS NULL AND l.type IN ('flat', 'new', 'house', 'room')"},
     {"key": "fixed", "mode": "place", "label": "Поправлено вами", "hint": "Ваши правки — можно пересмотреть",
      "where": "l.admin_fixed = 1"},
 ]

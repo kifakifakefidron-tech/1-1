@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.min.css">
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
-<link rel="stylesheet" href="/static/fix.css?v=16">
+<link rel="stylesheet" href="/static/fix.css?v=17">
 <link rel="stylesheet" href="/static/theme.css?v=16">
 <link rel="stylesheet" href="/static/glass.css?v=86">
 </head>
@@ -53,6 +53,15 @@
       <div class="fx-gal" id="fxGal" data-lb="fix"></div>
       <div class="fx-facts" id="fxFacts"></div>
       <pre class="fx-text" id="fxText"></pre>
+      <!-- 24.10: очередь «Ремонт» — ответ одним нажатием, сразу следующий объект; ответ учит сервис -->
+      <div class="fx-repair" id="fxRepair" hidden>
+        <p class="fx-repair-q">Что с ремонтом? <small id="fxRepairGuess"></small></p>
+        <div class="fx-repair-b">
+          <button type="button" class="pill" data-repair-pick="yes">С ремонтом</button>
+          <button type="button" class="pill" data-repair-pick="no">Без ремонта</button>
+          <button type="button" class="pill light" data-repair-pick="none">Не указано</button>
+        </div>
+      </div>
       <div class="fx-phones" id="fxPhones"></div>
       <a class="fx-open" id="fxOpen" target="_blank">Открыть объект на сайте ↗</a>
       <a class="fx-open ya-link" id="fxYaAll" target="_blank" rel="noopener">🔎 Адрес в Яндекс Картах ↗</a>
@@ -146,6 +155,6 @@
 <script src="/static/combo.js?v=3"></script>
 <script src="/static/yasel.js?v=4"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/fix.js?v=25"></script>
+<script src="/static/fix.js?v=26"></script>
 </body>
 </html>

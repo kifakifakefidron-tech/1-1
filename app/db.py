@@ -385,6 +385,7 @@ MIGRATIONS = [
     ("collection_items", "photos", "TEXT"),
     ("collection_items", "photo_order", "TEXT"),   # 18.10: {"order": [url…], "hidden": [url…]} — фото для клиента по порядку
     ("listings", "repair", "TEXT"),
+    ("listings", "repair_doubt", "INTEGER"),   # 24.10: ремонт «под вопросом» — очередь разбора «Ремонт»
     ("listings", "added_at", "INTEGER"),
     ("listings", "admin_fields", "TEXT"),   # 18.10: характеристики, поправленные админом (JSON) — повторы их не перетирают
     ("phone_codes", "method", "TEXT"),       # 17.10: NULL/'max' — код в MAX, 'call' — звонок (SMS.ru callcheck)
