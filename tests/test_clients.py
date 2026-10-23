@@ -78,7 +78,7 @@ def test_picks_clients_and_worklog_tied(env):
     assert p["client_name"] == "Анна" and p["color"] == "violet"
     c.post(f"/api/picks/{p['id']}/items", json={"listing_id": b, "add": True})
     items = {x["id"]: x["status"] for x in c.get(f"/api/clients?id={cid}").json()["items"]}
-    assert items == {a: "sent", b: "sent"}
+    assert items == {a: "added", b: "added"}   # 24.10b: в подборке — «Добавлен», «Отправлен» — когда скопировали ссылку
     # клиент видит свой заголовок, а не название подборки
     assert c.get(f"/api/c/{p['token']}").json()["title"] == "Квартиры для вас"
     # заметка «показ» по подборке → про клиента Анну, объект у неё «показан»

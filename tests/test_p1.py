@@ -54,7 +54,10 @@ def test_client_flow_pick_match_reactions(env):
     r = c.post(f"/api/clients/{cid}/topick", json={"ids": [a]}).json()
     pick = r["pick"]
     d = c.get(f"/api/clients?id={cid}").json()
-    assert {x["id"]: x["status"] for x in d["items"]} == {a: "sent"} and d["client"]["stage"] == "search"
+    assert {x["id"]: x["status"] for x in d["items"]} == {a: "added"} and d["client"]["stage"] == "search"   # 24.10b: «Добавлен»
+    c.post("/api/picks", json={"sent_token": pick["url"].rsplit("/", 1)[1]})   # ссылку скопировали → «Отправлен»
+    d = c.get(f"/api/clients?id={cid}").json()
+    assert {x["id"]: x["status"] for x in d["items"]} == {a: "sent"}
     assert conn.execute("SELECT COUNT(*) FROM favorites").fetchone()[0] == 0
     assert c.get(f"/api/clients/{cid}/match").json()["total"] == 0          # уже у клиента — в подборе не повторяется
     token = pick["url"].rsplit("/", 1)[1]
@@ -93,7 +96,7 @@ def test_delete_pick_forgets_its_statuses_and_manual_stage_is_kept(env):
     c.post("/api/clients", json={"id": cid, "name": "Оля", "stage": "talks"})
     pid = c.post(f"/api/clients/{cid}/add", json={"listing_id": a}).json()["pick"]["id"]
     d = c.get(f"/api/clients?id={cid}").json()
-    assert d["items"][0]["status"] == "sent" and d["client"]["stage"] == "talks"   # этап агент ставил сам — не трогаем
+    assert d["items"][0]["status"] == "added" and d["client"]["stage"] == "talks"   # этап агент ставил сам — не трогаем
     c.request("DELETE", "/api/picks", json={"id": pid})
     d = c.get(f"/api/clients?id={cid}").json()
     assert d["items"] == [] and any("Убран из подборки" in x["text"] for x in d["log"])

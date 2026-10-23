@@ -35,7 +35,7 @@
   const COLORS = ["gold", "teal", "sky", "violet", "coral", "rose", "lime", "slate"];
   const NK = { note: "Заметка", call: "Звонок", show: "Показ", meet: "Встреча" };
   // статус объекта для клиента подборки (одна пара клиент+объект) и ответ клиента со страницы подборки
-  const PAIR = { sent: "Отправлен", opened: "Открыл", liked: "Понравился", rejected: "Не подходит", show: "Показ",
+  const PAIR = { added: "Добавлен", sent: "Отправлен", opened: "Открыл", liked: "Понравился", rejected: "Не подходит", show: "Показ",
     talks: "Переговоры", deal: "Сделка", lost: "Отказ", matched: "Подобран" };
   const REACT = { like: ["Нравится", "ok"], no: ["Не подходит", "bad"], want_show: ["Хочет посмотреть", "ok"], question: ["Вопрос", "gold"] };
   let clientFilter = 0, baseQ = "", baseRes = null, baseTimer = 0;
@@ -171,10 +171,10 @@
   }
   // 24.10 (образец Артёма «Подборки — максимально просто»): объект — строка (⠿, номер, фото, название, цена, статус,
   // «Настроить»); всё для клиента — в раскрытой строке: цена, фото, статус, текст, комментарий, порядок, запись, убрать
-  const ST_CLS = { sent: "sent", opened: "open", liked: "ok", rejected: "bad", show: "ok", talks: "ok", deal: "ok", lost: "bad", matched: "sent" };
+  const ST_CLS = { added: "added", sent: "sent", opened: "open", liked: "ok", rejected: "bad", show: "ok", talks: "ok", deal: "ok", lost: "bad", matched: "sent" };
   function objCard(p, it, i) {
     const on = openRows.has(it.listing_id);
-    const st = it.status || "sent";
+    const st = it.status || "added";
     return `<article class="pk2-obj pk5-row${on ? " on" : ""}${it.is_active ? "" : " gone"}" draggable="true" data-lid="${it.listing_id}" data-pid="${p.id}" style="--i:${i}">
       <div class="pk5-line">
         <span class="pk5-grip" title="Перетащите, чтобы поменять порядок" aria-hidden="true">⠿</span>
@@ -377,7 +377,10 @@ ${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
   }
   window.addEventListener("click", (e) => {   // «Поделиться» ловит max.js (document, capture) — window срабатывает раньше
     const b = e.target.closest("[data-need-me]");
-    if (b && needMe(list.find((x) => x.id === Number(b.dataset.needMe)))) { e.preventDefault(); e.stopImmediatePropagation(); }
+    if (!b) return;
+    const pk = list.find((x) => x.id === Number(b.dataset.needMe));
+    if (needMe(pk)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+    if (pk) { window.pickSent(link(pk)); setTimeout(reload, 800); }   // 24.10b: поделились — «Отправлен»
   }, true);
   document.addEventListener("click", async (e) => {
     const t = e.target.closest("button, [data-open]");
@@ -402,7 +405,7 @@ ${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
     if (t.dataset.copy) {
       const p = list.find((x) => x.id === Number(t.dataset.copy));
       if (needMe(p)) return;
-      try { await navigator.clipboard.writeText(link(p)); toast("Ссылка скопирована — отправьте её клиенту"); }
+      try { await navigator.clipboard.writeText(link(p)); toast("Ссылка скопирована — отправьте её клиенту"); window.pickSent(link(p)); setTimeout(reload, 600); }
       catch { prompt("Скопируйте ссылку:", link(p)); }
       return;
     }
@@ -546,7 +549,7 @@ ${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
     if (f.dataset.then) {   // из окна «Ссылку пока нельзя отправить» — сразу копируем
       const d = $("pkNeedMe"); if (d && d.open) d.close();
       const p = list.find((x) => x.id === Number(f.dataset.me));
-      if (p) { try { await navigator.clipboard.writeText(link(p)); toast("Сохранено. Ссылка скопирована — отправьте её клиенту", 3000); }
+      if (p) { try { await navigator.clipboard.writeText(link(p)); toast("Сохранено. Ссылка скопирована — отправьте её клиенту", 3000); window.pickSent(link(p)); }
         catch { prompt("Скопируйте ссылку:", link(p)); } }
     }
   });

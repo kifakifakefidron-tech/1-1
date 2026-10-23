@@ -434,7 +434,7 @@
 
   // «Клиенту ▾» (ТЗ v2): одна кнопка вместо «В подборку» и «Клиенту». Выбрали клиента — объект в его подборке
   // (статус «Отправлен»), ссылку можно сразу скопировать. Новый клиент — прямо здесь. «Без клиента» — вторым пунктом.
-  const PAIR_L = { matched: "подобран", sent: "отправлен", opened: "открыл", liked: "понравился", rejected: "не подходит",
+  const PAIR_L = { matched: "подобран", added: "добавлен", sent: "отправлен", opened: "открыл", liked: "понравился", rejected: "не подходит",
     show: "показ", talks: "переговоры", deal: "сделка", lost: "отказ" };
   let cmData = null, cmFor = 0, cmDone = null;
   function cmDlg() {
@@ -2194,6 +2194,7 @@
       }
       if (t.dataset.copyUrl !== undefined) {
         navigator.clipboard.writeText(t.dataset.copyUrl).then(() => toast("Ссылка на подборку скопирована"), () => prompt("Скопируйте ссылку:", t.dataset.copyUrl));
+        window.pickSent && window.pickSent(t.dataset.copyUrl);
         return;
       }
 

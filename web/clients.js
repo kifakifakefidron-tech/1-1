@@ -535,6 +535,7 @@ ${lines.join("\n")}`;
     const r = await call(`/api/clients/${cur.client.id}/topick`, { ids });
     if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
     try { await navigator.clipboard.writeText(r.data.pick.url); } catch { /* */ }
+    window.pickSent && window.pickSent(r.data.pick.url);
     toast(`В подборке «${r.data.pick.title}»: +${r.data.added}. Ссылка скопирована — отправьте клиенту`, 4200);
     await refreshCur(); load(); match();
   }
@@ -549,6 +550,7 @@ ${lines.join("\n")}`;
     if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
     const url = r.data.pick.url;
     try { await navigator.clipboard.writeText(url); } catch { /* */ }
+    window.pickSent && window.pickSent(url);
     toast(`Добавлено в «${r.data.pick.title}»: ${r.data.added}. Ссылка для клиента скопирована`, 4000);
     await refreshCur();
     matchSince = 0; match();
@@ -634,7 +636,7 @@ ${lines.join("\n")}`;
       return;
     }
     if (t.dataset.copyPick) {
-      try { await navigator.clipboard.writeText(t.dataset.copyPick); toast("Ссылка скопирована — отправьте клиенту"); }
+      try { await navigator.clipboard.writeText(t.dataset.copyPick); toast("Ссылка скопирована — отправьте клиенту"); window.pickSent && window.pickSent(t.dataset.copyPick); }
       catch { prompt("Скопируйте ссылку:", t.dataset.copyPick); }
       return;
     }

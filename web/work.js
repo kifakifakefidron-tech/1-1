@@ -18,7 +18,7 @@
   let allClients = [], match = null;   // 17.10: выбранный клиент → объекты под его пожелания (тот же подбор, что в карточке клиента)
   if (!["all", "with", "without", "hidden"].includes(tab)) tab = "all";
   const TABS = { all: "Всё избранное", with: "У клиентов", without: "Без клиента", hidden: "Скрытые" };
-  const PC = { matched: "slate", sent: "sky", opened: "sky", liked: "ok", rejected: "bad", show: "gold", talks: "violet", deal: "ok", lost: "bad" };
+  const PC = { matched: "slate", added: "slate", sent: "sky", opened: "sky", liked: "ok", rejected: "bad", show: "gold", talks: "violet", deal: "ok", lost: "bad" };
   const REASONS = { sold: "Продан или снят", no_coop: "Не сотрудничаю", not_fit: "Не подходит", other: "Скрыт" };
 
   async function call(url, body, method) {
