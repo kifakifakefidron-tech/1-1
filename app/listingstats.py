@@ -109,3 +109,31 @@ def summary(conn: sqlite3.Connection, user_id: int) -> dict:
             "phone": sum(s["phone"] for s in st.values()), "picks": sum(s["picks"] for s in st.values()),
             "top": [{"id": r["id"], "title": r["title"], "complex": r["complex"], "price": r["price"], "deal": r["deal"],
                      **st.get(r["id"], {})} for r in top]}
+
+
+RECENT_KEEP = 40
+
+
+def remember(conn: sqlite3.Connection, user_id: int, listing_id: int) -> None:
+    """24.10: «Недавно смотрели» — человек открыл объект. База занята — пропускаем (это не главное)."""
+    try:
+        conn.execute("""INSERT INTO recent_views (user_id, listing_id, ts) VALUES (?, ?, ?)
+                        ON CONFLICT(user_id, listing_id) DO UPDATE SET ts = excluded.ts""", (user_id, listing_id, int(time.time())))
+        conn.execute("""DELETE FROM recent_views WHERE user_id = ? AND listing_id NOT IN
+                        (SELECT listing_id FROM recent_views WHERE user_id = ? ORDER BY ts DESC LIMIT ?)""",
+                     (user_id, user_id, RECENT_KEEP))
+        conn.commit()
+    except sqlite3.OperationalError:
+        conn.rollback()
+
+
+def recent(conn: sqlite3.Connection, user_id: int, limit: int = 8) -> list[dict]:
+    out = []
+    for r in conn.execute("""SELECT l.id, l.title, l.complex, l.district, l.street, l.house, l.price, l.deal, l.photos,
+                                    l.is_active, l.price_doubt, v.ts
+                             FROM recent_views v JOIN listings l ON l.id = v.listing_id
+                             WHERE v.user_id = ? ORDER BY v.ts DESC LIMIT ?""", (user_id, limit)):
+        ph = json.loads(r["photos"] or "[]")
+        out.append({k: r[k] for k in ("id", "title", "complex", "district", "street", "house", "price", "deal", "is_active", "ts")}
+                   | {"photo": ph[0] if ph else None, "price_doubt": bool(r["price_doubt"])})
+    return out

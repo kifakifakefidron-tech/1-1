@@ -525,6 +525,9 @@ def api_listing(request: Request, body: dict | None = None):
         if not own_view:
             from . import listingstats
             listingstats.record(conn, lid, _who(request))
+        if user:   # 24.10: «Недавно смотрели» в кабинете
+            from . import listingstats as _ls
+            _ls.remember(conn, user["id"], lid)
     if access and phones:   # 19.10: выбор агента (согласие на /agent) — подтверждён ли номер, без имени, без кнопки MAX
         from . import consent
         pf = consent.prefs(conn)
