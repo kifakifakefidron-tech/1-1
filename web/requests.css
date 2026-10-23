@@ -57,3 +57,11 @@
   color: var(--gold); border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent); }
 .rq-agent svg { width: 13px; height: 13px; }
 .rq-item.pinned { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
+
+/* 24.10 (Артём: «выровнять карточки запросов»): карточки в ряду — одной высоты, дата и номер всегда внизу, на одной линии */
+.rq-list { align-items: stretch; }
+.rq-item { height: 100%; }
+.rq-text { flex: 0 0 auto; }
+.rq-foot { margin-top: auto; padding-top: 10px; }
+.rq-phones { margin-top: 0; padding-top: 8px; }
+.rq-chips { min-height: 28px; align-content: flex-start; }
