@@ -39,6 +39,9 @@
     talks: "Переговоры", deal: "Сделка", lost: "Отказ", matched: "Подобран" };
   const REACT = { like: ["Нравится", "ok"], no: ["Не подходит", "bad"], want_show: ["Хочет посмотреть", "ok"], question: ["Вопрос", "gold"] };
   let clientFilter = 0, baseQ = "", baseRes = null, baseTimer = 0;
+  const openRows = new Set();   // 24.10: раскрытые строки «Настроить»
+  let addOpen = false;          // 24.10: «+ Добавить объект» раскрыт
+  let gripDown = false;         // строку тянем только за ⠿ (иначе мешает выделять текст в полях)
   const when = (ts) => new Date(ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   let open = Number(new URLSearchParams(location.search).get("open")) || 0;
   const isPhone = () => matchMedia("(max-width: 900px)").matches;
@@ -145,7 +148,7 @@
         <rect x="36" y="112" width="58" height="8" rx="4" class="f"/><rect x="36" y="126" width="38" height="6" rx="3" class="d"/>
         <circle cx="196" cy="110" r="22" class="g"/><path d="M186 110l7 7 13-14" class="h"/></svg>
       <h2>${list.length ? "Выберите подборку слева" : "Первая подборка — за минуту"}</h2>
-      <ol class="pk2-steps"><li><b>1</b><span>Назовите подборку — например, по имени клиента</span></li>
+      <ol class="pk2-steps"><li><b>1</b><span>Впишите имя клиента наверху — заведём клиента и его подборку разом</span></li>
         <li><b>2</b><span>Добавьте объекты из избранного или кнопкой «В подборку» в окне объекта</span></li>
         <li><b>3</b><span>Отправьте ссылку — увидите, когда клиент её откроет</span></li></ol>
       ${list.length ? "" : `<button type="button" class="pill" data-focus-new>${ic("plus")}Создать подборку</button>`}</div>`;
@@ -166,39 +169,56 @@
       ${hid.length ? `<div class="pk2-hid"><span>Скрыто от клиента:</span>${hid.map((u) => `<button type="button" class="pk2-hid-ph" data-ph-unhide="${esc(u)}" data-lid="${it.listing_id}" data-pid="${p.id}" title="Вернуть клиенту"><img src="${esc(u)}" alt="" loading="lazy"><i>${ic("plus")}</i></button>`).join("")}</div>` : ""}
     </div>`;
   }
+  // 24.10 (образец Артёма «Подборки — максимально просто»): объект — строка (⠿, номер, фото, название, цена, статус,
+  // «Настроить»); всё для клиента — в раскрытой строке: цена, фото, статус, текст, комментарий, порядок, запись, убрать
+  const ST_CLS = { sent: "sent", opened: "open", liked: "ok", rejected: "bad", show: "ok", talks: "ok", deal: "ok", lost: "bad", matched: "sent" };
   function objCard(p, it, i) {
-    return `<article class="pk2-obj${it.is_active ? "" : " gone"}" draggable="true" data-lid="${it.listing_id}" data-pid="${p.id}" style="--i:${i}">
-      <button type="button" class="pk2-rm" data-rm="${it.listing_id}" data-pid="${p.id}" aria-label="Убрать из подборки" title="Убрать из подборки">${ic("x")}</button>
-      <a class="pk2-ph" href="/?open=${it.listing_id}">${it.photo ? `<img src="${esc(it.photo)}" alt="" loading="lazy">` : `<span class="ph-none"><img src="/static/favicon.svg" alt=""><small>Фото у агента</small></span>`}
-        <span class="pk2-num">${i + 1}</span>${it.is_active ? "" : `<span class="pk2-gone">Снят с сайта</span>`}</a>
-      ${it.is_active ? "" : `<button type="button" class="pk2-sim" data-sim="${it.listing_id}" data-pid="${p.id}">${ic("repeat")}Снят — показать похожие</button>`}
-      <div class="pk2-ob">
-        <b class="pk2-price${it.hide_price ? " off" : ""}">${it.hide_price ? "Цена скрыта от клиента" : esc(money(it.my_price || it.price, it.deal))}</b>
-        <div class="pk2-prow">
-          <label class="pk2-pin money-wrap"><span>Цена для клиента</span>
-            <input data-pprice="${it.listing_id}" data-pid="${p.id}" data-deal="${it.deal}" data-money="${it.deal === "rent" ? "rent" : "sale"}" inputmode="decimal" autocomplete="off"
-              value="${it.my_price ? esc(priceIn(it.my_price, it.deal)) : ""}" placeholder="${esc(priceIn(it.price, it.deal) || "впишите")}"
-              aria-label="Цена для клиента"${it.hide_price ? " disabled" : ""}><em>${it.deal === "rent" ? "тыс. ₽/мес" : "млн ₽"}</em></label>
-          <label class="pk2-phide"><input type="checkbox" data-phide="${it.listing_id}" data-pid="${p.id}"${it.hide_price ? " checked" : ""}>Скрыть цену</label>
+    const on = openRows.has(it.listing_id);
+    const st = it.status || "sent";
+    return `<article class="pk2-obj pk5-row${on ? " on" : ""}${it.is_active ? "" : " gone"}" draggable="true" data-lid="${it.listing_id}" data-pid="${p.id}" style="--i:${i}">
+      <div class="pk5-line">
+        <span class="pk5-grip" title="Перетащите, чтобы поменять порядок" aria-hidden="true">⠿</span>
+        <span class="pk5-n">${i + 1}</span>
+        <a class="pk5-ph" href="/?open=${it.listing_id}">${it.photo ? `<img src="${esc(it.photo)}" alt="" loading="lazy">` : `<span>${ic("home")}</span>`}</a>
+        <span class="pk5-t"><a href="/?open=${it.listing_id}"><b>${esc(it.title)}</b></a><small>${esc(sub(it))}${it.is_active ? "" : " · снят с сайта"}</small></span>
+        <b class="pk5-price${it.hide_price ? " off" : ""}">${it.hide_price ? "скрыта" : esc(money(it.my_price || it.price, it.deal))}</b>
+        ${p.client_id ? `<span class="pk5-st ${ST_CLS[st] || ""}"><i></i>${esc(PAIR[st] || "Отправлен")}</span>` : ""}
+        ${it.reaction ? `<span class="pk2-re r-${REACT[it.reaction][1]}">${REACT[it.reaction][0]}</span>` : ""}
+        <button type="button" class="pk5-tog${on ? " on" : ""}" data-row="${it.listing_id}">${on ? "Свернуть" : "Настроить"}</button>
+      </div>
+      ${on ? `<div class="pk5-body">
+        ${it.is_active ? "" : `<button type="button" class="pk2-sim" data-sim="${it.listing_id}" data-pid="${p.id}">${ic("repeat")}Снят — показать похожие</button>`}
+        <div class="pk5-cols">
+          <div class="pk5-col">
+            <label class="pk2-pin money-wrap"><span>Цена для клиента <small>· в объявлении ${esc(money(it.price, it.deal))}</small></span>
+              <span class="pk5-pin"><input data-pprice="${it.listing_id}" data-pid="${p.id}" data-deal="${it.deal}" data-money="${it.deal === "rent" ? "rent" : "sale"}" inputmode="decimal" autocomplete="off"
+                value="${it.my_price ? esc(priceIn(it.my_price, it.deal)) : ""}" placeholder="${esc(priceIn(it.price, it.deal) || "впишите")}"
+                aria-label="Цена для клиента"${it.hide_price ? " disabled" : ""}><em>${it.deal === "rent" ? "тыс. ₽/мес" : "млн ₽"}</em></span></label>
+            <label class="pk2-phide"><input type="checkbox" data-phide="${it.listing_id}" data-pid="${p.id}"${it.hide_price ? " checked" : ""}>Скрыть цену от клиента</label>
+            ${photosHTML(p, it)}
+            ${p.client_id ? `<label class="pk2-pst"><span>Статус для ${esc(p.client_name || "клиента")}</span><select data-pst="${it.listing_id}" data-pid="${p.id}" aria-label="Статус">
+              ${Object.entries(PAIR).map(([k, v]) => `<option value="${k}"${st === k ? " selected" : ""}>${v}</option>`).join("")}</select></label>` : ""}
+          </div>
+          <div class="pk5-col">
+            <label class="pk2-ptext"><span>Текст для клиента <small>· сохраняется сам</small></span>
+              <textarea data-ptext="${it.listing_id}" data-pid="${p.id}" data-grow rows="6" maxlength="5000">${esc(it.text || it.orig || "")}</textarea>
+              ${it.text ? `<button type="button" class="pk2-ptext-reset" data-ptext-reset="${it.listing_id}" data-pid="${p.id}">Вернуть исходный текст</button>` : ""}</label>
+            <label class="pk5-com"><span>Ваш комментарий — клиент увидит</span>
+              <input class="pk2-com" data-com="${it.listing_id}" data-pid="${p.id}" maxlength="1000" value="${esc(it.note || "")}"
+                placeholder="Например: «Хозяин торгуется»" aria-label="Комментарий для клиента"></label>
+            ${it.reaction_text ? `<p class="pk2-hint">Клиент написал: «${esc(it.reaction_text)}»</p>` : ""}
+            ${notesFor(p, it)}
+          </div>
         </div>
-        ${photosHTML(p, it)}
-        <small class="pk2-phint">В объявлении: <b>${esc(money(it.price, it.deal))}</b>${it.my_price && !it.hide_price ? " · клиент видит вашу цену" : ""}${it.hide_price ? " · клиент видит «Цена по запросу»" : ""}</small>
-        <a class="pk2-ot" href="/?open=${it.listing_id}">${esc(it.title)}</a>
-        <small>${esc(sub(it))}</small>
-        <label class="pk2-ptext"><span>Текст для клиента <small>— можно исправить прямо здесь, сохранится сам</small></span>
-          <textarea data-ptext="${it.listing_id}" data-pid="${p.id}" data-grow rows="4" maxlength="5000">${esc(it.text || it.orig || "")}</textarea>
-          ${it.text ? `<button type="button" class="pk2-ptext-reset" data-ptext-reset="${it.listing_id}" data-pid="${p.id}">Вернуть исходный текст</button>` : ""}</label>
-        <input class="pk2-com" data-com="${it.listing_id}" data-pid="${p.id}" maxlength="1000" value="${esc(it.note || "")}"
-          placeholder="Комментарий от вас — клиент увидит над текстом" aria-label="Комментарий для клиента">
-        ${it.reaction ? `<span class="pk2-re r-${REACT[it.reaction][1]}">Ответ клиента: ${REACT[it.reaction][0]}${it.reaction_text ? ` — «${esc(it.reaction_text)}»` : ""}</span>` : ""}
-        ${p.client_id ? `<label class="pk2-pst"><span>Статус для ${esc(p.client_name || "клиента")}</span><select data-pst="${it.listing_id}" data-pid="${p.id}" aria-label="Статус">
-          ${Object.entries(PAIR).map(([k, v]) => `<option value="${k}"${(it.status || "sent") === k ? " selected" : ""}>${v}</option>`).join("")}</select></label>` : ""}
-        ${notesFor(p, it)}
-        <div class="pk2-oacts">
-          <button type="button" class="pk2-ib" data-move="-1" data-i="${i}" data-pid="${p.id}" ${i ? "" : "disabled"} aria-label="Выше" title="Выше">${ic("arrow-up")}</button>
-          <button type="button" class="pk2-ib" data-move="1" data-i="${i}" data-pid="${p.id}" ${i < p.items.length - 1 ? "" : "disabled"} aria-label="Ниже" title="Ниже">${ic("arrow-down")}</button>
-          <button type="button" class="pk2-tb" data-wnote="${it.listing_id}" data-pid="${p.id}" title="Записать: звонок, показ, заметка">${ic("note")}Запись</button>
-        </div></div></article>`;
+        <div class="pk5-acts">
+          <button type="button" class="chip" data-move="-1" data-i="${i}" data-pid="${p.id}" ${i ? "" : "disabled"}>${ic("arrow-up")}Выше</button>
+          <button type="button" class="chip" data-move="1" data-i="${i}" data-pid="${p.id}" ${i < p.items.length - 1 ? "" : "disabled"}>${ic("arrow-down")}Ниже</button>
+          <a class="chip" href="/planner?add=show&listing=${it.listing_id}${p.client_id ? `&client=${p.client_id}` : ""}">${ic("calendar")}Запись на показ</a>
+          <button type="button" class="chip" data-wnote="${it.listing_id}" data-pid="${p.id}">${ic("note")}Заметка</button>
+          <span class="pk5-sp"></span>
+          <button type="button" class="chip danger" data-rm="${it.listing_id}" data-pid="${p.id}">Убрать из подборки</button>
+        </div>
+      </div>` : ""}</article>`;
   }
   // журнал по объекту в этой подборке (и про её клиента) — видит только агент
   function notesFor(p, it) {
@@ -241,23 +261,27 @@
     const ph = p.items.map((x) => x.photo).filter(Boolean).slice(0, 3);
     box.innerHTML = `
       <button type="button" class="pk2-back" data-back>${ic("chevron-left")}Все подборки</button>
-      <header class="pk2-hero">
+      <header class="pk2-hero pk5-hero">
         <div class="pk2-col n${ph.length} c-${esc(p.color)}">${ph.map((u) => `<img src="${esc(u)}" alt="">`).join("") || `<span>${ic("folder")}</span>`}</div>
         <div class="pk2-hero-b">
-          <p class="pk2-eyebrow">Подборка · обновлена ${esc(ago(p.updated))}</p>
           <h2>${esc(p.title)}</h2>
-          <p class="pk2-hero-m"><span>${p.n} ${plural(p.n, "объект", "объекта", "объектов")}</span>${seenBadge(p)}</p>
-          ${p.client_id ? `<div class="pk2-client">${ic("user")}<span>Для клиента</span><b>${esc(p.client_name || "")}</b>
-            <a href="/clients?id=${p.client_id}" title="Карточка клиента: пожелания, история, все объекты">Карточка ${ic("chevron")}</a></div>` : ""}
+          <p class="pk2-hero-m">${p.client_id ? `<a class="pk5-cl" href="/clients?id=${p.client_id}" title="Карточка клиента: пожелания, история">Клиент ${esc(p.client_name || "")} ›</a>`
+            : `<button type="button" class="pk5-cl warn" data-tab="setup">Без клиента — привязать ›</button>`}
+            <span>${p.n} ${plural(p.n, "объект", "объекта", "объектов")}</span>${seenBadge(p)}<span class="pk5-upd">обновлена ${esc(ago(p.updated))}</span></p>
         </div>
       </header>
-      <div class="pk2-share">
+      <div class="pk2-share pk5-share">
         <div class="pk2-link"><span title="${esc(link(p))}">${esc(link(p).replace(/^https?:\/\//, ""))}</span>
           <button type="button" class="pill" data-copy="${p.id}">${ic("link")}Копировать</button></div>
-        <button type="button" class="pk2-act" data-need-me="${p.id}" data-share-text="${esc(`${p.title}\n${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
+        <button type="button" class="pk2-act" data-need-me="${p.id}" data-share-text="${esc(`${p.title}
+${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
         <a class="pk2-act" href="${esc(link(p))}?as=agent&back=${encodeURIComponent(`${location.origin}/picks?open=${p.id}`)}" title="Ваше открытие не засчитается как просмотр клиента">${ic("eye")}<span>Как видит клиент</span></a>
-        <button type="button" class="pk2-act" data-dup="${p.id}">${ic("layers")}<span>Копия для другого клиента</span></button>
-        <button type="button" class="pk2-act danger" data-del="${p.id}">${ic("trash")}<span>Удалить</span></button>
+        <details class="pk5-more"><summary class="pk2-act">${ic("more")}<span>Ещё</span></summary>
+          <div class="pk5-menu">
+            <button type="button" data-dup="${p.id}">${ic("layers")}Копия для другого клиента</button>
+            <button type="button" data-tab="setup">${ic("sliders")}Оформление и контакт</button>
+            <button type="button" class="danger" data-del="${p.id}">${ic("trash")}Удалить подборку</button>
+          </div></details>
       </div>
       ${p.contact_phone && p.contact_name && p.contact_name !== "Коллега (по коду)" ? "" : `<form class="pk2-me" data-me="${p.id}" autocomplete="off">
         <p>${ic("user")}<b>Как вас показать клиенту?</b> Клиент видит только ваш контакт — без него ему некуда позвонить.</p>
@@ -268,15 +292,17 @@
       <nav class="pk2-tabs"><button type="button" data-tab="items" class="${tab === "items" ? "on" : ""}">Объекты <b>${p.items.length}</b></button>
         <button type="button" data-tab="setup" class="${tab === "setup" ? "on" : ""}">Оформление и контакт</button></nav>
       ${tab === "items" ? `
-        ${p.items.length ? `<p class="pk2-hint">Порядок — как увидит клиент. ${isPhone() ? "Стрелки меняют порядок." : "Перетащите карточку, чтобы поменять порядок."}</p>
-          <div class="pk2-grid" id="pkGrid">${p.items.map((it, i) => objCard(p, it, i)).join("")}</div>`
-          : `<div class="pk2-noitems">${ic("home")}<b>В подборке пока нет объектов</b><span>Добавьте из избранного ниже или кнопкой «В подборку» в окне объекта.</span></div>`}
-        <section class="pk2-add">
+        ${p.items.length ? `<p class="pk2-hint">Клиент увидит объекты в этом порядке — ${isPhone() ? "стрелки «Выше / Ниже» в «Настроить»" : "перетащите строку за ⠿, чтобы поменять"}.</p>
+          <div class="pk2-grid pk5-list" id="pkGrid">${p.items.map((it, i) => objCard(p, it, i)).join("")}</div>`
+          : `<div class="pk2-noitems">${ic("home")}<b>В подборке пока нет объектов</b><span>Добавьте из избранного ниже или кнопкой «Клиенту» в окне объекта на поиске.</span></div>`}
+        <button type="button" class="pk5-addbtn${addOpen ? " on" : ""}" data-addopen>${ic("plus")}${addOpen ? "Скрыть" : "Добавить объект"}</button>
+        ${addOpen || !p.items.length ? `<section class="pk2-add">
           <div class="pk2-add-h"><h3>${ic("heart")}Из избранного</h3>
             <label class="pk2-search sm"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
               <input id="pkFavQ" type="search" value="${esc(favQ)}" placeholder="ЖК, улица" aria-label="Найти в избранном"></label></div>
           <div id="pkFavs">${addStrip(p)}</div>
-        </section>` : `
+          <p class="pk2-hint">Нужного нет в избранном? Найдите объект на <a href="/">поиске</a> и нажмите «Клиенту» в окне объекта — он сразу попадёт сюда.</p>
+        </section>` : ""}` : `
         <form class="pk2-form" data-edit="${p.id}">
           <label class="agent-field"><span>Название — видите только вы</span><input name="title" maxlength="120" value="${esc(p.title)}"></label>
           <label class="agent-field"><span>Заголовок для клиента</span><input name="client_title" maxlength="120" value="${esc(p.client_title || "")}"
@@ -356,6 +382,13 @@
   document.addEventListener("click", async (e) => {
     const t = e.target.closest("button, [data-open]");
     if (!t || t.closest("#pkText") || t.closest(".pk-panel")) return;
+    if (t.dataset.row) {   // 24.10: «Настроить» / «Свернуть» строку объекта
+      const lid = Number(t.dataset.row);
+      if (openRows.has(lid)) openRows.delete(lid); else openRows.add(lid);
+      renderDetail(); return;
+    }
+    if (t.hasAttribute("data-addopen")) { addOpen = !addOpen; renderDetail(); if (addOpen) loadSide(); return; }
+    if (t.dataset.tab && t.closest(".pk5-more")) t.closest(".pk5-more").open = false;
     if (t.dataset.open) {
       open = Number(t.dataset.open); tab = "items"; favQ = "";
       renderList(); renderDetail(); loadSide();
@@ -604,9 +637,12 @@
     const f = e.target;
     if (f.id === "pksNew") {
       e.preventDefault();
-      const r = await call("/api/picks", { title: f.title.value.trim() });
+      // 24.10: подборка = клиент. Есть такой клиент — открываем его подборку, нет — заводим клиента и подборку разом
+      const r = await call("/api/picks", { client_name: f.title.value.trim() });
       if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
-      f.title.value = ""; open = r.data.pick.id; tab = "items"; await reload(); loadSide(); return;
+      toast(r.data.pick.made_client ? `Завели клиента «${f.title.value.trim()}» и его подборку — пожелания можно дописать в «Клиентах»`
+        : "У этого клиента уже есть подборка — открыли её", 4000);
+      f.title.value = ""; open = r.data.pick.id; tab = "items"; addOpen = true; await reload(); loadSide(); return;
     }
     if (f.dataset.edit) {
       e.preventDefault();
@@ -764,8 +800,10 @@
 
   // перетаскивание карточек (мышь; на телефоне — стрелки)
   let drag = null;
+  document.addEventListener("mousedown", (e) => { gripDown = !!(e.target.closest && e.target.closest(".pk5-grip, .pk5-line")) && !(e.target.closest && e.target.closest("a, button, input")); });
   document.addEventListener("dragstart", (e) => {
     if (e.target.closest && e.target.closest(".pk2-own")) { e.preventDefault(); return; }   // фото тянем своим способом
+    if (e.target.closest && e.target.closest(".pk5-row") && !gripDown) { e.preventDefault(); return; }   // 24.10: строку — только за саму строку, не за поля
     const card = e.target.closest && e.target.closest(".pk2-obj");
     if (!card || e.target.closest("input")) return;
     drag = card; card.classList.add("drag");

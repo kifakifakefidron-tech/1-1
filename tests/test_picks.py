@@ -185,3 +185,16 @@ def test_admin_repair_answer_teaches_same_text():
     assert ingest.set_fields(conn, lid, {"repair": "no"}, 1)["ok"]
     assert conn.execute("SELECT repair, repair_doubt FROM listings WHERE id = ?", (lid,)).fetchone()[:] == ("no", 0)
     assert conn.execute("SELECT COUNT(*) FROM learned_rules WHERE kind = 'frag_repair'").fetchone()[0] >= 1
+
+
+def test_new_pick_is_client():
+    """24.10 (Артём): подборка всегда для клиента — имя создаёт клиента и его подборку; то же имя ещё раз — та же подборка."""
+    from app import accounts, db, picks
+    conn = db.connect(":memory:")
+    u = accounts.upsert_email_user(conn, "a@x.ru")
+    a = picks.for_client_name(conn, u, "Жора")
+    assert a["made_client"] and a["client_name"] == "Жора"
+    b = picks.for_client_name(conn, u, "  жора ")
+    assert b["id"] == a["id"] and not b["made_client"]
+    assert conn.execute("SELECT COUNT(*) FROM clients WHERE user_id = ?", (u["id"],)).fetchone()[0] == 1
+    assert "error" in picks.for_client_name(conn, u, "  ")

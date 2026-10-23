@@ -1394,7 +1394,10 @@ def api_picks(request: Request, body: dict | None = None):
     if request.method == "POST":
         if _too_often(request, "picks", 300, 3600):
             return _err("Слишком часто — попробуйте позже.", 429)
-        res = picks.save(conn, user, body)
+        if "client_name" in body and not body.get("id"):   # 24.10: новая подборка = клиент (есть — его подборка)
+            res = picks.for_client_name(conn, user, body.get("client_name"))
+        else:
+            res = picks.save(conn, user, body)
         return _err(res["error"]) if "error" in res else JSONResponse({"pick": res})
     lid = _num(request.query_params.get("listing"), int)
     return JSONResponse({"items": picks.mine(conn, user["id"]),
