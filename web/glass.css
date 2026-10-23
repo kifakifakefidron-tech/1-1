@@ -1288,25 +1288,49 @@ summary { transition: color .2s var(--m-out); }
   .dv3 .dv-acts { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
 }
 
-/* 24.10 (Артём): на компьютере меню при наведении раскрывается целиком — все разделы с названием и описанием сразу,
-   а не подсказка у одного пункта. Класс .rail-open ставит rail.js через 0,12 с наведения (не мигает при проводке мышью);
-   поверх страницы (меню fixed) — содержимое не сдвигается; ушла мышь — снова узкое. Одиночные подсказки больше не нужны. */
+/* 24.10b (Артём): меню при наведении раскрывается вширь, а строки НЕ меняют высоту — курсор остаётся на том же значке.
+   У каждого пункта справа название и описание в одну строку. Класс .rail-open ставит rail.js через 0,12 с наведения. */
+.rail-g .rail-logo { text-decoration: none; }
+.rail-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; border: 2px solid var(--gold-100);
+  color: var(--gold-100); font: 700 14px/1 var(--head, var(--body)); letter-spacing: .02em; transition: transform .45s var(--spring); }
+.rail-g .rail-logo:hover .rail-mark { transform: rotate(-6deg) scale(1.05); }
+.rail-word { display: none; }
 @media (hover: hover) and (min-width: 821px) {
   .rail-g .rail-a .rail-tip, .rail-g .rail-ava .rail-tip { display: none; }
-  .rail-g.rail-open { width: 310px; align-items: stretch; padding: 12px; overflow-y: auto;
-    background: rgba(3, 52, 51, .96); box-shadow: var(--glass-sh), 0 24px 60px rgba(0, 0, 0, .35); }
-  .rail-g.rail-open .rail-logo { align-self: flex-start; margin-left: 0; }
-  .rail-g.rail-open .rail-a { width: 100%; height: auto !important; min-height: 44px; display: grid; grid-template-columns: 22px minmax(0, 1fr);
-    column-gap: 12px; place-items: center start; padding: 7px 12px; }
-  .rail-g.rail-open .rail-a .rail-tip { position: static; display: grid; gap: 1px; width: auto; max-width: none; padding: 0; border: 0;
+  .rail-g.rail-open { width: 350px; align-items: stretch; padding-left: 12px; padding-right: 12px; overflow-y: auto;
+    background: rgba(3, 52, 51, .97); box-shadow: var(--glass-sh), 0 24px 60px rgba(0, 0, 0, .35); }
+  .rail-g.rail-open .rail-logo { width: auto; justify-content: start; display: flex; gap: 12px; align-items: center; padding-left: 2px; }
+  .rail-g.rail-open .rail-word { display: grid; gap: 2px; animation: railTipIn .22s var(--ease) both; }
+  .rail-word b { font: 700 17px/1 var(--head, var(--body)); color: var(--gold-100); }
+  .rail-word small { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
+  .rail-g.rail-open .rail-a { width: 100%; display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 12px;
+    place-items: center start; padding: 0 12px; }
+  .rail-g.rail-open .rail-a .rail-tip { position: static; display: grid; gap: 1px; width: 100%; max-width: none; min-width: 0; padding: 0; border: 0;
     background: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; pointer-events: none;
     opacity: 1; transform: none; filter: none; transition: none; animation: railTipIn .22s var(--ease) both; }
   .rail-g.rail-open .rail-tip::before { display: none; }
-  .rail-g.rail-open .rail-tip b { white-space: normal; font-size: 14px; }
-  .rail-g.rail-open .rail-tip small { white-space: normal; font-size: 12px; }
+  .rail-g.rail-open .rail-tip b { font-size: 14px; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rail-g.rail-open .rail-tip small { font-size: 11.5px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rail-g.rail-open.rail-t2 .rail-tip small, .rail-g.rail-open.rail-t3 .rail-tip small { display: none; }
   .rail-g.rail-open .rail-a.on .rail-tip b, .rail-g.rail-open .rail-a.on .rail-tip small { color: #0f2f2e; }
   .rail-g.rail-open .rail-sep { width: 100%; }
   .rail-g.rail-open .rail-ava { align-self: flex-start; margin-left: 4px; }
   .rail-g.rail-open .rail-c, .rail-g.rail-open .rail-n { top: 50%; right: 10px; translate: 0 -50%; }
 }
 @keyframes railTipIn { from { opacity: 0; transform: translateX(-6px); } }
+
+/* 24.10b: мини-карта больше не наезжает на закреплённую панель «Клиенту / Позвонить» (у Leaflet свои z-index до 1000) */
+.dv-map-wrap { position: relative; z-index: 0; isolation: isolate; }
+.dv-bar { z-index: 30; }
+/* раскрывающиеся плитки: видно, что их можно раскрыть — стрелка в кружке и подпись над ними */
+.dv3 .dv-accs::before { content: "Подробнее — нажмите на плитку, чтобы раскрыть"; grid-column: 1 / -1; margin: 2px 2px 0; font-size: 12px;
+  letter-spacing: .02em; color: var(--ink-3); }
+.dv3 .dv-acc { position: relative; }
+.dv3 .dv-acc summary { padding-right: 52px; }
+.dv3 .dv-acc summary::after { display: grid !important; position: absolute; right: 12px; top: 50%; translate: 0 -50%; place-items: center;
+  content: "" !important; width: 28px; height: 28px; margin: 0; border: 0; border-radius: 50%; transform: none !important;
+  background: rgba(243, 232, 188, .1) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e3cb8f' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / 16px no-repeat;
+  transition: rotate .25s var(--ease), background-color .2s; }
+.dv3 .dv-acc[open] summary::after { rotate: 180deg; background-color: rgba(243, 232, 188, .2); }
+.dv3 .dv-acc summary:hover::after { background-color: rgba(243, 232, 188, .2); }
+.dv3 .dv-acc[open] > summary { top: 0; }
