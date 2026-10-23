@@ -1208,3 +1208,82 @@ summary { transition: color .2s var(--m-out); }
   .search #q { padding-right: 52px; }
   .search .q-go { padding: 0 11px; } .search .q-go span { display: none; }
 }
+
+/* ═══ 24.10 ОКНО ОБЪЕКТА v3 (образец Артёма «Постер + бенто») ═══════════════════════════════════════════════ */
+.dv-hero { position: relative; }
+.dv-hero .dv-gal-wrap { margin: 0; }
+.dv-count { position: absolute; left: 14px; bottom: 14px; z-index: 2; padding: 4px 10px; border-radius: 999px; pointer-events: none;
+  background: rgba(8, 30, 29, .72); color: var(--gold-100); font: 600 12px var(--body); backdrop-filter: blur(6px); }
+.dv3 .dv-head { padding-top: 4px; }
+.dv3 .dv-eyebrow { margin: 14px 0 6px; font: 600 12.5px/1.3 var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--gold); }
+.dv3 .marks { margin: 0 0 8px; }
+.dv3 .dv-price { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin: 2px 0 6px; }
+.dv3 .dv-big { font: 600 clamp(54px, 13vw, 76px)/.9 var(--head); letter-spacing: -.01em; color: var(--gold-100); }
+.dv3 .dv-big.sm { font-size: 32px; }
+.dv3 .dv-unit { display: grid; gap: 2px; padding-bottom: 6px; }
+.dv3 .dv-unit b { font: 600 19px/1 var(--head); color: var(--gold); }
+.dv3 .dv-unit small { color: var(--ink-3); font-size: 12.5px; }
+.dv3 .dv-subt { margin: 0 0 4px; color: var(--ink-3); font-size: 13.5px; }
+/* плитки-бенто */
+.dv-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 14px 0 4px; }
+.dv-tiles > :last-child:nth-child(3n + 1) { grid-column: span 3; }
+.dv-tiles > :last-child:nth-child(3n + 2) { grid-column: span 2; }
+.dv-tile { display: grid; align-content: space-between; gap: 10px; min-height: 84px; padding: 12px 14px; border-radius: 16px; text-decoration: none;
+  background: rgba(4, 30, 29, .55); border: 1px solid rgba(243, 232, 188, .08); color: var(--ink); min-width: 0; }
+.dv-tile small { color: var(--ink-3); font-size: 12px; }
+.dv-tile b { font: 600 24px/1.05 var(--head); color: var(--gold-100); overflow-wrap: anywhere; }
+.dv-tile.good { background: #b7e4c7; border-color: #b7e4c7; } .dv-tile.good small { color: #1f5a3c; } .dv-tile.good b { color: #0d3b26; }
+.dv-tile.high { background: rgba(255, 160, 140, .14); } .dv-tile.high b { color: #ffc2b4; }
+.dv-tile.down b { color: #b7e4c7; }
+.dv-tile.place { background: rgba(243, 232, 188, .07); }
+.dv-tile.place b { font: 600 14.5px/1.25 var(--body); overflow-wrap: break-word; hyphens: auto; } .dv-tile.place i { font-style: normal; color: var(--gold); margin-left: 4px; }
+.dv-tile.place:hover { border-color: var(--gold-300); }
+/* описание — всегда целиком */
+.dv-sec { margin: 18px 0 0; padding-top: 16px; border-top: 1px solid rgba(243, 232, 188, .1); }
+.dv-sec-h { margin: 0 0 8px; font: 600 12px var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--gold); }
+.dv3 .dv-desc, .dv3 .dv-desc.clamp { max-height: none !important; -webkit-line-clamp: unset !important; overflow: visible !important; mask: none !important; }
+.dv3 .dv-desc p { margin: 0; white-space: pre-wrap; font-size: 15px; line-height: 1.6; color: var(--ink); }
+.dv3 .dv-desc-more { display: none !important; }
+/* контакт */
+.dv3 .dv-contacts { margin: 18px 0 0; padding: 16px 0 0; border-top: 1px solid rgba(243, 232, 188, .1); background: none; border-radius: 0; }
+.dv3 .dv-contacts-h { display: none; }
+.dv3 .dv-phone { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0; }
+.dv3 .dv-phone-l { display: grid; gap: 3px; min-width: 0; }
+.dv3 .dv-phone-num { font: 600 21px/1.1 var(--body); color: var(--ink); text-decoration: none; letter-spacing: .01em; }
+.dv3 .dv-phone-s { color: var(--ink-3); font-size: 12.5px; }
+.dv3 .dv-phone-s a { color: var(--gold); }
+.dv3 .dv-max { width: 48px; height: 48px; border-radius: 50%; flex: none; display: grid; place-items: center;
+  background: #0b2524; border: 1px solid rgba(243, 232, 188, .16); color: var(--gold-100); font: 700 11.5px var(--body); }
+/* действия — маленькие плитки с иконкой */
+.dv3 .dv-acts { grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)) !important; gap: 6px !important; margin: 16px 0 4px !important; }
+.dv3 .dv-act { padding: 10px 4px 8px !important; border-radius: 14px !important; font-size: 11.5px !important; gap: 5px !important;
+  background: rgba(4, 30, 29, .55) !important; border: 1px solid rgba(243, 232, 188, .08) !important; }
+.dv3 .dv-act i svg { width: 18px; height: 18px; }
+/* раскрывающиеся плитки — по две в ряд, открытая — на всю ширину */
+.dv3 .dv-accs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 16px 0 0; border-top: 0; }
+.dv3 .dv-acc, .dv3 .dv-acc-btn { border: 1px solid rgba(243, 232, 188, .08); border-radius: 16px; background: rgba(4, 30, 29, .55); min-width: 0; }
+.dv3 .dv-acc[open] { grid-column: 1 / -1; }
+.dv3 .dv-acc summary, .dv3 .dv-acc-btn { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 12px 14px; }
+.dv3 .dv-acc summary::after { position: absolute; display: none; }
+.dv3 .dv-acc-ic { display: none; }
+.dv3 .dv-acc-t { font: 600 15px var(--body); }
+.dv3 .dv-acc-h { white-space: normal; font-size: 12.5px; }
+.dv3 .dv-acc.admin .dv-acc-t { color: var(--gold); }
+.dv3 .d-report .dv-acc-t { color: #ffb4a3; }
+.dv3 .dv-acc-b { padding: 0 14px 14px; }
+.dv3 .dv-acc-btn { display: flex; align-items: center; gap: 8px; font: 600 14px var(--body); }
+.dv3 .dv-acc-btn .dv-acc-ic { display: inline; background: none; width: auto; height: auto; }
+/* закреплённая панель «Клиенту / Позвонить» */
+.dv-bar { position: sticky; bottom: 0; z-index: 5; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; margin: 18px 0 0;
+  border-top: 1px solid rgba(243, 232, 188, .1); box-shadow: 0 -10px 24px rgba(0, 0, 0, .22); }
+.dv-bar-b { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 62px; padding: 0 12px; border: 0; cursor: pointer;
+  font: 600 18px/1 var(--head); letter-spacing: .06em; text-transform: uppercase; text-decoration: none; }
+.dv-bar-b svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.dv-bar-b.client { background: linear-gradient(160deg, var(--gold-200), var(--gold-300)); color: #0f2f2e; }
+.dv-bar-b.call { background: #071d1c; color: var(--gold-100); }
+.dv-bar-b:hover { filter: brightness(1.06); }
+@media (max-width: 640px) {
+  .dv-bar { padding-bottom: env(safe-area-inset-bottom); }
+  .dv-tile { min-height: 74px; padding: 10px 12px; } .dv-tile b { font-size: 21px; }
+  .dv3 .dv-acts { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+}
