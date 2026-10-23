@@ -139,3 +139,17 @@ def test_partial_word_finds_same_as_full():
     assert total("самоле") == total("самолет") == 1
     assert total("тургенев") == total("тургенева") == 1
     assert total("2к фестивальн") == 1
+
+
+def test_admin_price_clears_doubt():
+    """24.10 (Артём): «Цена уточняется» после правки админа должна пропасть — и у повтора того же текста."""
+    conn = db.connect(":memory:")
+    now = int(time.time())
+    text = "2-к квартира 73,9 м², 3/9 эт., ФМР, ул. Тургенева 10. Цена 1 600 000 000. 89180000921"
+    lid = _add(conn, text, "d1", now)
+    assert conn.execute("SELECT price_doubt FROM listings WHERE id = ?", (lid,)).fetchone()[0] == 1
+    ingest.set_price(conn, lid, 16_000_000, user_id=1)
+    assert conn.execute("SELECT price, price_doubt FROM listings WHERE id = ?", (lid,)).fetchone()[:] == (16_000_000, None)
+    m = ingest.add_message(conn, source="wa", text=text, chat_id="c2", msg_id="d2", ts=now + 60)
+    ingest.process_message(conn, m, use_llm=False)   # повтор того же текста
+    assert conn.execute("SELECT price, price_doubt FROM listings WHERE id = ?", (lid,)).fetchone()[:] == (16_000_000, None)

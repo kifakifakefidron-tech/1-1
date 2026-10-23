@@ -217,7 +217,9 @@
     if (!pts.length || !window.L) { $("pkMain").classList.add("no-map"); return; }
     $("pkMapCol").hidden = false; $("pkSwitch").hidden = false;
     map = L.map("pkMap", { scrollWheelZoom: false, attributionControl: false, zoomControl: true });
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+    // 24.10: OSM требует адрес сайта в запросе плитки (без него Chrome/Edge получали «Access blocked»). Страница подборки
+    // целиком без referrer, а плиткам — только origin (нейтральный адрес подборок, без пути со ссылкой клиента).
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, referrerPolicy: "origin" }).addTo(map);
     L.control.attribution({ prefix: false }).addAttribution("© OpenStreetMap").addTo(map);
     const b = [];
     pts.forEach((o) => {

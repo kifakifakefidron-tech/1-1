@@ -172,6 +172,9 @@ def tick(conn) -> dict:
     if not db.get_state(conn, "sold_v1"):   # один раз (приёмка 18.10): «Квартира продана» — с сайта
         stats["sold"] = ingest.hide_sold(conn)
         db.set_state(conn, "sold_v1", str(stats["sold"]))
+    if not db.get_state(conn, "price_doubt_fix_v1"):   # 24.10: цену поправил админ — «Цена уточняется» снять
+        n = conn.execute("UPDATE listings SET price_doubt = NULL WHERE price_fixed = 1 AND price_doubt = 1").rowcount
+        db.set_state(conn, "price_doubt_fix_v1", str(n))
     if not db.get_state(conn, "rent_v2"):   # один раз (приёмка 18.10): «сдам / сдаю / аренда» — аренда без условий
         stats["rent_v2"] = ingest.fix_rent_v2(conn)["moved"]
         db.set_state(conn, "rent_v2", "1")

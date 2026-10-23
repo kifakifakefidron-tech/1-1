@@ -16,7 +16,9 @@ from .rules import TYPE_LABELS
 from .textnorm import norm, words
 
 SORTS = {   # цена «под вопросом» (pricefix) в сортировках по цене — в самом конце
-    "new": "l.last_seen DESC, l.id DESC",
+    # 24.10 (Артём): «сначала свежие» — по тому, когда объект ВПЕРВЫЕ появился (новые сегодня сверху), а не по последнему
+    # повтору в чатах: иначе старый объект, который снова прислали, прыгал наверх
+    "new": "l.first_seen DESC, l.id DESC",
     "price_asc": "l.price IS NULL OR l.price_doubt IS 1, l.price ASC, l.id DESC",
     "price_desc": "l.price IS NULL OR l.price_doubt IS 1, l.price DESC, l.id DESC",
     "price_m2": "l.price_m2 IS NULL OR l.price_doubt IS 1, l.price_m2 ASC, l.id DESC",

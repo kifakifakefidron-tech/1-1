@@ -425,6 +425,7 @@ def learned_fix(conn: sqlite3.Connection, fh: str, d: dict) -> None:
         v = json.loads(val)
         if kind == "frag_price" and v.get("price"):
             d["price"] = int(v["price"])
+            d["price_doubt"] = False   # цену проверил админ — не «под вопросом»
         elif kind == "frag_deal" and v.get("deal") in ("sale", "rent"):
             d["deal"] = v["deal"]
         elif kind == "frag_fields":   # 18.10: этот текст админ уже поправлял (тип, комнаты, площадь, этаж, адрес…)
@@ -538,7 +539,8 @@ def set_price(conn: sqlite3.Connection, listing_id: int, price: int, user_id: in
     if r is None:
         return {"error": "не найдено"}
     old = r["price"]
-    conn.execute("""UPDATE listings SET price = ?, price_m2 = ?, price_fixed = 1,
+    # 24.10: правка админа снимает «Цена уточняется» (price_doubt) — раньше плашка висела и после правки
+    conn.execute("""UPDATE listings SET price = ?, price_m2 = ?, price_fixed = 1, price_doubt = NULL,
                     price_wrong = CASE WHEN ? != ? THEN ? ELSE price_wrong END WHERE id = ?""",
                  (price, _price_m2(price, r["area"]), old or 0, price, old, listing_id))
     if user_id:

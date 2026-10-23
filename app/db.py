@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS listings (
 );
 CREATE INDEX IF NOT EXISTS ix_listings_main ON listings(is_active, type, deal, price);
 CREATE INDEX IF NOT EXISTS ix_listings_last ON listings(last_seen);
+CREATE INDEX IF NOT EXISTS ix_listings_first ON listings(first_seen);
 CREATE INDEX IF NOT EXISTS ix_listings_district ON listings(district);
 CREATE INDEX IF NOT EXISTS ix_listings_complex ON listings(complex);
 
