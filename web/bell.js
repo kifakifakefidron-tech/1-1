@@ -42,25 +42,38 @@
   const shown = () => { try { return JSON.parse(localStorage.getItem("bellShown") || "[]"); } catch { return []; } };
   const remember = (id) => { try { localStorage.setItem("bellShown", JSON.stringify([id, ...shown()].slice(0, 50))); } catch { /* */ } };
 
+  // 24.10i (Артём: «всплывающее уведомление — стильнее, под наш стиль»): значок по виду, золотой надзаголовок, крупный заголовок,
+  // «Открыть» и «Все уведомления», полоска — сколько осталось до закрытия (наведение — пауза)
+  const KIND = { search: ["search", "Новое по поиску"], price: ["trend-down", "Цена изменилась"], gone: ["x-circle", "Объект снят"],
+    client: ["users", "Клиент"], own: ["home", "Мой объект"], plan: ["calendar", "Планер"], sub: ["card", "Подписка"],
+    billing: ["coins", "Оплата сервиса"], buyer: ["briefcase", "Есть покупатель"] };
+  const ic = (name) => (window.ic ? window.ic(name) : ICON);
   function pop(n) {
     let box = document.getElementById("bellPop");
     if (!box) {
       box = document.createElement("div");
       box.id = "bellPop";
-      box.className = "bell-pop";
+      box.className = "bell-pop v2";
       box.setAttribute("role", "status");
       document.body.appendChild(box);
     }
-    box.innerHTML = `<span class="bell-pop-ic">${esc(n.icon || "🔔")}</span>
-      <div class="bell-pop-txt"><b>${esc(n.title)}</b>${n.body ? `<small>${esc(n.body)}</small>` : ""}</div>
-      <div class="bell-pop-acts">${n.url ? `<a class="bell-pop-go" href="${esc(n.url)}">Открыть</a>` : `<a class="bell-pop-go" href="/notifications">Открыть</a>`}
-        <button type="button" class="bell-pop-x" aria-label="Закрыть">✕</button></div>`;
+    const [icon, label] = KIND[n.kind] || ["bell", "Уведомление"];
+    const up = n.kind === "price" && /выросла/i.test(n.title || "");
+    const ms = innerWidth < 768 ? 6000 : 12000;
+    box.className = `bell-pop v2 k-${esc(n.kind || "")}${up ? " up" : ""}`;
+    box.innerHTML = `<div class="bp-top"><span class="bp-ic">${up ? ic("trend") : ic(icon)}</span>
+        <span class="bp-eye">${esc(label)} · сейчас</span>
+        <button type="button" class="bell-pop-x bp-x" aria-label="Закрыть">${ic("x")}</button></div>
+      <b class="bp-t">${esc(n.title)}</b>${n.body ? `<p class="bp-b">${esc(n.body)}</p>` : ""}
+      <div class="bp-acts"><a class="bell-pop-go bp-go" href="${esc(n.url || "/notifications")}">Открыть</a>
+        <a class="bp-all" href="/notifications">Все уведомления</a></div>
+      <i class="bp-line" style="--ms:${ms}ms"></i>`;
     box.classList.remove("out");
     requestAnimationFrame(() => box.classList.add("in"));
     const close = () => { box.classList.add("out"); box.classList.remove("in"); };
-    let t = setTimeout(close, innerWidth < 768 ? 6000 : 15000);   // на телефоне — коротко, не закрывает ленту (акт 14.10)
-    box.onmouseenter = () => clearTimeout(t);
-    box.onmouseleave = () => { t = setTimeout(close, 6000); };
+    let t = setTimeout(close, ms);   // на телефоне — коротко, не закрывает ленту (акт 14.10)
+    box.onmouseenter = () => { clearTimeout(t); box.classList.add("hold"); };
+    box.onmouseleave = () => { box.classList.remove("hold"); t = setTimeout(close, 5000); };
     box.querySelector(".bell-pop-x").onclick = close;
     box.querySelector(".bell-pop-go").onclick = () => {
       fetch("/api/notices", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },

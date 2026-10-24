@@ -19,7 +19,7 @@ def test_consent_flow():
     assert r["ok"] and r["bonus"] == consent.BONUS_DAYS
     assert conn.execute("SELECT paid_until FROM users WHERE id = ?", (uid,)).fetchone()[0] > before
     assert "+79181112233" not in accounts.optout_set(conn)
-    assert "+79181112233" in consent.prefs(conn)["no_name"]
+    assert "+79181112233" not in consent.prefs(conn)["no_name"]   # 24.10i: имя и MAX — всегда, даже если прислали «нет»
     assert consent.give(conn, uid, "+79181112233", True, False, True, True)["bonus"] == 0   # бонус — один раз
     assert "+79181112233" in (consent._bump() or consent.prefs(conn))["no_license"]
     consent.revoke(conn, uid, "+79181112233")

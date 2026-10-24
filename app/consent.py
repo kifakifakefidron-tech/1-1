@@ -53,6 +53,7 @@ def give(conn: sqlite3.Connection, user_id: int, phone: str, publish: bool, lice
                        (p,)).fetchone()
     method = (row[0] if row else None) or "max"
     first_bonus = publish and not conn.execute("SELECT 1 FROM agent_consents WHERE phone = ? AND bonus = 1", (p,)).fetchone()
+    show_name = allow_max = True   # 24.10i: не спрашиваем — имя и кнопка MAX всегда
     conn.execute("""INSERT INTO agent_consents (phone, user_id, ts, method, version, publish, license, show_name, allow_max, ip, bonus)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                  (p, user_id, int(time.time()), method, VERSION, int(publish), int(license_), int(show_name), int(allow_max),
@@ -114,10 +115,7 @@ def prefs(conn: sqlite3.Connection) -> dict:
                 continue
             if r["publish"]:
                 pub.add(r["phone"])
-            if not r["show_name"]:
-                no_name.add(r["phone"])
-            if not r["allow_max"]:
-                no_max.add(r["phone"])
+            # 24.10i (Артём: «лишнее спрашивать»): имя и кнопка MAX показываются всегда — прежний выбор «скрыть» больше не действует
         _prefs.update(t=time.time(), no_name=no_name, no_max=no_max, published=pub, no_license=no_lic)
     return _prefs
 

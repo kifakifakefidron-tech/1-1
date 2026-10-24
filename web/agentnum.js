@@ -45,9 +45,6 @@
         <div class="an2-cell">
           ${opt("publish", given && c.publish, "phone", "Показывать мой номер и имя",
             `Согласие на <a href="/consent-publish" target="_blank">распространение персональных данных</a> — в карточках ваших объявлений, только вошедшим с доступом. Отозвать — в любой момент.`)}
-          <div class="an2-prefs"><span>Как показывать:</span>
-            <label class="an-sw"><input type="checkbox" data-k="show_name"${!given || c.show_name ? " checked" : ""}><span></span>Моё имя</label>
-            <label class="an-sw"><input type="checkbox" data-k="allow_max"${!given || c.allow_max ? " checked" : ""}><span></span>Кнопка «Написать в MAX»</label></div>
         </div>
         ${opt("license", given && c.license, "layers", "Тексты и фото объявлений",
           `Разрешение <a href="/license" target="_blank">использовать тексты и фото</a> — в карточках, превью ссылок и подборках для клиентов коллег.`)}
@@ -90,7 +87,7 @@
     const phone = card.dataset.phone;
     if (e.target.closest("[data-save]")) {
       const v = (k) => card.querySelector(`[data-k="${k}"]`).checked;
-      const r = await call("/api/agent/consent", { phone, publish: v("publish"), license: v("license"), show_name: v("show_name"), allow_max: v("allow_max") });
+      const r = await call("/api/agent/consent", { phone, publish: v("publish"), license: v("license"), show_name: true, allow_max: true });
       if (!r.ok) { toast(r.data.detail || "Не получилось сохранить"); return; }
       data.phones = r.data.phones;
       render();

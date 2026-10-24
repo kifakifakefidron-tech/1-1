@@ -1412,3 +1412,47 @@ summary { transition: color .2s var(--m-out); }
 .pv-chk input { flex: none; width: 19px; height: 19px; margin-top: 1px; accent-color: var(--gold); }
 .pv-chk a { color: var(--gold); }
 .pv-agree .note { font-size: 12px; color: var(--ink-3); }
+
+/* ═══ 24.10i: всплывающее уведомление и тосты — в стиле сайта ═══ */
+.bell-pop.v2 { display: block !important; width: min(380px, calc(100vw - 24px)); padding: 16px 16px 18px !important; border-radius: 22px !important;
+  background: linear-gradient(160deg, rgba(10, 74, 72, .97), rgba(4, 46, 45, .98)) !important; border: 1px solid rgba(227, 203, 143, .38) !important;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .07) !important; overflow: hidden; }
+.bell-pop.v2::before { display: none; }
+.bp-top { display: flex; align-items: center; gap: 10px; }
+.bp-ic { display: grid; place-items: center; width: 38px; height: 38px; flex: none; border-radius: 12px; color: #0f2f2e;
+  background: linear-gradient(160deg, var(--gold-100, #f3e8bc), var(--gold-300, #d9bf7f)); }
+.bp-ic svg { width: 19px; height: 19px; }
+.bell-pop.v2.k-price .bp-ic { background: linear-gradient(160deg, #c9f0dc, #7fd1a6); }
+.bell-pop.v2.k-price.up .bp-ic, .bell-pop.v2.k-gone .bp-ic { background: linear-gradient(160deg, #ffd6cc, #f29a7e); }
+.bell-pop.v2.k-plan .bp-ic { background: linear-gradient(160deg, #d8ecff, #7cc4f5); }
+.bell-pop.v2.k-client .bp-ic, .bell-pop.v2.k-buyer .bp-ic { background: linear-gradient(160deg, #e8deff, #b9a3f5); }
+.bp-eye { flex: 1; min-width: 0; font: 600 11px var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--gold-200, var(--gold));
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bp-x { display: grid; place-items: center; width: 30px; height: 30px; margin: 0 !important; padding: 0; border: 0; border-radius: 50%;
+  background: rgba(255, 255, 255, .08) !important; color: var(--ink); cursor: pointer; }
+.bp-x svg { width: 15px; height: 15px; }
+.bp-t { display: -webkit-box; margin: 12px 0 0; font: 600 17px/1.3 var(--display); color: var(--ink); -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere; }
+.bp-b { margin: 4px 0 0; color: var(--ink-2); font-size: 13.5px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere; }
+.bp-acts { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
+.bp-go { display: inline-flex; align-items: center; height: 38px; padding: 0 18px !important; border-radius: 999px; font: 600 14px var(--body) !important; }
+.bp-all { color: var(--ink-2); font-size: 13.5px; text-decoration: none; }
+.bp-all:hover { color: var(--gold); }
+.bp-line { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; transform-origin: left; background: linear-gradient(90deg, var(--gold-100, #f3e8bc), var(--gold-300, #d9bf7f));
+  opacity: .8; }
+.bell-pop.v2.in .bp-line { animation: bpLine var(--ms, 12s) linear forwards; }
+.bell-pop.v2.hold .bp-line { animation-play-state: paused; }
+@keyframes bpLine { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (max-width: 767px) {
+  .bell-pop.v2 { padding: 12px 12px 14px !important; border-radius: 18px !important; }
+  .bell-pop.v2 .bp-b { display: none; }
+  .bell-pop.v2 .bp-t { font-size: 15px; margin-top: 8px; }
+  .bell-pop.v2 .bp-acts { margin-top: 10px; }
+}
+/* тост — та же карточка: стекло, золотая точка-значок, крупнее */
+.toast { padding: 14px 20px 14px 16px !important; border-radius: 18px !important;
+  background: linear-gradient(160deg, rgba(10, 74, 72, .97), rgba(4, 46, 45, .98)) !important; border-color: rgba(227, 203, 143, .38) !important;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .42), inset 0 1px 0 rgba(255, 255, 255, .07) !important; font-size: 14.5px !important; }
+.toast::before { width: 22px; height: 22px; margin-top: -1px; border-radius: 50%; box-shadow: none;
+  background: var(--gold) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230f2f2e' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4 8-9'/%3E%3C/svg%3E") center / 14px no-repeat; }
