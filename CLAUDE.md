@@ -945,6 +945,14 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
 - 24.10 (ветки support-phone, support-only): ПОДДЕРЖКА — +7 938 422-28-30 (config.SUPPORT_PHONE): меню «Поддержка» (/contacts#support),
   «Контакты» — блок «Позвонить» / «Написать в MAX», /how — {{SUPPORT_PHONE}} / {{SUPPORT_TEL}}, /api/meta → support_phone.
   Подтверждение номера кодом в MAX — ПРЕЖНИЙ номер VERIFY_NUMBER из .env (решение Артёма: не номер поддержки).
+- 24.10 (ветка fix-gone, правило Артёма): объект уходит с сайта ТОЛЬКО если 1) в сообщении про ЭТОТ объект «продано / задаток / бронь»
+  (rules.is_sold / under_deposit по куску текста объекта), 2) не присылали STALE_DAYS (15), 3) агент сам отметил «продано»/снял,
+  4) удалил админ. Склейка повторов (копия → основная карточка) — не удаление. Убрано: «пост СТРЕЛ с фото без пары — скрыть»
+  (strely_photo) — остаётся на сайте, админу в отчёт. ownmatch.is_own — только номер В ТЕКСТЕ (раньше и номер переславшего: сотрудник
+  СТРЕЛ пересылал чужой объект с фото → его скрывали). Разово ownmatch.unhide_forwarded (state own_fix_v2, отчёт own_fix_report):
+  вернуть strely_photo и ошибочные strely/own_dup (свежие — на сайт, старые — в архив). listings.merged_into — куда приклеена копия
+  (ownmatch._move, dupfix, копии с артикулом в feed.sync); окно снятого объекта пишет НАСТОЯЩУЮ причину (server._gone_reason: продано,
+  задаток, копия, повтор, админ, срок) и у копии — «Открыть основную карточку» (старым dup_text основная ищется dupfix.find_main).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

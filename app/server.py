@@ -515,6 +515,32 @@ def api_hidden(request: Request, body: dict | None = None):
     return JSONResponse({"items": [{**search.row_to_item(r, False), "reason": r["h_reason"], "hidden_at": r["h_ts"]} for r in rows]})
 
 
+_GONE = {
+    "sold_text": ("Агент написал, что продано", "В последнем сообщении об этом объекте — «продана / снята с продажи»."),
+    "deposit": ("Объект под задатком", "Агент написал «задаток / бронь». Если сделка сорвётся и объект пришлют снова — вернётся на сайт."),
+    "chat": ("Объявление из чата, который мы не собираем", "Чат выключен или он не про Краснодар."),
+    "strely": ("Это копия объекта агентства", "Основная карточка — на сайте агентства."),
+    "strely_photo": ("Это копия объекта агентства", "Пост агентства с фото: основная карточка — на сайте агентства."),
+    "own_dup": ("Это повтор", "Этот объект уже есть в другой карточке."),
+    "dup_text": ("Это повтор", "Тот же текст и номер с другой ценой — объект есть в другой карточке."),
+    "admin": ("Скрыт администратором", ""), "phone": ("Скрыт администратором", ""),
+    "rent_rule": ("Скрыт правилом аренды", ""),
+}
+
+
+def _gone_reason(row) -> dict:
+    """Почему объект не на сайте: заголовок и пояснение для окна объекта."""
+    reason = row["hidden_reason"] if "hidden_reason" in row.keys() else None
+    if row["sold_at"] if "sold_at" in row.keys() else None:
+        if not reason or reason == "sold_text":
+            return {"kind": "sold", "title": "Агент отметил: продано", "text": ""}
+    if reason in _GONE:
+        t, x = _GONE[reason]
+        return {"kind": reason, "title": t, "text": x}
+    return {"kind": "stale", "title": "Объект снят с продажи",
+            "text": f"Его не присылали в чаты {config.STALE_DAYS}+ дней. Скорее всего, продан."}
+
+
 def api_listing(request: Request, body: dict | None = None):
     conn = db.get()
     lid = int(request.path_params["id"])
@@ -533,6 +559,21 @@ def api_listing(request: Request, body: dict | None = None):
         if d.get("fragment"):
             d["fragment"] = parser.strip_phones(d["fragment"])
     row = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
+    if not row["is_active"]:   # 24.10l: почему снят — честно (раньше любая причина выглядела как «продан»)
+        d["gone"] = _gone_reason(row)
+        mid = row["merged_into"] if "merged_into" in row.keys() else None
+        if not mid and row["hidden_reason"] == "dup_text":   # склеили до 24.10l — основную карточку найдём и запомним
+            from . import dupfix
+            mid = dupfix.find_main(conn, row)
+            if mid:
+                try:
+                    conn.execute("UPDATE listings SET merged_into = ? WHERE id = ?", (mid, lid))
+                    conn.commit()
+                except sqlite3.OperationalError:
+                    conn.rollback()
+        if mid:
+            tgt = conn.execute("SELECT id FROM listings WHERE id = ? AND is_active = 1", (mid,)).fetchone()
+            d["merged_into"] = tgt[0] if tgt else None
     # 19.10: просмотр карточки — в статистику агента (не роботы-превью и не сам агент со своим номером)
     if not _PREVIEW_BOT.search(request.headers.get("user-agent", "")):
         own_view = bool(user and conn.execute(

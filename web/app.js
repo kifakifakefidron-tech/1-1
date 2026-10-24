@@ -1072,9 +1072,10 @@
         : `<button type="button" class="dv-bar-b call" data-login>${ic("phone")}Позвонить</button>`) : "";
     const bar = gone || o.loading ? "" : (u || callBtn) ? `<div class="dv-bar">${u ? `<button type="button" class="dv-bar-b client" data-client-open="${o.id}">${ic("users")}Клиенту</button>` : ""}${callBtn}</div>` : "";
     return `
-      ${gone ? `<div class="dv-gone">${ic("alert")}<span><b>Объект снят с продажи</b>
-        <small>Его больше не присылают в чаты${o.last_seen ? ` — последний раз ${esc(new Date(o.last_seen * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }))}` : ""}. Скорее всего, продан.</small></span>
-        <a class="pill" href="/?${similarQ}" target="_top">Похожие объекты</a></div>` : ""}
+      ${gone ? `<div class="dv-gone">${ic("alert")}<span><b>${esc((o.gone && o.gone.title) || "Объект снят с продажи")}</b>
+        <small>${esc((o.gone && o.gone.text) || "")}${o.last_seen ? ` Последнее сообщение — ${esc(new Date(o.last_seen * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }))}.` : ""}</small></span>
+        ${o.merged_into ? `<a class="pill" href="/?open=${o.merged_into}" target="_top">Открыть основную карточку</a>`
+          : `<a class="pill" href="/?${similarQ}" target="_top">Похожие объекты</a>`}</div>` : ""}
       <div class="dv-hero${gone ? " dv-gone-gal" : ""}">${gallery}${photos.length > 1 ? `<span class="dv-count">${photos.length} фото</span>` : ""}</div>
       <div class="dv dv3">
         <div class="dv-head">

@@ -415,7 +415,8 @@ MIGRATIONS = [
     ("collections", "hide_map", "INTEGER NOT NULL DEFAULT 0"),
     ("collection_items", "map_lat", "REAL"),   # 24.10f: своя точка объекта в подборке (автор подвинул метку)
     ("collection_items", "map_lon", "REAL"),
-    ("collection_items", "map_off", "INTEGER NOT NULL DEFAULT 0"),   # точку этого объекта клиенту не показываем   # 24.10e: клиенту — без карты и точек (решает автор подборки)   # 24.10c: своё фото обложки подборки (/photos/pk/…); пусто — градиент цвета подборки
+    ("collection_items", "map_off", "INTEGER NOT NULL DEFAULT 0"),   # точку этого объекта клиенту не показываем
+    ("listings", "merged_into", "INTEGER"),   # 24.10l: копия приклеена к этой карточке (ownmatch._move, dupfix)   # 24.10e: клиенту — без карты и точек (решает автор подборки)   # 24.10c: своё фото обложки подборки (/photos/pk/…); пусто — градиент цвета подборки
     ("client_items", "pick_id", "INTEGER"),        # в какой подборке отправлен (статусы из подборки уходят вместе с ней)
     ("client_items", "sent_at", "INTEGER"),
     ("client_items", "opened_at", "INTEGER"),

@@ -35,9 +35,11 @@ def own_phones() -> set[str]:
 
 
 def is_own(phones, roles=None) -> bool:
+    """Объявление СТРЕЛ — номер СТРЕЛ в тексте объявления (phones; если в тексте номера нет, там номер приславшего).
+    24.10l (Артём: «объекты сняты, а присылались сегодня»): раньше считался и номер ТОГО, КТО ПЕРЕСЛАЛ (phone_roles
+    'sender') — сотрудник СТРЕЛ пересылал чужой объект с фото, его не находили на сайте агентства и скрывали ('strely_photo')."""
     ps = set(json.loads(phones) if isinstance(phones, str) else (phones or []))
-    rs = set((json.loads(roles) if isinstance(roles, str) else (roles or {})) or {})
-    return bool((ps | rs) & own_phones())
+    return bool(ps & own_phones())
 
 
 def _street(s) -> str:
@@ -170,6 +172,7 @@ def feed_match(conn: sqlite3.Connection, d: dict, with_photo: bool = False) -> i
 
 def _move(conn: sqlite3.Connection, src: int, dst: int) -> None:
     """Всё, что ссылалось на копию (избранное, клиенты, подборки, планер, журнал, история повторов), — на главную карточку."""
+    conn.execute("UPDATE listings SET merged_into = ? WHERE id = ?", (dst, src))   # 24.10l: окно копии открывает главную
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     for t in _REFS:
         if t in tables:
@@ -178,6 +181,32 @@ def _move(conn: sqlite3.Connection, src: int, dst: int) -> None:
     conn.execute("UPDATE listing_events SET listing_id = ? WHERE listing_id = ?", (dst, src))
     conn.execute("UPDATE listings SET seen_count = seen_count + (SELECT seen_count FROM listings WHERE id = ?), "
                  "last_seen = MAX(last_seen, (SELECT last_seen FROM listings WHERE id = ?)) WHERE id = ?", (src, src, dst))
+
+
+def unhide_forwarded(conn: sqlite3.Connection, now: int | None = None) -> dict:
+    """24.10l: один раз (state own_fix_v2) — вернуть объявления, скрытые как «свои» только из-за номера того, КТО ПЕРЕСЛАЛ.
+    Свежие (присылали за STALE_DAYS) — снова на сайте; старые — в обычный архив (повтор вернёт)."""
+    now = int(now or time.time())
+    if db.get_state(conn, "own_fix_v2"):
+        return {}
+    from . import config
+    back, arch, ex = 0, 0, []
+    for r in conn.execute("""SELECT id, title, phones, last_seen, hidden_reason FROM listings WHERE source = 'chat'
+                             AND hidden_reason IN ('strely', 'strely_photo', 'own_dup')""").fetchall():
+        # «пост с фото без пары» больше не скрываем вовсе; копии и дубли — только если объект на самом деле не СТРЕЛ
+        if r["hidden_reason"] != "strely_photo" and is_own(r["phones"]):
+            continue
+        fresh = (r["last_seen"] or 0) >= now - config.STALE_DAYS * 86400
+        conn.execute("UPDATE listings SET hidden_reason = NULL, merged_into = NULL, is_active = ? WHERE id = ?", (1 if fresh else 0, r["id"]))
+        back += fresh
+        arch += not fresh
+        if len(ex) < 30:
+            ex.append({"id": r["id"], "title": r["title"], "back": bool(fresh)})
+    rep = {"returned": back, "archived": arch, "examples": ex, "ts": now}
+    db.set_state(conn, "own_fix_report", json.dumps(rep, ensure_ascii=False))
+    db.set_state(conn, "own_fix_v2", "1")
+    conn.commit()
+    return rep
 
 
 def run(conn: sqlite3.Connection, now: int | None = None) -> dict:
@@ -215,13 +244,11 @@ def run(conn: sqlite3.Connection, now: int | None = None) -> dict:
     for a in check:
         pp = photo_post(conn, a)
         fid = best(feed, a) or (best(feed, a, loose) if pp else None)
-        if not fid and pp:   # пост с фото — точно есть на сайте, но пару не нашли: скрываем, админу — списком на проверку
-            conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'strely_photo' WHERE id = ?", (a["id"],))
-            done.add(a["id"])
+        if not fid and pp:   # 24.10l (Артём: «снимать строго — продано/задаток, 15 дней, сам или админ»): пару на сайте
+            # не нашли — объект ОСТАЁТСЯ на сайте, админу — списком на проверку (раньше скрывали «strely_photo»)
             nopair += 1
             if len(ex) < 30:
-                ex.append({"id": a["id"], "to": None, "title": a["title"], "why": "пост с фото — пары на сайте не нашли, скрыт"})
-            continue
+                ex.append({"id": a["id"], "to": None, "title": a["title"], "why": "пост с фото — пары на сайте не нашли, оставлен на сайте"})
         if fid:
             _move(conn, a["id"], fid)
             conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'strely' WHERE id = ?", (a["id"],))
@@ -266,4 +293,5 @@ def maybe_run(conn: sqlite3.Connection) -> dict | None:
     if time.time() - last < 60:   # раз в минуту: фото приходит чуть позже текста — копия не висит на сайте
         return None
     db.set_state(conn, "own_match_ts", str(int(time.time())))
+    unhide_forwarded(conn)   # один раз: вернуть скрытые только из-за номера переславшего
     return run(conn)

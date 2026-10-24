@@ -38,6 +38,19 @@ def _twins(a, b) -> bool:
     return bool(_close(a["price"], b["price"], 0.10, 0)) and text_twin(a["fragment"], b["fragment"], short_ok=True)
 
 
+def find_main(conn: sqlite3.Connection, row) -> int | None:
+    """24.10l: копия, склеенная до появления merged_into, — найти её основную карточку (тот же текст и место, на сайте)."""
+    p = _place(row)
+    if not p:
+        return None
+    for r in conn.execute("""SELECT * FROM listings WHERE is_active = 1 AND id != ? AND deal = ? AND rooms IS ? AND fragment IS NOT NULL
+                             AND (complex = ? OR street = ?) ORDER BY first_seen LIMIT 200""",
+                          (row["id"], row["deal"], row["rooms"], row["complex"], row["street"])).fetchall():
+        if _place(r) == p and _twins(r, row):
+            return r["id"]
+    return None
+
+
 def run(conn: sqlite3.Connection, apply: bool = False) -> dict:
     rows = conn.execute("""SELECT * FROM listings WHERE source = 'chat' AND is_active = 1 AND hidden_reason IS NULL
                            AND COALESCE(owner_user_id, 0) = 0 AND fragment IS NOT NULL""").fetchall()

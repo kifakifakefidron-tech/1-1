@@ -173,8 +173,11 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
             conn.execute("UPDATE listings SET is_active=0 WHERE id=?", (r["id"],))
             gone += 1
     # Объявления из чатов с артикулом, который есть в фиде, — это объекты СТРЕЛ: копии скрываем
+    # 24.10l: с причиной и ссылкой на карточку сайта — окно копии открывает её, а не пишет «снят, скорее всего продан»
     dupes = conn.execute(
-        """UPDATE listings SET is_active = 0 WHERE source = 'chat' AND is_active = 1 AND article IN
+        """UPDATE listings SET is_active = 0, hidden_reason = 'strely',
+                  merged_into = (SELECT f.id FROM listings f WHERE f.source = 'feed' AND f.is_active = 1 AND f.article = listings.article LIMIT 1)
+           WHERE source = 'chat' AND is_active = 1 AND article IN
                (SELECT article FROM listings WHERE source = 'feed' AND is_active = 1 AND article IS NOT NULL)""").rowcount
     conn.commit()
     db.set_state(conn, "feed_synced", str(now))

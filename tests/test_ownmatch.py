@@ -88,14 +88,15 @@ def test_photo_post_always_sticks_or_hides():
     conn.execute("""INSERT INTO listings (type, deal, rooms, area, price, title, phones, photos, first_seen, last_seen,
                     seen_count, is_active, source, search_text) VALUES ('flat','sale',2,56.0,6000000,'пост с фото',
                     '["+79618571772"]','["/photos/1/a.jpg"]',1,1,1,1,'chat','')""")
-    # пост с фото, которому на сайте пары нет совсем — всё равно скрыт (и в отчёте админу)
+    # пост с фото, которому на сайте пары нет совсем — 24.10l: ОСТАЁТСЯ на сайте (снимаем только продано/задаток/срок/вручную), в отчёте админу
     conn.execute("""INSERT INTO listings (type, deal, rooms, area, price, title, phones, photos, first_seen, last_seen,
                     seen_count, is_active, source, search_text) VALUES ('house','sale',NULL,120.0,15000000,'дом с фото',
                     '["+79618571772"]','["/photos/2/b.jpg"]',1,1,1,1,'chat','')""")
     conn.commit()
     rep = ownmatch.run(conn)
     assert rep == {"to_feed": 1, "merged": 0, "nopair": 1}
-    assert [r[0] for r in conn.execute("SELECT id FROM listings WHERE is_active = 1")] == [fid]
+    active = [r[0] for r in conn.execute("SELECT title FROM listings WHERE is_active = 1 AND source = 'chat'")]
+    assert active == ["дом с фото"]
 
 
 def test_admin_set_fields_sticks_and_learns():
