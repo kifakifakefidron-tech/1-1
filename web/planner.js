@@ -611,6 +611,8 @@
     const sp = new URLSearchParams(location.search);
     if (sp.get("add")) {
       await openEvent(null, { kind: KINDS[sp.get("add")] ? sp.get("add") : "show", listing: Number(sp.get("listing")) || null });
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(sp.get("day") || "")) {   // 24.10d: день из недели в кабинете
+      await pickDay(sp.get("day"));
     } else if (sp.get("event")) {
       const id = Number(sp.get("event"));
       let ev = findEv(id);

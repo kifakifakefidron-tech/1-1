@@ -31,6 +31,7 @@
   const sub = (it) => [it.complex ? `ЖК ${it.complex}` : "", it.district, it.street ? `${it.street}${it.house ? `, ${it.house}` : ""}` : ""]
     .filter(Boolean).join(" · ");
 
+  let addSrc = "fav", recent = null;
   let list = [], favs = null, clientsList = null, q = "", filter = "all", tab = "items", favQ = "";
   const COLORS = ["gold", "teal", "sky", "violet", "coral", "rose", "lime", "slate"];
   const NK = { note: "Заметка", call: "Звонок", show: "Показ", meet: "Встреча" };
@@ -96,6 +97,7 @@
   }
   async function loadSide() {   // избранное (добавлять) — один раз
     if (favs === null) { const r = await call("/api/favorites"); favs = r.ok ? r.data.items.filter((f) => f.favorite !== false) : []; }
+    if (recent === null) { const r = await call("/api/recent"); recent = r.ok ? r.data.items : []; }
     renderDetail();
   }
 
@@ -229,31 +231,29 @@
     return `<div class="pk2-wn" title="Журнал — видите только вы"><span class="pk2-wn-k k-${esc(n.kind)}">${NK[n.kind] || "Заметка"} · ${esc(when(n.ts))}</span>
       ${n.text ? `<p>${esc(n.text)}</p>` : ""}${ns.length > 1 ? `<small>ещё ${ns.length - 1} в журнале объекта</small>` : ""}</div>`;
   }
-  function favCard(f, p) {
-    return `<div class="pk2-fav">
-        <span class="pk2-fph">${f.photos && f.photos[0] ? `<img src="${esc(f.photos[0])}" alt="" loading="lazy">`
-          : `<span class="ph-none"><img src="/static/favicon.svg" alt=""><small>Фото у агента</small></span>`}</span>
-        <b>${esc(money(f.price, f.deal))}</b><small>${esc(f.complex ? `ЖК ${f.complex} · ${f.title}` : f.title)}</small>
-        ${f.description ? `<p class="pk2-fdesc">${esc(f.description.slice(0, 220))}</p>` : ""}
-        <a class="pk2-fopen" href="/?open=${f.id}">Открыть объект</a>
-        <button type="button" class="pk2-addb" data-add="${f.id}" data-pid="${p.id}" aria-label="Добавить в подборку">${ic("plus")}</button></div>`;
+  function favCard(f, p) {   // 24.10d: та же карточка, что везде, с полным описанием и кнопкой «Добавить»
+    return LCard.html(f, { desc: true, meta: "",
+      foot: `<div class="lc-acts"><button type="button" class="lc-btn main" data-add="${f.id}" data-pid="${p.id}">${ic("plus")}Добавить в подборку</button></div>` });
   }
   function baseStrip(p) {
     if (!baseQ.trim()) return `<p class="pk2-hint">Пишите как в поиске на главной: «2к фмр до 7 млн», «студия самолёт», улица — покажем 20 объектов.</p>`;
     if (baseRes === null) return `<p class="pk2-hint">Ищем…</p>`;
     const inPick = new Set(p.items.map((x) => x.listing_id));
     const items = baseRes.filter((f) => !inPick.has(f.id));
-    return items.length ? `<div class="pk2-strip">${items.map((f) => favCard(f, p)).join("")}</div>` : `<p class="pk2-hint">Ничего не нашлось.</p>`;
+    return items.length ? LCard.grid(items.map((f) => favCard(f, p)).join(""), "sm") : `<p class="pk2-hint">Ничего не нашлось.</p>`;
   }
-  function addStrip(p) {
-    if (favs === null) return `<p class="pk2-hint">Загружаем избранное…</p>`;
+  function addStrip(p) {   // 24.10d: откуда добавить — избранное или недавно открытые
+    const src = addSrc === "recent" ? recent : favs;
+    if (src === null) return `<p class="pk2-hint">Загружаем…</p>`;
     const inPick = new Set(p.items.map((x) => x.listing_id));
     const s = favQ.trim().toLowerCase();
-    const add = favs.filter((f) => !inPick.has(f.id) && (!s || `${f.title} ${f.complex || ""} ${f.district || ""}`.toLowerCase().includes(s)));
-    if (!favs.length) return `<p class="pk2-hint">Избранное пусто. Отмечайте объекты сердечком на <a href="/">поиске</a> — они появятся здесь.</p>`;
-    if (!add.length) return `<p class="pk2-hint">${s ? "Ничего не нашлось." : "Всё избранное уже в подборке."}</p>`;
-    return `<div class="pk2-strip">${add.slice(0, 40).map((f) => favCard(f, p)).join("")}</div>`;
+    const add = src.filter((f) => !inPick.has(f.id) && (!s || `${f.title} ${f.complex || ""} ${f.district || ""} ${f.street || ""}`.toLowerCase().includes(s)));
+    if (!src.length) return `<div class="pk7-none">${ic(addSrc === "recent" ? "eye" : "heart")}<b>${addSrc === "recent" ? "Вы ещё ничего не открывали" : "Избранное пусто"}</b>
+      <span>${addSrc === "recent" ? "Открывайте объекты на поиске — они появятся здесь." : "Отмечайте объекты сердечком на поиске — они появятся здесь."}</span></div>`;
+    if (!add.length) return `<p class="pk2-hint">${s ? "Ничего не нашлось." : "Все эти объекты уже в подборке."}</p>`;
+    return LCard.grid(add.slice(0, 40).map((f) => favCard(f, p)).join(""), "sm");
   }
+
   function renderDetail() {
     const box = $("pkDetail");
     const p = list.find((x) => x.id === open);
@@ -299,14 +299,18 @@ ${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
         ${p.items.length ? `<p class="pk2-hint">Клиент увидит объекты в этом порядке — ${isPhone() ? "стрелки «Выше / Ниже» в «Настроить»" : "перетащите строку за ⠿, чтобы поменять"}.</p>
           <div class="pk2-grid pk5-list" id="pkGrid">${p.items.map((it, i) => objCard(p, it, i)).join("")}</div>`
           : `<div class="pk2-noitems">${ic("home")}<b>В подборке пока нет объектов</b><span>Добавьте из избранного ниже или кнопкой «Клиенту» в окне объекта на поиске.</span></div>`}
-        <button type="button" class="pk5-addbtn${addOpen ? " on" : ""}" data-addopen>${ic("plus")}${addOpen ? "Скрыть" : "Добавить объект"}</button>
-        ${addOpen || !p.items.length ? `<section class="pk2-add">
-          <div class="pk2-add-h"><h3>${ic("heart")}Из избранного</h3>
-            <label class="pk2-search sm"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-              <input id="pkFavQ" type="search" value="${esc(favQ)}" placeholder="ЖК, улица" aria-label="Найти в избранном"></label></div>
+        ${addOpen || !p.items.length ? `<section class="pk7-add">
+          <div class="pk7-add-h"><div><h3>Добавить объект</h3><p>Выберите из своего списка — объект сразу встанет в конец подборки.</p></div>
+            ${p.items.length ? `<button type="button" class="pk7-x" data-addopen aria-label="Свернуть">${ic("x")}</button>` : ""}</div>
+          <div class="pk7-bar"><div class="pk7-seg" role="tablist">
+              <button type="button" data-addsrc="fav" class="${addSrc === "fav" ? "on" : ""}">${ic("heart")}Избранное${favs ? `<b>${favs.length}</b>` : ""}</button>
+              <button type="button" data-addsrc="recent" class="${addSrc === "recent" ? "on" : ""}">${ic("eye")}Недавно смотрели${recent ? `<b>${recent.length}</b>` : ""}</button></div>
+            <label class="pk2-search sm pk7-q"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              <input id="pkFavQ" type="search" value="${esc(favQ)}" placeholder="ЖК, улица, район" aria-label="Найти"></label></div>
           <div id="pkFavs">${addStrip(p)}</div>
-          <p class="pk2-hint">Нужного нет в избранном? Найдите объект на <a href="/">поиске</a> и нажмите «Клиенту» в окне объекта — он сразу попадёт сюда.</p>
-        </section>` : ""}` : `
+          <p class="pk7-tip">${ic("help")}Нужного нет? Найдите объект на <a href="/">поиске</a> и нажмите «Клиенту» в окне объекта — он сразу попадёт в эту подборку.</p>
+        </section>` : `<button type="button" class="pk7-open" data-addopen><span class="pk7-oi">${ic("plus")}</span>
+          <span><b>Добавить объект</b><small>из избранного или недавно просмотренных</small></span>${ic("chevron")}</button>`}` : `
         <form class="pk2-form" data-edit="${p.id}">
           <label class="agent-field"><span>Название — видите только вы</span><input name="title" maxlength="120" value="${esc(p.title)}"></label>
           <label class="agent-field"><span>Заголовок для клиента</span><input name="client_title" maxlength="120" value="${esc(p.client_title || "")}"
@@ -413,6 +417,7 @@ ${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
       catch { prompt("Скопируйте ссылку:", link(p)); }
       return;
     }
+    if (t.dataset.addsrc) { addSrc = t.dataset.addsrc; renderDetail(); return; }
     if (t.dataset.add) {
       t.disabled = true;
       const r = await call(`/api/picks/${pid}/items`, { listing_id: Number(t.dataset.add), add: true });

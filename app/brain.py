@@ -178,7 +178,8 @@ def overview(conn: sqlite3.Connection) -> dict:
 
 # ─── всё выученное — одним списком ─────────────────────────────────────────
 KNOW_KINDS = {"addr": "Дом", "cx_alias": "Название ЖК", "cx_district": "ЖК → район", "street": "Улица → район",
-              "frag_price": "Цена", "frag_deal": "Продажа / аренда", "point": "Точка на карте"}
+              "frag_price": "Цена", "frag_deal": "Продажа / аренда", "point": "Точка на карте",
+              "frag_repair": "Ремонт (этот текст)", "repair_phrase": "Ремонт: слова"}
 
 
 def knowledge(conn: sqlite3.Connection, kind: str = "", q: str = "", limit: int = 500) -> list[dict]:

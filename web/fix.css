@@ -155,3 +155,13 @@
 .fx-repair-b { display: flex; flex-wrap: wrap; gap: 8px; }
 .fx-repair-b .pill { min-width: 140px; justify-content: center; }
 .fx-text mark { background: rgba(227, 203, 143, .35); color: inherit; border-radius: 4px; padding: 0 2px; }
+
+/* 24.10d: очередь «Ремонт» — выученные слова */
+.fx-phr { margin-top: 12px; padding: 12px 14px; border-radius: 16px; border: 1px dashed var(--glass-line-2); background: rgba(255, 255, 255, .03); }
+.fx-phr-q { margin: 0 0 8px; font-size: 13px; color: var(--ink-3); line-height: 1.45; }
+.fx-phr-q b { color: var(--ink); }
+.fx-phr-f { display: flex; flex-wrap: wrap; gap: 6px; }
+.fx-phr-f input { flex: 1 1 220px; min-width: 0; padding: 9px 12px; border-radius: 12px; border: 1px solid var(--glass-line); background: rgba(0, 0, 0, .16);
+  color: var(--ink); font: 15px var(--body); }
+.fx-phr-msg { margin: 8px 0 0; color: var(--ok); font-size: 13px; }
+#fxText mark { cursor: pointer; }

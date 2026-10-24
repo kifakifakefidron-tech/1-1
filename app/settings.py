@@ -16,7 +16,8 @@ from pathlib import Path
 from . import config
 
 COLORS = ("gold", "teal", "sky", "violet", "coral", "rose", "lime", "slate")
-DEFAULTS = {"pick_color": "gold", "pick_cover": "", "pick_photo": "", "pick_brand": "", "pick_name": "", "pick_phone": "", "cabinet_order": [],
+THEMES = ("light",) + COLORS   # 24.10d: тема подборки для клиента; «light» — классика (как было)
+DEFAULTS = {"pick_color": "light", "pick_cover": "", "pick_photo": "", "pick_brand": "", "pick_name": "", "pick_phone": "", "cabinet_order": [],
             "blocks": [], "mail_off": False}
 # Свои блоки кабинета — только безопасные виды и только данные (никакой разметки и скриптов от пользователя)
 BLOCK_TYPES = ("note", "todo", "links", "search", "goal", "countdown", "stock")
@@ -88,7 +89,7 @@ def save(conn: sqlite3.Connection, user_id: int, patch: dict) -> dict:
     cur = get(conn, user_id)
     if "pick_color" in patch:
         c = str(patch["pick_color"] or "")
-        cur["pick_color"] = c if c in COLORS or re.fullmatch(r"#[0-9a-fA-F]{6}", c) else "gold"
+        cur["pick_color"] = c if c in THEMES or re.fullmatch(r"#[0-9a-fA-F]{6}", c) else "light"
     for key in ("pick_cover", "pick_photo"):   # только своё загруженное фото (или пусто — без обложки / без фото)
         if key in patch:
             u = str(patch[key] or "")

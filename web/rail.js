@@ -37,12 +37,13 @@
     { href: "/cabinet", icon: "dashboard", tip: "Кабинет", desc: "Дела, ставки, курсы, новости", user: true },
     { href: "/my", icon: "home-edit", tip: "Мои объекты", desc: "Свои объявления и их статистика", user: true, also: ["/my/edit"] },
     { href: "/clients", icon: "users", tip: "Клиенты", desc: "Этапы, подборки, что кому показали", main: true, user: true },
+    // 24.10d (Артём): на телефоне — 6-й пункт нижней панели, сразу после «Клиентов»
+    { href: "/picks", icon: "stack", tip: "Подборки", desc: "Ссылка для клиента с вашим контактом", main: true, user: true },
     { href: "/requests", icon: "briefcase", tip: "Запросы покупателей", short: "Запросы", desc: "Кто что ищет и номер агента", main: true, user: true },
     { href: "/work", icon: "heart", tip: "Избранное", desc: "Сохранённые объекты и клиенты", main: true, user: true,
       count: (c) => c.work, countTip: (n) => `в избранном: ${n}` },
     { href: "/planner", icon: "calendar", tip: "Планер", desc: "Показы, звонки, встречи", user: true,
       count: (c) => c.plan_today + c.plan_overdue, countTip: (n) => `дел на сегодня и просроченных: ${n}`, hot: (c) => c.plan_overdue > 0 },
-    { href: "/picks", icon: "stack", tip: "Подборки", desc: "Ссылка для клиента с вашим контактом", user: true },
     { href: "/compare", icon: "scale", tip: "Сравнение", desc: "До 10 объектов рядом" },
     { href: "/market", icon: "chart", tip: "Аналитика рынка", short: "Аналитика", desc: "Цена метра по районам и ЖК" },
     { href: "/notifications", icon: "bell", tip: "Уведомления", desc: "Новые объекты и снижение цен", user: true, bell: true },
@@ -114,7 +115,7 @@
     sheet.innerHTML = `<div class="rs-in"><span class="rs-grab" data-rs-close></span>
       <div class="rs-top"><b class="rs-h">Все разделы</b><button type="button" class="rs-x" data-rs-close aria-label="Закрыть">✕</button></div>`
       + (me ? "" : `<a class="rs-a" href="/?login=1">${ic("user")}<span><b>Войти</b><small>Неделя бесплатно — без карты</small></span></a>`)
-      + items.filter((it) => !it.sep).map((it) => `<a class="rs-a${isOn(it) ? " on" : ""}" href="${it.href}">${ic(it.icon)}<span><b>${it.tip}</b><small>${it.desc || ""}</small></span>${badge(it)}</a>`).join("")
+      + items.filter((it) => !it.sep).map((it) => `<a class="rs-a${isOn(it) ? " on" : ""}" href="${it.href}"${it.main ? " data-main" : ""}>${ic(it.icon)}<span><b>${it.tip}</b><small>${it.desc || ""}</small></span>${badge(it)}</a>`).join("")
       + `</div>`;
     document.body.appendChild(sheet);
     const more = rail.querySelector(".rail-more");
@@ -131,9 +132,7 @@
       setTimeout(hide, 260);
     };
     const open = () => {
-      // 17.10: в «Ещё» — только то, чего нет в нижней панели (что видно внизу — в шторке не повторяем)
-      const shown = new Set([...rail.querySelectorAll("a.rail-a")].filter((a) => a.offsetParent !== null).map((a) => a.getAttribute("href")));
-      sheet.querySelectorAll("a.rs-a").forEach((a) => { a.hidden = shown.has(a.getAttribute("href")); });
+      // 24.10d (Артём): в «Ещё» — ВСЕ разделы, и те, что есть в нижней панели (одно место, где видно всё)
       try { sheet.showPopover(); } catch { sheet.classList.add("open"); }
       more.setAttribute("aria-expanded", "true");
     };

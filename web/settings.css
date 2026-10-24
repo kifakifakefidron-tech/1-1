@@ -109,3 +109,23 @@
   .st2-nav a { flex: none; padding: 8px 12px; border-radius: 999px; font-size: 13px; }
   .st2-nav a svg { display: none; }
 }
+
+/* 24.10d: тема подборки — предпросмотр в её цветах (фон, карточки, текст, акцент) */
+.st-preview { --sp-bg: #f5f5f7; --sp-card: #fff; --sp-ink: #1d1d1f; --sp-ink3: #6e6e73; --accent: #1d1d1f; --sp-acc-ink: #fff; }
+.st-preview[data-theme="gold"] { --sp-bg: #f4efe4; --sp-card: #fffdf8; --sp-ink: #2b2417; --sp-ink3: #857a66; --accent: #c9a85c; --sp-acc-ink: #2b2417; }
+.st-preview[data-theme="teal"] { --sp-bg: #062b2a; --sp-card: #0c3b39; --sp-ink: #f3e8bc; --sp-ink3: #9fb3a8; --accent: #e3cb8f; --sp-acc-ink: #062b2a; }
+.st-preview[data-theme="sky"] { --sp-bg: #eef3f9; --sp-card: #ffffff; --sp-ink: #0f2540; --sp-ink3: #637893; --accent: #5b9bd5; --sp-acc-ink: #ffffff; }
+.st-preview[data-theme="violet"] { --sp-bg: #f3f0fa; --sp-card: #ffffff; --sp-ink: #251a3f; --sp-ink3: #776d8f; --accent: #8f74e0; --sp-acc-ink: #ffffff; }
+.st-preview[data-theme="coral"] { --sp-bg: #fbf1ec; --sp-card: #fffaf7; --sp-ink: #3a1e14; --sp-ink3: #8f6c60; --accent: #e0785c; --sp-acc-ink: #ffffff; }
+.st-preview[data-theme="rose"] { --sp-bg: #fbf0f4; --sp-card: #fffafc; --sp-ink: #3a1424; --sp-ink3: #8f6478; --accent: #d86a96; --sp-acc-ink: #ffffff; }
+.st-preview[data-theme="lime"] { --sp-bg: #f1f5e9; --sp-card: #fcfef8; --sp-ink: #1f2c14; --sp-ink3: #6c7a5e; --accent: #7fae45; --sp-acc-ink: #ffffff; }
+.st-preview[data-theme="slate"] { --sp-bg: #15171b; --sp-card: #1f2228; --sp-ink: #eef0f3; --sp-ink3: #8b929c; --accent: #c9b27a; --sp-acc-ink: #15171b; }
+.st-preview .sp-phone { background: var(--sp-bg); color: var(--sp-ink); transition: background .35s, color .35s; }
+.st-preview .sp-agent, .st-preview .sp-item { background: var(--sp-card); color: var(--sp-ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .06); }
+.st-preview .sp-agent small, .st-preview .sp-item small { color: var(--sp-ink3); }
+.st-preview .sp-btn { background: var(--accent); color: var(--sp-acc-ink); }
+.st-preview .sp-brand { color: var(--accent); }
+.st-preview .sp-head.has-cover .sp-cover::after { background: linear-gradient(180deg, transparent 20%, var(--sp-bg)); }
+.st-color.light { background: linear-gradient(135deg, #f5f5f7 50%, #1d1d1f 50%) !important; }
+.st-colors-h { display: flex; justify-content: space-between; gap: 8px; }
+.st-theme-name { color: var(--ink-2); font-size: 13px; margin: 6px 0 0; }

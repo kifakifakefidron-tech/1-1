@@ -17,9 +17,9 @@
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.min.css">
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
-<link rel="stylesheet" href="/static/fix.css?v=17">
+<link rel="stylesheet" href="/static/fix.css?v=18">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=92">
+<link rel="stylesheet" href="/static/glass.css?v=94">
 </head>
 <body>
 <header class="nav"><div class="nav-in">
@@ -60,6 +60,14 @@
           <button type="button" class="pill" data-repair-pick="yes">С ремонтом</button>
           <button type="button" class="pill" data-repair-pick="no">Без ремонта</button>
           <button type="button" class="pill light" data-repair-pick="none">Не указано</button>
+        </div>
+        <div class="fx-phr">
+          <p class="fx-phr-q"><b>Запомнить слова для всех объявлений</b> — выделите их в тексте выше или нажмите на подсвеченное слово</p>
+          <div class="fx-phr-f"><input id="fxPhr" maxlength="80" placeholder="например: свежая косметика" autocomplete="off" aria-label="Слова о состоянии">
+            <button type="button" class="chip" data-phr="yes">= с ремонтом</button>
+            <button type="button" class="chip" data-phr="no">= без ремонта</button>
+            <button type="button" class="chip" data-phr="none">не про ремонт</button></div>
+          <p class="fx-phr-msg" id="fxPhrMsg" hidden></p>
         </div>
       </div>
       <div class="fx-phones" id="fxPhones"></div>
@@ -151,10 +159,10 @@
 <script src="/static/icons.js?v=9"></script>
 <script src="/static/pickers.js?v=18"></script>
 <script src="/static/max.js?v=2"></script>
-<script src="/static/rail.js?v=30"></script>
+<script src="/static/rail.js?v=32"></script>
 <script src="/static/combo.js?v=3"></script>
 <script src="/static/yasel.js?v=4"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/fix.js?v=26"></script>
+<script src="/static/fix.js?v=27"></script>
 </body>
 </html>

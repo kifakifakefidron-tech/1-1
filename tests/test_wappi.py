@@ -211,3 +211,12 @@ def test_trim_chat_photos_once(conn):
                     VALUES ('flat','sale',1,'t','[]',1,1,1,1,'feed','["/a","/b"]')""")
     assert media.trim_chat_photos(conn) == 1 and media.trim_chat_photos(conn) == 0
     assert [json.loads(r[0]) for r in conn.execute("SELECT photos FROM listings ORDER BY id")] == [["/a"], ["/a", "/b"]]
+
+
+def test_wappi_error_hints():
+    """24.10d: письмо о сбое Wappi объясняет простыми словами, что случилось."""
+    from app import notify
+    assert "QR" in notify.wappi_hint('HTTP 400 {"detail":"Driver not ready"}')
+    assert "само" in notify.wappi_hint("The read operation timed out")
+    assert "позже" in notify.wappi_hint('HTTP 400 {"detail":"повторите запрос чуть позже"}')
+    assert notify.WAPPI_GRACE_S >= 15 * 60

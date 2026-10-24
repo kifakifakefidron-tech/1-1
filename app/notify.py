@@ -83,6 +83,26 @@ def daily_summary(conn: sqlite3.Connection) -> None:
         db.set_state(conn, "tg_summary_day", today)
 
 
+WAPPI_GRACE_S = 15 * 60
+
+
+def wappi_hint(err: str) -> str:
+    """Что значит ошибка Wappi — простыми словами."""
+    e = (err or "").lower()
+    if "driver not ready" in e or "not authorized" in e or "qr" in e:
+        return ("номер в Wappi отключён (телефон вышел из WhatsApp/мессенджера или разрядился). "
+                "Откройте кабинет wappi.pro → профиль → если просит QR-код — отсканируйте его телефоном заново.")
+    if "timed out" in e or "timeout" in e:
+        return "Wappi долго не отвечает — у них перегрузка или сеть. Обычно проходит само; если держится часами — напишите в поддержку Wappi."
+    if "чуть позже" in e or "429" in e or "too many" in e:
+        return "Wappi просит повторить запрос позже — у них временная перегрузка. Обычно проходит само."
+    if "401" in e or "403" in e or "token" in e:
+        return "Wappi не принимает ключ — проверьте WAPPI_TOKEN в .env и оплату тарифа."
+    if "402" in e or "оплат" in e or "balance" in e:
+        return "похоже, закончилась оплата тарифа Wappi — продлите в кабинете wappi.pro."
+    return "проверьте в кабинете wappi.pro, подключён ли номер и оплачен ли тариф."
+
+
 def check_health(conn: sqlite3.Connection, wappi_errors: dict[str, str], llm_failures: int) -> None:
     """Проверки после каждого цикла worker."""
     if not _chat_id(conn) and not (mailer.available() and (config.ALERT_EMAIL or config.ADMIN_EMAILS)):
@@ -96,8 +116,22 @@ def check_health(conn: sqlite3.Connection, wappi_errors: dict[str, str], llm_fai
                                    f"(подключены ли номера, оплачен ли тариф).")
         else:
             resolve(conn, "silence", "Сообщения из чатов снова поступают.")
-    for profile, err in wappi_errors.items():
-        alert(conn, f"wappi:{profile}", f"Wappi {profile} отвечает ошибкой: {err[:300]}")
+    # 24.10d: разовые сбои Wappi (таймаут, «повторите позже») проходят сами — пишем, только если ошибка держится 15+ минут
+    for profile in set(config.WAPPI_PROFILES) | set(wappi_errors):
+        key = f"wappi_err_since:{profile}"
+        err = wappi_errors.get(profile)
+        if not err:
+            if db.get_state(conn, key) not in (None, "0"):
+                db.set_state(conn, key, "0")
+                resolve(conn, f"wappi:{profile}", f"Wappi {profile} снова отвечает — сообщения собираются.")
+            continue
+        since = int(db.get_state(conn, key, "0") or 0)
+        if not since:
+            db.set_state(conn, key, str(now))
+            continue
+        if now - since >= WAPPI_GRACE_S:
+            alert(conn, f"wappi:{profile}", f"Wappi {profile} не отвечает уже {(now - since) // 60} мин: {wappi_hint(err)}\n"
+                                            f"Ответ Wappi: {err[:300]}")
     if config.SITE_URL.startswith("https") and (config.SECRET_KEY in ("", "change-me") or len(config.SECRET_KEY) < 24):
         alert(conn, "secret_key", "В .env не задан надёжный SECRET_KEY — ссылки из писем и календаря можно подделать. "
                                   "Выполните на сервере: echo SECRET_KEY=$(openssl rand -hex 32) >> .env && docker compose up -d",

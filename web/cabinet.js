@@ -56,10 +56,14 @@
     $("dName").textContent = me.name || me.email || "Коллега";
     $("dMail").textContent = [me.name && me.email, me.tg_username && "@" + me.tg_username].filter(Boolean).join(" · ");
     const left = me.access_until ? Math.max(0, Math.ceil((me.access_until - Date.now() / 1000) / 86400)) : 0;
-    const acc = $("dAccess");
-    if (me.is_admin) { acc.className = "d-access gold"; acc.textContent = "Администратор"; }
-    else if (me.access) { acc.className = "d-access ok"; acc.textContent = `Доступ · ещё ${left} ${plural(left, "день", "дня", "дней")}`; }
-    else { acc.className = "d-access off"; acc.textContent = "Без доступа к номерам"; }
+    const acc = $("dAccess");   // 24.10d: остаток подписки — крупно наверху (и на телефоне)
+    const till = me.access_until ? new Date(me.access_until * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }) : "";
+    acc.href = "/pay";
+    if (me.is_admin) { acc.className = "d-access d-sub gold"; acc.innerHTML = `${ic("shield")}<span><b>Админ</b><small>доступ без ограничений</small></span>`; }
+    else if (me.access) {
+      acc.className = `d-access d-sub ${left <= 2 ? "warn" : "ok"}`;
+      acc.innerHTML = `<b class="d-sub-n">${left}</b><span><b>${plural(left, "день", "дня", "дней")} подписки</b><small>до ${esc(till)} · продлить</small></span>`;
+    } else { acc.className = "d-access d-sub off"; acc.innerHTML = `${ic("card")}<span><b>Подписка не активна</b><small>оформить доступ</small></span>`; }
   }
 
   // ─── погода ────────────────────────────────────────────────────────
@@ -174,22 +178,41 @@
 
   // ─── мой день ─────────────────────────────────────────────────────
   const KIND = { show: ["home", "Показ"], call: ["phone", "Созвон"], meet: ["users", "Встреча"], task: ["check", "Задача"] };
+  // 24.10d (Артём): «Мой день» — неделя из календаря (пн–вс, точки по событиям, нажатие — день в планере)
+  // и ниже список запланированного: сегодня, завтра и дальше
+  const KCOL = { show: "gold", call: "sky", meet: "violet", task: "lime" };
   function day() {
-    const t0 = dash.today, t1 = t0 + 86400;
+    const t0 = dash.today, ws = dash.week_start || t0, now = Date.now() / 1000;
+    const key = (ts) => { const x = new Date(ts * 1000); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
+    const byDay = {};
+    dash.agenda.forEach((e) => { (byDay[key(e.ts)] = byDay[key(e.ts)] || []).push(e); });
+    const wd = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
+    const week = wd.map((w, i) => {
+      const ts = ws + i * 86400 + 3600 * 3, k = key(ts), list = byDay[k] || [], d = new Date(ts * 1000);
+      const cls = [k === key(t0 + 3600) ? "today" : "", ts < t0 ? "past" : "", list.length ? "has" : ""].filter(Boolean).join(" ");
+      return `<a class="wk-d ${cls}" href="/planner?day=${k}" title="${list.length ? `${list.length} ${plural(list.length, "событие", "события", "событий")}` : "Нет событий"}">
+        <span>${w}</span><b>${d.getDate()}</b>
+        <i class="wk-dots">${list.slice(0, 4).map((e) => `<em class="c-${esc(e.color || KCOL[e.kind] || "gold")}"></em>`).join("")}</i></a>`;
+    }).join("");
+    const label = (ts) => {
+      const k = key(ts);
+      if (k === key(t0 + 3600)) return "Сегодня";
+      if (k === key(t0 + 86400 + 3600)) return "Завтра";
+      return new Date(ts * 1000).toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
+    };
     const evRow = (e) => {
-      const [icon, label] = KIND[e.kind] || ["calendar", "Событие"];
-      const what = e.title || label;
+      const [icon, lbl] = KIND[e.kind] || ["calendar", "Событие"];
       const sub = [e.listing && (e.listing.complex ? `ЖК ${e.listing.complex}` : e.listing.title), e.contact_name, e.place].filter(Boolean).join(" · ");
-      return `<a class="wd-ev${e.done ? " done" : ""}" href="/planner?event=${e.id}"><span class="wd-time">${hhmm(e.ts)}</span>
-        <span class="wd-kind">${ic(icon)}</span><span class="wd-what"><b>${esc(what)}</b><small>${esc(sub || label)}</small></span>
+      return `<a class="wd-ev c-${esc(e.color || KCOL[e.kind] || "gold")}${e.done ? " done" : ""}" href="/planner?event=${e.id}"><span class="wd-time">${hhmm(e.ts)}</span>
+        <span class="wd-kind">${ic(icon)}</span><span class="wd-what"><b>${esc(e.title || lbl)}</b><small>${esc(sub || lbl)}</small></span>
         <span>${e.done ? ic("check") : ""}</span></a>`;
     };
-    const today = dash.agenda.filter((e) => e.ts < t1), tomorrow = dash.agenda.filter((e) => e.ts >= t1);
-    const group = (t, list) => list.length ? `<div class="wd-group"><p class="wd-gt">${t}</p>${list.map(evRow).join("")}</div>` : "";
-    const body = today.length || tomorrow.length ? group("Сегодня", today) + group("Завтра", tomorrow)
-      : `<p class="g-empty">На сегодня и завтра ничего не запланировано. Добавьте показ или созвон — напомним заранее на сайте и почтой.</p>`;
+    const upcoming = dash.agenda.filter((e) => e.ts >= t0 && (!e.done || e.ts > now - 3600)).slice(0, 8);
+    let list = "", last = "";
+    upcoming.forEach((e) => { const l = label(e.ts); if (l !== last) { list += `<p class="wd-gt">${esc(l)}</p>`; last = l; } list += evRow(e); });
     put("wDay", `${head("calendar", "Мой день", dash.overdue ? `<a class="wd-over" href="/planner">${ic("alert")}просрочено: ${dash.overdue}</a>` : `<a class="g-link" href="/planner">Планер →</a>`)}
-      ${body}
+      <div class="wk-strip">${week}</div>
+      <div class="wd-list">${list || `<p class="g-empty">На ближайшие дни ничего не запланировано. Добавьте показ или созвон — напомним заранее на сайте и почтой.</p>`}</div>
       <div class="wd-acts"><a class="pill light" href="/planner?add=show">${ic("plus")}Показ</a><a class="pill light" href="/planner?add=call">${ic("plus")}Созвон</a>
         <a class="pill light" href="/planner?add=task">${ic("plus")}Задача</a></div>`, 4);
   }
@@ -218,13 +241,6 @@
   }
 
   // ─── 24.10: недавно смотрели — последние открытые объекты, плиткой с фото ─────────────────────────
-  function recentW() {   // 24.10c: та же карточка, что в ленте главной, только меньше
-    const list = dash.recent || [];
-    put("wRecent", `${head("eye", "Недавно смотрели", list.length ? `<a class="g-link" href="/work">Избранное →</a>` : "")}
-      ${list.length ? LCard.grid(list.map((o) => LCard.html(o, { meta: "" })).join(""), "sm")
-        : `<p class="g-empty">Здесь появятся объекты, которые вы открывали, — на всех ваших устройствах. <a href="/">К поиску →</a></p>`}`, 6);
-  }
-
   // ─── 24.10c (Артём): вместо «Мои объекты» — «Мои клиенты»: этапы, следующие шаги ───
   const CL_C = { new: "#b8c8e4", search: "#8fd1cb", shows: "#e3cb8f", talks: "#d9b3e6", deposit: "#f0b77a", deal: "#a7d1b6", lost: "#e2a596" };
   function clientsW() {
@@ -475,7 +491,7 @@
     dash = r.data;
     const w = dash.widgets;
     weather(w.weather); rate(w.keyrate); mortgage(w.mortgage, w.banks); fx(w.currency, w.moex); rbc(w.news);
-    day(); requestsW(); recentW(); clientsW(); crm(); news(); market(); calcHtml(); admin();
+    day(); requestsW(); clientsW(); crm(); news(); market(); calcHtml(); admin();
     layout();
     if (me.is_admin && new URLSearchParams(location.search).has("banks")) { openBanks(); history.replaceState(null, "", "/cabinet"); }
   }

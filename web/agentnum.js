@@ -45,12 +45,12 @@
           `Согласие на <a href="/consent-publish" target="_blank">распространение персональных данных</a> — в карточках ваших объявлений, только вошедшим с доступом. Отозвать — в любой момент.`)}
         ${opt("license", given && c.license, "layers", "Тексты и фото объявлений",
           `Разрешение <a href="/license" target="_blank">использовать тексты и фото</a> — в карточках, превью ссылок и подборках для клиентов коллег.`)}
+        ${opt("show_name", !given || c.show_name, "user", "Показывать моё имя",
+          "Рядом с номером — ваше имя из объявления. Выключите — коллеги увидят только номер.")}
+        ${opt("allow_max", !given || c.allow_max, "chat", "Кнопка «Написать в MAX»",
+          "Коллеги смогут сразу написать вам в MAX. Выключите — останется только звонок.")}
       </div>
-      <div class="an-opts">
-        <label class="an-sw"><input type="checkbox" data-k="show_name"${!given || c.show_name ? " checked" : ""}><span></span>Показывать моё имя</label>
-        <label class="an-sw"><input type="checkbox" data-k="allow_max"${!given || c.allow_max ? " checked" : ""}><span></span>Кнопка «Написать в MAX»</label>
-      </div>
-      <p class="an-hint">${ic("help")}<span>Без первой галочки номер будет <b>скрыт</b> во всех ваших объявлениях — это тоже честный выбор.</span></p>
+      <p class="an-hint">${ic("help")}<span>Отметьте нужное и нажмите «Сохранить». Без первой галочки номер будет <b>скрыт</b> во всех ваших объявлениях — это тоже честный выбор.</span></p>
       <div class="st-acts an2-acts">
         <button type="button" class="pill" data-save>Сохранить</button>
         ${x.hidden && !(given && c.publish) ? "" : `<button type="button" class="chip danger" data-revoke>Отозвать согласие и скрыть номер</button>`}

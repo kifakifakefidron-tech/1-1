@@ -9,7 +9,7 @@ import shutil
 import time
 from pathlib import Path
 
-from . import config, dedupe, learning, osmaddr, parser, rules
+from . import config, dedupe, learning, osmaddr, parser, rules, textnorm
 from .rules import TYPE_LABELS, rooms_mask
 from .textnorm import norm, words
 
@@ -83,13 +83,71 @@ def _learned_repair(conn: sqlite3.Connection, listing_id: int) -> str | None:
         return None
 
 
+# 24.10d (Артём: «чтобы конкретные написания он запоминал»): слова из очереди «Ремонт» — правило для ВСЕХ объявлений.
+# learned_rules kind='repair_phrase', key — слова (как в search_text: строчные, ё→е), value {"repair": "yes"|"no"|""}
+# ("" — эти слова не про ремонт квартиры: вырезаются из текста перед правилами). Кэш в памяти процесса — минута.
+_phrases = {"t": 0.0, "v": {}}
+
+
+def repair_phrases(conn: sqlite3.Connection, fresh: bool = False) -> dict[str, str]:
+    if fresh or time.time() - _phrases["t"] > 60:
+        v = {}
+        for k, val in conn.execute("SELECT key, value FROM learned_rules WHERE kind = 'repair_phrase'"):
+            try:
+                v[k] = str(json.loads(val).get("repair") or "")
+            except (TypeError, ValueError):
+                continue
+        _phrases.update(t=time.time(), v=v)
+    return _phrases["v"]
+
+
+def repair_by_phrases(text: str, phrases: dict[str, str]) -> tuple[str | None, int]:
+    """Состояние по тексту с учётом выученных слов: (repair, doubt). Слова решают; правила по остальному тексту
+    спорят с ними — объект остаётся в очереди «Ремонт» на проверку."""
+    t = textnorm.norm(text)
+    hits = {v for k, v in phrases.items() if v and k in t}
+    for k, v in phrases.items():   # выученные слова (и «не про ремонт») не мешают правилам
+        if k in t:
+            t = t.replace(k, " ")
+    rule, doubt = rules.detect_repair(t), int(rules.repair_doubt(t))
+    if hits:
+        val = "no" if "no" in hits else "yes"
+        return val, int(len(hits) > 1 or (rule is not None and rule != val))
+    return rule, doubt
+
+
+def learn_repair_phrase(conn: sqlite3.Connection, phrase: str, value: str) -> dict:
+    """Запомнить слова и сразу пересчитать все объявления, где они есть (поправленные админом — как есть)."""
+    key = textnorm.norm(phrase).strip(" .,;:!?«»\"'()-")
+    if not 3 <= len(key) <= 80:
+        return {"error": "Выделите слова о состоянии: от 3 до 80 знаков."}
+    val = {"yes": "yes", "no": "no", "none": ""}.get(value)
+    if val is None:
+        return {"error": "Не понял, что значат эти слова."}
+    label = f"«{key}» — {({'yes': 'с ремонтом', 'no': 'без ремонта'}).get(val, 'не про ремонт квартиры')}"
+    conn.execute("""INSERT INTO learned_rules (kind, key, value, label, n, ts) VALUES ('repair_phrase', ?, ?, ?, 1, ?)
+                    ON CONFLICT(kind, key) DO UPDATE SET value = excluded.value, label = excluded.label, n = n + 1, ts = excluded.ts""",
+                 (key, json.dumps({"repair": val}, ensure_ascii=False), label, int(time.time())))
+    repair_phrases(conn, fresh=True)
+    n = 0
+    for r in conn.execute("SELECT id, search_text, repair, repair_doubt FROM listings WHERE instr(search_text, ?) > 0", (key,)).fetchall():
+        _reindex(conn, r["id"], r["search_text"] or "")
+        new = conn.execute("SELECT repair, repair_doubt FROM listings WHERE id = ?", (r["id"],)).fetchone()
+        n += int((new["repair"], new["repair_doubt"]) != (r["repair"], r["repair_doubt"]))
+    conn.commit()
+    return {"ok": True, "phrase": key, "label": label, "changed": n}
+
+
 def _reindex(conn: sqlite3.Connection, listing_id: int, text: str) -> None:
     conn.execute("DELETE FROM listings_fts WHERE rowid = ?", (listing_id,))
     conn.execute("INSERT INTO listings_fts(rowid, search_text) VALUES (?, ?)", (listing_id, text))
-    # состояние «с ремонтом / без ремонта» — по тому же тексту (фильтр «Ремонт»); тот же текст админ уже разбирал — его ответ
+    # состояние «с ремонтом / без ремонта» — по тому же тексту (фильтр «Ремонт»); тот же текст админ уже разбирал — его ответ;
+    # дальше — выученные слова (repair_phrase), потом правила
     learned = _learned_repair(conn, listing_id)
-    rep = (learned or None) if learned is not None else rules.detect_repair(text)
-    doubt = 0 if learned is not None else int(rules.repair_doubt(text))
+    if learned is not None:
+        rep, doubt = learned or None, 0
+    else:
+        rep, doubt = repair_by_phrases(text, repair_phrases(conn))
     conn.execute("""UPDATE listings SET repair = CASE WHEN json_type(admin_fields, '$.repair') IS NOT NULL
                     THEN NULLIF(json_extract(admin_fields, '$.repair'), '') ELSE ? END,
                     repair_doubt = CASE WHEN json_type(admin_fields, '$.repair') IS NOT NULL THEN 0 ELSE ? END WHERE id = ?""",

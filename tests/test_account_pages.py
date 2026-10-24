@@ -31,7 +31,7 @@ def client(tmp_path, monkeypatch):
 
 def test_settings_save_and_validate(client):
     s = client.get("/api/settings").json()["settings"]
-    assert s["pick_color"] == "gold" and s["cabinet_order"] == []
+    assert s["pick_color"] == "light" and s["cabinet_order"] == []
     r = client.post("/api/settings", json={"pick_color": "violet", "pick_brand": "Агентство «Дом»", "pick_phone": "8 918 111-22-33",
                                            "pick_cover": "https://evil.example/x.jpg", "cabinet_order": ["wFx", "wDay", "<bad>"]}).json()
     st = r["settings"]

@@ -279,3 +279,23 @@ dialog:not(.pv-lb).closing { animation: pvLbOut .2s ease forwards; }
   .pv-body { padding: 18px 18px 20px; }
   .pv-switch { width: calc(100% - 24px); }
 }
+
+/* ═══ 24.10d ТЕМЫ (Артём: «цвет в настройках меняет фон и цвет текста — стильные подборки»): тема из настроек агента
+   задаёт фон, карточки, текст, кнопки и акцент; «Классика» (light) — как раньше: светлая, тёмная по настройке телефона ═══ */
+:root[data-theme="gold"] { --bg: #f4efe4; --card: #fffdf8; --ink: #2b2417; --ink-2: #4f4535; --ink-3: #857a66; --btn: #2b2417; --btn-ink: #fdf8ec; --accent: #c9a85c; --accent-ink: #2b2417; --line: rgba(0, 0, 0, .08); --fill: rgba(0, 0, 0, .04); --fill-2: rgba(0, 0, 0, .07); color-scheme: light; }
+:root[data-theme="teal"] { --bg: #062b2a; --card: #0c3b39; --ink: #f3e8bc; --ink-2: #ddd5b3; --ink-3: #9fb3a8; --btn: #f3e8bc; --btn-ink: #062b2a; --accent: #e3cb8f; --accent-ink: #062b2a; --line: rgba(255, 255, 255, .1); --fill: rgba(255, 255, 255, .06); --fill-2: rgba(255, 255, 255, .1); color-scheme: dark; }
+:root[data-theme="sky"] { --bg: #eef3f9; --card: #ffffff; --ink: #0f2540; --ink-2: #2d4461; --ink-3: #637893; --btn: #0f2540; --btn-ink: #ffffff; --accent: #5b9bd5; --accent-ink: #ffffff; --line: rgba(0, 0, 0, .08); --fill: rgba(0, 0, 0, .04); --fill-2: rgba(0, 0, 0, .07); color-scheme: light; }
+:root[data-theme="violet"] { --bg: #f3f0fa; --card: #ffffff; --ink: #251a3f; --ink-2: #43385e; --ink-3: #776d8f; --btn: #251a3f; --btn-ink: #ffffff; --accent: #8f74e0; --accent-ink: #ffffff; --line: rgba(0, 0, 0, .08); --fill: rgba(0, 0, 0, .04); --fill-2: rgba(0, 0, 0, .07); color-scheme: light; }
+:root[data-theme="coral"] { --bg: #fbf1ec; --card: #fffaf7; --ink: #3a1e14; --ink-2: #5c3a2e; --ink-3: #8f6c60; --btn: #3a1e14; --btn-ink: #fffaf7; --accent: #e0785c; --accent-ink: #ffffff; --line: rgba(0, 0, 0, .08); --fill: rgba(0, 0, 0, .04); --fill-2: rgba(0, 0, 0, .07); color-scheme: light; }
+:root[data-theme="rose"] { --bg: #fbf0f4; --card: #fffafc; --ink: #3a1424; --ink-2: #5c3245; --ink-3: #8f6478; --btn: #3a1424; --btn-ink: #fffafc; --accent: #d86a96; --accent-ink: #ffffff; --line: rgba(0, 0, 0, .08); --fill: rgba(0, 0, 0, .04); --fill-2: rgba(0, 0, 0, .07); color-scheme: light; }
+:root[data-theme="lime"] { --bg: #f1f5e9; --card: #fcfef8; --ink: #1f2c14; --ink-2: #3d4b31; --ink-3: #6c7a5e; --btn: #1f2c14; --btn-ink: #fcfef8; --accent: #7fae45; --accent-ink: #ffffff; --line: rgba(0, 0, 0, .08); --fill: rgba(0, 0, 0, .04); --fill-2: rgba(0, 0, 0, .07); color-scheme: light; }
+:root[data-theme="slate"] { --bg: #15171b; --card: #1f2228; --ink: #eef0f3; --ink-2: #c9ced6; --ink-3: #8b929c; --btn: #eef0f3; --btn-ink: #15171b; --accent: #c9b27a; --accent-ink: #15171b; --line: rgba(255, 255, 255, .1); --fill: rgba(255, 255, 255, .06); --fill-2: rgba(255, 255, 255, .1); color-scheme: dark; }
+:root[data-theme] .pv-hero::before { content: ""; position: absolute; inset: -20% -10% auto; height: 520px; z-index: -2; pointer-events: none;
+  background: radial-gradient(60% 60% at 15% 20%, color-mix(in srgb, var(--accent) 34%, transparent), transparent 70%),
+              radial-gradient(50% 50% at 90% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%); }
+:root[data-theme] .pv-eyebrow { color: var(--accent); letter-spacing: .12em; text-transform: uppercase; font-size: 12.5px; }
+:root[data-theme] .pv-agent { border: 1px solid var(--line); }
+:root[data-theme] .pv-switch-ind { background: var(--card); }
+:root[data-theme="teal"] .pv-hero h1, :root[data-theme="slate"] .pv-hero h1 { color: var(--accent); }
+/* чуть стильнее для всех тем: мягкий свет за заголовком и тонкая линия акцента под шапкой */
+.pv-hero-in::after { content: ""; display: block; width: 56px; height: 3px; margin-top: 26px; border-radius: 3px; background: var(--accent); opacity: .85; }

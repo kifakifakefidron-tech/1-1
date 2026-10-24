@@ -538,3 +538,86 @@
 @media (max-width: 760px) { .pk2-hero.pk5-hero { grid-template-columns: auto minmax(0, 1fr); gap: 14px; } }
 .pk5-t a { display: block; min-width: 0; overflow: hidden; }
 .pk5-price { flex: none; }
+
+/* 24.10d: «Добавить объект» — мягкая понятная плашка; панель: откуда (избранное / недавно смотрели), поиск, обычные карточки */
+.pk7-open { display: flex; align-items: center; gap: 14px; width: 100%; margin-top: 14px; padding: 14px 18px; border-radius: 20px; cursor: pointer; text-align: left;
+  border: 1px solid rgba(227, 203, 143, .3); background: linear-gradient(135deg, rgba(227, 203, 143, .1), rgba(255, 255, 255, .02)); color: var(--ink);
+  transition: border-color .2s, background .2s, transform .25s var(--ease); }
+.pk7-open:hover { border-color: rgba(227, 203, 143, .55); transform: translateY(-1px); }
+.pk7-open > span:nth-child(2) { flex: 1; display: grid; gap: 2px; }
+.pk7-open b { font: 600 16px var(--display); }
+.pk7-open small { color: var(--ink-3); font-size: 13px; }
+.pk7-open > svg { width: 18px; height: 18px; color: var(--ink-3); }
+.pk7-oi { display: grid; place-items: center; width: 42px; height: 42px; flex: none; border-radius: 50%; background: linear-gradient(160deg, var(--gold-200), var(--gold-300)); color: #0f2f2e; }
+.pk7-oi svg { width: 20px; height: 20px; }
+.pk7-add { margin-top: 14px; padding: 18px; border-radius: 24px; background: rgba(0, 20, 20, .22); border: 1px solid var(--glass-line);
+  animation: riseIn .35s var(--ease) both; }
+.pk7-add-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.pk7-add-h h3 { margin: 0; font: 600 18px var(--display); }
+.pk7-add-h p { margin: 4px 0 0; color: var(--ink-3); font-size: 13.5px; }
+.pk7-x { display: grid; place-items: center; width: 36px; height: 36px; flex: none; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .06); color: var(--ink); cursor: pointer; }
+.pk7-x svg { width: 16px; height: 16px; }
+.pk7-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+.pk7-seg { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .04); }
+.pk7-seg button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border: 0; border-radius: 999px; background: none; color: var(--ink-2);
+  font: 500 13.5px var(--body); cursor: pointer; white-space: nowrap; }
+.pk7-seg button svg { width: 15px; height: 15px; }
+.pk7-seg button b { min-width: 18px; padding: 0 6px; border-radius: 9px; background: rgba(255, 255, 255, .1); font-size: 11.5px; }
+.pk7-seg button.on { background: linear-gradient(160deg, var(--gold-200), var(--gold-300)); color: #0f2f2e; font-weight: 600; }
+.pk7-seg button.on b { background: rgba(15, 47, 46, .15); }
+.pk7-q { flex: 1 1 220px; }
+.pk7-none { display: grid; justify-items: center; gap: 6px; padding: 26px 12px; text-align: center; color: var(--ink-3); }
+.pk7-none svg { width: 26px; height: 26px; color: var(--gold); }
+.pk7-none b { color: var(--ink); font-size: 15px; }
+.pk7-tip { display: flex; gap: 8px; align-items: flex-start; margin: 14px 0 0; color: var(--ink-3); font-size: 13px; line-height: 1.45; }
+.pk7-tip svg { width: 16px; height: 16px; flex: none; margin-top: 1px; }
+.pk7-tip a { color: var(--gold); }
+
+/* ═══ 24.10d (Артём: «подборки на телефоне — всё сокращено»): телефон — та же подборка, что на ПК, только в столбик.
+   Объект — карточка: фото и название целиком, ниже цена и статус, внизу две кнопки «Открыть» / «Настроить» во всю ширину;
+   кнопки подборки — с подписями; список подборок — короче шапка и цифры полосой ═══ */
+@media (max-width: 760px) {
+  .pk5-line { display: grid !important; grid-template-columns: 30px 72px minmax(0, 1fr); grid-template-areas: "n ph t" "pr pr st" "re re re" "b b b";
+    align-items: start; gap: 10px 12px; padding: 14px; }
+  .pk5-grip { display: none; }
+  .pk5-n { grid-area: n; }
+  .pk5-ph { grid-area: ph; width: 72px; height: 72px; border-radius: 14px; }
+  .pk5-t { grid-area: t; flex-basis: auto; }
+  .pk5-t a { overflow: visible; }
+  .pk5-t b, .pk5-t small { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.35; }
+  .pk5-t b { font-size: 15px; }
+  .pk5-price { grid-area: pr; margin: 0; align-self: center; font-size: 22px; }
+  .pk5-st { grid-area: st; justify-self: end; align-self: center; }
+  .pk5-line > .pk2-re { grid-area: re; justify-self: start; }
+  .pk6-btns { grid-area: b; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pk6-open, .pk5-row .pk5-tog { width: auto; height: 44px; justify-content: center; padding: 0 12px; margin: 0; }
+  .pk6-open span { display: inline; }
+  /* кнопки подборки — с подписями, переносом */
+  .pk5-share { flex-wrap: wrap; }
+  .pk2-share .pk2-act { width: auto; flex: 1 1 calc(50% - 8px); justify-content: center; padding: 0 14px; }
+  .pk2-share .pk2-act span { display: inline; }
+  .pk2-share .pk5-more { flex: 1 1 calc(50% - 8px); }
+  .pk2-share .pk5-more > summary { width: 100%; justify-content: center; }
+  .pk2-link { flex-wrap: wrap; }
+  .pk2-link span { flex: 1 1 100%; overflow-wrap: anywhere; white-space: normal !important; }
+  .pk2-link .pill { width: 100%; justify-content: center; }
+  .pk2-me p { flex-wrap: wrap; }
+  .pk2-me-f input, .pk2-me-f .pill { flex: 1 1 100%; height: 46px; }
+  .pk2-hero.pk5-hero { grid-template-columns: 110px minmax(0, 1fr); }
+  .pk6-cov { width: 110px; }
+  .pk2-hero h2 { font-size: 24px; }
+  /* список: цифры — полосой вбок, а не на пол-экрана */
+  #pkStats { display: flex; overflow-x: auto; scrollbar-width: none; gap: 8px; margin-left: -16px; margin-right: -16px; padding: 0 16px; }
+  #pkStats::-webkit-scrollbar { display: none; }
+  #pkStats .pk2-stat { flex: 0 0 auto; min-width: 128px; }
+  .pk7-bar { flex-direction: column; align-items: stretch; }
+  .pk7-seg { width: 100%; } .pk7-seg button { flex: 1; justify-content: center; }
+}
+@media (max-width: 760px) {
+  .pk2-lead { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 14px; }
+}
+@media (max-width: 760px) {
+  .pk6-cov-b { left: 6px; bottom: 6px; height: 28px; padding: 0 9px; gap: 3px; }
+  .pk6-cov-b span { font-size: 11px; white-space: nowrap; }
+}
+@media (max-width: 760px) { .pk2-obj.pk5-row { display: block !important; padding: 0 !important; } }

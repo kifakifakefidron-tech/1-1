@@ -198,3 +198,25 @@ def test_new_pick_is_client():
     assert b["id"] == a["id"] and not b["made_client"]
     assert conn.execute("SELECT COUNT(*) FROM clients WHERE user_id = ?", (u["id"],)).fetchone()[0] == 1
     assert "error" in picks.for_client_name(conn, u, "  ")
+
+
+def test_repair_phrase_learned_for_all_listings():
+    """24.10d (Артём): слова из очереди «Ремонт» запоминаются для ВСЕХ объявлений — старые пересчитываются, новые сразу верно."""
+    import time
+
+    from app import db, ingest
+    conn = db.connect(":memory:")
+    ingest._phrases.update(t=0.0, v={})
+    t1 = "2-к квартира 50 м², 3/9 эт., ФМР, ул. Тургенева 10. Состояние косметика свежая. 6 млн. 89180000931"
+    m = ingest.add_message(conn, source="wa", text=t1, chat_id="c", msg_id="p1", ts=int(time.time()))
+    lid = ingest.process_message(conn, m, use_llm=False)["results"][0]["listing_id"]
+    assert conn.execute("SELECT repair, repair_doubt FROM listings WHERE id = ?", (lid,)).fetchone()[:] == (None, 1)
+    res = ingest.learn_repair_phrase(conn, "Косметика свежая", "yes")
+    assert res["ok"] and res["changed"] == 1
+    assert conn.execute("SELECT repair, repair_doubt FROM listings WHERE id = ?", (lid,)).fetchone()[:] == ("yes", 0)
+    t2 = "1-к квартира 38 м², 5/16 эт., ЮМР, ул. Ставропольская 200. Косметика свежая, мебель. 4,5 млн. 89180000932"
+    m2 = ingest.add_message(conn, source="wa", text=t2, chat_id="c", msg_id="p2", ts=int(time.time()))
+    lid2 = ingest.process_message(conn, m2, use_llm=False)["results"][0]["listing_id"]
+    assert conn.execute("SELECT repair FROM listings WHERE id = ?", (lid2,)).fetchone()[0] == "yes"
+    assert "error" in ingest.learn_repair_phrase(conn, "ок", "yes")
+    assert ingest.repair_by_phrases("стоимость ремонта обсуждаем", {"стоимость ремонта": ""}) == (None, 0)

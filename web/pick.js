@@ -65,7 +65,9 @@
   const PALETTE = { gold: "#e3cb8f", teal: "#5fd0c0", sky: "#7cc4f5", violet: "#b9a3f5", coral: "#f29a7e", rose: "#f08fb6", lime: "#b6db7a", slate: "#9fb3b1" };
   function applyStyle(st) {
     const c = PALETTE[st.color] || (/^#[0-9a-f]{6}$/i.test(st.color || "") ? st.color : PALETTE.gold);
-    document.documentElement.style.setProperty("--accent", c);
+    // 24.10d: тема — фон, текст и акцент целиком (светлая «Классика» — без темы, как раньше)
+    if (PALETTE[st.color]) document.documentElement.dataset.theme = st.color;
+    else { delete document.documentElement.dataset.theme; if (st.color && st.color !== "light") document.documentElement.style.setProperty("--accent", c); }
     $("pkBrand").textContent = st.brand || "Подборка объектов";
     if (st.cover) {
       $("pkCover").hidden = false;

@@ -25,7 +25,9 @@ def build(conn, user) -> dict:
     today = datetime.fromtimestamp(now, MSK).replace(hour=0, minute=0, second=0, microsecond=0)
     t0 = int(today.timestamp())
     uid = user["id"]
-    agenda = events(conn, uid, t0, t0 + 2 * 86400)
+    # 24.10d: «Мой день» — неделя календаря (пн–вс) и список запланированного на 14 дней вперёд
+    monday = t0 - today.weekday() * 86400
+    agenda = events(conn, uid, min(monday, t0), max(monday + 7 * 86400, t0 + 14 * 86400))
     overdue = conn.execute("SELECT COUNT(*) FROM planner_events WHERE user_id = ? AND done = 0 AND ts < ?",
                            (uid, t0)).fetchone()[0]
     crm = {k: 0 for k in STATUS_LABELS}
@@ -44,14 +46,13 @@ def build(conn, user) -> dict:
         mine = 0
     new_today = conn.execute("SELECT COUNT(*) FROM listings WHERE is_active = 1 AND first_seen >= ?", (t0,)).fetchone()[0]
     return {
-        "now": now, "today": t0,
+        "now": now, "today": t0, "week_start": monday,
         "agenda": agenda, "overdue": overdue,
         "crm": [{"key": k, "label": v, "n": crm[k]} for k, v in STATUS_LABELS.items()], "favorites": fav,
         "notices": notices, "unread": unread, "saved": saved,
         "picks": {"n": picks[0], "views": picks[1]}, "mine": mine, "new_today": new_today,
         "market": _market(conn),
         "clients": clients.summary(conn, uid),
-        "recent": __import__("app.listingstats", fromlist=["recent"]).recent(conn, uid),   # 24.10: «Недавно смотрели»
         # 19.10: запросы покупателей — в кабинете наверху (всем с подпиской), «под ваши объекты» — по подтверждённым номерам
         "requests": __import__("app.buyers", fromlist=["summary"]).summary(conn, uid) if accounts.has_access(user)
                     else {"locked": True},

@@ -474,6 +474,15 @@ def api_listings(request: Request, body: dict | None = None):
     return _cached(request, compute)
 
 
+def api_recent(request: Request):
+    """24.10d: «Недавно смотрели» — вкладка «Избранного» (раньше — блок кабинета). Те же поля, что у карточки ленты."""
+    user, err = _need_user(request)
+    if err:
+        return err
+    from . import listingstats
+    return JSONResponse({"items": listingstats.recent(db.get(), user["id"], limit=40)})
+
+
 def api_hidden(request: Request, body: dict | None = None):
     """Скрыть объект только для себя: POST /api/hidden {id, hide, reason}; GET — список скрытых (чтобы вернуть)."""
     user, err = _need_user(request)
@@ -2431,6 +2440,19 @@ def api_admin_banned(request: Request, body: dict | None = None):
     return JSONResponse({"items": [dict(r) for r in rows], "phones": [dict(r) for r in phones]})
 
 
+def api_admin_repair_phrase(request: Request, body: dict | None = None):
+    """24.10d: очередь «Ремонт» — запомнить слова для всех объявлений: POST {phrase, repair: yes|no|none}."""
+    user, err = _need_admin(request)
+    if err:
+        return err
+    body = body or {}
+    res = ingest.learn_repair_phrase(db.get(), str(body.get("phrase") or ""), str(body.get("repair") or ""))
+    if res.get("error"):
+        return _err(res["error"])
+    _bump_cache()
+    return JSONResponse(res)
+
+
 def api_admin_fix(request: Request, body: dict | None = None):
     """Экран разбора /fix: следующий объект очереди (без уже разобранных и пропущенных в этой сессии)
     или конкретный объект (?id=). mode: place (ЖК/район) | geo (карта)."""
@@ -2846,6 +2868,7 @@ routes = [
     Route("/api/me", threaded(api_me)),
     Route("/api/favorites", threaded(api_favorites)),
     Route("/api/hidden", threaded(api_hidden), methods=["GET", "POST"]),
+    Route("/api/recent", threaded(api_recent)),
     Route("/api/favorites/{id:int}", threaded(api_favorite_toggle), methods=["POST"]),
     Route("/api/promo", threaded(api_promo), methods=["POST"]),
     Route("/api/complaints", threaded(api_complaint), methods=["POST"]),
@@ -2915,6 +2938,7 @@ routes = [
     Route("/api/admin/geo-quality", threaded(api_admin_geo_quality)),
     Route("/api/admin/geo-queue", threaded(api_admin_geo_queue)),
     Route("/api/admin/fix", threaded(api_admin_fix), methods=["GET", "POST"]),
+    Route("/api/admin/repair-phrase", threaded(api_admin_repair_phrase), methods=["POST"]),
     Route("/api/admin/geo-audit", threaded(api_admin_geo_audit), methods=["GET", "POST"]),
     Route("/api/admin/dir", threaded(api_admin_dir), methods=["GET", "POST"]),
     Route("/api/admin/reconcile", threaded(api_admin_reconcile), methods=["GET", "POST"]),

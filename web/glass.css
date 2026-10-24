@@ -1382,3 +1382,19 @@ summary { transition: color .2s var(--m-out); }
   .lc-btn { min-height: 32px; padding: 0 10px; font-size: 12.5px; }
 }
 .lc.bye { transition: opacity .25s, transform .25s; opacity: 0; transform: scale(.95); }
+.lc-desc { margin: 6px 0 0; color: var(--ink-2); font-size: 13px; line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; }
+
+/* 24.10d (Артём: «шапка меню не скрывается — пусть всегда будет»): на телефоне шапка закреплена сверху и при прокрутке не уезжает;
+   строка поиска главной прилипает под ней. В приложении «на экране Домой» — отступ под часы внутри шапки, а не у страницы. */
+@media (max-width: 640px) {
+  :root { --navh: 62px; }
+  .nav { position: sticky; top: 0; z-index: 40; background: rgba(3, 83, 82, .9); border-bottom: 1px solid var(--glass-line);
+    -webkit-backdrop-filter: saturate(1.6) blur(16px); backdrop-filter: saturate(1.6) blur(16px); }
+  .nav-in { padding: 10px 16px; }
+  body:has(> .nav) .search { top: var(--navh); }
+}
+@media (display-mode: standalone) and (max-width: 640px) {
+  body:has(> .nav) { padding-top: 0; }
+  .nav { padding-top: env(safe-area-inset-top); }
+  body:has(> .nav) .search { top: calc(var(--navh) + env(safe-area-inset-top)); }
+}

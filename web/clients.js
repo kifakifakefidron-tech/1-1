@@ -331,7 +331,7 @@
       li.classList.toggle("on", i === at);
       li.querySelector(".n").innerHTML = i < at ? ic("check") : String(i + 1);
     });
-    box.style.setProperty("--fill", at > 0 ? `${(at / (steps.length - 1)) * 100}%` : "0%");
+    box.querySelector(".c-step").style.setProperty("--fill", at > 0 ? String(at / (steps.length - 1)) : "0");   // доля линии от 0 до 1
     const lb = box.querySelector(".c-lost");
     if (lb) lb.classList.toggle("on", lost);
     const on = box.querySelector(".c-step li.on");

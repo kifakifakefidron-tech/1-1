@@ -367,6 +367,38 @@
     return a > 40 && a < 50 && b > 35 && b < 45 ? [a, b] : null;
   }
 
+  // ─── 24.10d: «Ремонт» — выученные слова для всех объявлений ─────────────
+  document.addEventListener("mouseup", () => {
+    if (kind !== "repair" || !$("fxPhr")) return;
+    const s = String(getSelection()).trim();
+    if (s && s.length <= 80 && $("fxText").contains(getSelection().anchorNode)) $("fxPhr").value = s.toLowerCase();
+  });
+  document.addEventListener("click", async (e) => {
+    const m = e.target.closest("#fxText mark");
+    if (m && kind === "repair" && !String(getSelection()).trim()) {   // слово целиком — с соседним словом, если оно рядом
+      const nx = (m.nextSibling && m.nextSibling.textContent || "").match(/^\s*[а-яёa-z-]+/i);
+      const prev = (m.previousSibling && m.previousSibling.textContent || "").match(/[а-яёa-z-]+\s*$/i);
+      $("fxPhr").value = `${prev ? prev[0] : ""}${m.textContent}${nx ? nx[0] : ""}`.trim().toLowerCase();
+      $("fxPhr").focus();
+      return;
+    }
+    const b = e.target.closest("[data-phr]");
+    if (!b) return;
+    const phrase = $("fxPhr").value.trim();
+    if (!phrase) { toast("Выделите слова в тексте или впишите их"); $("fxPhr").focus(); return; }
+    b.disabled = true;
+    const r = await call("/api/admin/repair-phrase", { phrase, repair: b.dataset.phr });
+    b.disabled = false;
+    const msg = $("fxPhrMsg");
+    if (!r.ok) { msg.hidden = false; msg.textContent = r.data.detail || "Не получилось"; return; }
+    msg.hidden = false;
+    msg.textContent = `Запомнили ${r.data.label}. Пересчитано объявлений: ${r.data.changed}. Новые будут разбираться так же.`;
+    $("fxPhr").value = "";
+    toast(`Запомнили — поправлено объявлений: ${r.data.changed}`, 3500);
+    if (item) { ss.history.push(item.id); save(); }
+    setTimeout(next, 900);
+  });
+
   // ─── сохранение ───────────────────────────────────────────────────────
   let busy = false, repairPick = null;
   document.addEventListener("click", (e) => {

@@ -2,7 +2,7 @@
    Та же разметка и те же классы, что у ленты главной (.item, .item-photo 1:1, .item-head, .price, .item-title, .item-place),
    поэтому вид задают style/theme/glass.css. Страница добавляет своё через opts:
      top  — отметки поверх фото (слева сверху), sel — галочка выбора, extra — строки под адресом,
-     foot — кнопки внизу, cls — свой класс, href — куда ведёт нажатие (по умолчанию /?open=ID — окно объекта, objview.js).
+     foot — кнопки внизу, desc — полное описание объявления, cls — свой класс, href — куда ведёт нажатие (по умолчанию /?open=ID — окно объекта, objview.js).
    LCard.html(o, opts) → <li>; LCard.grid(html, cls) → <ol class="results lc-grid">. Фото листаются стрелками. */
 (() => {
   "use strict";
@@ -60,6 +60,7 @@
       <div class="item-price"><div class="price">${o.price_doubt ? "Цена уточняется" : esc(price(o.price, o.deal))}</div>${m2}</div>
       ${o.title ? `<div class="item-title">${esc(o.title)}</div>` : ""}
       ${addr ? `<div class="item-place">${esc(addr)}</div>` : ""}
+      ${opts.desc && o.description ? `<p class="lc-desc">${esc(o.description)}</p>` : ""}
       ${opts.extra || ""}
       ${mt || opts.foot ? `<div class="item-foot lc-foot">${mt ? `<div class="item-meta">${esc(mt)}</div>` : ""}${opts.foot || ""}</div>` : ""}
     </li>`;

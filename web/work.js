@@ -14,10 +14,10 @@
     think: { t: "Думает", c: "violet", help: "Клиент думает — не забудьте перезвонить." },
     refuse: { t: "Отказ", c: "coral", help: "Не подошло — останется для истории, можно вернуть." },
   };
-  let items = [], hiddenItems = [], tab = new URLSearchParams(location.search).get("tab") || "all", q = "", sort = "touched", clientF = 0;
+  let items = [], hiddenItems = [], recentItems = [], tab = new URLSearchParams(location.search).get("tab") || "all", q = "", sort = "touched", clientF = 0;
   let allClients = [], match = null;   // 17.10: выбранный клиент → объекты под его пожелания (тот же подбор, что в карточке клиента)
-  if (!["all", "with", "without", "hidden"].includes(tab)) tab = "all";
-  const TABS = { all: "Всё избранное", with: "У клиентов", without: "Без клиента", hidden: "Скрытые" };
+  if (!["all", "with", "without", "recent", "hidden"].includes(tab)) tab = "all";
+  const TABS = { all: "Всё избранное", with: "У клиентов", without: "Без клиента", recent: "Недавно смотрели", hidden: "Скрытые" };
   const PC = { matched: "slate", added: "slate", sent: "sky", opened: "sky", liked: "ok", rejected: "bad", show: "gold", talks: "violet", deal: "ok", lost: "bad" };
   const REASONS = { sold: "Продан или снят", no_coop: "Не сотрудничаю", not_fit: "Не подходит", other: "Скрыт" };
 
@@ -63,12 +63,13 @@
   }
 
   function renderTabs() {
-    const n = (k) => (k === "hidden" ? hiddenItems.length : items.filter((o) => k === "all" || (k === "with" ? o.clients.length : !o.clients.length)).length);
+    const n = (k) => (k === "hidden" ? hiddenItems.length : k === "recent" ? recentItems.length : items.filter((o) => k === "all" || (k === "with" ? o.clients.length : !o.clients.length)).length);
     const nav = $("wkTabs");
     nav.innerHTML = `<i class="wk-ind" aria-hidden="true"></i>` + Object.keys(TABS).map((k) => `<button type="button" class="wk-tab${k === tab ? " on" : ""}"
       data-tab="${k}" aria-pressed="${k === tab}">${TABS[k]}<b>${n(k)}</b></button>`).join("");
     requestAnimationFrame(slide);
     $("wkHelp").textContent = tab === "hidden" ? "Объекты, которые вы скрыли для себя: в поиске и на карте их не видно. «Вернуть» — снова показывать."
+      : tab === "recent" ? "Объекты, которые вы открывали, — на всех ваших устройствах, последние сверху."
       : "Избранное — объекты, отмеченные сердечком. Статусы ставятся клиентам: в окне объекта «Клиенту» или в подборке клиента.";
     // 17.10: «отправлен» — только если ушёл клиенту (подборка, реакция, показ); «Подобран» — ещё не отправлен
     const sent = items.filter((o) => o.clients.some((c) => c.status !== "matched")).length;
@@ -114,6 +115,14 @@
   }
   function render() {
     renderTabs();
+    if (tab === "recent") {   // 24.10d: перенесено из кабинета
+      const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+      const list = recentItems.filter((o) => words.every((w) => [o.title, o.complex, o.district, o.street].filter(Boolean).join(" ").toLowerCase().includes(w)));
+      $("wkList").innerHTML = list.length ? LCard.grid(list.map((o) => LCard.html(o, { meta: `смотрели ${ago(o.ts)}`,
+        top: items.some((x) => x.id === o.id) ? `<span class="lc-tag">${ic("heart")}в избранном</span>` : "" })).join(""))
+        : `<div class="wk-empty">${ic("eye")}<b>Пока пусто</b>Здесь появятся объекты, которые вы открывали. <a class="pill" href="/">Перейти к поиску</a></div>`;
+      return;
+    }
     if (tab === "hidden") {
       const words = q.toLowerCase().split(/\s+/).filter(Boolean);
       const list = hiddenItems.filter((o) => words.every((w) => [o.title, o.complex, o.district, o.street].filter(Boolean).join(" ").toLowerCase().includes(w)));
@@ -175,6 +184,8 @@
     allClients = (cl.ok && cl.data.items) || [];
     const h = await call("/api/hidden");
     hiddenItems = (h.ok && h.data.items) || [];
+    const rc = await call("/api/recent");
+    recentItems = (rc.ok && rc.data.items) || [];
     render();
   }
 

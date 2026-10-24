@@ -4,8 +4,10 @@
   "use strict";
   const $ = (id) => document.getElementById(id);
   const ic = (n) => (window.ic ? window.ic(n) : "");
-  const PALETTE = { gold: "#e3cb8f", teal: "#5fd0c0", sky: "#7cc4f5", violet: "#b9a3f5", coral: "#f29a7e", rose: "#f08fb6", lime: "#b6db7a", slate: "#9fb3b1" };
-  const NAMES = { gold: "Золото", teal: "Бирюза", sky: "Небо", violet: "Сирень", coral: "Коралл", rose: "Роза", lime: "Лайм", slate: "Графит" };
+  // 24.10d: тема подборки для клиента — фон, текст и акцент страницы целиком («Классика» — светлая, как у Apple)
+  const PALETTE = { light: "#f5f5f7", gold: "#e3cb8f", teal: "#0c3b39", sky: "#7cc4f5", violet: "#b9a3f5", coral: "#f29a7e", rose: "#f08fb6", lime: "#b6db7a", slate: "#1f2228" };
+  const NAMES = { light: "Классика — светлая", gold: "Шампань — тёплая светлая", teal: "Изумруд — тёмная с золотом", sky: "Небо — голубая",
+    violet: "Сирень", coral: "Коралл — тёплая", rose: "Роза", lime: "Лайм — свежая", slate: "Графит — тёмная" };
   let st = null;
 
   async function call(url, body) {
@@ -33,8 +35,9 @@
 
   function preview() {
     const s = st.settings;
-    const c = PALETTE[s.pick_color] || s.pick_color || PALETTE.gold;
-    $("stPreview").style.setProperty("--accent", c);
+    const theme = PALETTE[s.pick_color] ? s.pick_color : "light";
+    if (theme === "light") delete $("stPreview").dataset.theme; else $("stPreview").dataset.theme = theme;
+    if ($("stThemeName")) $("stThemeName").textContent = NAMES[theme];
     $("spBrand").textContent = s.pick_brand || "Подборка объектов";
     $("spName").textContent = s.pick_name || st.name || "Агент";
     $("spCover").style.backgroundImage = s.pick_cover ? `url("${s.pick_cover}")` : "";
@@ -46,7 +49,7 @@
       $(id).classList.toggle("has", !!s.pick_photo);
     }
     $("stColors").innerHTML = Object.entries(PALETTE).map(([k, hex]) => `<button type="button" role="radio" aria-checked="${k === s.pick_color}"
-      class="st-color${k === s.pick_color ? " on" : ""}" style="--c:${hex}" data-color="${k}" title="${NAMES[k]}" aria-label="${NAMES[k]}">${ic("check")}</button>`).join("");
+      class="st-color ${k}${k === s.pick_color || (k === "light" && !PALETTE[s.pick_color]) ? " on" : ""}" style="--c:${hex}" data-color="${k}" title="${NAMES[k]}" aria-label="${NAMES[k]}">${ic("check")}</button>`).join("");
   }
   function fill() {
     const s = st.settings;

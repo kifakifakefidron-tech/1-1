@@ -319,11 +319,11 @@ body.c-dragging .c-col { transition: background .2s, border-color .2s, transform
 .c-stages { position: relative; display: flex; align-items: flex-start; gap: 16px; margin: 26px 0 22px; padding: 0 0 2px; background: none;
   overflow-x: auto; scrollbar-width: none; flex-wrap: nowrap !important; }
 .c-stages::-webkit-scrollbar { display: none; }
-.c-step { --fill: 0%; position: relative; flex: 1; min-width: 520px; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+.c-step { --fill: 0; position: relative; flex: 1; min-width: 520px; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr));
   list-style: none; margin: 0; padding: 0; }
 .c-step::before, .c-step::after { content: ""; position: absolute; top: 15px; height: 2px; left: calc(100% / var(--n) / 2); border-radius: 2px; }
 .c-step::before { right: calc(100% / var(--n) / 2); background: var(--ci-line); }
-.c-step::after { width: calc((100% - 100% / var(--n)) * var(--fill) / 100%); background: var(--gold-300, #d9bf7f);
+.c-step::after { width: calc((100% - 100% / var(--n)) * var(--fill)); background: var(--gold-300, #d9bf7f);
   transition: width .5s var(--ease); }
 .c-stages .c-step li { position: relative; z-index: 1; display: grid; justify-items: center; }
 .c-stages .c-step button { display: grid; justify-items: center; gap: 8px; padding: 0 2px; margin: 0; border: 0; background: none !important;
