@@ -679,3 +679,22 @@
 .pk5-acts { margin-top: 12px; padding: 12px 14px; border-radius: 18px; background: rgba(0, 20, 20, .22); }
 .pk5-acts .chip { border-radius: 999px; }
 .pk8-map { height: 200px; }
+
+/* 24.10h (Артём: «выровнять данные»): разделы «Настроить» — одна сетка из двух равных колонок, карточки в ряду одной высоты,
+   края колонок совпадают (раньше карта распирала левую колонку и та заезжала под правую) */
+.pk9 { display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "price text" "photo text" "point client";
+  gap: 12px; align-items: stretch; }
+.pk9 > * { min-width: 0; }
+.pk9 .a-price { grid-area: price; } .pk9 .a-photo { grid-area: photo; } .pk9 .a-point { grid-area: point; }
+.pk9 .a-text { grid-area: text; align-content: start; } .pk9 .a-client { grid-area: client; align-content: start; }
+.pk9 .a-text textarea { min-height: 220px; }
+.pk9 .pk8-map { width: 100%; }
+@media (max-width: 900px) {
+  .pk9 { grid-template-columns: minmax(0, 1fr); grid-template-areas: "price" "text" "photo" "point" "client"; }
+}
+.pk9-sw { white-space: normal; line-height: 1.35; }
+.pk9 .pk8-pt { grid-template-columns: minmax(0, 1fr); }
+.pk9 .pk8-map { justify-self: stretch; }
+.pk9 .pk5-pin { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pk9 .pk5-pin input { flex: 1; min-width: 0; width: auto; }
+.pk9 .pk5-pin em { flex: none; }

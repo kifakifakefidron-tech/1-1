@@ -422,8 +422,7 @@ a.evv-row:hover { background: rgba(255, 255, 255, .1); }
 /* 24.10g (Артём): сегодняшний день — золотом, как неделя в кабинете; дела на нём — тёмными плашками (не сливаются с золотом);
    число и «сегодня» — в одной строке шапки ячейки и переносятся, а не наезжают. Планер шире — ячейки просторнее */
 .pv { max-width: 1640px; }
-.pv-board { grid-template-columns: minmax(0, 1fr) 380px; }
-.pv-cell { min-height: 112px; }
+@media (min-width: 1101px) { .pv-board { grid-template-columns: minmax(0, 1fr) 380px; } .pv-cell { min-height: 112px; } }
 .pv-cell-h { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 2px 6px; min-width: 0; }
 .pv-today-l { display: none; font: 700 9.5px/1 var(--body); letter-spacing: .1em; text-transform: uppercase; font-style: normal; }
 .pv-cell.today { background: linear-gradient(160deg, var(--gold-100, #f3e8bc), var(--gold-300, #d9bf7f)) !important; border-color: transparent;
@@ -435,5 +434,7 @@ a.evv-row:hover { background: rgba(255, 255, 255, .1); }
 .pv-cell.today .pv-more { color: rgba(18, 48, 47, .75); }
 .pv-cell.today .pv-dots i { box-shadow: 0 0 0 1.5px rgba(18, 48, 47, .55); }
 .pv-cell.today.on { box-shadow: 0 12px 30px rgba(0, 20, 20, .3), inset 0 0 0 2px #0f2f2e; }
-@media (max-width: 1100px) { .pv-board { grid-template-columns: minmax(0, 1fr) 320px; } .pv-cell { min-height: 96px; } }
+/* 24.10h: ширина для компьютера — только ≥1101 px; ниже — одна колонка, как было (правило без условия перебивало мобильное —
+   на телефоне календарь налезал на «Запланировано») */
+@media (min-width: 641px) and (max-width: 1100px) { .pv-cell { min-height: 96px; } }
 @media (max-width: 640px) { .pv-cell { min-height: 0; } .pv-cell.today .pv-today-l { display: none; } }

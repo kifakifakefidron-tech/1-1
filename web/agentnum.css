@@ -97,3 +97,10 @@
   .an2-card { padding: 18px 16px !important; border-radius: 22px !important; }
   .an2-nums { gap: 18px; }
 }
+
+/* 24.10h: два согласия; имя и MAX — переключатели под плиткой «Показывать мой номер и имя» */
+.an2-cell { display: grid; gap: 8px; align-content: start; }
+.an2-prefs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 10px 14px; border-radius: 16px; background: rgba(255, 255, 255, .03);
+  font-size: 13.5px; }
+.an2-prefs > span { color: var(--ink-3); font-size: 12.5px; }
+.an2 .an-opts { display: none; }

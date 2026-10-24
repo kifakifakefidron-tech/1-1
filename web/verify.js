@@ -2,7 +2,10 @@
    Основной способ — ЗВОНОК (SMS.ru callcheck): позвонить со своего номера на выданный номер, звонок сбросится сам.
    Запасной — код в MAX («1+1-XXXXXX» со своего номера на наш). API: POST /api/agent/verify {phone, method:"call"} |
    {phone} (MAX) | {phone, check:true}; GET /api/agent/verify?phone=&method=call.
-   PhoneVerify.mount(box, { methods: ["call","max"], again: bool, onDone() }) */
+   PhoneVerify.mount(box, { methods: ["call","max"], again: bool, onDone(), consent: true }) —
+   24.10h (Артём: «согласия ставятся сразу с подтверждением телефона»): в форме — две галочки (показ номера и имени — ст. 10.1 152-ФЗ
+   требует отдельного согласия, поэтому отдельно от текстов и фото); отмеченные сохраняются сами, как только номер подтвердился;
+   имя и кнопка MAX — настройки показа, включены сразу (выключаются на «Ваш номер на 1+1»). */
 (() => {
   "use strict";
   const ic = (n) => (window.ic ? window.ic(n) : "");
@@ -24,7 +27,23 @@
     const hasCall = methods.includes("call"), hasMax = methods.includes("max");
     let timer = 0, tick = 0;
     const stop = () => { clearInterval(timer); clearInterval(tick); };
-    const done = () => { stop(); box.innerHTML = `<p class="pv-ok">${ic("check-circle")}Номер подтверждён</p>`; opt.onDone && opt.onDone(); };
+    let agree = { publish: false, license: false };
+    const done = async (ph) => {
+      stop();
+      let saved = false;
+      if (ph && (agree.publish || agree.license)) {
+        const r = await call("/api/agent/consent", { phone: ph, publish: agree.publish, license: agree.license, show_name: true, allow_max: true });
+        saved = r.ok;
+      }
+      box.innerHTML = `<p class="pv-ok">${ic("check-circle")}Номер подтверждён${saved ? " · согласия сохранены" : ""}</p>`;
+      opt.onDone && opt.onDone();
+    };
+    const consentHTML = () => opt.consent === false ? "" : `<div class="pv-agree">
+        <label class="pv-chk"><input type="checkbox" data-agree="publish"${agree.publish ? " checked" : ""}><span>Показывать мой номер и имя в моих объявлениях на 1+1 —
+          даю <a href="/consent-publish" target="_blank">согласие на распространение персональных данных</a> (только вошедшим с доступом; отозвать можно в любой момент)</span></label>
+        <label class="pv-chk"><input type="checkbox" data-agree="license"${agree.license ? " checked" : ""}><span>Разрешаю <a href="/license" target="_blank">использовать тексты и фото</a>
+          моих объявлений — в карточках, превью ссылок и подборках для клиентов коллег</span></label>
+        <small class="note">Отметьте сразу — после подтверждения всё сохранится само. Без первой галочки номер будет скрыт.</small></div>`;
 
     function form(method) {
       stop();
@@ -32,11 +51,13 @@
           <input type="tel" inputmode="tel" autocomplete="tel" placeholder="+7 918 123-45-67" aria-label="Ваш номер" required>
           <button type="submit" class="pill">${method === "call" ? `${ic("phone")}Подтвердить звонком` : `${opt.again ? "Подтвердить ещё номер" : "Получить код"}`}</button>
         </form>
+        ${consentHTML()}
         ${method === "call" ? `<p class="note pv-hint">Позвоните со своего номера на номер, который мы покажем, — звонок бесплатный и сбросится сам. Ничего говорить и вводить не нужно.</p>`
           : `<p class="note pv-hint">Отправите сообщение с кодом со своего номера в MAX.</p>`}
         ${method === "call" && hasMax ? `<button type="button" class="pv-alt" data-alt="max">Нет возможности позвонить? Подтвердить кодом в MAX</button>` : ""}
         ${method === "max" && hasCall ? `<button type="button" class="pv-alt" data-alt="call">${ic("phone")}Подтвердить звонком — быстрее</button>` : ""}
         <div class="pv-out"></div>`;
+      box.querySelectorAll("[data-agree]").forEach((c) => c.addEventListener("change", () => { agree[c.dataset.agree] = c.checked; }));
       const f = box.querySelector("form");
       f.addEventListener("submit", (e) => { e.preventDefault(); (method === "call" ? startCall : startMax)(f.querySelector("input").value.trim()); });
       box.querySelectorAll("[data-alt]").forEach((b) => b.addEventListener("click", () => form(b.dataset.alt)));
@@ -63,7 +84,7 @@
       timer = setInterval(async () => {
         const s = await call(`/api/agent/verify?phone=${encodeURIComponent(ph)}&method=call`);
         if (!s.ok) return;
-        if (s.data.status === "ok") { done(); return; }
+        if (s.data.status === "ok") { done(ph); return; }
         if (s.data.status === "expired" || left <= 0) {
           stop();
           out().innerHTML = `<div class="pv-card"><p class="pv-err">Время вышло — звонка не было.</p>
@@ -87,7 +108,7 @@
         const b = e.currentTarget; b.disabled = true; b.textContent = "Проверяем…";
         const c = await call("/api/agent/verify", { phone: ph, check: true });
         b.disabled = false; b.textContent = "Проверить ещё раз";
-        if (c.ok && c.data.status === "ok") { done(); return; }
+        if (c.ok && c.data.status === "ok") { done(ph); return; }
         out().querySelector(".pv-wt").textContent = c.data.detail || "Пока не пришло — попробуйте через минуту.";
       });
       stop();
@@ -95,7 +116,7 @@
       timer = setInterval(async () => {
         if (++tries > 360) { stop(); return; }
         const s = await call(`/api/agent/verify?phone=${encodeURIComponent(ph)}`);
-        if (s.ok && s.data.status === "ok") done();
+        if (s.ok && s.data.status === "ok") done(ph);
       }, 5000);
     }
     form(hasCall ? "call" : "max");

@@ -42,14 +42,15 @@
         <a class="an2-objs" href="/my"><b>${n}</b><span>${n % 10 === 1 && n % 100 !== 11 ? "объект" : "объектов"}<br>с номером</span>${ic("chevron")}</a></div>
       ${given ? `<p class="an-when">Последнее решение — ${esc(date(c.ts))} (документы от ${esc(c.version || "")})</p>` : ""}
       <div class="an-checks">
-        ${opt("publish", given && c.publish, "phone", "Показывать мой номер и имя",
-          `Согласие на <a href="/consent-publish" target="_blank">распространение персональных данных</a> — в карточках ваших объявлений, только вошедшим с доступом. Отозвать — в любой момент.`)}
+        <div class="an2-cell">
+          ${opt("publish", given && c.publish, "phone", "Показывать мой номер и имя",
+            `Согласие на <a href="/consent-publish" target="_blank">распространение персональных данных</a> — в карточках ваших объявлений, только вошедшим с доступом. Отозвать — в любой момент.`)}
+          <div class="an2-prefs"><span>Как показывать:</span>
+            <label class="an-sw"><input type="checkbox" data-k="show_name"${!given || c.show_name ? " checked" : ""}><span></span>Моё имя</label>
+            <label class="an-sw"><input type="checkbox" data-k="allow_max"${!given || c.allow_max ? " checked" : ""}><span></span>Кнопка «Написать в MAX»</label></div>
+        </div>
         ${opt("license", given && c.license, "layers", "Тексты и фото объявлений",
           `Разрешение <a href="/license" target="_blank">использовать тексты и фото</a> — в карточках, превью ссылок и подборках для клиентов коллег.`)}
-        ${opt("show_name", !given || c.show_name, "user", "Показывать моё имя",
-          "Рядом с номером — ваше имя из объявления. Выключите — коллеги увидят только номер.")}
-        ${opt("allow_max", !given || c.allow_max, "chat", "Кнопка «Написать в MAX»",
-          "Коллеги смогут сразу написать вам в MAX. Выключите — останется только звонок.")}
       </div>
       <p class="an-hint">${ic("help")}<span>Отметьте нужное и нажмите «Сохранить». Без первой галочки номер будет <b>скрыт</b> во всех ваших объявлениях — это тоже честный выбор.</span></p>
       <div class="st-acts an2-acts">
@@ -62,7 +63,7 @@
   function render() {
     const phones = data.phones || [];
     if ($("anBonus")) $("anBonus").textContent = `${data.bonus_days || 30} дней`;
-    if ($("anVerifyCard")) {
+    if ($("anVerifyCard")) {   // 24.10h: согласия — сразу в форме подтверждения (verify.js)
       $("anVerifyCard").hidden = false;
       $("anVerifyH").textContent = phones.length ? "Подтвердить ещё один номер" : "Подтвердите номер из объявлений";
       if (window.PhoneVerify) PhoneVerify.mount($("anVerify"), { methods: data.verify_methods, again: phones.length > 0, onDone: load });

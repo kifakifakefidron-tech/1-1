@@ -239,20 +239,17 @@
       </div>
       ${on ? `<div class="pk5-body">
         ${it.is_active ? "" : `<button type="button" class="pk2-sim" data-sim="${it.listing_id}" data-pid="${p.id}">${ic("repeat")}Снят — показать похожие</button>`}
-        <div class="pk5-cols pk9">
-          <div class="pk5-col">
-            <section class="pk9-s"><h4>${ic("tag")}Цена для клиента</h4>
+        <div class="pk9">
+            <section class="pk9-s a-price"><h4>${ic("tag")}Цена для клиента</h4>
               <label class="pk2-pin money-wrap"><span>В объявлении — ${esc(money(it.price, it.deal))}. Можно поставить свою</span>
                 <span class="pk5-pin"><input data-pprice="${it.listing_id}" data-pid="${p.id}" data-deal="${it.deal}" data-money="${it.deal === "rent" ? "rent" : "sale"}" inputmode="decimal" autocomplete="off"
                   value="${it.my_price ? esc(priceIn(it.my_price, it.deal)) : ""}" placeholder="${esc(priceIn(it.price, it.deal) || "впишите")}"
                   aria-label="Цена для клиента"${it.hide_price ? " disabled" : ""}><em>${it.deal === "rent" ? "тыс. ₽/мес" : "млн ₽"}</em></span></label>
               <label class="pk2-phide pk9-sw"><input type="checkbox" data-phide="${it.listing_id}" data-pid="${p.id}"${it.hide_price ? " checked" : ""}><span></span>Скрыть цену — клиент увидит «Цена по запросу»</label>
             </section>
-            <section class="pk9-s">${photosHTML(p, it)}</section>
-            <section class="pk9-s">${pointHTML(p, it)}</section>
-          </div>
-          <div class="pk5-col">
-            <section class="pk9-s"><h4>${ic("note")}Что прочитает клиент</h4>
+            <section class="pk9-s a-photo">${photosHTML(p, it)}</section>
+            <section class="pk9-s a-point">${pointHTML(p, it)}</section>
+            <section class="pk9-s a-text"><h4>${ic("note")}Что прочитает клиент</h4>
               <label class="pk2-ptext"><span>Текст объявления <small>· сохраняется сам, номера телефонов вырезаются</small></span>
                 <textarea data-ptext="${it.listing_id}" data-pid="${p.id}" data-grow rows="6" maxlength="5000">${esc(it.text || it.orig || "")}</textarea>
                 ${it.text ? `<button type="button" class="pk2-ptext-reset" data-ptext-reset="${it.listing_id}" data-pid="${p.id}">Вернуть исходный текст</button>` : ""}</label>
@@ -260,13 +257,12 @@
                 <input class="pk2-com" data-com="${it.listing_id}" data-pid="${p.id}" maxlength="1000" value="${esc(it.note || "")}"
                   placeholder="Например: «Хозяин торгуется»" aria-label="Комментарий для клиента"></label>
             </section>
-            ${p.client_id ? `<section class="pk9-s"><h4>${ic("user")}${esc(p.client_name || "Клиент")}</h4>
+            ${p.client_id ? `<section class="pk9-s a-client"><h4>${ic("user")}${esc(p.client_name || "Клиент")}</h4>
               <label class="pk2-pst"><span>Статус объекта у клиента</span><select data-pst="${it.listing_id}" data-pid="${p.id}" aria-label="Статус">
                 ${Object.entries(PAIR).map(([k, v]) => `<option value="${k}"${st === k ? " selected" : ""}>${v}</option>`).join("")}</select></label>
               ${it.reaction_text ? `<p class="pk9-said">Клиент написал: «${esc(it.reaction_text)}»</p>` : ""}
               ${notesFor(p, it)}
-            </section>` : notesFor(p, it) ? `<section class="pk9-s">${notesFor(p, it)}</section>` : ""}
-          </div>
+            </section>` : notesFor(p, it) ? `<section class="pk9-s a-client">${notesFor(p, it)}</section>` : ""}
         </div>
         <div class="pk5-acts">
           <button type="button" class="chip" data-move="-1" data-i="${i}" data-pid="${p.id}" ${i ? "" : "disabled"}>${ic("arrow-up")}Выше</button>
