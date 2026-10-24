@@ -199,64 +199,52 @@
 
   // ─── карточка клиента ──────────────────────────────────────────────
   // ─── обзор клиента: всё главное на одном экране, правка — кнопкой «Изменить» (17.10) ───
-  function infoHTML() {
+  function infoHTML() {   // 24.10c — по образцу Артёма (фото 89)
     if (!cur) { $("dInfo").innerHTML = ""; return; }
     const c = cur.client, w = c.wishes || {};
     const when = (ts) => new Date(ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
     const lbl = (list, keys) => (keys || []).map((k) => (list.find(([x]) => x === k) || [k, k])[1]);
-    const wishes = [
-      ["Что ищет", lbl(W_TYPES, w.types).join(", ")],
-      ["Комнаты", roomsTxt(c.rooms)],
-      ["Бюджет", budget(c)],
-      ["Районы", (c.districts || []).join(", ")],
-      ["ЖК", (w.complexes || []).join(", ")],
-      ["Площадь", w.area_min || w.area_max ? `${w.area_min ? `от ${w.area_min}` : ""} ${w.area_max ? `до ${w.area_max}` : ""} м²`.trim() : ""],
-      ["Этаж", [w.not_first && "не первый", w.not_last && "не последний"].filter(Boolean).join(", ")],
-      ["Состояние", lbl(W_COND, w.cond).join(", ")],
-      ["Оплата", lbl(W_PAY, w.pay).join(", ")],
-      ["Обременение", w.no_encumbrance ? "только без обременения" : ""],
-      ["Срок", w.buy_by || ""],
-    ].filter(([, v]) => v);
-    // 24.10b (образец Артёма): главное крупно одной строкой — «2-комн. · ФМР · до 7 млн», остальное списком
-    const MAIN = ["Что ищет", "Комнаты", "Районы", "Бюджет"];
-    const big = wishes.filter(([k]) => MAIN.includes(k)).map(([k, v]) => (k === "Комнаты" && /^\d+к(, \d+к)*$/.test(v) ? `${v.replace(/к/g, "")}-комн.` : v)).join(" · ");
-    const rest = wishes.filter(([k]) => !MAIN.includes(k));
+    const types = lbl(W_TYPES, w.types).map((x) => x.toLowerCase());
+    const big = [roomsTxt(c.rooms), types.join(" / ") || (c.rooms && c.rooms.length ? "квартира" : "")].filter(Boolean).join(" ");
+    const area = w.area_min || w.area_max ? `${w.area_min ? `от ${w.area_min}` : ""} ${w.area_max ? `до ${w.area_max}` : ""} м²`.trim() : "";
+    const sub = [budget(c) && `${budget(c)} ₽`, area].filter(Boolean).join(" · ");
+    const chips = [...(c.districts || []), ...(w.complexes || []).map((x) => `ЖК ${x}`), w.not_first && "не первый этаж", w.not_last && "не последний этаж",
+      ...lbl(W_COND, w.cond).map((x) => x.toLowerCase()), ...lbl(W_PAY, w.pay).map((x) => x.toLowerCase()),
+      w.no_encumbrance && "без обременения", w.buy_by && `срок: ${w.buy_by}`].filter(Boolean);
     const items = cur.items || [], liked = items.filter((o) => ["liked", "show", "talks", "deal"].includes(o.status)).length;
     const shows = items.filter((o) => ["show", "talks", "deal"].includes(o.status)).length;
     const now = Date.now();
     const upcoming = (cur.events || []).filter((e) => !e.done && e.ts * 1000 >= now - 3600e3).sort((a, b) => a.ts - b.ts).slice(0, 3);
+    const LOGI = { note: "note", stage: "layers", object: "home", event: "calendar", new: "user", next: "clock" };
     const recent = (cur.log || []).slice().sort((a, b) => b.ts - a.ts).slice(0, 4);
     const over = c.next_ts && c.next_ts * 1000 < now;
+    const tile = (t, n) => `<button type="button" data-tab="items"><span>${t}</span><b>${n}</b></button>`;
+    const mt = matchFor === c.id && matchTotal != null ? ` · ${num(matchTotal)}` : "";
+    // «Этап: Новый → Подбор» — новое значение жирным
+    const logText = (x) => esc(x.text).replace(/→\s*(.+)$/, "→ <b>$1</b>");
     $("dInfo").innerHTML = `
-      <div class="ci-stats">
-        <button type="button" data-tab="items"><b>${items.length}</b><span>${pl(items.length, "объект", "объекта", "объектов")}</span></button>
-        <button type="button" data-tab="items"><b>${liked}</b><span>понравилось</span></button>
-        <button type="button" data-tab="items"><b>${shows}</b><span>${pl(shows, "показ", "показа", "показов")}</span></button>
-        <button type="button" data-tab="items"><b>${(cur.picks || []).length}</b><span>${pl((cur.picks || []).length, "подборка", "подборки", "подборок")}</span></button>
-      </div>
+      <div class="ci-stats">${tile("Объектов", items.length)}${tile("Понравилось", liked)}${tile("Показов", shows)}${tile("Подборок", (cur.picks || []).length)}</div>
       <div class="ci-grid">
-        <section class="ci-box ci-next${over ? " over" : ""}"><h4>${ic("clock")}Следующий шаг</h4>
-          ${c.next_ts || c.next_text ? `<p><b>${esc(c.next_text || "Связаться")}</b>${c.next_ts ? `<small>${esc(when(c.next_ts))}${over ? " · просрочено" : ""}</small>` : ""}</p>`
-            : `<p class="ci-empty">Не задан — нажмите «Изменить» и укажите, что и когда сделать.</p>`}
-          <div class="ci-acts"><a class="chip" href="/planner?add=show&client=${c.id}">${ic("home")}Показ</a>
-            <a class="chip" href="/planner?add=call&client=${c.id}">${ic("phone")}Созвон</a>
-            <a class="chip" href="/planner?add=meet&client=${c.id}">${ic("users")}Встреча</a></div></section>
-        <section class="ci-box ci-wish"><h4>${ic("search")}Что ищет</h4>
-          ${big ? `<p class="ci-big">${esc(big)}</p>` : ""}
-          ${rest.length ? `<dl class="ci-dl">${rest.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` : ""}
-          ${wishes.length ? "" : `<p class="ci-empty">Пожелания не заполнены — без них сервис не подберёт объекты.</p>`}
-          <div class="ci-acts"><button type="button" class="pill ci-match" data-tab="items">${ic("sparkle")}Подходящие объекты<b id="ciMatchN">${
-            matchFor === c.id && matchTotal != null ? ` · ${num(matchTotal)}` : ""}</b></button></div></section>
-        ${c.note ? `<section class="ci-box"><h4>${ic("note")}Заметка</h4><p class="ci-note">${esc(c.note)}</p></section>` : ""}
-        <section class="ci-box"><h4>${ic("calendar")}Ближайшие дела</h4>
-          ${upcoming.length ? `<ul class="ci-list">${upcoming.map((e) => `<li><a href="/planner?event=${e.id}">${esc(e.title)}</a><small>${esc(when(e.ts))}</small></li>`).join("")}</ul>`
-            : `<p class="ci-empty">Дел нет.</p>`}</section>
-        <section class="ci-box"><h4>${ic("layers")}Последнее</h4>
-          ${recent.length ? `<ul class="ci-list">${recent.map((x) => `<li><span>${esc(x.text)}</span><small>${esc(when(x.ts))}</small></li>`).join("")}</ul>
-            <div class="ci-acts"><button type="button" class="chip" data-tab="log">Вся история</button></div>` : `<p class="ci-empty">Истории пока нет.</p>`}</section>
-        ${["buyer", "tenant"].includes(c.kind) ? `<section class="ci-box ci-pub" id="ciPub"><h4>${ic("users")}Запрос коллегам</h4>
-          <p class="ci-empty">Загружаем…</p></section>` : ""}
-        <section class="ci-box ci-meta"><h4>${ic("user")}О клиенте</h4><dl class="ci-dl">
+        <section class="ci-box ci-wish"><h4>Что ищет</h4>
+          ${big || sub || chips.length ? `${big ? `<p class="ci-big">${esc(big)}</p>` : ""}${sub ? `<p class="ci-sub">${esc(sub)}</p>` : ""}
+            ${chips.length ? `<div class="ci-chips">${chips.map((x) => `<span>${esc(x)}</span>`).join("")}</div>` : ""}`
+            : `<p class="ci-empty">Пожелания не заполнены — без них сервис не подберёт объекты.</p>
+              <div class="ci-acts"><button type="button" class="ci-btn" id="ciFill">${ic("edit")}Заполнить пожелания</button></div>`}
+          <button type="button" class="ci-match" data-tab="items">Подходящие объекты<b id="ciMatchN">${mt}</b></button></section>
+        <section class="ci-box ci-next${over ? " over" : ""}"><h4>Следующий шаг</h4>
+          ${c.next_ts || c.next_text ? `<p class="ci-next-t">${esc(c.next_text || "Связаться")}</p>${c.next_ts ? `<p class="ci-hint${over ? " bad" : ""}">${esc(when(c.next_ts))}${over ? " · просрочено" : ""}</p>` : ""}`
+            : `<p class="ci-next-t">Не задан</p><p class="ci-hint">Запланируйте, что и когда сделать — попадёт в «Дела» и в историю.</p>`}
+          <div class="ci-acts3"><a class="ci-btn" href="/planner?add=show&client=${c.id}">${ic("home")}Показ</a>
+            <a class="ci-btn" href="/planner?add=call&client=${c.id}">${ic("phone")}Созвон</a>
+            <a class="ci-btn" href="/planner?add=meet&client=${c.id}">${ic("user")}Встреча</a></div>
+          <div class="ci-up">${upcoming.length ? `<ul class="ci-list">${upcoming.map((e) => `<li><a href="/planner?event=${e.id}">${ic("calendar")}<span>${esc(e.title)}</span><small>${esc(when(e.ts))}</small></a></li>`).join("")}</ul>`
+            : `<p class="ci-hint">Ближайших дел нет</p>`}</div></section>
+        <section class="ci-box ci-last"><h4>Последнее <button type="button" class="ci-more" data-tab="log">Вся история ›</button></h4>
+          ${recent.length ? `<ul class="ci-log">${recent.map((x) => `<li>${ic(LOGI[x.kind] || "note")}<span>${logText(x)}</span><small>${esc(when(x.ts))}</small></li>`).join("")}</ul>`
+            : `<p class="ci-hint">Истории пока нет.</p>`}</section>
+        ${["buyer", "tenant"].includes(c.kind) ? `<section class="ci-box ci-pub" id="ciPub"><h4>Запрос коллегам</h4><p class="ci-hint">Загружаем…</p></section>` : ""}
+        ${c.note ? `<section class="ci-box"><h4>Заметка</h4><p class="ci-note">${esc(c.note)}</p></section>` : ""}
+        <section class="ci-box ci-meta"><h4>О клиенте</h4><dl class="ci-dl">
           <dt>Кто</dt><dd>${esc(data.kinds[c.kind] || "")}</dd>
           ${c.phone ? `<dt>Телефон</dt><dd><a href="tel:${esc(c.phone)}">${esc(c.phone)}</a></dd>` : ""}
           ${c.source ? `<dt>Откуда</dt><dd>${esc(c.source)}</dd>` : ""}
@@ -281,7 +269,7 @@
     const box = $("ciPub");
     if (!box) return;
     const p = pubState;
-    const head = `<h4>${ic("users")}Запрос коллегам</h4>`;
+    const head = `<h4>Запрос коллегам</h4>`;
     if (p) {
       const d = new Date(p.last_seen * 1000), till = new Date((p.last_seen + 10 * 86400) * 1000);
       const f = (x) => x.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
@@ -292,12 +280,12 @@
           <button type="button" class="chip" data-pub="off">Снять</button></div>`;
       return;
     }
-    box.innerHTML = `${head}<p class="ci-empty">Покажите пожелания клиента всем агентам 1+1: у кого есть подходящий объект — получит
-      уведомление и позвонит вам. Имя и номер клиента не показываются, запрос живёт 10 дней.</p>
+    box.innerHTML = `${head}<p class="ci-pub-lead">Покажите пожелания всем агентам 1+1 — у кого есть подходящий объект, позвонит вам.</p>
+      <p class="ci-hint">Имя и номер клиента скрыты · запрос живёт 10 дней</p>
       <textarea id="ciPubNote" class="ci-pub-note" rows="2" maxlength="500" data-grow
-        placeholder="Комментарий для коллег (необязательно): срочность, способ оплаты…"></textarea>
+        placeholder="Комментарий (необязательно): срочность, способ оплаты…"></textarea>
       ${err ? `<p class="ci-pub-err">${esc(err)}</p>` : ""}
-      <div class="ci-acts"><button type="button" class="chip on" data-pub="go">${ic("share")}Опубликовать запрос</button></div>`;
+      <button type="button" class="ci-pub-go" data-pub="go">Опубликовать запрос</button>`;
   }
   $("dInfo").addEventListener("click", async (e) => {
     const b = e.target.closest("[data-pub]");
@@ -325,38 +313,29 @@
     if (name === "items" && cur && !$("dMatchList").dataset.loaded) match();
   }
   const pl = (n, a, b, c) => (n % 10 === 1 && n % 100 !== 11 ? a : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? b : c);
-  function stagesHTML() {
-    const keys = Object.keys(data.stages), at = cur ? keys.indexOf(cur.client.stage) : 0;
+  function stagesHTML() {   // 24.10c — по образцу: кружки с номерами на линии, пройденные — галочкой, «Отказ» справа
+    const keys = Object.keys(data.stages), steps = keys.filter((k) => k !== "lost");
     $("dStages").hidden = !cur;
-    // кнопки уже есть (тот же клиент обновился) — не пересобираем, иначе плашка «прыгнет»
-    if (cur && $("dStages").dataset.cid === String(cur.client.id) && $("dStages").querySelector(".c-stage-ind")) {
-      slideStage(cur.client.stage);
-      return;
-    }
-    $("dStages").dataset.cid = cur ? cur.client.id : "";
-    $("dStages").innerHTML = `<i class="c-stage-ind" aria-hidden="true"></i>` + keys.map((k, i) => `<button type="button" data-stage="${k}"
-      class="${i === at ? "on" : i < at && k !== "lost" ? "past" : ""}${k === "lost" ? " lost" : ""}" style="--c:${STAGE_C[k]}">${k === "lost" ? "" : `<i class="n">${i + 1}</i>`}${esc(data.stages[k])}</button>`).join("");
-    requestAnimationFrame(() => slideStage(cur ? cur.client.stage : keys[0], false));
+    $("dStages").innerHTML = `<ol class="c-step" style="--n:${steps.length}">${steps.map((k, i) => `<li><button type="button" data-stage="${k}">
+        <i class="n">${i + 1}</i><span>${esc(data.stages[k])}</span></button></li>`).join("")}</ol>
+      ${keys.includes("lost") ? `<button type="button" class="c-lost" data-stage="lost">${esc(data.stages.lost)}</button>` : ""}`;
+    slideStage(cur ? cur.client.stage : steps[0], false);
   }
-  // плашка выбранного этапа плавно переезжает к нажатому
-  function slideStage(stage, animate = true, tries = 0) {
-    const box = $("dStages"), ind = box.querySelector(".c-stage-ind"), b = box.querySelector(`[data-stage="${stage}"]`);
-    if (!ind || !b) return;
-    // 17.10: окно ещё раскрывается (размеры 0) — плашка не рисовалась и выбранный этап был не виден; ждём и повторяем
-    if (!b.offsetWidth && tries < 20) { setTimeout(() => slideStage(stage, false, tries + 1), 50); return; }
-    if (!animate) ind.style.transition = "none";
-    ind.style.width = `${b.offsetWidth}px`;
-    ind.style.height = `${b.offsetHeight}px`;
-    ind.style.transform = `translate(${b.offsetLeft}px, ${b.offsetTop}px)`;   // этапы в два ряда — плашка едет и вниз
-    ind.style.background = STAGE_C[stage];
-    if (!animate) { void ind.offsetWidth; ind.style.transition = ""; }
-    const keys = Object.keys(data.stages), at = keys.indexOf(stage);
-    box.querySelectorAll("[data-stage]").forEach((x, i) => {
-      x.classList.toggle("on", x === b);
-      x.classList.toggle("past", i < at && x.dataset.stage !== "lost");
+  function slideStage(stage) {
+    const box = $("dStages"), steps = Object.keys(data.stages).filter((k) => k !== "lost");
+    if (!box.querySelector(".c-step")) return;
+    const lost = stage === "lost", at = lost ? -1 : steps.indexOf(stage);
+    box.classList.toggle("is-lost", lost);
+    box.querySelectorAll(".c-step li").forEach((li, i) => {
+      li.classList.toggle("done", i < at);
+      li.classList.toggle("on", i === at);
+      li.querySelector(".n").innerHTML = i < at ? ic("check") : String(i + 1);
     });
-    const sl = b.offsetLeft - box.clientWidth / 2 + b.offsetWidth / 2;   // на телефоне — прокрутить к выбранному
-    box.scrollTo({ left: sl, behavior: animate ? "smooth" : "auto" });
+    box.style.setProperty("--fill", at > 0 ? `${(at / (steps.length - 1)) * 100}%` : "0%");
+    const lb = box.querySelector(".c-lost");
+    if (lb) lb.classList.toggle("on", lost);
+    const on = box.querySelector(".c-step li.on");
+    if (on && box.scrollWidth > box.clientWidth) box.scrollTo({ left: on.offsetLeft - box.clientWidth / 2 + on.offsetWidth / 2, behavior: "smooth" });
   }
   // окно меняет ширину (поворот телефона, раскрытие) — плашка этапа встаёт на место
   const stageRO = window.ResizeObserver ? new ResizeObserver(() => { if (cur) slideStage(cur.client.stage, false); }) : null;
@@ -414,26 +393,26 @@
     const c = cur ? cur.client : null;
     $("dName").textContent = c ? c.name : "Новый клиент";
     $("dAva").textContent = c ? (c.name.trim()[0] || "К").toUpperCase() : "+";
-    $("dSub").textContent = c ? [data.kinds[c.kind], c.created && `добавлен ${new Date(c.created * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}`, c.phone]
+    $("dSub").textContent = c ? [data.kinds[c.kind], c.created && `добавлен ${new Date(c.created * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}`]
       .filter(Boolean).join(" · ") : "Заполните, кто это и что ищет — сервис подберёт объекты";
     const digits = c && c.phone ? c.phone.replace(/\D/g, "") : "";
     $("dActs").innerHTML = digits ? `<a href="tel:${esc(c.phone)}" aria-label="Позвонить">${ic("phone")}</a>
       <button type="button" class="c-max" data-max="${esc(c.phone)}" aria-label="Написать в MAX" title="Написать в MAX">MAX</button>` : "";
     $("dItemsN").textContent = cur && cur.items.length ? cur.items.length : "";
-    $("dLogN").textContent = cur && (cur.log.length + (cur.work || []).length) ? cur.log.length + (cur.work || []).length : "";
-    $("dTasksN").textContent = cur && cur.events.filter((e) => !e.done).length ? cur.events.filter((e) => !e.done).length : "";
+    $("dLogN").textContent = cur ? cur.log.length + (cur.work || []).length : "";
+    $("dTasksN").textContent = cur ? cur.events.filter((e) => !e.done).length : "";
     document.querySelectorAll('.c-tabs [data-tab]:not([data-tab="card"])').forEach((b) => { b.hidden = !cur; });
   }
-  function itemsHTML() {
+  function itemsHTML() {   // 24.10c: та же карточка, что в ленте главной; статус — выбором внизу
     const st = data.item_status;
-    $("dItems").innerHTML = cur.items.length ? cur.items.map((o) => `<div class="c-it${o.is_active ? "" : " off"}">
-        ${o.photo ? `<img src="${esc(o.photo)}" alt="" loading="lazy">` : `<span class="noimg"></span>`}
-        <div><a href="/?open=${o.id}" target="_blank">${esc(o.complex ? `ЖК ${o.complex}` : o.title)}</a>
-          <small>${esc(o.title)} · ${esc(money(o.price, o.deal))} ₽${o.is_active ? "" : " · снят"}</small>
-          ${o.reaction ? `<small class="c-react r-${esc(o.reaction)}">Ответ клиента: ${esc(REACT[o.reaction] || "")}${o.reaction_text ? ` — «${esc(o.reaction_text)}»` : ""}</small>` : ""}
-          ${(() => { const w = lastWork(o.id); return w ? `<small class="c-wk">${ic((WK[w.kind] || WK.note)[0])}${(WK[w.kind] || WK.note)[1]}${w.text ? ": " + esc(w.text.slice(0, 90)) : ""}</small>` : ""; })()}</div>
-        <select data-item="${o.id}" aria-label="Статус">${Object.entries(st).map(([k, t]) => `<option value="${k}"${o.status === k ? " selected" : ""}>${t}</option>`).join("")}
-          <option value="__del">Убрать</option></select></div>`).join("")
+    $("dItems").innerHTML = cur.items.length ? LCard.grid(cur.items.map((o) => LCard.html({ ...o, photos: o.photos || (o.photo ? [o.photo] : []) }, {
+        top: `<span class="lc-tag gold">${esc(st[o.status] || o.status)}</span>`,
+        extra: `${o.reaction ? `<p class="lc-line c-react r-${esc(o.reaction)}">Ответ клиента: ${esc(REACT[o.reaction] || "")}${o.reaction_text ? ` — «${esc(o.reaction_text)}»` : ""}</p>` : ""}
+          ${(() => { const w = lastWork(o.id); return w ? `<p class="lc-line">${ic((WK[w.kind] || WK.note)[0])}${(WK[w.kind] || WK.note)[1]}${w.text ? ": " + esc(w.text.slice(0, 90)) : ""}</p>` : ""; })()}`,
+        meta: "",
+        foot: `<div class="lc-acts"><select data-item="${o.id}" aria-label="Статус">${Object.entries(st).map(([k, t]) => `<option value="${k}"${o.status === k ? " selected" : ""}>${t}</option>`).join("")}
+          <option value="__del">Убрать</option></select></div>`,
+      })).join(""), "sm")
       : `<p class="g-empty">Объектов пока нет. Отметьте подходящие ниже и нажмите «В подборку» — или добавьте из окна объекта кнопкой «Клиенту».</p>`;
   }
   const plural = (n, a, b, c) => (n % 10 === 1 && n % 100 !== 11 ? a : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? b : c);
@@ -523,16 +502,17 @@ ${lines.join("\n")}`;
   }
   let matchPage = 1, matchSince = 0, freshIds = [];   // matchSince — из уведомления «новое под клиента»
   let mSort = "new", mPhoto = false, mNotFirst = false, showHidden = false, matchFor = 0, matchTotal = null;
-  function matchItem(o) {
-    const diff = o.market_diff != null && o.market_diff < -2 ? `<span class="c-good">ниже рынка ${Math.abs(o.market_diff)}%</span>` : "";
-    return `<div class="c-it${showHidden ? "" : " c-mit"}" data-mid="${o.id}">
-        ${showHidden ? "" : `<label class="c-chk"><input type="checkbox" data-msel="${o.id}" aria-label="Отметить"></label>`}
-        ${o.photos && o.photos[0] ? `<img src="${esc(o.photos[0])}" alt="" loading="lazy">` : `<span class="noimg"></span>`}
-        <div><a href="/?open=${o.id}" target="_blank">${esc(o.complex ? `ЖК ${o.complex}` : o.title)}</a>
-          <small>${esc(o.title)} · ${esc(money(o.price, o.deal))} ₽${o.district ? ` · ${esc(o.district)}` : ""} ${diff}</small></div>
-        ${showHidden ? `<button type="button" class="pill light" data-unhide="${o.id}">Вернуть</button>`
-          : `<span class="c-mact"><button type="button" class="pill light" data-offer="${o.id}" title="В подборку клиента">В подборку</button>
-            <button type="button" class="c-x" data-nope="${o.id}" title="Не подходит — больше не предлагать" aria-label="Не подходит">${ic("x")}</button></span>`}</div>`;
+  function matchItem(o) {   // 24.10c: общей карточкой, галочка выбора — справа сверху на фото
+    const diff = o.market_diff != null && o.market_diff < -2 ? `<span class="lc-tag ok">ниже рынка ${Math.abs(o.market_diff)}%</span>` : "";
+    return LCard.html(o, {
+      cls: "c-mit",
+      top: diff,
+      sel: showHidden ? "" : `<label class="lc-sel" title="Отметить"><input type="checkbox" data-msel="${o.id}" aria-label="Отметить"></label>`,
+      meta: "",
+      foot: `<div class="lc-acts">${showHidden ? `<button type="button" class="lc-btn main" data-unhide="${o.id}">Вернуть</button>`
+        : `<button type="button" class="lc-btn main" data-offer="${o.id}">${ic("folder")}В подборку</button>
+          <button type="button" class="lc-btn x" data-nope="${o.id}" title="Не подходит — больше не предлагать" aria-label="Не подходит">${ic("x")}</button>`}</div>`,
+    });
   }
   const selected = () => [...document.querySelectorAll("[data-msel]:checked")].map((x) => Number(x.dataset.msel));
   function selBar() {
@@ -541,6 +521,7 @@ ${lines.join("\n")}`;
     $("mSel").textContent = n ? `отмечено: ${n}` : "";
     $("mToPick").disabled = $("mNo").disabled = !n;
     $("mAll").checked = n && n === document.querySelectorAll("[data-msel]").length;
+    document.querySelectorAll("[data-msel]").forEach((x) => { const c = x.closest(".lc"); if (c) c.classList.toggle("picked", x.checked); });
   }
   async function sendToPick(ids) {
     const r = await call(`/api/clients/${cur.client.id}/topick`, { ids });
@@ -598,7 +579,7 @@ ${lines.join("\n")}`;
           <small>Появились с ${esc(when)} и подходят под пожелания клиента</small></span>
           ${d.items.length ? `<button type="button" class="pill" data-topick>Всё в подборку</button>` : ""}
           <button type="button" class="chip" data-all-match>Показать все подходящие</button></div>
-        <div class="c-items">${d.items.map(matchItem).join("") || `<p class="g-empty">Новых пока нет — все подходящие ниже.</p>`}</div>`;
+        ${d.items.length ? LCard.grid(d.items.map(matchItem).join(""), "sm") : `<p class="g-empty">Новых пока нет — все подходящие ниже.</p>`}`;
       box.innerHTML = `<p class="g-empty">Новые объекты — наверху. «Показать все подходящие» — весь подбор здесь.</p>`;
       requestAnimationFrame(() => fb.scrollIntoView({ block: "start", behavior: "smooth" }));
       selBar();
@@ -632,8 +613,9 @@ ${lines.join("\n")}`;
     if (t.dataset.froom !== undefined) { const k = Number(t.dataset.froom); form.rooms = form.rooms.includes(k) ? form.rooms.filter((x) => x !== k) : [...form.rooms, k]; renderFormChips(); return; }
     if (t.dataset.fdel) { form.districts = form.districts.filter((x) => x !== t.dataset.fdel); renderFormChips(); return; }
     if (t.dataset.offer) { sendToPick([Number(t.dataset.offer)]); return; }
-    if (t.dataset.nope) { t.closest(".c-it").remove(); hideIds([Number(t.dataset.nope)]); return; }
-    if (t.dataset.unhide) { t.closest(".c-it").remove(); hideIds([Number(t.dataset.unhide)], false); return; }
+    if (t.dataset.nope) { t.closest(".lc, .c-it").remove(); hideIds([Number(t.dataset.nope)]); return; }
+    if (t.dataset.unhide) { t.closest(".lc, .c-it").remove(); hideIds([Number(t.dataset.unhide)], false); return; }
+    if (t.id === "ciFill") { tab("card"); return; }
     if (t.id === "mToPick") { const ids = selected(); if (ids.length) sendToPick(ids); return; }
     if (t.id === "mNo") { const ids = selected(); if (ids.length) hideIds(ids); return; }
     if (t.id === "mHidden") { showHidden = !showHidden; match(); return; }

@@ -214,4 +214,27 @@
     mailLoad();
     verLoad();
   })();
+  // 24.10c: слева — разделы настроек (как оглавление), выбранный подсвечивается при прокрутке
+  (function sectionNav() {
+    const nav = $("stNav");
+    if (!nav) return;
+    const secs = [...document.querySelectorAll("#stApp .st-card")].filter((s) => s.querySelector("h2"));
+    nav.innerHTML = secs.map((s, i) => {
+      if (!s.id) s.id = `st-sec-${i}`;
+      const icon = s.querySelector(".st-ic svg, .st-ic i");
+      return `<a href="#${s.id}" data-sec="${s.id}">${icon ? icon.outerHTML : ""}<span>${escH(s.querySelector("h2").textContent)}</span></a>`;
+    }).join("");
+    nav.addEventListener("click", (e) => {
+      const a = e.target.closest("a[data-sec]");
+      if (!a) return;
+      e.preventDefault();
+      document.getElementById(a.dataset.sec).scrollIntoView({ behavior: "smooth", block: "start" });
+      history.replaceState(null, "", `#${a.dataset.sec}`);
+    });
+    if (!window.IntersectionObserver) return;
+    const io = new IntersectionObserver((ents) => {
+      ents.forEach((en) => { if (en.isIntersecting) nav.querySelectorAll("a").forEach((a) => a.classList.toggle("on", a.dataset.sec === en.target.id)); });
+    }, { rootMargin: "-20% 0px -70% 0px" });
+    secs.forEach((s) => io.observe(s));
+  })();
 })();

@@ -116,7 +116,7 @@
   // в списке подборка — цветная плитка (цвет выбирается в «Оформлении»), буква клиента или названия и число объектов
   function cover(p) {
     const letter = (p.client_name || p.title || "П").trim().charAt(0).toUpperCase();
-    return `<span class="pk2-cov c-${esc(p.color)}"><b>${esc(letter)}</b><i>${p.n}</i></span>`;
+    return `<span class="pk2-cov c-${esc(p.color)}${p.cover ? " own" : ""}">${p.cover ? `<img src="${esc(p.cover)}" alt="">` : `<b>${esc(letter)}</b>`}<i>${p.n}</i></span>`;
   }
   function seenBadge(p) {
     p = { ...p, views: p.views_unique || p.views };   // уникальные открытия клиентом (до 13.10 считались все)
@@ -184,7 +184,8 @@
         <b class="pk5-price${it.hide_price ? " off" : ""}">${it.hide_price ? "скрыта" : esc(money(it.my_price || it.price, it.deal))}</b>
         ${p.client_id ? `<span class="pk5-st ${ST_CLS[st] || ""}"><i></i>${esc(PAIR[st] || "Отправлен")}</span>` : ""}
         ${it.reaction ? `<span class="pk2-re r-${REACT[it.reaction][1]}">${REACT[it.reaction][0]}</span>` : ""}
-        <button type="button" class="pk5-tog${on ? " on" : ""}" data-row="${it.listing_id}">${on ? "Свернуть" : "Настроить"}</button>
+        <span class="pk6-btns"><a class="pk6-open" href="/?open=${it.listing_id}" title="Открыть объект">${ic("external")}<span>Открыть</span></a>
+          <button type="button" class="pk5-tog${on ? " on" : ""}" data-row="${it.listing_id}">${ic(on ? "chevron-left" : "sliders")}<span>${on ? "Свернуть" : "Настроить"}</span></button></span>
       </div>
       ${on ? `<div class="pk5-body">
         ${it.is_active ? "" : `<button type="button" class="pk2-sim" data-sim="${it.listing_id}" data-pid="${p.id}">${ic("repeat")}Снят — показать похожие</button>`}
@@ -258,11 +259,14 @@
     const p = list.find((x) => x.id === open);
     document.body.classList.toggle("pk-open", !!p);
     if (!p) { box.innerHTML = emptyState(); return; }
-    const ph = p.items.map((x) => x.photo).filter(Boolean).slice(0, 3);
     box.innerHTML = `
       <button type="button" class="pk2-back" data-back>${ic("chevron-left")}Все подборки</button>
       <header class="pk2-hero pk5-hero">
-        <div class="pk2-col n${ph.length} c-${esc(p.color)}">${ph.map((u) => `<img src="${esc(u)}" alt="">`).join("") || `<span>${ic("folder")}</span>`}</div>
+        <div class="pk6-cov c-${esc(p.color)}${p.cover ? " own" : ""}">${p.cover ? `<img src="${esc(p.cover)}" alt="">`
+            : `<b>${esc((p.client_name || p.title || "П").trim().charAt(0).toUpperCase())}</b>`}
+          <label class="pk6-cov-b" title="Своё фото обложки — его увидит клиент вверху подборки">${ic("plus")}<span>${p.cover ? "Другое фото" : "Своё фото"}</span>
+            <input type="file" accept="image/*" data-pcover="${p.id}" hidden></label>
+          ${p.cover ? `<button type="button" class="pk6-cov-x" data-pcover-del="${p.id}" title="Убрать фото — снова градиент" aria-label="Убрать фото обложки">${ic("x")}</button>` : ""}</div>
         <div class="pk2-hero-b">
           <h2>${esc(p.title)}</h2>
           <p class="pk2-hero-m">${p.client_id ? `<a class="pk5-cl" href="/clients?id=${p.client_id}" title="Карточка клиента: пожелания, история">Клиент ${esc(p.client_name || "")} ›</a>`
@@ -671,6 +675,23 @@ ${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
       img.src = URL.createObjectURL(file);
     });
   }
+  document.addEventListener("change", async (e) => {
+    const inp = e.target;
+    if (!inp.dataset || !inp.dataset.pcover || !inp.files[0]) return;
+    toast("Загружаем обложку…", 4000);
+    let data = "";
+    try { data = await shrink(inp.files[0]); } catch { toast("Не получилось прочитать фото — нужен JPEG или PNG", 3000); return; }
+    const r = await call("/api/picks", { id: Number(inp.dataset.pcover), cover: data });
+    toast(r.ok ? "Обложка сохранена — клиент увидит её вверху подборки" : r.data.detail || "Не получилось", 3000);
+    await reload();
+  });
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-pcover-del]");
+    if (!b) return;
+    const r = await call("/api/picks", { id: Number(b.dataset.pcoverDel), cover: "" });
+    toast(r.ok ? "Фото убрано — обложка снова в цвет подборки" : r.data.detail || "Не получилось");
+    await reload();
+  });
   document.addEventListener("change", async (e) => {
     const inp = e.target;
     if (!inp.dataset || !inp.dataset.phAdd) return;

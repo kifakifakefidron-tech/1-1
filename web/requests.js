@@ -31,17 +31,18 @@
     clearTimeout(toast.t);
     toast.t = setTimeout(() => { try { t.hidePopover(); } catch { t.hidden = true; } }, ms);
   }
-  // 24.10b (образец Артёма): сверху сделка и время, крупно бюджет, отметки, текст, внизу номер широкой кнопкой и MAX
-  const big = (r) => {
+  // 24.10c (Артём: «убрать цену вверху»): бюджет — отметкой рядом с комнатами и районами, а не крупно сверху
+  const budget = (r) => {
     const p = r.price_max || r.price_min;
-    if (!p) return `<p class="rq2-budget none">бюджет не указан</p>`;
-    const [v, unit] = r.deal === "rent" ? [Math.round(p / 1000).toLocaleString("ru-RU"), "тыс. ₽/мес"]
-      : [(p / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 }), "млн ₽"];
-    const pre = r.price_max ? (r.price_min && r.price_min !== r.price_max ? `${(r.deal === "rent" ? Math.round(r.price_min / 1000) : (r.price_min / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 }))}–` : "до ") : "от ";
-    return `<p class="rq2-budget">${pre}${esc(v)}<small>${unit}</small></p>`;
+    if (!p) return "";
+    const f = (x) => (r.deal === "rent" ? `${Math.round(x / 1000).toLocaleString("ru-RU")} тыс.` : `${(x / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} млн`);
+    const unit = r.deal === "rent" ? " ₽/мес" : " ₽";
+    if (r.price_min && r.price_max && r.price_min !== r.price_max) return `${f(r.price_min)}–${f(r.price_max)}${unit}`;
+    return `${r.price_max ? "до" : "от"} ${f(p)}${unit}`;
   };
   function itemHTML(r, i) {
     const chips = [r.type && TYPES[r.type], roomsText(r.rooms_mask), ...r.districts, ...r.complexes.map((c) => `ЖК ${c}`)].filter(Boolean);
+    const bud = budget(r);
     const fresh = lastVisit && r.first_seen > lastVisit;
     const phones = (r.phones || []).map((p, k) => `<div class="rq2-ph"><a class="pill${k ? " light" : ""}" href="tel:${esc(p)}">${ic("phone")}${esc(pretty(p))}</a>
       <button type="button" class="rq2-max" data-max="${esc(p)}">MAX</button>
@@ -50,8 +51,7 @@
       <div class="rq2-top"><span class="rq2-deal${r.deal === "rent" ? " rent" : ""}">${r.deal === "rent" ? "Аренда" : "Покупка"}</span>
         ${fresh ? `<span class="rq-new">Новый</span>` : ""}${r.source === "agent" ? `<span class="rq-agent">${ic("check-circle")}Агент 1+1</span>` : ""}
         <small>${esc(ago(r.last_seen))}${r.source !== "agent" && r.seen_count > 1 ? ` · присылали ${r.seen_count} ${r.seen_count % 10 >= 2 && r.seen_count % 10 <= 4 && (r.seen_count % 100 < 12 || r.seen_count % 100 > 14) ? "раза" : "раз"}` : ""}</small></div>
-      ${big(r)}
-      ${chips.length ? `<div class="rq-chips">${chips.map((c) => `<span class="chip">${esc(c)}</span>`).join("")}</div>` : ""}
+      ${chips.length || bud ? `<div class="rq-chips">${bud ? `<span class="chip rq2-bud">${esc(bud)}</span>` : ""}${chips.map((c) => `<span class="chip">${esc(c)}</span>`).join("")}</div>` : ""}
       <p class="rq-text clamp">${esc(r.text)}</p>
       <button type="button" class="rq-more" data-more hidden>Полностью</button>
       ${phones ? `<div class="rq-phones rq2-phones">${phones}</div>` : admin ? `<div class="rq2-ph"><button type="button" class="rq2-del" data-del="${r.id}" aria-label="Удалить запрос">${ic("trash")}</button></div>` : ""}</li>`;

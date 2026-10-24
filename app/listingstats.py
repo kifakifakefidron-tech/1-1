@@ -129,11 +129,13 @@ def remember(conn: sqlite3.Connection, user_id: int, listing_id: int) -> None:
 
 def recent(conn: sqlite3.Connection, user_id: int, limit: int = 8) -> list[dict]:
     out = []
-    for r in conn.execute("""SELECT l.id, l.title, l.complex, l.district, l.street, l.house, l.price, l.deal, l.photos,
-                                    l.is_active, l.price_doubt, v.ts
+    # 24.10c: поля как у ленты главной — карточка на сайте одна (web/lcard.js)
+    for r in conn.execute("""SELECT l.id, l.title, l.complex, l.district, l.settlement, l.street, l.house, l.price, l.price_m2,
+                                    l.deal, l.photos, l.is_active, l.price_doubt, l.first_seen, l.last_seen, v.ts
                              FROM recent_views v JOIN listings l ON l.id = v.listing_id
                              WHERE v.user_id = ? ORDER BY v.ts DESC LIMIT ?""", (user_id, limit)):
         ph = json.loads(r["photos"] or "[]")
-        out.append({k: r[k] for k in ("id", "title", "complex", "district", "street", "house", "price", "deal", "is_active", "ts")}
-                   | {"photo": ph[0] if ph else None, "price_doubt": bool(r["price_doubt"])})
+        out.append({k: r[k] for k in ("id", "title", "complex", "district", "settlement", "street", "house", "price", "price_m2",
+                                      "deal", "is_active", "first_seen", "last_seen", "ts")}
+                   | {"photo": ph[0] if ph else None, "photos": ph[:10], "price_doubt": bool(r["price_doubt"])})
     return out

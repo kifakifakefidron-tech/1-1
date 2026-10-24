@@ -17,9 +17,9 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=90">
-<link rel="stylesheet" href="/static/cabinet.css?v=27">
-<link rel="stylesheet" href="/static/clients.css?v=19">
+<link rel="stylesheet" href="/static/glass.css?v=92">
+<link rel="stylesheet" href="/static/cabinet.css?v=29">
+<link rel="stylesheet" href="/static/clients.css?v=21">
 </head>
 <body class="dash-body">
 <main class="dash">
@@ -112,7 +112,7 @@
       <section class="c-fresh-box" id="dFresh" hidden></section>
       <div class="c-report" id="dReport"></div>
       <div class="c-picks" id="dPicks"></div>
-      <div class="c-items" id="dItems"></div>
+      <div id="dItems"></div>
       <div class="c-match-h"><h3>Подходят по пожеланиям <b id="dMatchN"></b></h3><button type="button" class="pill light" id="dMatch"><span data-ic="sparkle"></span>Обновить</button></div>
       <div class="c-mtools" id="dMtools">
         <select id="mSort" aria-label="Порядок"><option value="new">Сначала свежие</option><option value="price_asc">Дешевле</option>
@@ -123,7 +123,7 @@
       <div class="c-mbar" id="dMbar" hidden><label class="c-chk"><input type="checkbox" id="mAll"><span>Выбрать все</span></label>
         <b id="mSel"></b><button type="button" class="pill" id="mToPick">В подборку и скопировать ссылку</button>
         <button type="button" class="chip" id="mNo">Не подходит</button></div>
-      <div class="c-items" id="dMatchList"></div>
+      <ol class="results lc-grid sm" id="dMatchList"></ol>
     </div>
 
     <div class="c-pane" data-pane="log" hidden>
@@ -143,7 +143,8 @@
 <script src="/static/max.js?v=2"></script>
 <script src="/static/rail.js?v=30"></script>
 <script src="/static/pickers.js?v=18"></script>
-<script src="/static/clients.js?v=27"></script>
+<script src="/static/lcard.js?v=2"></script>
+<script src="/static/clients.js?v=28"></script>
 <script src="/static/objview.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 </body>

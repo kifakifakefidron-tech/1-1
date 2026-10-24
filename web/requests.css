@@ -107,3 +107,19 @@
 .rq2-dlg { width: min(520px, calc(100vw - 24px)); overflow-x: hidden; }
 .rq2-dlg .dlg-body { overflow-x: hidden; }
 .rq2-dlg .dlg-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 14px; }
+
+/* 24.10c: цвета — как у карточек поиска (матовое стекло, светлые отметки), номер и MAX — всегда внизу карточки */
+.rq2-item { background: linear-gradient(180deg, rgba(255, 255, 255, .065), rgba(255, 255, 255, .03)) !important; border: 1px solid var(--glass-line) !important;
+  border-radius: var(--r-lg, 20px) !important; box-shadow: var(--glass-hi); }
+.rq2-item:hover { border-color: var(--glass-line-2) !important; box-shadow: var(--glass-hi), 0 14px 36px rgba(0, 18, 18, .24); }
+.rq2-deal { background: rgba(227, 203, 143, .16); color: var(--gold); border: 1px solid rgba(227, 203, 143, .35); }
+.rq2-deal.rent { background: rgba(110, 231, 183, .12); color: var(--ok); border-color: rgba(110, 231, 183, .3); }
+.rq2-item .rq-chips { margin-top: 12px; gap: 5px; }
+.rq2-item .rq-chips .chip { background: rgba(255, 255, 255, .07); border: 1px solid var(--glass-line); color: var(--ink-2); border-radius: 999px; padding: 4px 11px; }
+.rq2-item .rq-chips .chip.rq2-bud { color: var(--ink); font-weight: 600; border-color: rgba(227, 203, 143, .4); }
+.rq2-item .rq-text { color: var(--ink-2); }
+.rq2-phones { margin-top: auto !important; padding-top: 14px !important; }
+.rq2-ph .pill { min-height: 42px; }
+.rq2-ph .pill.light { border-width: 1px; }
+.rq2-max, .rq2-del { min-height: 42px; border-radius: 999px; min-width: 56px; }
+.rq2-del { background: rgba(255, 255, 255, .04); }

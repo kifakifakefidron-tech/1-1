@@ -433,7 +433,7 @@
   const STRELY = `<svg class="strely-ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 12.5L8 7M8 7V11M8 7H4"/><path d="M7.5 9.5L13 4M13 4V8M13 4H9"/></svg>`;
 
   // «Клиенту ▾» (ТЗ v2): одна кнопка вместо «В подборку» и «Клиенту». Выбрали клиента — объект в его подборке
-  // (статус «Отправлен»), ссылку можно сразу скопировать. Новый клиент — прямо здесь. «Без клиента» — вторым пунктом.
+  // (статус «Добавлен»), «Перейти в подборку» — сразу к ней. Новый клиент — прямо здесь. Подборки без клиента нет (24.10c).
   const PAIR_L = { matched: "подобран", added: "добавлен", sent: "отправлен", opened: "открыл", liked: "понравился", rejected: "не подходит",
     show: "показ", talks: "переговоры", deal: "сделка", lost: "отказ" };
   let cmData = null, cmFor = 0, cmDone = null;
@@ -460,8 +460,7 @@
       <details class="cm-newbox"><summary>${ic("plus")}Новый клиент</summary>
         <form class="cm-new-f" id="cmNew" autocomplete="off"><input name="name" maxlength="80" placeholder="Имя" required>
           <input name="phone" maxlength="30" inputmode="tel" placeholder="Телефон (необязательно)">
-          <button type="submit" class="pill">Создать и добавить</button></form></details>
-      <button type="button" class="cm-nopick" data-pick-open="${id}">${ic("folder")}В подборку без клиента…</button></div>`;
+          <button type="submit" class="pill">Создать и добавить</button></form></details></div>`;
     if (!dlg.open) dlg.showModal();
     const r = await call(`/api/clients?listing=${id}`);
     if (!r.ok) { dlg.querySelector(".cm-list").innerHTML = `<p class="note">Не получилось загрузить клиентов.</p>`; return; }
@@ -485,7 +484,7 @@
     const done = $("cmDone");
     done.hidden = !cmDone;
     if (cmDone) done.innerHTML = `${ic("check")}<span>Добавлено: <b>${esc(cmDone.name)}</b> — в подборке «${esc(cmDone.pick.title || "")}»</span>
-      <button type="button" class="pill light" data-copy-url="${esc(cmDone.pick.url || "")}">${ic("link")}Скопировать ссылку</button>`;
+      <a class="pill" href="/picks?open=${cmDone.pick.id || ""}">${ic("stack")}Перейти в подборку</a>`;
   }
   async function cmAdd(cid) {
     const r = await call(`/api/clients/${cid}/add`, { listing_id: cmFor });

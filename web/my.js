@@ -51,41 +51,29 @@
       <div><h2>Шаг 1 · подтвердите свой номер</h2><p>Так мы поймём, какие объявления из чатов — ваши. Никто другой не сможет их изменить.
         ${(data.verify_methods || []).includes("call") ? "Проще всего — позвонить с этого номера: звонок бесплатный и сбросится сам." : "Подтверждение — сообщением с кодом в MAX."}</p></div></div>${form}</section>`;
   }
-  // 19.10: статистика объекта за 30 дней — просмотры, номер, избранное, подборки (24.10b — плитками)
+  // 19.10: статистика объекта за 30 дней — просмотры, номер, избранное, подборки
   function statsHTML(o) {
     const s = o.stats;
     if (!s || o.is_active === 0) return "";
-    return `<div class="my3-stats" title="За последние 30 дней">
-      <span><b>${s.views}</b>просмотров${s.views7 ? `<i>+${s.views7} за неделю</i>` : ""}</span>
-      <span><b>${s.phone}</b>открыли номер</span>
-      <span><b>${s.fav}</b>в избранном</span>
-      <span><b>${s.picks}</b>в подборках</span>
-    </div>`;
+    return `<div class="lc-stats" title="За последние 30 дней">
+      <span><b>${s.views}</b>просмотров</span><span><b>${s.phone}</b>номер</span>
+      <span><b>${s.fav}</b>избранное</span><span><b>${s.picks}</b>подборки</span></div>`;
   }
-  function itemCard(o, i) {
+  // 24.10c: карточка — та же, что в ленте главной (lcard.js), плюс источник, статистика и кнопки
+  function itemCard(o) {
     const sold = !o.is_active, own = o.source === "own", site = o.source === "feed";
-    const photos = o.photos || [], photo = photos[0];
-    const href = o.can_edit ? `/my/edit?id=${o.id}` : `/?open=${o.id}`;
-    const eyebrow = o.complex ? `ЖК ${o.complex}` : o.district || "";
-    return `<article class="my3-card${sold ? " gone" : ""}" style="--i:${Math.min(i, 12)}">
-      <a class="my3-photo" href="${href}">${photo ? `<img src="${esc(photo)}" alt="" loading="lazy">`
-        : `<span class="ph-none"><img src="/static/favicon.svg" alt=""><small>${o.can_edit ? "Добавить фото" : "Фото у агента"}</small></span>`}
-        <em class="my3-src ${own ? "own" : site ? "site" : "chat"}">${own ? "Добавлен вами" : site ? "С сайта" : "Из чатов"}</em>
-        ${photos.length ? `<em class="my3-n">${ic("layers")}${photos.length} фото</em>` : ""}${sold ? `<em class="my3-gone">Снят с сайта</em>` : ""}</a>
-      <div class="my3-b">
-        ${eyebrow ? `<p class="my3-eye">${esc(eyebrow)}</p>` : ""}
-        <b class="my3-price">${esc(money(o.price, o.deal))}</b>
-        <a class="my3-t" href="/?open=${o.id}">${esc(o.title)}</a>
-        ${place(o) ? `<p class="my3-addr">${ic("pin")}${esc(place(o))}</p>` : ""}
-        ${statsHTML(o)}
-        <p class="my3-meta">${ic("clock")}${sold ? "снят" : own && o.expires_at ? `на сайте до ${fmtDay(o.expires_at)}` : "на сайте"}</p>
-        <div class="my3-foot">
-          ${o.can_edit ? `<a class="pill my-edit" href="/my/edit?id=${o.id}">${ic("edit")}Изменить</a>
-            <button type="button" class="wk-btn" data-status="${sold ? "active" : "sold"}" data-id="${o.id}">${sold ? "Вернуть на сайт" : "Продано · снять"}</button>`
-          : site ? `<span class="my-note">С сайта arrowsrealty.ru — цена, фото и описание меняются на сайте</span>`
-          : `<span class="my-note">Этой карточкой управляет другой агент</span>`}
-        </div>
-      </div></article>`;
+    return LCard.html(o, {
+      href: o.can_edit ? `/my/edit?id=${o.id}` : `/?open=${o.id}`,
+      noPhoto: o.can_edit ? "Добавить фото" : "Фото у агента",
+      top: `<span class="lc-tag${site ? " gold" : ""}">${own ? "Добавлен вами" : site ? "С сайта" : "Из чатов"}</span>`,
+      extra: statsHTML(o) + `<p class="lc-line">${ic("clock")}${sold ? "снят" : own && o.expires_at ? `на сайте до ${fmtDay(o.expires_at)}` : "на сайте"}</p>`,
+      meta: "",
+      foot: `<div class="lc-acts">${o.can_edit ? `<a class="lc-btn main" href="/my/edit?id=${o.id}">${ic("edit")}Изменить</a>
+          <button type="button" class="lc-btn" data-status="${sold ? "active" : "sold"}" data-id="${o.id}">${sold ? "Вернуть на сайт" : "Продано · снять"}</button>`
+        : site ? `<span class="my-note">Цена, фото и описание меняются на сайте агентства</span>`
+        : `<span class="my-note">Этой карточкой управляет другой агент</span>`}
+        <a class="lc-btn" href="/?open=${o.id}" title="Как видят коллеги">${ic("eye")}</a></div>`,
+    });
   }
   function renderList() {
     clearInterval(waitTimer);
@@ -107,8 +95,8 @@
         <nav class="nt2-tabs my3-tabs">${[["all", "Все"], ["on", "Активные"], ["site", "С сайта"], ["chat", "Из чатов"], ["own", "Добавлены вами"], ["off", "Снятые"]]
           .filter(([k]) => k === "all" || n[k]).map(([k, t]) =>
           `<button type="button" class="${k === tab ? "on" : ""}" data-tab="${k}">${t}<b>${n[k]}</b></button>`).join("")}</nav>
-        <div class="my3-grid">${shown.map(itemCard).join("") || `<div class="wk-empty">${ic("home")}<b>${items.length ? "Здесь пусто" : "Пока нет объявлений"}</b>
-          ${items.length ? "" : "Как только вы разместите объект в чатах с подтверждённым номером — он появится здесь. Или добавьте объект сами."}</div>`}</div>` : ""}
+        ${shown.length ? LCard.grid(shown.map((x) => itemCard(x)).join("")) : `<div class="wk-empty">${ic("home")}<b>${items.length ? "Здесь пусто" : "Пока нет объявлений"}</b>
+          ${items.length ? "" : "Как только вы разместите объект в чатах с подтверждённым номером — он появится здесь. Или добавьте объект сами."}</div>`}` : ""}
       <p class="my-rules">${ic("help")}Менять можно только объявления с вашим подтверждённым номером. Свой объект висит ${data.own_days} дней — за 10, 5, 2 и 1 день
         до конца спросим «ещё актуален?» (уведомление на сайте и письмо): «да» — продлим, «нет» — снимем сразу, без ответа — снимем по сроку. Все правки сохраняются в журнале.</p>`;
     if (window.PhoneVerify && $("verifyMount")) PhoneVerify.mount($("verifyMount"), { methods: data.verify_methods, again: data.phones.length > 0,

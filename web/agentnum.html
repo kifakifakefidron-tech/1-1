@@ -17,43 +17,57 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=90">
-<link rel="stylesheet" href="/static/settings.css?v=5">
-<link rel="stylesheet" href="/static/agentnum.css?v=1">
+<link rel="stylesheet" href="/static/glass.css?v=92">
+<link rel="stylesheet" href="/static/settings.css?v=6">
+<link rel="stylesheet" href="/static/agentnum.css?v=2">
 </head>
 <body>
-<main class="st an">
-  <header class="st-head an-hero">
-    <p class="an-eyebrow">Агентам</p>
-    <h1>Ваш номер на 1+1</h1>
-    <p>Ваши объявления из риелторских чатов Краснодара есть на 1+1. Подтвердите номер — и управляйте ими сами:
-      отмечайте проданные, правьте цену и параметры, добавляйте фото. Или уберите номер одной кнопкой.</p>
-    <ul class="an-perks">
-      <li><i data-ic="check-circle"></i><span><b>«Проверенный агент»</b> на всех ваших объявлениях</span></li>
-      <li><i data-ic="edit"></i><span><b>Свои объекты — в одном месте</b>: «продано», цена, этаж, район, фото</span></li>
-      <li><i data-ic="gift"></i><span><b id="anBonus">30 дней</b> полного доступа бесплатно — один раз</span></li>
-      <li><i data-ic="shield"></i><span><b>Ваш выбор</b>: показывать ли имя и кнопку MAX; отзыв — одной кнопкой</span></li>
-    </ul>
+<main class="st an an2">
+  <header class="an2-head">
+    <div><p class="an-eyebrow">Агентам · ваш номер и ваши согласия</p>
+      <h1>Ваш номер на 1+1</h1>
+      <p class="an2-lead">Ваши объявления из риелторских чатов Краснодара есть на 1+1. Подтвердите номер — и управляйте ими сами:
+        отмечайте проданные, правьте цену и параметры, добавляйте фото. Или уберите номер одной кнопкой.</p></div>
+    <div class="an2-nums" id="anNums"></div>
   </header>
 
-  <section class="st-card" id="anGuest" hidden>
-    <div class="st-card-h"><span class="st-ic"><i data-ic="phone"></i></span><div><h2>Шаг 1. Войдите по своему номеру</h2>
-      <p>Вход звонком сразу подтверждает, что номер ваш: вы звоните на бесплатный номер, звонок сбросится сам.</p></div></div>
-    <a class="pill" href="/?login=1&amp;num=1" id="anLogin">Войти по номеру телефона</a>
-  </section>
+  <div class="an2-wrap">
+    <div class="an2-main">
+      <section class="st-card an2-card" id="anGuest" hidden>
+        <div class="st-card-h"><span class="st-ic"><i data-ic="phone"></i></span><div><h2>Шаг 1. Войдите по своему номеру</h2>
+          <p>Вход звонком сразу подтверждает, что номер ваш: вы звоните на бесплатный номер, звонок сбросится сам.</p></div></div>
+        <a class="pill" href="/?login=1&amp;num=1" id="anLogin">Войти по номеру телефона</a>
+      </section>
 
-  <div id="anPhones"></div>
+      <div id="anPhones"></div>
 
-  <section class="st-card" id="anVerifyCard" hidden>
-    <div class="st-card-h"><span class="st-ic"><i data-ic="phone"></i></span><div><h2 id="anVerifyH">Подтвердите номер из объявлений</h2>
-      <p>Номер должен совпадать с номером в ваших объявлениях. Подтвердить можно звонком со своего номера (бесплатно) или кодом в MAX.</p></div></div>
-    <div id="anVerify"></div>
-  </section>
+      <section class="st-card an2-card" id="anVerifyCard" hidden>
+        <div class="st-card-h"><span class="st-ic"><i data-ic="phone"></i></span><div><h2 id="anVerifyH">Подтвердите номер из объявлений</h2>
+          <p>Номер должен совпадать с номером в ваших объявлениях. Подтвердить можно звонком со своего номера (бесплатно) или кодом в MAX.</p></div></div>
+        <div id="anVerify"></div>
+      </section>
+    </div>
 
-
-  <p class="an-docs">Документы: <a href="/consent-publish">Согласие на распространение персональных данных</a> ·
-    <a href="/license">Разрешение на использование текстов и фото</a> · <a href="/consent">Согласие на обработку данных</a> ·
-    <a href="/privacy">Политика</a>. Вопросы — <a href="/contacts">контакты</a>.</p>
+    <aside class="an2-side">
+      <section class="an2-card an2-perks-c">
+        <h2>Что это даёт</h2>
+        <ul class="an-perks">
+          <li><i data-ic="check-circle"></i><span><b>«Проверенный агент»</b> на всех ваших объявлениях</span></li>
+          <li><i data-ic="edit"></i><span><b>Свои объекты — в одном месте</b>: «продано», цена, этаж, район, фото</span></li>
+          <li><i data-ic="gift"></i><span><b id="anBonus">30 дней</b> полного доступа бесплатно — один раз</span></li>
+          <li><i data-ic="shield"></i><span><b>Ваш выбор</b>: показывать ли имя и кнопку MAX; отзыв — одной кнопкой</span></li>
+        </ul>
+      </section>
+      <section class="an2-card an-docs">
+        <h2>Документы</h2>
+        <a href="/consent-publish">Согласие на распространение персональных данных</a>
+        <a href="/license">Разрешение на использование текстов и фото</a>
+        <a href="/consent">Согласие на обработку данных</a>
+        <a href="/privacy">Политика конфиденциальности</a>
+        <p>Вопросы — <a href="/contacts">контакты</a>.</p>
+      </section>
+    </aside>
+  </div>
 </main>
 
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
@@ -61,7 +75,7 @@
 <script src="/static/pickers.js?v=18"></script>
 <script src="/static/rail.js?v=30"></script>
 <script src="/static/verify.js?v=1"></script>
-<script src="/static/agentnum.js?v=1"></script>
+<script src="/static/agentnum.js?v=2"></script>
 <script src="/static/bell.js?v=6"></script>
 </body>
 </html>

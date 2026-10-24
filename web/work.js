@@ -94,56 +94,37 @@
     if (!animate) { void ind.offsetWidth; ind.style.transition = ""; }
   }
 
+  // 24.10c: все карточки — та же, что в ленте главной (lcard.js); своё — клиенты, заметка, кнопки
   function card(o) {
     const d = drop(o);
-    const photo = (o.photos || [])[0];
-    const cls = o.clients.length ? PC[o.clients[0].status] || "sky" : "slate";
-    return `<article class="wk-card c-${cls}${o.is_active ? "" : " gone"}${photo ? "" : " nophoto"}" data-id="${o.id}">
-      <a class="wk-photo" href="/?open=${o.id}">${photo ? `<img src="${esc(photo)}" alt="" loading="lazy">` : `<span class="ph-none"><img src="/static/favicon.svg" alt=""><small>Фото у агента</small></span>`}
-        ${o.is_active ? "" : `<em class="wk-gone">Снят с сайта</em>`}
-        ${d ? `<em class="wk-drop ${d < 0 ? "down" : "up"}">${ic(d < 0 ? "trend-down" : "trend")}${d < 0 ? "−" : "+"}${short(Math.abs(d))}</em>` : ""}</a>
-      <div class="wk-body">
-        <div class="wk-top"><a class="wk-title" href="/?open=${o.id}">${esc(head(o))}</a>
-          <button type="button" class="wk-x" data-remove="${o.id}" title="Убрать из списка" aria-label="Убрать из списка">${ic("x")}</button></div>
-        <b class="wk-price">${esc(money(o.price, o.deal))}</b>
-        <p class="wk-what">${esc(o.title)}${place(o) ? ` · ${esc(place(o))}` : ""}</p>
-        <div class="wk-cl">${o.clients.length ? o.clients.map((c) => `<a class="wk-c p-${PC[c.status] || "sky"}" href="/clients?id=${c.id}" title="Карточка клиента">
+    return LCard.html(o, {
+      top: d ? `<span class="lc-tag ${d < 0 ? "ok" : "bad"}">${ic(d < 0 ? "trend-down" : "trend")}${d < 0 ? "−" : "+"}${short(Math.abs(d))}</span>` : "",
+      extra: `<div class="wk-cl">${o.clients.length ? o.clients.map((c) => `<a class="wk-c p-${PC[c.status] || "sky"}" href="/clients?id=${c.id}" title="Карточка клиента">
             ${ic("user")}<span>${esc(c.name)}</span><b>${esc(c.label)}</b></a>`).join("")
           : `<span class="wk-c none" title="Отправить клиенту — кнопка «Клиенту» в окне объекта">${ic("users")}Не отправлен</span>`}</div>
-        ${o.note ? `<p class="wk-note-t" title="Личная заметка — изменить в окне объекта">${ic("note")}<span>${esc(o.note)}</span></p>` : ""}
-        <div class="wk-foot">
-          <span class="wk-when">${ic("clock")}${ago(o.touched)}</span>
-          <a class="wk-btn" href="/planner?add=show&listing=${o.id}${o.clients.length === 1 ? `&client=${o.clients[0].id}` : ""}">${ic("calendar")}Показ</a>
-          <a class="wk-btn" href="/?open=${o.id}">${ic("external")}Открыть</a>
-        </div>
-      </div></article>`;
+        ${o.note ? `<p class="wk-note-t" title="Личная заметка — изменить в окне объекта">${ic("note")}<span>${esc(o.note)}</span></p>` : ""}`,
+      meta: o.touched ? ago(o.touched) : "",
+      foot: `<div class="lc-acts"><a class="lc-btn" href="/planner?add=show&listing=${o.id}${o.clients.length === 1 ? `&client=${o.clients[0].id}` : ""}">${ic("calendar")}Показ</a>
+        <button type="button" class="lc-btn x" data-remove="${o.id}" title="Убрать из списка" aria-label="Убрать из списка">${ic("x")}</button></div>`,
+    });
   }
   function hiddenCard(o) {
-    const photo = (o.photos || [])[0];
-    return `<article class="wk-card c-slate gone" data-hid="${o.id}">
-      <a class="wk-photo" href="/?open=${o.id}">${photo ? `<img src="${esc(photo)}" alt="" loading="lazy">` : `<span class="ph-none"><img src="/static/favicon.svg" alt=""><small>Фото у агента</small></span>`}
-        <em class="wk-gone">${esc(REASONS[o.reason] || "Скрыт")}</em></a>
-      <div class="wk-body">
-        <a class="wk-title" href="/?open=${o.id}">${esc(head(o))}</a>
-        <b class="wk-price">${esc(money(o.price, o.deal))}</b>
-        <p class="wk-what">${esc(o.title)}${place(o) ? ` · ${esc(place(o))}` : ""}</p>
-        <div class="wk-foot"><span class="wk-when">${ic("eye")}скрыт ${ago(o.hidden_at)}</span>
-          <button type="button" class="pill" data-unhide="${o.id}">Вернуть</button></div>
-      </div></article>`;
+    return LCard.html(o, { goneText: REASONS[o.reason] || "Скрыт", cls: "gone", meta: `скрыт ${ago(o.hidden_at)}`,
+      foot: `<div class="lc-acts"><button type="button" class="lc-btn main" data-unhide="${o.id}">Вернуть</button></div>` });
   }
   function render() {
     renderTabs();
     if (tab === "hidden") {
       const words = q.toLowerCase().split(/\s+/).filter(Boolean);
       const list = hiddenItems.filter((o) => words.every((w) => [o.title, o.complex, o.district, o.street].filter(Boolean).join(" ").toLowerCase().includes(w)));
-      $("wkList").innerHTML = list.map(hiddenCard).join("") || `<div class="wk-empty">${ic("eye")}<b>Скрытых нет</b>
+      $("wkList").innerHTML = list.length ? LCard.grid(list.map(hiddenCard).join("")) : `<div class="wk-empty">${ic("eye")}<b>Скрытых нет</b>
         В окне объекта есть кнопка «Скрыть» — если объект продан или вы не сотрудничаете, он пропадёт только у вас.</div>`;
       return;
     }
     const list = visible();
     renderMatch();
     if (clientF && !list.length) { $("wkList").innerHTML = ""; return; }
-    $("wkList").innerHTML = list.map(card).join("") || `<div class="wk-empty">${ic(items.length ? "search" : "heart")}
+    $("wkList").innerHTML = list.length ? LCard.grid(list.map(card).join("")) : `<div class="wk-empty">${ic(items.length ? "search" : "heart")}
       <b>${items.length ? "Здесь пока пусто" : "Список пуст"}</b>
       ${items.length ? "В этой вкладке нет объектов." : "Нажмите сердечко на объекте в поиске — он появится здесь. Клиентам объекты отправляются кнопкой «Клиенту»."}
       ${items.length ? "" : `<a class="pill" href="/">Перейти к поиску</a>`}</div>`;
@@ -151,19 +132,12 @@
 
   // ─── подбор под выбранного клиента ───
   function matchCard(o) {
-    const photo = (o.photos || [])[0], fav = items.some((x) => x.id === o.id);
-    return `<article class="wk-card c-sky wk-m${photo ? "" : " nophoto"}" data-mid="${o.id}">
-      <a class="wk-photo" href="/?open=${o.id}">${photo ? `<img src="${esc(photo)}" alt="" loading="lazy">` : `<span class="ph-none"><img src="/static/favicon.svg" alt=""><small>Фото у агента</small></span>`}
-        ${fav ? `<em class="wk-drop down">${ic("heart")}в избранном</em>` : ""}</a>
-      <div class="wk-body">
-        <a class="wk-title" href="/?open=${o.id}">${esc(head(o))}</a>
-        <b class="wk-price">${esc(money(o.price, o.deal))}</b>
-        <p class="wk-what">${esc(o.title)}${place(o) ? ` · ${esc(place(o))}` : ""}</p>
-        <div class="wk-foot">
-          <button type="button" class="wk-btn gold" data-madd="${o.id}">${ic("folder")}В подборку клиента</button>
-          <button type="button" class="wk-btn" data-mno="${o.id}" title="Больше не предлагать этому клиенту">${ic("x")}Не подходит</button>
-        </div>
-      </div></article>`;
+    const fav = items.some((x) => x.id === o.id);
+    return LCard.html(o, {
+      top: fav ? `<span class="lc-tag">${ic("heart")}в избранном</span>` : "",
+      foot: `<div class="lc-acts"><button type="button" class="lc-btn main" data-madd="${o.id}">${ic("folder")}В подборку</button>
+        <button type="button" class="lc-btn" data-mno="${o.id}" title="Больше не предлагать этому клиенту">Не подходит</button></div>`,
+    });
   }
   function renderMatch() {
     const box = $("wkMatch");
@@ -180,7 +154,7 @@
     box.innerHTML = `<div class="wk-mh"><b>Подходят для «${nm}»${match.total ? ` · ${match.total}` : ""}</b>
         <span>${n ? "По пожеланиям из карточки клиента: тип, комнаты, бюджет, районы. Что уже у клиента — ниже." : "По пожеланиям клиента новых объектов нет."}</span>
         <a class="wk-btn" href="/clients?id=${clientF}">${ic("user")}Пожелания клиента</a></div>
-      ${n ? `<div class="wk-grid">${match.items.map(matchCard).join("")}</div>` : ""}
+      ${n ? LCard.grid(match.items.map(matchCard).join("")) : ""}
       ${match.more ? `<a class="wk-btn wk-mmore" href="/clients?id=${clientF}">Ещё объекты — в карточке клиента</a>` : ""}
       ${visible().length ? `<h3 class="wk-mh2">Уже у клиента и в избранном</h3>` : ""}`;
   }
@@ -230,7 +204,7 @@
       const id = Number(t.dataset.unhide);
       await call("/api/hidden", { id, hide: false });
       hiddenItems = hiddenItems.filter((o) => o.id !== id);
-      const el = document.querySelector(`.wk-card[data-hid="${id}"]`);
+      const el = document.querySelector(`.lc[data-lc="${id}"]`);
       if (el) { el.classList.add("bye"); setTimeout(render, 260); } else render();
       toast("Объект снова виден в поиске");
       return;
@@ -247,7 +221,7 @@
       const r = await call(`/api/notes/${o.id}`, { status: next });
       if (!r.ok) { toast("Не сохранилось — попробуйте ещё раз"); return; }
       toast(next ? `Статус: ${ST[next].t}` : "Статус снят");
-      const el = document.querySelector(`.wk-card[data-id="${o.id}"]`);
+      const el = document.querySelector(`.lc[data-lc="${o.id}"]`);
       if (tab !== "all" && st(o) !== tab && el) { el.classList.add("bye"); setTimeout(render, 260); } else render();
       return;
     }
@@ -257,7 +231,7 @@
       if (o.favorite) await call(`/api/favorites/${o.id}`, {});
       if (o.note) await call(`/api/notes/${o.id}`, { text: "" });
       items = items.filter((x) => x !== o);
-      const el = document.querySelector(`.wk-card[data-id="${o.id}"]`);
+      const el = document.querySelector(`.lc[data-lc="${o.id}"]`);
       if (el) { el.classList.add("bye"); setTimeout(render, 260); } else render();
       toast("Убрано");
     }

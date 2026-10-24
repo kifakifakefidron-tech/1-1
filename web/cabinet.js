@@ -218,40 +218,14 @@
   }
 
   // ─── 24.10: недавно смотрели — последние открытые объекты, плиткой с фото ─────────────────────────
-  function recentW() {
+  function recentW() {   // 24.10c: та же карточка, что в ленте главной, только меньше
     const list = dash.recent || [];
-    const money = (p, deal) => (!p ? "цена не указана" : deal === "rent" ? `${Math.round(p / 1000).toLocaleString("ru-RU")} тыс./мес`
-      : p >= 1e6 ? `${(p / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} млн ₽` : `${Math.round(p / 1000)} тыс. ₽`);
-    const where = (o) => (o.complex ? `ЖК ${o.complex}` : o.street ? `${o.street}${o.house ? ", " + o.house : ""}` : o.district || "");
     put("wRecent", `${head("eye", "Недавно смотрели", list.length ? `<a class="g-link" href="/work">Избранное →</a>` : "")}
-      ${list.length ? `<div class="wrc-grid">${list.map((o) => `<a class="wrc-it${o.is_active ? "" : " gone"}" href="/?open=${o.id}">
-          <span class="wrc-ph">${o.photo ? `<img src="${esc(o.photo)}" alt="" loading="lazy">` : `<i>Фото у агента</i>`}${o.is_active ? "" : "<em>снят</em>"}</span>
-          <b>${o.price_doubt ? "Цена уточняется" : esc(money(o.price, o.deal))}</b>
-          <small>${esc(where(o) || o.title)}</small></a>`).join("")}</div>`
+      ${list.length ? LCard.grid(list.map((o) => LCard.html(o, { meta: "" })).join(""), "sm")
         : `<p class="g-empty">Здесь появятся объекты, которые вы открывали, — на всех ваших устройствах. <a href="/">К поиску →</a></p>`}`, 6);
   }
 
-  // ─── 19.10: мои объекты — статистика за неделю (главная «морковка» подтверждения номера) ─────────
-  function agentW() {
-    const a = dash.agent || {};
-    if (!a.verified) {
-      put("wAgent", `${head("home-edit", "Мои объекты")}
-        <p class="g-empty">Подтвердите свой номер — увидите, сколько раз смотрели ваши объекты, открывали номер и добавляли в подборки
-          клиентам и в избранное. Плюс «Проверенный агент» и 30 дней бесплатно.</p>
-        <a class="pill" href="/agent">Подтвердить номер</a>`, 6);
-      return;
-    }
-    const money = (v, deal) => (deal === "rent" ? `${Math.round(v / 1000)} тыс./мес` : `${(v / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} млн`);
-    put("wAgent", `${head("home-edit", "Мои объекты", `<a class="g-link" href="/my">Все ${a.listings || 0} →</a>`)}
-      <div class="wq-nums wa-nums"><a href="/my"><b>${a.views7 || 0}</b><span>просмотров за неделю</span></a>
-        <a href="/my"><b>${a.phone || 0}</b><span>открыли номер (30 дн.)</span></a>
-        <a href="/my"><b>${a.picks || 0}</b><span>в подборках клиентам</span></a></div>
-      ${(a.top || []).map((o) => `<a class="wq-row" href="/?open=${o.id}"><b>${esc(o.complex ? `ЖК ${o.complex}` : o.title)} · ${esc(money(o.price || 0, o.deal))}</b>
-        <small>${o.views || 0} просмотров · номер открыли ${o.phone || 0} · в подборках ${o.picks || 0}</small></a>`).join("")
-        || `<p class="g-empty">Объявлений с вашим номером на сайте пока нет.</p>`}`, 6);
-  }
-
-  // ─── клиенты (CRM) ───────────────────────────────────────────────
+  // ─── 24.10c (Артём): вместо «Мои объекты» — «Мои клиенты»: этапы, следующие шаги ───
   const CL_C = { new: "#b8c8e4", search: "#8fd1cb", shows: "#e3cb8f", talks: "#d9b3e6", deposit: "#f0b77a", deal: "#a7d1b6", lost: "#e2a596" };
   function clientsW() {
     const c = dash.clients || { stages: [], next: [], total: 0 };
@@ -261,7 +235,7 @@
       return `<a class="wn-it${over ? " unread" : ""}" href="/clients?id=${x.id}"><b>${esc(x.name)} — ${esc(x.next_text || "связаться")}</b>
         <small${over ? ' style="color:var(--bad)"' : ""}>${new Date(x.next_ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</small></a>`;
     }).join("");
-    put("wClients", `${head("users", "Клиенты", `<a class="g-link" href="/clients">Все клиенты →</a>`)}
+    put("wClients", `${head("users", "Мои клиенты", `<a class="g-link" href="/clients">Все ${c.total || ""} →</a>`)}
       ${c.total ? `<div class="wc-pipe wc-cli">${c.stages.filter((s) => s.key !== "lost").map((s) => `<a class="wc-st" href="/clients"><b>${s.n}</b><span>${esc(s.label)}</span>
         <div class="wc-bar"><i style="--w:${Math.round(s.n / max * 100)}%;--c:${CL_C[s.key]}"></i></div></a>`).join("")}</div>
         ${nxt ? `<p class="wd-gt" style="margin-top:14px">Следующие шаги</p>${nxt}` : ""}`
@@ -501,7 +475,7 @@
     dash = r.data;
     const w = dash.widgets;
     weather(w.weather); rate(w.keyrate); mortgage(w.mortgage, w.banks); fx(w.currency, w.moex); rbc(w.news);
-    day(); requestsW(); agentW(); recentW(); clientsW(); crm(); news(); market(); calcHtml(); admin();
+    day(); requestsW(); recentW(); clientsW(); crm(); news(); market(); calcHtml(); admin();
     layout();
     if (me.is_admin && new URLSearchParams(location.search).has("banks")) { openBanks(); history.replaceState(null, "", "/cabinet"); }
   }

@@ -1332,3 +1332,53 @@ summary { transition: color .2s var(--m-out); }
 .dv3 .dv-acc[open] summary::after { rotate: 180deg; background-color: rgba(243, 232, 188, .2); }
 .dv3 .dv-acc summary:hover::after { background-color: rgba(243, 232, 188, .2); }
 .dv3 .dv-acc[open] > summary { top: 0; }
+
+/* ═══ ОБЩАЯ КАРТОЧКА ОБЪЕКТА (lcard.js, 24.10c): как в ленте главной — на «Моих объектах», в «Избранном», кабинете, у клиента ═══ */
+.lc-grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); margin: 0; }
+.lc-grid.sm { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.lc-grid.sm .price { font-size: 20px; }
+.lc-grid.sm .item-head { font-size: 13px; }
+.lc-grid.sm .item { padding: 0 12px 12px; }
+.lc-grid.sm .item-photo { margin: 0 -12px 8px; }
+.lc .item-photo img { opacity: 1; }
+.lc .item-photo.none { display: grid; place-items: center; align-content: center; gap: 6px; color: var(--ink-3); }
+.lc .item-photo.none span { font-size: 13px; letter-spacing: .03em; opacity: .85; }
+.lc-top { position: absolute; left: 10px; top: 10px; right: 54px; z-index: 1; display: flex; flex-wrap: wrap; gap: 5px; pointer-events: none; }
+.lc-top > * { pointer-events: auto; }
+.lc-tag { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; font: 600 11.5px var(--body);
+  background: rgba(4, 50, 49, .84); color: var(--ink); backdrop-filter: blur(6px); white-space: nowrap; }
+.lc-tag svg { width: 13px; height: 13px; }
+.lc-tag.gold { background: linear-gradient(160deg, var(--gold-200), var(--gold-300)); color: #0f2f2e; }
+.lc-tag.ok { color: var(--ok); } .lc-tag.bad { color: var(--bad); }
+.lc-gone { position: absolute; left: 10px; bottom: 10px; z-index: 1; padding: 4px 10px; border-radius: 999px; font: 600 11.5px var(--body);
+  font-style: normal; background: rgba(4, 50, 49, .88); color: var(--bad); }
+.lc.gone .item-photo img { filter: grayscale(1) brightness(.72); }
+.lc .ph-nav { z-index: 2; }
+.lc-foot { flex-wrap: wrap; }
+.lc-foot .lc-acts { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; margin-top: 8px; }
+.lc-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid var(--glass-line-2); background: none; color: var(--ink); font: 500 13px var(--body); text-decoration: none; cursor: pointer;
+  transition: background .2s, border-color .2s; }
+.lc-btn svg { width: 14px; height: 14px; }
+.lc-btn:hover { background: rgba(255, 255, 255, .08); }
+.lc-btn.main { border-color: transparent; background: linear-gradient(160deg, var(--gold-200), var(--gold-300)); color: #0f2f2e; font-weight: 600; }
+.lc-btn.x { width: 34px; padding: 0; margin-left: auto; color: var(--ink-3); }
+.lc-btn.x:hover { color: var(--bad); }
+.lc-sel { position: absolute; right: 10px; top: 10px; z-index: 3; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
+  background: rgba(4, 50, 49, .82); cursor: pointer; }
+.lc-sel input { width: 18px; height: 18px; accent-color: var(--gold); cursor: pointer; }
+.lc.picked { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
+.lc-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin: 8px 0 0; }
+.lc-stats span { display: grid; gap: 1px; padding: 7px 4px; border-radius: 12px; background: rgba(255, 255, 255, .05); color: var(--ink-3);
+  font-size: 10.5px; line-height: 1.2; text-align: center; }
+.lc-stats b { color: var(--ink); font: 600 16px var(--display); }
+.lc-line { display: flex; align-items: center; gap: 6px; margin: 4px 0 0; color: var(--ink-3); font-size: 12.5px; line-height: 1.35; }
+.lc-line svg { width: 13px; height: 13px; flex: none; }
+@media (max-width: 640px) {
+  .lc-grid, .lc-grid.sm { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .lc-top { left: 6px; top: 6px; right: 44px; }
+  .lc-tag { padding: 3px 7px; font-size: 10.5px; }
+  .lc-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lc-btn { min-height: 32px; padding: 0 10px; font-size: 12.5px; }
+}
+.lc.bye { transition: opacity .25s, transform .25s; opacity: 0; transform: scale(.95); }

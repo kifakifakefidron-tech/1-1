@@ -83,3 +83,29 @@
   border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .03); cursor: pointer; }
 .st-mailon input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--gold); flex: none; }
 .st-mailon span { display: grid; gap: 3px; } .st-mailon small { color: var(--ink-3); font-size: 13px; line-height: 1.45; }
+
+/* 24.10c — по прошлым образцам: надзаголовок, крупный заголовок, слева оглавление разделов, карточки-стекло */
+.st:has(.st2) { max-width: 1240px; }
+.st2-head h1 { font: 600 clamp(34px, 4.6vw, 56px)/1.02 var(--display) !important; letter-spacing: -.02em; }
+.st2-eyebrow { margin: 0 0 6px; font: 600 12px var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
+.st2:not([hidden]) { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 22px; align-items: start; }
+.st2-nav { position: sticky; top: 16px; display: grid; gap: 2px; padding: 8px; border-radius: 22px; border: 1px solid var(--glass-line); background: var(--glass);
+  box-shadow: var(--glass-hi); }
+.st2-nav a { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; color: var(--ink-2); text-decoration: none; font-size: 14px;
+  transition: background .2s, color .2s; }
+.st2-nav a svg { width: 17px; height: 17px; flex: none; color: var(--ink-3); }
+.st2-nav a:hover { background: rgba(255, 255, 255, .06); color: var(--ink); }
+.st2-nav a.on { background: linear-gradient(160deg, var(--gold-200), var(--gold-300)); color: #0f2f2e; font-weight: 600; }
+.st2-nav a.on svg { color: #0f2f2e; }
+.st2-body { min-width: 0; }
+.st2 .st-card { scroll-margin-top: 16px; border-radius: 26px; background: var(--glass); box-shadow: var(--glass-sh), var(--glass-hi); }
+.st2 .st-card-h h2 { font-size: 22px; }
+.st2 .st-ic { border-radius: 14px; }
+@media (max-width: 900px) {
+  .st2:not([hidden]) { grid-template-columns: minmax(0, 1fr); }
+  .st2-nav { position: sticky; top: 0; z-index: 5; display: flex; overflow-x: auto; scrollbar-width: none; border-radius: 999px; padding: 4px;
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+  .st2-nav::-webkit-scrollbar { display: none; }
+  .st2-nav a { flex: none; padding: 8px 12px; border-radius: 999px; font-size: 13px; }
+  .st2-nav a svg { display: none; }
+}

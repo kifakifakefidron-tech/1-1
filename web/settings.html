@@ -16,15 +16,17 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=90">
-<link rel="stylesheet" href="/static/settings.css?v=5">
+<link rel="stylesheet" href="/static/glass.css?v=92">
+<link rel="stylesheet" href="/static/settings.css?v=6">
 </head>
 <body>
 <main class="st">
-  <header class="st-head"><h1>Настройки</h1><p>Сохраняются в аккаунте — одинаково на всех ваших устройствах.</p></header>
+  <header class="st-head st2-head"><p class="st2-eyebrow">Аккаунт</p><h1>Настройки</h1><p>Сохраняются в аккаунте — одинаково на всех ваших устройствах.</p></header>
   <div id="stGuest" class="note-box" hidden>Настройки доступны после входа. <a href="/?login=1">Войти</a></div>
 
-  <div id="stApp" hidden>
+  <div id="stApp" class="st2" hidden>
+    <nav class="st2-nav" id="stNav" aria-label="Разделы настроек"></nav>
+    <div class="st2-body">
     <section class="st-card" id="stPick">
       <div class="st-card-h"><span class="st-ic"><i data-ic="folder"></i></span><div><h2>Подборки для клиентов</h2>
         <p>Как выглядит страница, которую вы отправляете клиенту. Клиент видит только ваш контакт — ни адреса сервиса, ни чужих номеров.</p></div></div>
@@ -116,6 +118,7 @@
         <p>Необходимые работают всегда. Статистику посещений и приглашение коллеги можно разрешить или отозвать в любой момент.</p></div></div>
       <div class="st-acts"><button type="button" class="chip" data-cookie-settings>Изменить согласие на cookie</button></div>
     </section>
+    </div>
   </div>
   <p class="st-saved" id="stSaved" aria-live="polite"></p>
 </main>
@@ -125,7 +128,7 @@
 <script src="/static/pickers.js?v=18"></script>
 <script src="/static/rail.js?v=30"></script>
 <script src="/static/verify.js?v=1"></script>
-<script src="/static/settings.js?v=8"></script>
+<script src="/static/settings.js?v=9"></script>
 <script src="/static/bell.js?v=6"></script>
 </body>
 </html>

@@ -26,30 +26,32 @@
   document.querySelectorAll("[data-ic]").forEach((el) => { el.outerHTML = ic(el.dataset.ic); });
 
   let data = null;
+  // 24.10c (образцы Артёма): номер крупно + статус-капсула, согласия — плитками с галочкой, переключатели, кнопки внизу
   function phoneCard(x) {
     const c = x.consent || {};
     const given = !!x.consent;
-    const state = x.hidden ? `<span class="an-st off">Номер скрыт на сайте</span>`
-      : given && c.publish ? `<span class="an-st on">${ic("check-circle")}Показывается с вашего согласия</span>`
-        : `<span class="an-st">Показывается из объявлений в чатах — согласие ещё не дано</span>`;
-    return `<section class="st-card an-phone" data-phone="${esc(x.phone)}">
-      <div class="an-ph-h"><div><b class="an-num">${esc(pretty(x.phone))}</b>${state}</div>
-        <a class="chip" href="/my">${ic("home-edit")}Мои объекты · ${x.listings}</a></div>
+    const state = x.hidden ? `<span class="an2-st off">${ic("ban")}Номер скрыт на сайте</span>`
+      : given && c.publish ? `<span class="an2-st on">${ic("check-circle")}Показывается с вашего согласия</span>`
+        : `<span class="an2-st wait">${ic("clock")}Согласие ещё не дано — номер из объявлений в чатах</span>`;
+    const opt = (k, on, icon, title, text) => `<label class="an2-opt${on ? " on" : ""}"><input type="checkbox" data-k="${k}"${on ? " checked" : ""}>
+        <span class="an2-box">${ic("check")}</span><span class="an2-oi">${ic(icon)}</span><span class="an2-ot"><b>${title}</b><small>${text}</small></span></label>`;
+    const n = x.listings || 0;
+    return `<section class="st-card an2-card an-phone" data-phone="${esc(x.phone)}">
+      <div class="an-ph-h"><div><p class="an2-lbl">Подтверждённый номер</p><b class="an-num">${esc(pretty(x.phone))}</b>${state}</div>
+        <a class="an2-objs" href="/my"><b>${n}</b><span>${n % 10 === 1 && n % 100 !== 11 ? "объект" : "объектов"}<br>с номером</span>${ic("chevron")}</a></div>
       ${given ? `<p class="an-when">Последнее решение — ${esc(date(c.ts))} (документы от ${esc(c.version || "")})</p>` : ""}
       <div class="an-checks">
-        <label class="consent-chk"><input type="checkbox" data-k="publish"${given && c.publish ? " checked" : ""}>
-          <span>Даю согласие на <a href="/consent-publish" target="_blank">распространение моих персональных данных</a> — имени и номера
-            телефона в карточках моих объявлений на 1+1, только вошедшим пользователям с доступом. Отозвать могу в любой момент.</span></label>
-        <label class="consent-chk"><input type="checkbox" data-k="license"${given && c.license ? " checked" : ""}>
-          <span>Разрешаю <a href="/license" target="_blank">использовать тексты и фото моих объявлений</a> — в карточках, превью
-            ссылок и подборках для клиентов коллег.</span></label>
+        ${opt("publish", given && c.publish, "phone", "Показывать мой номер и имя",
+          `Согласие на <a href="/consent-publish" target="_blank">распространение персональных данных</a> — в карточках ваших объявлений, только вошедшим с доступом. Отозвать — в любой момент.`)}
+        ${opt("license", given && c.license, "layers", "Тексты и фото объявлений",
+          `Разрешение <a href="/license" target="_blank">использовать тексты и фото</a> — в карточках, превью ссылок и подборках для клиентов коллег.`)}
       </div>
       <div class="an-opts">
         <label class="an-sw"><input type="checkbox" data-k="show_name"${!given || c.show_name ? " checked" : ""}><span></span>Показывать моё имя</label>
         <label class="an-sw"><input type="checkbox" data-k="allow_max"${!given || c.allow_max ? " checked" : ""}><span></span>Кнопка «Написать в MAX»</label>
       </div>
-      <p class="an-hint">Без первой галочки номер будет <b>скрыт</b> во всех ваших объявлениях — это тоже честный выбор.</p>
-      <div class="st-acts">
+      <p class="an-hint">${ic("help")}<span>Без первой галочки номер будет <b>скрыт</b> во всех ваших объявлениях — это тоже честный выбор.</span></p>
+      <div class="st-acts an2-acts">
         <button type="button" class="pill" data-save>Сохранить</button>
         ${x.hidden && !(given && c.publish) ? "" : `<button type="button" class="chip danger" data-revoke>Отозвать согласие и скрыть номер</button>`}
       </div>
@@ -62,6 +64,9 @@
     $("anVerifyH").textContent = phones.length ? "Подтвердить ещё один номер" : "Подтвердите номер из объявлений";
     if (window.PhoneVerify) PhoneVerify.mount($("anVerify"), { methods: data.verify_methods, again: phones.length > 0, onDone: load });
     $("anPhones").innerHTML = phones.map(phoneCard).join("");
+    const objs = phones.reduce((s, x) => s + (x.listings || 0), 0), ok = phones.filter((x) => x.consent && x.consent.publish).length;
+    $("anNums").innerHTML = phones.length ? `<span><b>${phones.length}</b><small>${phones.length === 1 ? "номер" : "номера"}</small></span>
+      <span><b>${objs}</b><small>объектов</small></span><span class="${ok === phones.length ? "up" : ""}"><b>${ok}/${phones.length}</b><small>с согласием</small></span>` : "";
   }
   async function load() {
     const r = await call("/api/agent/consent");
@@ -69,6 +74,10 @@
     data = r.data;
     render();
   }
+  document.addEventListener("change", (e) => {   // плитка согласия подсвечивается сразу
+    const o = e.target.closest(".an2-opt");
+    if (o) o.classList.toggle("on", e.target.checked);
+  });
   document.addEventListener("click", async (e) => {
     const card = e.target.closest(".an-phone");
     if (!card) return;

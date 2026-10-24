@@ -102,6 +102,14 @@ def save(conn: sqlite3.Connection, user, body: dict) -> dict:
                             _phone(str(body.get("contact_phone") or phone)), now, now)).lastrowid
     if body.get("listing_id"):
         set_item(conn, user["id"], int(cid), int(body["listing_id"]), True, commit=False)
+    if "cover" in body:   # 24.10c: своё фото обложки (картинка из браузера) или "" — снова градиент
+        raw = str(body.get("cover") or "")
+        url = None
+        if raw:
+            url, why = settings.save_cover(raw, "pk")
+            if not url:
+                return {"error": why}
+        conn.execute("UPDATE collections SET cover = ?, updated = ? WHERE id = ? AND user_id = ?", (url, now, int(cid), user["id"]))
     if "color" in body:
         c = str(body.get("color") or "")
         conn.execute("UPDATE collections SET color = ? WHERE id = ? AND user_id = ?",
@@ -514,4 +522,6 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
     # название подборки — для агента («Ирине — 2к ФМР»); клиент видит только свой заголовок (или нейтральный)
     return {"title": c["client_title"] or "Подобрали для вас", "note": c["note"],
             "contact_name": "" if (c["contact_name"] or "") == PROMO_NAME else c["contact_name"], "contact_phone": c["contact_phone"],
-            "updated": c["updated"], "items": items, "style": settings.public_pick_style(conn, c["user_id"])}
+            "updated": c["updated"], "items": items,
+            "style": {**(st := settings.public_pick_style(conn, c["user_id"])),
+                      "cover": (c["cover"] if "cover" in c.keys() else None) or st.get("cover") or ""}}

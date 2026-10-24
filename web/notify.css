@@ -131,3 +131,19 @@ a.nt2-num:hover b { color: var(--gold); }
   .nt2-ico img { border-radius: 14px; }
 }
 .nt2-it:has(.nt2-go) { cursor: pointer; }
+
+/* 24.10c: вкладки компактнее; не помещаются — листаются (колёсико, палец, стрелки по краям с затуханием) */
+.nt2-tabs-w { position: relative; margin-bottom: 6px; }
+.nt2-tabs-w .nt2-tabs { width: auto; margin: 0; scroll-behavior: smooth; }
+.nt2-tabs button { padding: 7px 12px; font-size: 13.5px; gap: 6px; }
+.nt2-tarr { position: absolute; top: 50%; z-index: 2; display: grid; place-items: center; width: 34px; height: 34px; margin-top: -17px; padding: 0;
+  border: 1px solid var(--glass-line-2); border-radius: 50%; background: var(--teal-800, #043231); color: var(--ink); cursor: pointer;
+  opacity: 0; pointer-events: none; transition: opacity .2s; box-shadow: 0 4px 14px rgba(0, 0, 0, .3); }
+.nt2-tarr svg { width: 16px; height: 16px; }
+.nt2-tarr.l { left: 4px; } .nt2-tarr.r { right: 4px; }
+.nt2-tabs-w.can-l .nt2-tarr.l, .nt2-tabs-w.can-r .nt2-tarr.r { opacity: 1; pointer-events: auto; }
+.nt2-tabs-w.can-r .nt2-tabs { -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); }
+.nt2-tabs-w.can-l .nt2-tabs { -webkit-mask-image: linear-gradient(90deg, transparent, #000 15%); mask-image: linear-gradient(90deg, transparent, #000 15%); }
+.nt2-tabs-w.can-l.can-r .nt2-tabs { -webkit-mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent); }
+@media (hover: none) { .nt2-tarr { display: none; } }

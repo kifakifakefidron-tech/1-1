@@ -462,17 +462,13 @@ body.d-arranging .g:not(.lifting) { opacity: .85; }
 .wr-tabs button.on small { color: #0f2f2e; opacity: .7; }
 .wr-foot a { color: inherit; }
 
-/* 24.10: «Недавно смотрели» */
-.wrc-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-.wrc-it { display: grid; gap: 3px; min-width: 0; text-decoration: none; color: var(--ink); }
-.wrc-ph { position: relative; display: block; aspect-ratio: 4 / 3; border-radius: 14px; overflow: hidden; background: rgba(255, 255, 255, .05);
-  border: 1px solid var(--glass-line); margin-bottom: 4px; }
-.wrc-ph img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .4s var(--ease); }
-.wrc-it:hover .wrc-ph img { transform: scale(1.05); }
-.wrc-ph i { position: absolute; inset: 0; display: grid; place-items: center; font-style: normal; font-size: 11.5px; color: var(--ink-3); }
-.wrc-ph em { position: absolute; left: 6px; top: 6px; padding: 2px 8px; border-radius: 999px; font: 600 11px var(--body); font-style: normal;
-  background: rgba(0, 0, 0, .55); color: #ffd2c6; }
-.wrc-it.gone img { filter: grayscale(1) brightness(.75); }
-.wrc-it b { font: 600 14.5px var(--body); }
-.wrc-it small { color: var(--ink-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-@media (max-width: 720px) { .wrc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* 24.10c — по прошлым образцам: дата надзаголовком, крупное приветствие, заголовки блоков золотом с разрядкой, крупные цифры */
+.d-date { font: 600 12px var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
+.d-hello { font: 600 clamp(34px, 4.4vw, 54px)/1.02 var(--head); letter-spacing: .005em; color: var(--gold-100, var(--ink)); }
+.g-t { font: 600 12px var(--body); letter-spacing: .16em; color: var(--gold-200, var(--gold)); }
+.g-t svg { color: var(--gold-300, var(--gold)); }
+.wq-nums b, .wc-st b { font-family: var(--head) !important; font-weight: 600; color: var(--gold-100, var(--ink)); }
+.wq-nums b { font-size: 36px !important; line-height: 1 !important; }
+.wc-st b { font-size: 30px !important; line-height: 1 !important; }
+.wq-nums a, .wc-st { border-radius: 18px; background: rgba(0, 20, 20, .3) !important; border: 0 !important; }

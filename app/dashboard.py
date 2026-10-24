@@ -51,7 +51,6 @@ def build(conn, user) -> dict:
         "picks": {"n": picks[0], "views": picks[1]}, "mine": mine, "new_today": new_today,
         "market": _market(conn),
         "clients": clients.summary(conn, uid),
-        "agent": __import__("app.listingstats", fromlist=["summary"]).summary(conn, uid),   # 19.10: статистика своих объектов
         "recent": __import__("app.listingstats", fromlist=["recent"]).recent(conn, uid),   # 24.10: «Недавно смотрели»
         # 19.10: запросы покупателей — в кабинете наверху (всем с подпиской), «под ваши объекты» — по подтверждённым номерам
         "requests": __import__("app.buyers", fromlist=["summary"]).summary(conn, uid) if accounts.has_access(user)

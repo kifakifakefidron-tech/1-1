@@ -96,6 +96,25 @@
       ${n ? `<b class="${u ? "hot" : ""}">${u || n}</b>` : ""}</button>`;
     $("ntFilter").innerHTML = tab("", "Все", data.items.length, unreadAtOpen.size)
       + Object.entries(KINDS).filter(([k]) => cnt[k]).map(([k, [label]]) => tab(k, label, cnt[k], unr[k])).join("");
+    const on = $("ntFilter").querySelector(".on");
+    if (on) on.scrollIntoView({ block: "nearest", inline: "nearest" });
+    tabArrows();
+  }
+  // 24.10c: вкладки не помещаются — листаются колёсиком, пальцем и стрелками по краям
+  function tabArrows() {
+    const nav = $("ntFilter"), w = $("ntTabsW");
+    if (!nav || !w) return;
+    w.classList.toggle("can-l", nav.scrollLeft > 4);
+    w.classList.toggle("can-r", nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 4);
+  }
+  if ($("ntFilter")) {
+    $("ntFilter").addEventListener("scroll", tabArrows, { passive: true });
+    $("ntFilter").addEventListener("wheel", (e) => {
+      const nav = e.currentTarget;
+      if (nav.scrollWidth <= nav.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      e.preventDefault(); nav.scrollLeft += e.deltaY;
+    }, { passive: false });
+    addEventListener("resize", tabArrows);
   }
   function renderFeed() {
     const list = data.items.filter((n) => !filter || n.kind === filter);
@@ -157,6 +176,7 @@
     const a = e.target.closest("a[data-nid]");
     if (a) { try { localStorage.setItem(`seen:${a.dataset.nid}`, "1"); } catch { /* */ } return; }
     const b = e.target.closest("button");
+    if (b && b.dataset.tarr) { const nav = $("ntFilter"); nav.scrollBy({ left: Number(b.dataset.tarr) * nav.clientWidth * .7, behavior: "smooth" }); return; }
     if (!b) {   // нажатие по карточке — как по стрелке (кроме выделения текста)
       const it = e.target.closest(".nt2-it"), go = it && it.querySelector(".nt2-go");
       if (go && !String(getSelection())) go.click();

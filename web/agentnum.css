@@ -25,3 +25,75 @@
 .an-hint { margin: 0 0 12px; font-size: 13px; color: var(--ink-3); }
 .an-docs { margin: 18px 4px 40px; font-size: 13px; color: var(--ink-3); line-height: 1.6; }
 .an-docs a { color: var(--ink-2); }
+
+/* 24.10c — вид по образцам Артёма: крупный заголовок и цифры, слева номера, справа «что это даёт» и документы */
+.an2 { max-width: 1240px; }
+.an2-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px 30px; flex-wrap: wrap; margin-bottom: 22px; }
+.an2-head h1 { margin: 2px 0 10px; font: 600 clamp(34px, 4.6vw, 58px)/1.02 var(--display); letter-spacing: -.02em; }
+.an2-lead { margin: 0; max-width: 720px; color: var(--ink-2); font-size: 15.5px; line-height: 1.55; }
+.an2 .an-eyebrow { font-size: 12px; letter-spacing: .14em; }
+.an2-nums { display: flex; gap: 26px; }
+.an2-nums span { display: grid; }
+.an2-nums b { font: 600 clamp(34px, 4vw, 48px)/1 var(--display); letter-spacing: -.02em; }
+.an2-nums .up b { color: var(--ok); }
+.an2-nums small { color: var(--ink-3); font-size: 13px; margin-top: 4px; }
+.an2-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
+.an2-main { display: grid; gap: 16px; min-width: 0; }
+.an2-main .st-card, #anPhones .st-card { margin: 0 0 16px; }
+.an2-side { position: sticky; top: 16px; display: grid; gap: 14px; }
+.an2-card { padding: 22px 24px !important; border-radius: 26px !important; border: 1px solid var(--glass-line); background: var(--glass);
+  box-shadow: var(--glass-sh), var(--glass-hi); }
+.an2-side .an2-card { padding: 18px 20px !important; }
+.an2-side h2 { margin: 0 0 12px; font: 600 12px var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); }
+.an2-side .an-perks { margin: 0; grid-template-columns: 1fr; gap: 8px; }
+.an2-side .an-perks li { background: rgba(255, 255, 255, .04); }
+.an2 .an-docs { margin: 0; display: grid; gap: 8px; font-size: 13.5px; }
+.an2 .an-docs a { color: var(--ink); text-decoration: none; padding: 8px 10px; border-radius: 12px; background: rgba(255, 255, 255, .04); }
+.an2 .an-docs a:hover { color: var(--gold); background: rgba(255, 255, 255, .08); }
+.an2 .an-docs p { margin: 4px 0 0; color: var(--ink-3); }
+.an2 .an-docs p a { display: inline; padding: 0; background: none; color: var(--gold); }
+.an2-lbl { margin: 0 0 4px; font: 600 11.5px var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+.an2 .an-num { font: 600 clamp(26px, 3vw, 34px)/1.1 var(--display); }
+.an2-st { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 5px 12px; border-radius: 999px; font: 600 12.5px var(--body);
+  background: rgba(255, 255, 255, .07); color: var(--ink-2); }
+.an2-st svg { width: 14px; height: 14px; }
+.an2-st.on { background: rgba(110, 231, 183, .12); color: var(--ok); }
+.an2-st.off { background: rgba(248, 113, 113, .12); color: var(--bad); }
+.an2-st.wait { background: rgba(227, 203, 143, .12); color: var(--gold); }
+.an2-objs { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 18px; border: 1px solid var(--glass-line);
+  color: var(--ink); text-decoration: none; transition: background .2s, border-color .2s; }
+.an2-objs:hover { background: rgba(255, 255, 255, .06); border-color: var(--glass-line-2); }
+.an2-objs b { font: 600 28px/1 var(--display); }
+.an2-objs span { color: var(--ink-3); font-size: 12.5px; line-height: 1.25; }
+.an2-objs svg { width: 16px; height: 16px; color: var(--ink-3); }
+.an2 .an-checks { grid-template-columns: 1fr 1fr; gap: 10px; margin: 18px 0 14px; }
+.an2-opt { position: relative; display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; align-items: start; padding: 16px;
+  border-radius: 20px; border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .035); cursor: pointer;
+  transition: border-color .25s, background .25s; }
+.an2-opt:hover { border-color: var(--glass-line-2); }
+.an2-opt.on { border-color: rgba(227, 203, 143, .5); background: linear-gradient(135deg, rgba(227, 203, 143, .1), rgba(255, 255, 255, .02)); }
+.an2-opt input { position: absolute; opacity: 0; pointer-events: none; }
+.an2-oi { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 13px; background: rgba(255, 255, 255, .07); color: var(--gold); }
+.an2-oi svg { width: 19px; height: 19px; }
+.an2-ot { display: grid; gap: 4px; padding-right: 30px; }
+.an2-ot b { font: 600 15.5px/1.3 var(--display); }
+.an2-ot small { color: var(--ink-3); font-size: 12.5px; line-height: 1.45; }
+.an2-ot a { color: var(--gold); }
+.an2-box { position: absolute; right: 14px; top: 14px; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 8px;
+  border: 1.5px solid var(--glass-line-2); color: transparent; transition: background .2s, border-color .2s, color .2s; }
+.an2-box svg { width: 15px; height: 15px; }
+.an2-opt.on .an2-box { background: var(--gold); border-color: var(--gold); color: #0f2f2e; }
+.an2-opt input:focus-visible ~ .an2-box { outline: 2px solid var(--gold); outline-offset: 2px; }
+.an2 .an-opts { padding: 12px 14px; border-radius: 16px; background: rgba(255, 255, 255, .03); }
+.an2 .an-hint { display: flex; gap: 8px; align-items: flex-start; margin: 12px 0 16px; }
+.an2 .an-hint svg { width: 16px; height: 16px; flex: none; margin-top: 1px; }
+.an2-acts { display: flex; flex-wrap: wrap; gap: 10px; padding-top: 16px; border-top: 1px solid var(--glass-line); }
+@media (max-width: 980px) {
+  .an2-wrap { grid-template-columns: minmax(0, 1fr); }
+  .an2-side { position: static; }
+}
+@media (max-width: 640px) {
+  .an2 .an-checks { grid-template-columns: 1fr; }
+  .an2-card { padding: 18px 16px !important; border-radius: 22px !important; }
+  .an2-nums { gap: 18px; }
+}

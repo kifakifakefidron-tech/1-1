@@ -16,8 +16,8 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=90">
-<link rel="stylesheet" href="/static/notify.css?v=6">
+<link rel="stylesheet" href="/static/glass.css?v=92">
+<link rel="stylesheet" href="/static/notify.css?v=7">
 </head>
 <body>
 <main class="nt2">
@@ -31,7 +31,11 @@
 
   <div class="nt2-wrap" id="ntApp" hidden>
     <section class="nt2-main">
-      <nav class="nt2-tabs" id="ntFilter" aria-label="Вид уведомлений"></nav>
+      <div class="nt2-tabs-w" id="ntTabsW">
+        <button type="button" class="nt2-tarr l" data-tarr="-1" aria-label="Листать влево"><svg class="ic"><use href="/static/icons.svg?v=7#i-chevron-left"/></svg></button>
+        <nav class="nt2-tabs" id="ntFilter" aria-label="Вид уведомлений"></nav>
+        <button type="button" class="nt2-tarr r" data-tarr="1" aria-label="Листать вправо"><svg class="ic"><use href="/static/icons.svg?v=7#i-chevron"/></svg></button>
+      </div>
       <div id="ntList" class="nt2-feed"></div>
     </section>
     <aside class="nt2-side">
@@ -54,7 +58,7 @@
 <script src="/static/pickers.js?v=18"></script>
 <script src="/static/max.js?v=2"></script>
 <script src="/static/rail.js?v=30"></script>
-<script src="/static/notify.js?v=9"></script>
+<script src="/static/notify.js?v=10"></script>
 <script src="/static/objview.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 </body>

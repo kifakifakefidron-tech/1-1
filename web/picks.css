@@ -502,3 +502,39 @@
   .pk5-tog { margin-left: auto; }
 }
 .pk5-st.added { color: var(--ink-2); border-style: dashed; }
+
+/* 24.10c (Артём): обложка подборки — всегда градиент цвета подборки (буква клиента) или своё фото; кнопки «Открыть» и «Настроить» заметнее */
+.pk2-cov.own img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.pk6-cov { position: relative; display: grid; place-items: center; width: 210px; aspect-ratio: 1; flex: none; border-radius: 22px; overflow: hidden;
+  background: var(--cc, linear-gradient(150deg, #f3e8bc, #c9a85c)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18), 0 14px 34px rgba(0, 0, 0, .25); }
+.pk6-cov > b { font: 600 84px/1 var(--head); color: rgba(15, 47, 46, .72); }
+.pk6-cov.own > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.pk6-cov-b { position: absolute; left: 10px; bottom: 10px; display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 12px; border-radius: 999px;
+  background: rgba(4, 50, 49, .82); color: var(--ink); font: 600 12.5px var(--body); cursor: pointer; backdrop-filter: blur(6px);
+  opacity: 0; transform: translateY(4px); transition: opacity .2s, transform .25s var(--ease); }
+.pk6-cov-b svg { width: 14px; height: 14px; }
+.pk6-cov:hover .pk6-cov-b, .pk6-cov-b:focus-within { opacity: 1; transform: none; }
+.pk6-cov-x { position: absolute; right: 8px; top: 8px; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%;
+  background: rgba(4, 50, 49, .82); color: var(--ink); cursor: pointer; opacity: 0; transition: opacity .2s; }
+.pk6-cov-x svg { width: 14px; height: 14px; }
+.pk6-cov:hover .pk6-cov-x { opacity: 1; }
+@media (hover: none) { .pk6-cov-b, .pk6-cov-x { opacity: 1; transform: none; } }
+.pk6-btns { display: inline-flex; gap: 6px; flex: none; }
+.pk6-open, .pk5-row .pk5-tog { display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 14px; border-radius: 999px; font: 600 13.5px var(--body);
+  text-decoration: none; cursor: pointer; white-space: nowrap; transition: background .2s, border-color .2s, transform .25s var(--ease); }
+.pk6-open { border: 1px solid var(--glass-line-2); color: var(--ink); background: rgba(255, 255, 255, .04); }
+.pk6-open:hover { background: rgba(255, 255, 255, .1); }
+.pk5-row .pk5-tog { border: 0; background: linear-gradient(160deg, var(--gold-200), var(--gold-300)); color: #0f2f2e; }
+.pk5-row .pk5-tog.on { background: rgba(255, 255, 255, .1); color: var(--ink); }
+.pk6-open svg, .pk5-row .pk5-tog svg { width: 15px; height: 15px; }
+.pk5-t a:hover b { color: var(--gold); text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 760px) {
+  .pk6-cov { width: 120px; border-radius: 18px; }
+  .pk6-cov > b { font-size: 52px; }
+  .pk6-open span { display: none; }
+  .pk6-open { width: 38px; padding: 0; justify-content: center; }
+}
+.pk2-hero.pk5-hero { grid-template-columns: auto minmax(0, 1fr); align-items: center; }
+@media (max-width: 760px) { .pk2-hero.pk5-hero { grid-template-columns: auto minmax(0, 1fr); gap: 14px; } }
+.pk5-t a { display: block; min-width: 0; overflow: hidden; }
+.pk5-price { flex: none; }
