@@ -39,9 +39,39 @@
 .nt2-it.off .nt2-ico img { filter: grayscale(1) brightness(.75); }
 .k-plan .nt2-ico { color: #9ad1ff; } .k-client .nt2-ico { color: #c4b5fd; }
 .nt2-b { min-width: 0; }
-.nt2-top { display: flex; align-items: baseline; gap: 12px; }
-.nt2-top b { flex: 1; min-width: 0; font-size: 15.5px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.nt2-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .nt2-top time { flex: none; color: var(--ink-3); font-size: 12.5px; }
+/* 24.10b (образец Артёма): отметка вида, крупный заголовок, круглая стрелка справа */
+.nt2-pill { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 999px; font: 600 11.5px var(--body);
+  letter-spacing: .02em; background: rgba(227, 203, 143, .14); color: var(--gold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.nt2-pill.k-price { background: rgba(110, 231, 183, .12); color: var(--ok); }
+.up .nt2-pill.k-price, .nt2-pill.k-gone { background: rgba(248, 113, 113, .12); color: var(--bad); }
+.nt2-pill.k-plan { background: rgba(154, 209, 255, .12); color: #9ad1ff; }
+.nt2-pill.k-client, .nt2-pill.k-buyer { background: rgba(196, 181, 253, .14); color: #c4b5fd; }
+.nt2-t { display: block; margin-top: 8px; font: 600 17px/1.3 var(--display); letter-spacing: -.005em; overflow-wrap: anywhere; }
+.nt2-big { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; margin: 8px 0 0 !important; color: var(--ink) !important;
+  font: 600 24px/1.15 var(--display) !important; letter-spacing: -.01em; }
+.nt2-big > span { color: var(--ink-3); font-weight: 400; }
+.nt2-big small { font: 500 14px var(--body); color: var(--ink-2); }
+.nt2-big em { font: 600 14px var(--body); font-style: normal; padding: 2px 9px; border-radius: 999px; background: rgba(110, 231, 183, .12); color: var(--ok); }
+.nt2-big em.up { background: rgba(248, 113, 113, .12); color: var(--bad); }
+.nt2-it { grid-template-columns: 52px minmax(0, 1fr) 40px; align-items: center; }
+.nt2-go { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--glass-line-2); color: var(--ink);
+  transition: background .2s, transform .25s var(--ease), color .2s; }
+.nt2-go svg { width: 16px; height: 16px; }
+.nt2-it:hover .nt2-go { background: linear-gradient(160deg, var(--gold-200), var(--gold-300)); color: #0f2f2e; border-color: transparent; transform: translateX(2px); }
+.nt2-it .nt2-ico { align-self: start; }
+.nt2-num { display: flex; align-items: center; gap: 12px; margin: 8px 0 10px; color: inherit; text-decoration: none; }
+.nt2-num b { font: 600 44px/1 var(--display); letter-spacing: -.02em; color: var(--ink); }
+.nt2-num b.zero { color: var(--ink-3); }
+.nt2-num span { color: var(--ink-2); font-size: 13.5px; line-height: 1.35; }
+.nt2-num.sm b { font-size: 28px; }
+a.nt2-num:hover b { color: var(--gold); }
+.nt2-new { width: 100%; justify-content: center; margin-top: 12px; text-decoration: none; }
+.nt2-sub b { color: var(--ink); font-weight: 600; margin-right: 2px; }
+.nt2-sub b + b, .nt2-sub b:not(:first-child) { margin-left: 12px; }
+.nt2-sub b.hot { color: var(--gold); }
+.nt2-sub span { display: block; margin-top: 4px; font-size: 13.5px; }
 .nt2-b p { margin: 4px 0 0; color: var(--ink-2); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .nt2-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .nt2-btn { display: inline-flex; align-items: center; gap: 4px; height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--glass-line-2);
@@ -94,9 +124,10 @@
   .nt2 { padding: 16px 16px 110px; }
   .nt2-wrap { grid-template-columns: minmax(0, 1fr); }
   .nt2-side { position: static; }
-  .nt2-it { grid-template-columns: 44px minmax(0, 1fr); gap: 12px; padding: 12px; }
+  .nt2-it { grid-template-columns: 44px minmax(0, 1fr) 34px; gap: 12px; padding: 12px; }
+  .nt2-go { width: 34px; height: 34px; }
+  .nt2-big { font-size: 20px !important; }
   .nt2-ico { width: 44px; height: 44px; border-radius: 14px; }
   .nt2-ico img { border-radius: 14px; }
-  .nt2-top { flex-direction: column; gap: 2px; }
-  .nt2-top time { order: -1; }
 }
+.nt2-it:has(.nt2-go) { cursor: pointer; }

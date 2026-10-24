@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=16">
 <link rel="stylesheet" href="/static/glass.css?v=90">
-<link rel="stylesheet" href="/static/notify.css?v=5">
+<link rel="stylesheet" href="/static/notify.css?v=6">
 </head>
 <body>
 <main class="nt2">
@@ -36,14 +36,15 @@
     </section>
     <aside class="nt2-side">
       <section class="nt2-card">
-        <h2>Слежу за поисками</h2>
-        <p class="nt2-hint">Настройте фильтры на поиске и нажмите «Следить» — новые объекты придут сюда<span id="ntMail"></span>.</p>
-        <ul class="nt2-saved" id="ntSaved"></ul>
-        <a class="nt2-more" href="/">Настроить новый поиск</a>
-      </section>
-      <section class="nt2-card">
         <h2>Что отслеживаю</h2>
         <div class="nt2-track" id="ntTrack"></div>
+      </section>
+      <section class="nt2-card">
+        <h2>Слежу за поисками</h2>
+        <div id="ntSavedNum" class="nt2-num"></div>
+        <p class="nt2-hint">Настройте фильтры на поиске и нажмите «Следить» — новые объекты придут сюда<span id="ntMail"></span>.</p>
+        <ul class="nt2-saved" id="ntSaved"></ul>
+        <a class="pill nt2-new" href="/">Настроить новый поиск</a>
       </section>
     </aside>
   </div>
@@ -53,7 +54,7 @@
 <script src="/static/pickers.js?v=18"></script>
 <script src="/static/max.js?v=2"></script>
 <script src="/static/rail.js?v=30"></script>
-<script src="/static/notify.js?v=7"></script>
+<script src="/static/notify.js?v=9"></script>
 <script src="/static/objview.js?v=3"></script>
 <script src="/static/bell.js?v=6"></script>
 </body>

@@ -142,3 +142,64 @@
   background: rgba(255, 255, 255, .05); border: 1px solid var(--glass-line); }
 .my-stats b { color: var(--ink); font-size: 13px; }
 .my-stats .warn { color: #f0c27b; border-color: rgba(240, 194, 123, .45); }
+
+/* 24.10b — список по образцу Артёма: надзаголовок, цифры, карточка номера, вкладки-капсулы, карточки в 3 колонки */
+.my3-eyebrow { margin: 0 0 4px; font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--gold); }
+.my3-head h1 { font-size: clamp(30px, 3.4vw, 42px); }
+.my3-nums { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 10px 0 0 !important; color: var(--ink-3); font-size: 14px; }
+.my3-nums b { margin-right: 5px; color: var(--ink); font: 600 18px var(--display); }
+.my3-phones .my-card-h > div { flex: 1; min-width: 0; }
+.my3-phones .my-chips { margin: 12px 0 0; }
+.my3-addph { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 40px; align-self: center; }
+.my3-addph svg { width: 16px; height: 16px; transition: transform .25s var(--ease); }
+.my3-addph.on svg { transform: rotate(45deg); }
+.my3-more { margin: 14px 0 0 56px; }
+.my3-tabs { display: flex; gap: 4px; width: max-content; max-width: 100%; overflow-x: auto; scrollbar-width: none; padding: 4px; margin: 4px 0 16px;
+  border-radius: 999px; border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .05); }
+.my3-tabs::-webkit-scrollbar { display: none; }
+.my3-tabs button { display: inline-flex; align-items: center; gap: 7px; flex: none; padding: 8px 14px; border: 0; border-radius: 999px; background: none;
+  color: var(--ink-2); font: 500 14px var(--body); cursor: pointer; white-space: nowrap; transition: background .25s var(--ease), color .25s; }
+.my3-tabs button:hover { color: var(--ink); }
+.my3-tabs button.on { background: linear-gradient(160deg, var(--gold-200), var(--gold-300)); color: #0f2f2e; font-weight: 600; }
+.my3-tabs b { min-width: 20px; padding: 1px 6px; border-radius: 9px; background: rgba(255, 255, 255, .1); font: 600 11.5px var(--body); text-align: center; }
+.my3-tabs button.on b { background: rgba(15, 47, 46, .15); }
+.my3-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.my3-grid > .wk-empty { grid-column: 1 / -1; }
+.my3-card { display: flex; flex-direction: column; overflow: hidden; border-radius: 24px; border: 1px solid var(--glass-line); background: var(--glass);
+  animation: riseIn .45s var(--ease) both; animation-delay: calc(var(--i, 0) * 30ms); transition: transform .3s var(--ease), border-color .2s; }
+.my3-card:hover { transform: translateY(-3px); border-color: var(--glass-line-2); }
+.my3-photo { position: relative; display: block; aspect-ratio: 4 / 3; background: rgba(255, 255, 255, .05); overflow: hidden; }
+.my3-photo > img { width: 100%; height: 100%; object-fit: cover; transition: transform .6s var(--ease); }
+.my3-card:hover .my3-photo > img { transform: scale(1.04); }
+.my3-photo em { position: absolute; display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; font: 600 11.5px var(--body);
+  font-style: normal; background: rgba(4, 50, 49, .82); color: var(--ink); backdrop-filter: blur(6px); }
+.my3-src { left: 12px; top: 12px; }
+.my3-src.site { background: linear-gradient(160deg, var(--gold-200), var(--gold-300)) !important; color: #0f2f2e !important; }
+.my3-n { right: 12px; bottom: 12px; }
+.my3-n svg { width: 13px; height: 13px; }
+.my3-gone { right: 12px; top: 12px; color: var(--bad) !important; }
+.my3-card.gone .my3-photo > img { filter: grayscale(1) brightness(.7); }
+.my3-b { display: flex; flex-direction: column; gap: 6px; flex: 1; padding: 16px 18px 18px; }
+.my3-eye { margin: 0; font: 600 11.5px var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--gold);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.my3-price { font: 600 26px/1.1 var(--display); letter-spacing: -.01em; }
+.my3-t { color: var(--ink); font-size: 15px; font-weight: 500; text-decoration: none; line-height: 1.35; }
+.my3-t:hover { color: var(--gold); }
+.my3-addr { display: flex; align-items: flex-start; gap: 6px; margin: 0; color: var(--ink-3); font-size: 13.5px; line-height: 1.4; }
+.my3-addr svg, .my3-meta svg { width: 14px; height: 14px; flex: none; margin-top: 2px; }
+.my3-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 8px 0 2px; }
+.my3-stats span { display: grid; gap: 2px; padding: 9px 8px; border-radius: 14px; background: rgba(255, 255, 255, .05); color: var(--ink-3);
+  font-size: 11.5px; line-height: 1.25; text-align: center; }
+.my3-stats b { color: var(--ink); font: 600 19px var(--display); }
+.my3-stats i { font-style: normal; color: var(--ok); font-size: 10.5px; }
+.my3-meta { display: flex; align-items: center; gap: 5px; margin: 2px 0 0; color: var(--ink-3); font-size: 12.5px; }
+.my3-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--glass-line); }
+.my3-foot .pill { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; font-size: 13px; text-decoration: none; }
+.my3-foot .pill svg { width: 15px; height: 15px; }
+@media (max-width: 640px) {
+  .my3-phones .my-card-h { flex-wrap: wrap; }
+  .my3-addph { width: 100%; justify-content: center; }
+  .my3-more { margin-left: 0; }
+  .my3-grid { grid-template-columns: minmax(0, 1fr); }
+  .my3-stats span { padding: 8px 4px; font-size: 11px; }
+}

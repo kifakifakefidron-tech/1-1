@@ -11,6 +11,7 @@
   const TYPES = { flat: "Квартира", room: "Комната", house: "Дом", land: "Участок", commercial: "Коммерция" };
   const ROOMS = [[0, "Студия"], [1, "1"], [2, "2"], [3, "3"], [4, "4+"]];
   let data = null, meta = {}, complexes = [], tab = "all", waitTimer = 0;
+  const plural = (n, a, b, c) => { const m = Math.abs(n) % 100, d = m % 10; return m > 10 && m < 20 ? c : d === 1 ? a : d > 1 && d < 5 ? b : c; };
 
   async function call(url, body, method) {
     const opts = { credentials: "same-origin", method: method || (body !== undefined ? "POST" : "GET") };
@@ -38,43 +39,50 @@
   function verifyBlock() {
     const phones = data.phones;
     const form = `<div class="pv" id="verifyMount"></div>`;   // 17.10: звонок — основной способ, код в MAX — запасной (verify.js)
-    if (phones.length) {
-      return `<section class="my-card my-phones"><div class="my-card-h"><span class="my-ic ok">${ic("check-circle")}</span>
-        <div><h2>Номер подтверждён</h2><p>Объявления с ${phones.length > 1 ? "этими номерами" : "этим номером"} — ваши: менять их можете только вы.</p></div></div>
-        <div class="my-chips">${phones.map((p) => `<span class="my-chip">${ic("phone")}${esc(p)}</span>`).join("")}</div>
-        <details class="my-more"><summary>Добавить ещё номер</summary>${form}</details></section>`;
+    if (phones.length) {   // 24.10b (образец Артёма): карточка подтверждённого номера, «+ Добавить ещё номер» справа
+      return `<section class="my-card my-phones my3-phones"><div class="my-card-h"><span class="my-ic ok">${ic("check-circle")}</span>
+        <div><h2>${phones.length > 1 ? "Номера подтверждены" : "Номер подтверждён"}</h2>
+          <p>Объявления с ${phones.length > 1 ? "этими номерами" : "этим номером"} — ваши: менять их можете только вы.</p>
+          <div class="my-chips">${phones.map((p) => `<span class="my-chip">${ic("phone")}${esc(p)}</span>`).join("")}</div></div>
+        <button type="button" class="pill light my3-addph" id="myAddPhone">${ic("plus")}Добавить ещё номер</button></div>
+        <div class="my3-more" id="myMorePh" hidden>${form}</div></section>`;
     }
     return `<section class="my-card my-step"><div class="my-card-h"><span class="my-ic">${ic("shield")}</span>
       <div><h2>Шаг 1 · подтвердите свой номер</h2><p>Так мы поймём, какие объявления из чатов — ваши. Никто другой не сможет их изменить.
         ${(data.verify_methods || []).includes("call") ? "Проще всего — позвонить с этого номера: звонок бесплатный и сбросится сам." : "Подтверждение — сообщением с кодом в MAX."}</p></div></div>${form}</section>`;
   }
-  // 19.10: статистика объекта за 30 дней — просмотры, номер, избранное, подборки
+  // 19.10: статистика объекта за 30 дней — просмотры, номер, избранное, подборки (24.10b — плитками)
   function statsHTML(o) {
     const s = o.stats;
     if (!s || o.is_active === 0) return "";
-    return `<div class="my-stats" title="За последние 30 дней">
-      <span><b>${s.views}</b>просмотров${s.views7 ? ` · ${s.views7} за неделю` : ""}</span>
+    return `<div class="my3-stats" title="За последние 30 дней">
+      <span><b>${s.views}</b>просмотров${s.views7 ? `<i>+${s.views7} за неделю</i>` : ""}</span>
       <span><b>${s.phone}</b>открыли номер</span>
       <span><b>${s.fav}</b>в избранном</span>
-      <span><b>${s.picks}</b>в подборках клиентам</span>
+      <span><b>${s.picks}</b>в подборках</span>
     </div>`;
   }
-  function itemCard(o) {
+  function itemCard(o, i) {
     const sold = !o.is_active, own = o.source === "own", site = o.source === "feed";
-    const photo = (o.photos || [])[0];
-    return `<article class="wk-card my-item${sold ? " gone" : ""} c-${sold ? "slate" : own ? "gold" : "teal"}">
-      <a class="wk-photo" href="${o.can_edit ? `/my/edit?id=${o.id}` : `/?open=${o.id}`}">${photo ? `<img src="${esc(photo)}" alt="" loading="lazy">` : `<span>${ic("plus")}<small>${o.can_edit ? "Добавить фото" : "Фото нет"}</small></span>`}
-        <em class="my-src${site ? " site" : ""}">${own ? "Добавлен вами" : site ? "С сайта" : "Из чатов"}</em>${sold ? `<em class="wk-gone">Снят с сайта</em>` : ""}</a>
-      <div class="wk-body">
-        <a class="wk-title" href="/?open=${o.id}">${esc(head(o))}</a>
-        <b class="wk-price">${esc(money(o.price, o.deal))}</b>
-        <p class="wk-what">${esc(o.title)}${place(o) ? ` · ${esc(place(o))}` : ""}</p>
-        <p class="my-meta">${ic("clock")}${sold ? "снят" : own && o.expires_at ? `на сайте до ${fmtDay(o.expires_at)}` : "на сайте"} · фото ${(o.photos || []).length}</p>
+    const photos = o.photos || [], photo = photos[0];
+    const href = o.can_edit ? `/my/edit?id=${o.id}` : `/?open=${o.id}`;
+    const eyebrow = o.complex ? `ЖК ${o.complex}` : o.district || "";
+    return `<article class="my3-card${sold ? " gone" : ""}" style="--i:${Math.min(i, 12)}">
+      <a class="my3-photo" href="${href}">${photo ? `<img src="${esc(photo)}" alt="" loading="lazy">`
+        : `<span class="ph-none"><img src="/static/favicon.svg" alt=""><small>${o.can_edit ? "Добавить фото" : "Фото у агента"}</small></span>`}
+        <em class="my3-src ${own ? "own" : site ? "site" : "chat"}">${own ? "Добавлен вами" : site ? "С сайта" : "Из чатов"}</em>
+        ${photos.length ? `<em class="my3-n">${ic("layers")}${photos.length} фото</em>` : ""}${sold ? `<em class="my3-gone">Снят с сайта</em>` : ""}</a>
+      <div class="my3-b">
+        ${eyebrow ? `<p class="my3-eye">${esc(eyebrow)}</p>` : ""}
+        <b class="my3-price">${esc(money(o.price, o.deal))}</b>
+        <a class="my3-t" href="/?open=${o.id}">${esc(o.title)}</a>
+        ${place(o) ? `<p class="my3-addr">${ic("pin")}${esc(place(o))}</p>` : ""}
         ${statsHTML(o)}
-        <div class="wk-foot">
+        <p class="my3-meta">${ic("clock")}${sold ? "снят" : own && o.expires_at ? `на сайте до ${fmtDay(o.expires_at)}` : "на сайте"}</p>
+        <div class="my3-foot">
           ${o.can_edit ? `<a class="pill my-edit" href="/my/edit?id=${o.id}">${ic("edit")}Изменить</a>
             <button type="button" class="wk-btn" data-status="${sold ? "active" : "sold"}" data-id="${o.id}">${sold ? "Вернуть на сайт" : "Продано · снять"}</button>`
-          : site ? `<span class="my-note">Объект с сайта arrowsrealty.ru — цена, фото и описание меняются на сайте (Тильда)</span>`
+          : site ? `<span class="my-note">С сайта arrowsrealty.ru — цена, фото и описание меняются на сайте</span>`
           : `<span class="my-note">Этой карточкой управляет другой агент</span>`}
         </div>
       </div></article>`;
@@ -86,16 +94,20 @@
       chat: (o) => o.source === "chat", own: (o) => o.source === "own" };
     const n = Object.fromEntries(Object.keys(F).map((k) => [k, items.filter(F[k]).length]));
     const shown = items.filter(F[tab] || F.all);
+    const nums = [[n.on, plural(n.on, "активный", "активных", "активных")], [n.site, "с сайта"], [n.chat, "из чатов"], [n.own, "добавлены вами"]]
+      .filter(([k], j) => k || !j);
     main.innerHTML = `
-      <header class="my-head"><div><h1>Мои объекты</h1><p>Всё с вашим номером: объекты с вашего сайта, объявления из чатов и добавленные вами — без повторов.</p></div>
+      <header class="my-head my3-head"><div><p class="my3-eyebrow">Всё с вашим номером — без повторов</p><h1>Мои объекты</h1>
+          ${items.length ? `<p class="my3-nums">${nums.map(([k, t]) => `<span><b>${k}</b>${t}</span>`).join("")}</p>`
+            : `<p>Объекты с вашего сайта, объявления из чатов и добавленные вами — в одном месте.</p>`}</div>
         ${data.phones.length ? (data.access ? `<a class="pill my-add" href="/my/edit">${ic("plus")}Добавить объект</a>`
           : `<a class="pill light" href="/pay">Добавлять — с подпиской</a>`) : ""}</header>
       ${verifyBlock()}
       ${data.phones.length || items.length ? `
-        <nav class="wk-tabs my-tabs">${[["all", "Все"], ["site", "С сайта"], ["chat", "Из чатов"], ["own", "Добавлены вами"], ["on", "Активные"], ["off", "Снятые"]]
+        <nav class="nt2-tabs my3-tabs">${[["all", "Все"], ["on", "Активные"], ["site", "С сайта"], ["chat", "Из чатов"], ["own", "Добавлены вами"], ["off", "Снятые"]]
           .filter(([k]) => k === "all" || n[k]).map(([k, t]) =>
-          `<button type="button" class="wk-tab${k === tab ? " on" : ""}" data-tab="${k}">${t}<b>${n[k]}</b></button>`).join("")}</nav>
-        <div class="wk-grid my-grid">${shown.map(itemCard).join("") || `<div class="wk-empty">${ic("home")}<b>${items.length ? "Здесь пусто" : "Пока нет объявлений"}</b>
+          `<button type="button" class="${k === tab ? "on" : ""}" data-tab="${k}">${t}<b>${n[k]}</b></button>`).join("")}</nav>
+        <div class="my3-grid">${shown.map(itemCard).join("") || `<div class="wk-empty">${ic("home")}<b>${items.length ? "Здесь пусто" : "Пока нет объявлений"}</b>
           ${items.length ? "" : "Как только вы разместите объект в чатах с подтверждённым номером — он появится здесь. Или добавьте объект сами."}</div>`}</div>` : ""}
       <p class="my-rules">${ic("help")}Менять можно только объявления с вашим подтверждённым номером. Свой объект висит ${data.own_days} дней — за 10, 5, 2 и 1 день
         до конца спросим «ещё актуален?» (уведомление на сайте и письмо): «да» — продлим, «нет» — снимем сразу, без ответа — снимем по сроку. Все правки сохраняются в журнале.</p>`;
@@ -337,6 +349,7 @@
       return;
     }
     if (t.hasAttribute("data-ai-close")) { $("myAiBox").hidden = true; return; }
+    if (t.id === "myAddPhone") { const m = $("myMorePh"); m.hidden = !m.hidden; t.classList.toggle("on", !m.hidden); return; }
     if (t.dataset.tab) { tab = t.dataset.tab; renderList(); return; }
     if (t.dataset.status) { setStatus(Number(t.dataset.id), t.dataset.status); return; }
     if (t.dataset.copy) {

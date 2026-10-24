@@ -217,6 +217,10 @@
       ["Обременение", w.no_encumbrance ? "только без обременения" : ""],
       ["Срок", w.buy_by || ""],
     ].filter(([, v]) => v);
+    // 24.10b (образец Артёма): главное крупно одной строкой — «2-комн. · ФМР · до 7 млн», остальное списком
+    const MAIN = ["Что ищет", "Комнаты", "Районы", "Бюджет"];
+    const big = wishes.filter(([k]) => MAIN.includes(k)).map(([k, v]) => (k === "Комнаты" && /^\d+к(, \d+к)*$/.test(v) ? `${v.replace(/к/g, "")}-комн.` : v)).join(" · ");
+    const rest = wishes.filter(([k]) => !MAIN.includes(k));
     const items = cur.items || [], liked = items.filter((o) => ["liked", "show", "talks", "deal"].includes(o.status)).length;
     const shows = items.filter((o) => ["show", "talks", "deal"].includes(o.status)).length;
     const now = Date.now();
@@ -235,11 +239,14 @@
           ${c.next_ts || c.next_text ? `<p><b>${esc(c.next_text || "Связаться")}</b>${c.next_ts ? `<small>${esc(when(c.next_ts))}${over ? " · просрочено" : ""}</small>` : ""}</p>`
             : `<p class="ci-empty">Не задан — нажмите «Изменить» и укажите, что и когда сделать.</p>`}
           <div class="ci-acts"><a class="chip" href="/planner?add=show&client=${c.id}">${ic("home")}Показ</a>
-            <a class="chip" href="/planner?add=call&client=${c.id}">${ic("phone")}Созвон</a></div></section>
-        <section class="ci-box"><h4>${ic("search")}Что ищет</h4>
-          ${wishes.length ? `<dl class="ci-dl">${wishes.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`
-            : `<p class="ci-empty">Пожелания не заполнены — без них сервис не подберёт объекты.</p>`}
-          <div class="ci-acts"><button type="button" class="chip" data-tab="items">${ic("sparkle")}Подходящие объекты</button></div></section>
+            <a class="chip" href="/planner?add=call&client=${c.id}">${ic("phone")}Созвон</a>
+            <a class="chip" href="/planner?add=meet&client=${c.id}">${ic("users")}Встреча</a></div></section>
+        <section class="ci-box ci-wish"><h4>${ic("search")}Что ищет</h4>
+          ${big ? `<p class="ci-big">${esc(big)}</p>` : ""}
+          ${rest.length ? `<dl class="ci-dl">${rest.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` : ""}
+          ${wishes.length ? "" : `<p class="ci-empty">Пожелания не заполнены — без них сервис не подберёт объекты.</p>`}
+          <div class="ci-acts"><button type="button" class="pill ci-match" data-tab="items">${ic("sparkle")}Подходящие объекты<b id="ciMatchN">${
+            matchFor === c.id && matchTotal != null ? ` · ${num(matchTotal)}` : ""}</b></button></div></section>
         ${c.note ? `<section class="ci-box"><h4>${ic("note")}Заметка</h4><p class="ci-note">${esc(c.note)}</p></section>` : ""}
         <section class="ci-box"><h4>${ic("calendar")}Ближайшие дела</h4>
           ${upcoming.length ? `<ul class="ci-list">${upcoming.map((e) => `<li><a href="/planner?event=${e.id}">${esc(e.title)}</a><small>${esc(when(e.ts))}</small></li>`).join("")}</ul>`
@@ -256,6 +263,7 @@
           ${c.created ? `<dt>Добавлен</dt><dd>${esc(new Date(c.created * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }))}</dd>` : ""}</dl></section>
       </div>`;
     if ($("ciPub")) { if (pubCid === c.id) pubHTML(); else { pubCid = c.id; pubState = null; } pubLoad(); }
+    if (!matchSince && !$("dMatchList").dataset.loaded) match();   // число подходящих — сразу в обзоре
   }
   // ─── 19.10: «Запрос коллегам» — пожелания клиента видят все агенты с подпиской (без имени и номера клиента),
   // подтверждённым агентам с подходящими объектами приходит «Под ваш объект есть покупатель» ───
@@ -327,7 +335,7 @@
     }
     $("dStages").dataset.cid = cur ? cur.client.id : "";
     $("dStages").innerHTML = `<i class="c-stage-ind" aria-hidden="true"></i>` + keys.map((k, i) => `<button type="button" data-stage="${k}"
-      class="${i === at ? "on" : i < at && k !== "lost" ? "past" : ""}" style="--c:${STAGE_C[k]}">${esc(data.stages[k])}</button>`).join("");
+      class="${i === at ? "on" : i < at && k !== "lost" ? "past" : ""}${k === "lost" ? " lost" : ""}" style="--c:${STAGE_C[k]}">${k === "lost" ? "" : `<i class="n">${i + 1}</i>`}${esc(data.stages[k])}</button>`).join("");
     requestAnimationFrame(() => slideStage(cur ? cur.client.stage : keys[0], false));
   }
   // плашка выбранного этапа плавно переезжает к нажатому
@@ -406,11 +414,14 @@
     const c = cur ? cur.client : null;
     $("dName").textContent = c ? c.name : "Новый клиент";
     $("dAva").textContent = c ? (c.name.trim()[0] || "К").toUpperCase() : "+";
-    $("dSub").textContent = c ? [data.kinds[c.kind], c.phone].filter(Boolean).join(" · ") : "Заполните, кто это и что ищет — сервис подберёт объекты";
+    $("dSub").textContent = c ? [data.kinds[c.kind], c.created && `добавлен ${new Date(c.created * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}`, c.phone]
+      .filter(Boolean).join(" · ") : "Заполните, кто это и что ищет — сервис подберёт объекты";
     const digits = c && c.phone ? c.phone.replace(/\D/g, "") : "";
     $("dActs").innerHTML = digits ? `<a href="tel:${esc(c.phone)}" aria-label="Позвонить">${ic("phone")}</a>
       <button type="button" class="c-max" data-max="${esc(c.phone)}" aria-label="Написать в MAX" title="Написать в MAX">MAX</button>` : "";
     $("dItemsN").textContent = cur && cur.items.length ? cur.items.length : "";
+    $("dLogN").textContent = cur && (cur.log.length + (cur.work || []).length) ? cur.log.length + (cur.work || []).length : "";
+    $("dTasksN").textContent = cur && cur.events.filter((e) => !e.done).length ? cur.events.filter((e) => !e.done).length : "";
     document.querySelectorAll('.c-tabs [data-tab]:not([data-tab="card"])').forEach((b) => { b.hidden = !cur; });
   }
   function itemsHTML() {
@@ -445,10 +456,10 @@
     const sent = n((o) => o.status !== "matched"), opened = n((o) => o.opened_at || ["opened", "liked", "rejected", "show", "talks", "deal"].includes(o.status));
     const liked = n((o) => o.status === "liked" || o.reaction === "like" || o.reaction === "want_show"), no = n((o) => o.status === "rejected");
     const shows = n((o) => ["show", "talks", "deal"].includes(o.status)) + (cur.events || []).filter((e) => e.kind === "show").length;
-    if (!it.length) { $("dReport").innerHTML = ""; return; }
-    const cell = (v, t, c = "") => `<span class="c-rc ${c}"><b>${v}</b><small>${t}</small></span>`;
+    // 24.10b: цифры видны всегда (и нули) — как на образце; «Скопировать отчёт» — когда есть объекты
+    const cell = (v, t, c = "") => `<span class="c-rc ${c}${v ? "" : " zero"}"><b>${v}</b><small>${t}</small></span>`;
     $("dReport").innerHTML = `<div class="c-rep">${cell(sent, "отправлено")}${cell(opened, "открыл")}${cell(liked, "понравилось", "ok")}${cell(no, "не подходит", "bad")}${cell(shows, "показов", "gold")}</div>
-      <button type="button" class="chip c-rep-copy" data-report-copy>${ic("note")}Скопировать отчёт</button>`;
+      ${it.length ? `<button type="button" class="chip c-rep-copy" data-report-copy>${ic("note")}Скопировать отчёт</button>` : ""}`;
   }
   function reportText() {
     const label = data.item_status;
@@ -511,7 +522,7 @@ ${lines.join("\n")}`;
     if (r.ok) { cur = r.data; header(); stagesHTML(); itemsHTML(); upgradeItems(); logHTML(); tasksHTML(); picksHTML(); reportHTML(); infoHTML(); }
   }
   let matchPage = 1, matchSince = 0, freshIds = [];   // matchSince — из уведомления «новое под клиента»
-  let mSort = "new", mPhoto = false, mNotFirst = false, showHidden = false;
+  let mSort = "new", mPhoto = false, mNotFirst = false, showHidden = false, matchFor = 0, matchTotal = null;
   function matchItem(o) {
     const diff = o.market_diff != null && o.market_diff < -2 ? `<span class="c-good">ниже рынка ${Math.abs(o.market_diff)}%</span>` : "";
     return `<div class="c-it${showHidden ? "" : " c-mit"}" data-mid="${o.id}">
@@ -571,6 +582,8 @@ ${lines.join("\n")}`;
     if (old) old.remove();
     if (!more) {
       $("dMatchN").textContent = showHidden ? `· скрытые ${d.total}` : d.total ? num(d.total) : "";
+      if (!showHidden && !matchSince) { matchFor = cur.client.id; matchTotal = d.total || 0;
+        if ($("ciMatchN")) $("ciMatchN").textContent = ` · ${num(matchTotal)}`; }
       const hb = $("mHidden");
       const hn = showHidden ? 0 : (d.hidden || 0);
       hb.hidden = !showHidden && !hn;

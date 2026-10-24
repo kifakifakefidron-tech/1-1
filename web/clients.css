@@ -296,3 +296,56 @@ body.c-dragging .c-col { transition: background .2s, border-color .2s, transform
 .c-fresh-box { margin: 0 0 18px; padding: 14px; border-radius: 20px; border: 1px solid var(--gold); background: rgba(227, 203, 143, .08);
   animation: riseIn .35s var(--ease) both; }
 .c-fresh-box .c-fresh { margin: 0 0 10px; }
+
+/* 24.10b — окно клиента по образцу Артёма: крупная шапка, этапы с номерами («Отказ» отдельно), вкладки-капсулы, крупные цифры */
+.c-dlg { width: min(940px, calc(100vw - 24px)); }
+.c-dlg-in { padding: 24px 26px 26px; }
+.c-dlg-who .d-ava.big { width: 64px; height: 64px; font-size: 26px; border-radius: 50%; }
+.c-dlg-who h2 { font-size: clamp(22px, 2.6vw, 30px); letter-spacing: -.015em; }
+.c-dlg-who p { color: var(--ink-3); font-size: 13.5px; }
+.c-stages { gap: 6px; margin: 20px 0 16px; padding: 0; background: none; }
+.c-stages button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 12px; border-radius: 999px;
+  border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .03); font-size: 13px; }
+.c-stages button .n { display: grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 50%; font: 600 11.5px var(--body);
+  font-style: normal; background: rgba(255, 255, 255, .08); color: var(--ink-2); transition: background .25s, color .25s; }
+.c-stages button.past { border-color: rgba(227, 203, 143, .28); }
+.c-stages button.past .n { background: rgba(227, 203, 143, .22); color: var(--gold); }
+.c-stages button.on { border-color: transparent; }
+.c-stages button.on .n { background: rgba(15, 47, 46, .18); color: #0f2f2e; }
+.c-stages button.lost { flex: 0 0 auto; margin-left: auto; border-style: dashed; color: var(--ink-3); }
+.c-stage-ind { border-radius: 999px; }
+.c-tabs { gap: 4px; width: max-content; max-width: 100%; overflow-x: auto; scrollbar-width: none; padding: 4px; margin-bottom: 16px;
+  border: 1px solid var(--glass-line); border-radius: 999px; background: rgba(255, 255, 255, .04); }
+.c-tabs::-webkit-scrollbar { display: none; }
+.c-tabs button { display: inline-flex; align-items: center; gap: 6px; flex: none; padding: 8px 16px; margin: 0; border: 0; border-radius: 999px;
+  color: var(--ink-2); white-space: nowrap; transition: background .25s var(--ease), color .25s; }
+.c-tabs button:hover { color: var(--ink); }
+.c-tabs button.on { background: linear-gradient(160deg, var(--gold-200), var(--gold-300)); color: #0f2f2e; font-weight: 600; }
+.c-tabs b:empty { display: none; }
+.c-tabs b { min-width: 20px; margin: 0; padding: 1px 6px; border-radius: 9px; background: rgba(255, 255, 255, .1); color: inherit; font-size: 11.5px; text-align: center; }
+.c-tabs button.on b { background: rgba(15, 47, 46, .15); }
+.ci-stats { gap: 10px; margin-bottom: 14px; }
+.ci-stats button { padding: 14px 16px; border-radius: 18px; background: rgba(255, 255, 255, .04); }
+.ci-stats b { font-size: 30px; letter-spacing: -.01em; }
+.ci-stats span { font-size: 12.5px; }
+.ci-grid { gap: 12px; }
+.ci-box { padding: 16px 18px; border-radius: 20px; }
+
+.ci-big { margin: 2px 0 12px !important; font: 600 22px/1.3 var(--display); letter-spacing: -.01em; overflow-wrap: anywhere; }
+.ci-match { display: inline-flex; align-items: center; gap: 6px; height: 40px; }
+.ci-match svg { width: 16px; height: 16px; }
+.ci-match b { font-weight: 600; }
+.ci-next p b { display: block; font: 600 17px/1.35 var(--display); }
+.c-rep { gap: 8px; }
+.c-rc { padding: 14px 12px !important; border-radius: 18px !important; }
+.c-rc b { font: 600 28px/1 var(--display) !important; }
+@media (max-width: 700px) {
+  .c-dlg-in { padding: 16px 14px 20px; }
+  .c-dlg-who .d-ava.big { width: 52px; height: 52px; font-size: 21px; }
+  .c-stages button { padding: 7px 10px; font-size: 12.5px; }
+  .c-stages button.lost { margin-left: 0; }
+
+  .ci-big { font-size: 19px; }
+  .ci-stats b, .c-rc b { font-size: 24px !important; }
+}
+.c-rc.zero b { color: var(--ink-3) !important; }
