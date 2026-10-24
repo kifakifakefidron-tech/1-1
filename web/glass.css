@@ -1313,7 +1313,8 @@ summary { transition: color .2s var(--m-out); }
   .rail-g.rail-open .rail-a.on .rail-tip b, .rail-g.rail-open .rail-a.on .rail-tip small { color: #0f2f2e; }
   .rail-g.rail-open .rail-sep { width: 100%; }
   .rail-g.rail-open .rail-ava { align-self: flex-start; margin-left: 4px; }
-  .rail-g.rail-open .rail-c, .rail-g.rail-open .rail-n { top: 50%; right: 10px; translate: 0 -50%; }
+  /* 24.10e (Артём): число дел/уведомлений — кружком на самом значке, а не справа строки */
+  .rail-g.rail-open .rail-c, .rail-g.rail-open .rail-n { top: 3px; left: 25px; right: auto; translate: none; }
 }
 @keyframes railTipIn { from { opacity: 0; transform: translateX(-6px); } }
 
@@ -1398,3 +1399,8 @@ summary { transition: color .2s var(--m-out); }
   .nav { padding-top: env(safe-area-inset-top); }
   body:has(> .nav) .search { top: calc(var(--navh) + env(safe-area-inset-top)); }
 }
+
+/* 24.10e: кружок с числом на значке меню — аккуратнее: золото (просрочено — коралл), тонкая обводка цвета меню */
+.rail-c { min-width: 16px; height: 16px; padding: 0 4px; font: 700 9.5px/1 var(--body); background: linear-gradient(160deg, var(--gold-100, #f3e8bc), var(--gold-300, #d9bf7f));
+  color: #12302f; box-shadow: 0 0 0 2px #035352; }
+.rail-c.hot { background: #f29a7e; color: #2a0f08; }

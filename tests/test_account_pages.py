@@ -188,3 +188,12 @@ def test_photo_complaint_and_admin_removes_photo(client):
     assert ingest.banned_photos(conn) == {"/photos/1/b.jpg"}
     # удалённое фото не делает объект «удалённым»
     assert client.get("/api/admin/banned").json()["items"] == []
+
+
+def test_recent_views_api(client):
+    """24.10e: открыл объект — он сразу в «Недавно смотрели» (вкладка «Избранного», /api/recent)."""
+    lid = client.get("/api/listings").json()["items"][0]["id"]
+    assert client.get("/api/recent").json()["items"] == []
+    client.get(f"/api/listings/{lid}")
+    items = client.get("/api/recent").json()["items"]
+    assert [x["id"] for x in items] == [lid] and "photos" in items[0]

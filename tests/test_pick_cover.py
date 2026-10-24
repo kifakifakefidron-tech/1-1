@@ -31,3 +31,17 @@ def test_cover_saved_and_public(tmp_path, monkeypatch):
     picks.save(conn, user, {"id": cid, "cover": ""})
     assert conn.execute("SELECT cover FROM collections WHERE id = ?", (cid,)).fetchone()[0] is None
     assert "error" in picks.save(conn, user, {"id": cid, "cover": "data:image/png;base64,AAAA"})
+
+
+def test_hide_map_removes_points():
+    """24.10e: автор подборки убрал карту — клиенту не отдаём координаты и флаг hide_map."""
+    conn = db.connect(":memory:")
+    user = accounts.create_promo_user(conn)
+    lid = conn.execute("""INSERT INTO listings (type, deal, title, photos, first_seen, last_seen, seen_count, is_active, source, search_text,
+                          lat, lon, geo_status, geo_src) VALUES ('flat','sale','2-к','[]',1,1,1,1,'feed','',45.03,38.97,'ok','osm-house')""").lastrowid
+    cid = conn.execute("INSERT INTO collections (user_id, title, token, created, updated) VALUES (?, 'П', 'tokm', 1, 1)", (user["id"],)).lastrowid
+    conn.execute("INSERT INTO collection_items (collection_id, listing_id, pos, added) VALUES (?, ?, 0, 1)", (cid, lid))
+    conn.commit()
+    picks.save(conn, user, {"id": cid, "hide_map": True})
+    pub = picks.public(conn, "tokm", count_view=False)
+    assert pub["hide_map"] is True and pub["items"][0]["lat"] is None

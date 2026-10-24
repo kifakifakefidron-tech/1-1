@@ -240,4 +240,25 @@
     }, { rootMargin: "-20% 0px -70% 0px" });
     secs.forEach((s) => io.observe(s));
   })();
+  // 24.10e (Артём: «посмотреть, как будет выглядеть, прямо из меню»): примерка тем на своей последней подборке
+  // (страница клиента ?as=agent&theme=…&back=…/settings); вернулись с ?pick_theme=X — тема выбрана
+  (async function tryOnPick() {
+    const sp = new URLSearchParams(location.search), want = sp.get("pick_theme");
+    if (want && PALETTE[want]) {
+      history.replaceState(null, "", location.pathname + location.hash);
+      const apply = () => { if (!st) { setTimeout(apply, 200); return; } save({ pick_color: want }); toast(`Тема подборок: ${NAMES[want]}`); };
+      apply();
+    }
+    const a = $("stTry");
+    if (!a) return;
+    const r = await call("/api/picks");
+    const p = r.ok && (r.data.items || [])[0];
+    if (!p) { a.hidden = false; a.textContent = "Создайте подборку — и примерьте на ней темы"; return; }
+    const upd = () => {
+      const th = st && PALETTE[st.settings.pick_color] ? st.settings.pick_color : "light";
+      a.href = `${p.url}?as=agent&theme=${th}&back=${encodeURIComponent(`${location.origin}/settings`)}`;
+    };
+    upd(); a.hidden = false;
+    a.addEventListener("click", upd);
+  })();
 })();

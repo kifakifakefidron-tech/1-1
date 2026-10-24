@@ -49,21 +49,37 @@
   }
 
   // ─── «Как видит клиент» — полоса «← Назад к подборке» (только агенту) ───
+  // 24.10e: из «Настроек» (back=…/settings) — полоса с выбором темы: смотреть разные и выбрать понравившуюся
+  const THEME_NAMES = { light: "Классика", gold: "Шампань", teal: "Изумруд", sky: "Небо", violet: "Сирень", coral: "Коралл", rose: "Роза", lime: "Лайм", slate: "Графит" };
+  const tryTheme = asAgent && THEME_NAMES[sp.get("theme")] ? sp.get("theme") : "";
   if (asAgent) {
     const back = sp.get("back") || "";
     const ok = /^https?:\/\/[^/]+\/picks(\?open=\d+)?$/.test(back);
+    const fromSettings = /^https?:\/\/[^/]+\/settings$/.test(back);
     const bar = document.createElement("div");
     bar.className = "pk-agentbar";
-    bar.innerHTML = `<a href="${ok ? back.replace(/"/g, "") : "#"}" class="pk-back">← Назад к подборке</a><span>Так подборку видит клиент</span>`;
-    bar.querySelector("a").addEventListener("click", (e) => {
-      if (history.length > 1) { e.preventDefault(); history.back(); } else if (!ok) { e.preventDefault(); window.close(); }
-    });
-    document.body.prepend(bar);
+    if (fromSettings) {
+      const cur = tryTheme || "light";
+      const href = (k) => { const q = new URLSearchParams(location.search); q.set("theme", k); return `?${q}`; };
+      bar.classList.add("themes");
+      bar.innerHTML = `<a href="${back.replace(/"/g, "")}" class="pk-back">← Назад</a>
+        <span class="pk-themes">${Object.entries(THEME_NAMES).map(([k, n]) => `<a href="${href(k)}" class="pk-th t-${k}${k === cur ? " on" : ""}" title="${n}"><i></i>${n}</a>`).join("")}</span>
+        <a href="${back.replace(/"/g, "")}?pick_theme=${cur}" class="pk-pick">Выбрать «${THEME_NAMES[cur]}»</a>`;
+      document.body.prepend(bar);
+    }
+    if (!fromSettings) bar.innerHTML = `<a href="${ok ? back.replace(/"/g, "") : "#"}" class="pk-back">← Назад к подборке</a><span>Так подборку видит клиент</span>`;
+    if (!fromSettings) {
+      bar.querySelector("a").addEventListener("click", (e) => {
+        if (history.length > 1) { e.preventDefault(); history.back(); } else if (!ok) { e.preventDefault(); window.close(); }
+      });
+      document.body.prepend(bar);
+    }
   }
 
   // ─── оформление из настроек агента ─────────────────────────
   const PALETTE = { gold: "#e3cb8f", teal: "#5fd0c0", sky: "#7cc4f5", violet: "#b9a3f5", coral: "#f29a7e", rose: "#f08fb6", lime: "#b6db7a", slate: "#9fb3b1" };
   function applyStyle(st) {
+    if (tryTheme) st = { ...st, color: tryTheme };   // примерка темы из настроек
     const c = PALETTE[st.color] || (/^#[0-9a-f]{6}$/i.test(st.color || "") ? st.color : PALETTE.gold);
     // 24.10d: тема — фон, текст и акцент целиком (светлая «Классика» — без темы, как раньше)
     if (PALETTE[st.color]) document.documentElement.dataset.theme = st.color;
@@ -132,10 +148,10 @@
         ${kind ? `<p class="pv-kind">${esc(kind)}</p>` : ""}
         ${specs(o)}
         ${pl || o.complex ? `<p class="pv-place">${ic("pin")}<span>${esc(pl || `ЖК ${o.complex}`)}${o.approx ? " · точный адрес — у агента" : ""}
-          · <a href="${esc(yandex(o))}" target="_blank" rel="noopener noreferrer">На карте</a></span></p>` : ""}
+          ${data.hide_map ? "" : `· <a href="${esc(yandex(o))}" target="_blank" rel="noopener noreferrer">На карте</a>`}</span></p>` : ""}
         ${o.is_active ? "" : `<p class="pv-gone">Этот объект уже сняли с продажи — уточните у агента, есть ли похожие.</p>`}
         ${o.note ? `<div class="pv-comment"><b>Комментарий агента</b>${esc(o.note)}</div>` : ""}
-        ${o.description ? `<div class="pk-desc clamp"><p>${esc(o.description)}</p><button type="button" data-more hidden>Читать полностью</button></div>` : ""}
+        ${o.description ? `<div class="pk-desc"><p>${esc(o.description)}</p></div>` : ""}
         ${o.is_active ? reactHTML(o) : ""}
       </div></li>`;
   }

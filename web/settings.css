@@ -129,3 +129,11 @@
 .st-color.light { background: linear-gradient(135deg, #f5f5f7 50%, #1d1d1f 50%) !important; }
 .st-colors-h { display: flex; justify-content: space-between; gap: 8px; }
 .st-theme-name { color: var(--ink-2); font-size: 13px; margin: 6px 0 0; }
+
+/* 24.10e: «Согласия по номеру» в настройках — те же плитки, что на /agent */
+.st-consent #anPhones { display: grid; gap: 14px; }
+.st-consent .an-phone { margin: 0; padding: 18px !important; border-radius: 22px !important; background: rgba(0, 20, 20, .22);
+  border: 1px solid var(--glass-line); box-shadow: none; }
+.st-consent .an-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0 12px; }
+.st-consent .an-ph-h { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+@media (max-width: 640px) { .st-consent .an-checks { grid-template-columns: 1fr; } }

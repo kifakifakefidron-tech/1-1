@@ -162,7 +162,7 @@
       <span class="pv-ev-bar"></span>
       <div class="pv-ev-top">
         <h3>${esc(e.title)}</h3>
-        <button type="button" class="pv-check${e.done ? " on" : ""}" data-done="${e.id}" aria-label="${e.done ? "Вернуть в планы" : "Отметить сделанным"}"
+        <button type="button" class="pv-check${e.done ? " on" : ""}" data-done="${e.id}" aria-label="${e.done ? "Вернуть в планы" : "Сделано"}"
           title="${e.done ? "Вернуть в планы" : "Сделано"}">${ic("check")}</button>
       </div>
       ${sub ? `<p class="pv-ev-sub">${esc(sub)}</p>` : ""}
@@ -379,14 +379,20 @@
     const phone = e.contact_phone || (cl && cl.phone) || "";
     const when = `${d.toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" })}, ${hm(e.ts)} – ${hm(end)}`;
     const remind = e.remind_min ? (e.remind_min >= 1440 ? "за день" : e.remind_min >= 60 ? `за ${e.remind_min / 60} ч` : `за ${e.remind_min} мин`) : "";
+    // 24.10e (Артём: «из кабинета открывается не понять что»): крупно время и дата, вид события, кто/что/где, понятные кнопки
+    const day = d.toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
+    const left = Math.round((e.ts - Date.now() / 1000) / 60);
+    const soon = e.done ? "Сделано" : left < -((e.dur_min || 60)) ? "Прошло" : left <= 0 ? "Идёт сейчас"
+      : left < 60 ? `через ${left} мин` : left < 1440 ? `через ${Math.round(left / 60)} ч` : "";
     $("evvBody").innerHTML = `
       <div class="evv c-${colorOf(e)}${e.done ? " done" : ""}">
-        <span class="evv-bar"></span>
-        <div class="evv-head"><span class="evv-kind">${ic(KIC[e.kind])}${KINDS[e.kind]}</span>
-          <button type="button" class="close" data-close aria-label="Закрыть">${ic("x")}</button></div>
+        <div class="evv-top">
+          <span class="evv-kind">${ic(KIC[e.kind])}${KINDS[e.kind]}</span>
+          <p class="evv-time">${hm(e.ts)}<span>–${hm(end)}</span></p>
+          <p class="evv-day">${esc(day[0].toUpperCase() + day.slice(1))} · ${dur(e.dur_min || 60)}${soon ? ` · <b>${soon}</b>` : ""}</p>
+        </div>
         <h2 id="evvTitle">${esc(e.title)}</h2>
-        <p class="evv-when">${ic("clock")}${esc(when[0].toUpperCase() + when.slice(1))} · ${dur(e.dur_min || 60)}${remind && !e.done ? ` · ${ic("bell")}напомним ${remind}` : ""}</p>
-        ${e.done ? `<p class="evv-done">${ic("check-circle")}Сделано</p>` : ""}
+        ${remind && !e.done ? `<p class="evv-when">${ic("bell")}Напомним ${remind} — на сайте и письмом</p>` : ""}
         ${cl ? `<a class="evv-row" href="/clients?id=${cl.id}"><span class="evv-ava">${esc((cl.name || "?")[0].toUpperCase())}</span>
           <span><small>Клиент</small><b>${esc(cl.name)}</b></span>${ic("chevron")}</a>` : ""}
         ${l ? `<a class="evv-row" href="/?open=${l.id}">${l.photo ? `<img src="${esc(l.photo)}" alt="">` : `<span class="evv-ava">${ic("home")}</span>`}
@@ -398,12 +404,12 @@
           <span class="evv-ava">${ic("pin")}</span><span><small>Где</small><b>${esc(e.place)}</b></span>${ic("external")}</a>` : ""}
         ${e.note ? `<div class="evv-note">${esc(e.note)}</div>` : ""}
         <div class="evv-acts">
-          <button type="button" class="pill" data-edit="${e.id}">${ic("edit")}Изменить</button>
+          <button type="button" class="pill" data-view-done="${e.id}">${ic("check")}${e.done ? "Вернуть в планы" : "Сделано"}</button>
+          <button type="button" class="pill light" data-edit="${e.id}">${ic("edit")}Изменить</button>
           <button type="button" class="pill light" data-clone="${e.id}">${ic("plus-circle")}Копировать</button>
-          <button type="button" class="pill light" data-view-done="${e.id}">${ic("check")}${e.done ? "Вернуть в планы" : "Сделано"}</button>
-          <a class="pill light" href="/api/planner/${e.id}.ics">${ic("calendar")}В календарь телефона</a>
-          <button type="button" class="chip danger" data-view-del="${e.id}">${ic("trash")}Удалить</button>
+          <a class="pill light" href="/api/planner/${e.id}.ics">${ic("calendar")}В календарь</a>
         </div>
+        <button type="button" class="evv-del" data-view-del="${e.id}">${ic("trash")}Удалить событие</button>
       </div>`;
     const dlg = $("evView");
     if (!dlg.open) dlg.showModal();

@@ -383,3 +383,37 @@ a.evv-row:hover { background: rgba(255, 255, 255, .1); }
 .ev-clinfo { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin: 8px 0 0; color: var(--ink-2); font-size: 13.5px; }
 .ev-clinfo svg { width: 15px; height: 15px; color: var(--gold); }
 .ev-clinfo a { color: var(--gold); }
+
+/* 24.10e: окно события — один крестик, крупное время, цветная шапка по цвету события, кнопки сеткой */
+.ev-view { width: min(520px, calc(100vw - 24px)); overflow-x: hidden; }
+.ev-view .dlg-body { overflow-x: hidden; }
+.evv-x { position: absolute; right: 14px; top: 14px; z-index: 3; display: grid; place-items: center; width: 40px; height: 40px; padding: 0;
+  border: 0; border-radius: 50%; background: rgba(0, 0, 0, .22); color: var(--ink); cursor: pointer; }
+.evv-x svg { width: 18px; height: 18px; }
+.evv { gap: 14px; padding: 0 0 20px; }
+.evv-bar, .evv-head { display: none; }
+.evv-top { display: grid; gap: 6px; justify-items: start; padding: 22px 22px 20px; margin-bottom: 2px;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--c) 30%, transparent), color-mix(in srgb, var(--c) 6%, transparent));
+  border-bottom: 1px solid var(--glass-line); }
+.evv > :not(.evv-top) { margin-left: 22px; margin-right: 22px; }
+.evv-time { margin: 6px 0 0; font: 600 clamp(38px, 9vw, 48px)/1 var(--head); color: var(--gold-100, var(--ink)); letter-spacing: .01em; }
+.evv-time span { font-size: .55em; color: var(--ink-2); margin-left: 4px; }
+.evv-day { margin: 0; color: var(--ink-2); font-size: 14px; }
+.evv-day b { color: var(--c); font-weight: 600; }
+.evv h2 { font-size: 22px; }
+.evv-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+.evv-acts .pill { justify-content: center; min-height: 46px; margin: 0; }
+.evv-del { justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 6px 0; border: 0; background: none;
+  color: var(--bad); font: 500 13.5px var(--body); cursor: pointer; opacity: .85; }
+.evv-del svg { width: 15px; height: 15px; }
+.evv-del:hover { opacity: 1; text-decoration: underline; }
+@media (max-width: 640px) {
+  .ev-view { width: 100vw; }
+  .evv-top { padding: 26px 18px 18px; }
+  .evv > :not(.evv-top) { margin-left: 18px; margin-right: 18px; }
+  .evv-acts { grid-template-columns: 1fr 1fr; }
+}
+.ev-view .evv .evv-time { margin: 8px 0 0; font: 600 clamp(40px, 9vw, 52px)/1 var(--head); color: var(--gold-100, var(--ink)); }
+.ev-view .evv .evv-time span { font-size: .5em; }
+.ev-view .evv .evv-day { font-size: 14.5px; }
+.ev-view .evv-acts .pill { white-space: nowrap; font-size: 14px; padding: 0 12px; }

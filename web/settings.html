@@ -16,8 +16,9 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=94">
-<link rel="stylesheet" href="/static/settings.css?v=7">
+<link rel="stylesheet" href="/static/glass.css?v=95">
+<link rel="stylesheet" href="/static/agentnum.css?v=3">
+<link rel="stylesheet" href="/static/settings.css?v=8">
 </head>
 <body>
 <main class="st">
@@ -39,7 +40,8 @@
             </div>
             <small>Например, ваше фото, логотип агентства или красивый вид города. Лучше горизонтальное.</small></div>
           <div class="st-f"><span>Тема подборки для клиента — фон, текст и акцент</span><div class="st-colors" id="stColors" role="radiogroup" aria-label="Тема подборки"></div>
-          <p class="st-theme-name" id="stThemeName"></p></div>
+          <p class="st-theme-name" id="stThemeName"></p>
+          <a class="pill light st-try" id="stTry" href="/picks" hidden><svg class="ic"><use href="/static/icons.svg?v=7#i-eye"/></svg>Примерить темы на своей подборке</a></div>
           <label class="st-f"><span>Подпись над заголовком</span><input id="stBrand" maxlength="60" placeholder="Подборка объектов — или название вашего агентства"></label>
           <div class="st-f"><span>Ваше фото — в подборках рядом с номером и как фото аккаунта</span>
             <div class="st-cover-row st-photo-row"><span class="st-ava" id="stPhotoPrev"></span>
@@ -108,6 +110,14 @@
       <div id="stVerBody"><p class="note">Загружаем…</p></div>
     </section>
 
+    <!-- 24.10e (Артём): согласия по номеру — здесь же, дать или отозвать в одно касание (тот же блок, что на /agent) -->
+    <section class="st-card st-consent" id="stConsent">
+      <div class="st-card-h"><span class="st-ic"><i data-ic="shield"></i></span><div><h2>Согласия по номеру</h2>
+        <p>Показывать ли ваш номер и имя в объявлениях, разрешать ли тексты и фото, кнопка MAX. Отметьте нужное и нажмите «Сохранить» —
+          отозвать можно в любой момент. Документы — на странице <a href="/agent">«Ваш номер на 1+1»</a>.</p></div></div>
+      <div id="anPhones" class="an2"></div>
+    </section>
+
     <section class="st-card">
       <div class="st-card-h"><span class="st-ic"><i data-ic="shield"></i></span><div><h2>Вход и безопасность</h2><p id="stSessInfo"></p></div></div>
       <div class="st-acts"><button type="button" class="chip" id="stLogoutAll">Выйти на всех других устройствах</button>
@@ -125,11 +135,12 @@
 </main>
 
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
-<script src="/static/icons.js?v=9"></script>
+<script src="/static/icons.js?v=10"></script>
 <script src="/static/pickers.js?v=18"></script>
-<script src="/static/rail.js?v=32"></script>
+<script src="/static/rail.js?v=33"></script>
 <script src="/static/verify.js?v=1"></script>
-<script src="/static/settings.js?v=10"></script>
+<script src="/static/agentnum.js?v=5"></script>
+<script src="/static/settings.js?v=12"></script>
 <script src="/static/bell.js?v=6"></script>
 </body>
 </html>

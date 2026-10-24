@@ -23,6 +23,7 @@
     clearTimeout(toast.t);
     toast.t = setTimeout(() => { try { t.hidePopover(); } catch { t.hidden = true; } }, ms);
   }
+  if (!$("anPhones")) return;   // на странице нет блока согласий
   document.querySelectorAll("[data-ic]").forEach((el) => { el.outerHTML = ic(el.dataset.ic); });
 
   let data = null;
@@ -57,20 +58,24 @@
       </div>
     </section>`;
   }
+  // 24.10e: этот же блок стоит в «Настройках» (там нет шапки и подтверждения — только номера и согласия)
   function render() {
     const phones = data.phones || [];
-    $("anBonus").textContent = `${data.bonus_days || 30} дней`;
-    $("anVerifyCard").hidden = false;
-    $("anVerifyH").textContent = phones.length ? "Подтвердить ещё один номер" : "Подтвердите номер из объявлений";
-    if (window.PhoneVerify) PhoneVerify.mount($("anVerify"), { methods: data.verify_methods, again: phones.length > 0, onDone: load });
-    $("anPhones").innerHTML = phones.map(phoneCard).join("");
+    if ($("anBonus")) $("anBonus").textContent = `${data.bonus_days || 30} дней`;
+    if ($("anVerifyCard")) {
+      $("anVerifyCard").hidden = false;
+      $("anVerifyH").textContent = phones.length ? "Подтвердить ещё один номер" : "Подтвердите номер из объявлений";
+      if (window.PhoneVerify) PhoneVerify.mount($("anVerify"), { methods: data.verify_methods, again: phones.length > 0, onDone: load });
+    }
+    $("anPhones").innerHTML = phones.map(phoneCard).join("") || ($("anVerifyCard") ? ""
+      : `<p class="st-hint">Сначала подтвердите номер (раздел выше) — здесь появятся согласия по нему.</p>`);
     const objs = phones.reduce((s, x) => s + (x.listings || 0), 0), ok = phones.filter((x) => x.consent && x.consent.publish).length;
-    $("anNums").innerHTML = phones.length ? `<span><b>${phones.length}</b><small>${phones.length === 1 ? "номер" : "номера"}</small></span>
+    if ($("anNums")) $("anNums").innerHTML = phones.length ? `<span><b>${phones.length}</b><small>${phones.length === 1 ? "номер" : "номера"}</small></span>
       <span><b>${objs}</b><small>объектов</small></span><span class="${ok === phones.length ? "up" : ""}"><b>${ok}/${phones.length}</b><small>с согласием</small></span>` : "";
   }
   async function load() {
     const r = await call("/api/agent/consent");
-    if (r.data && r.data.detail && !r.ok) { $("anGuest").hidden = false; return; }
+    if (r.data && r.data.detail && !r.ok) { if ($("anGuest")) $("anGuest").hidden = false; return; }
     data = r.data;
     render();
   }

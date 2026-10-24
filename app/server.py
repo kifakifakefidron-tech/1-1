@@ -474,7 +474,7 @@ def api_listings(request: Request, body: dict | None = None):
     return _cached(request, compute)
 
 
-def api_recent(request: Request):
+def api_recent(request: Request, body: dict | None = None):
     """24.10d: «Недавно смотрели» — вкладка «Избранного» (раньше — блок кабинета). Те же поля, что у карточки ленты."""
     user, err = _need_user(request)
     if err:

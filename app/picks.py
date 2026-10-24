@@ -90,6 +90,8 @@ def save(conn: sqlite3.Connection, user, body: dict) -> dict:
             fields["client_title"] = str(body.get("client_title") or "").strip()[:120] or None
         if "hide_address" in body:
             fields["hide_address"] = 1 if body.get("hide_address") else 0
+        if "hide_map" in body:
+            fields["hide_map"] = 1 if body.get("hide_map") else 0
         conn.execute(f"UPDATE collections SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ? AND user_id = ?",
                      (*fields.values(), int(cid), user["id"]))
     else:
@@ -490,6 +492,7 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
         count_open(conn, c["id"], device or "unknown")
     items = []
     hide = bool(c["hide_address"])
+    no_map = bool(c["hide_map"]) if "hide_map" in c.keys() else False   # 24.10e: автор подборки убрал карту
     # ответ этого устройства по каждому объекту (последний) — клиент видит, что уже ответил
     mine_r = {r[0]: r[1] for r in conn.execute(
         """SELECT listing_id, kind FROM pick_reactions WHERE collection_id = ? AND device = ? AND kind != 'question'
@@ -507,8 +510,8 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
             "price_hidden": bool(r["hide_price"]), "rooms": r["rooms"], "room_kind": r["room_kind"], "area": r["area"], "land": r["land"],
             "floor": r["floor"], "floors": r["floors"], "district": r["district"], "complex": r["complex"],
             "settlement": r["settlement"], "street": r["street"], "house": None if hide else r["house"],
-            "lat": _coarse(r["lat"], hide) if search.geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house" else None,
-            "lon": _coarse(r["lon"], hide) if search.geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house" else None,
+            "lat": _coarse(r["lat"], hide) if not no_map and search.geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house" else None,
+            "lon": _coarse(r["lon"], hide) if not no_map and search.geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house" else None,
             "approx": hide,
             # фото в порядке агента (перетаскиванием в /picks), скрытые — не показываем; свои агента — первыми.
             # 19.10: автор объявления не разрешил тексты и фото (/agent) — клиенту только свои фото агента подборки, без текста
@@ -520,7 +523,7 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
             "reaction": mine_r.get(r["id"])})
     from . import settings
     # название подборки — для агента («Ирине — 2к ФМР»); клиент видит только свой заголовок (или нейтральный)
-    return {"title": c["client_title"] or "Подобрали для вас", "note": c["note"],
+    return {"title": c["client_title"] or "Подобрали для вас", "note": c["note"], "hide_map": no_map,
             "contact_name": "" if (c["contact_name"] or "") == PROMO_NAME else c["contact_name"], "contact_phone": c["contact_phone"],
             "updated": c["updated"], "items": items,
             "style": {**(st := settings.public_pick_style(conn, c["user_id"])),

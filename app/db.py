@@ -411,7 +411,8 @@ MIGRATIONS = [
     ("collections", "views_unique", "INTEGER NOT NULL DEFAULT 0"),
     ("listing_edits", "src", "TEXT"),   # откуда правка: админ / агент / перепроверка / контур / чистка правил
     ("collections", "hide_address", "INTEGER NOT NULL DEFAULT 0"),   # клиенту — без номера дома, точка округлена ~300 м
-    ("collections", "cover", "TEXT"),   # 24.10c: своё фото обложки подборки (/photos/pk/…); пусто — градиент цвета подборки
+    ("collections", "cover", "TEXT"),
+    ("collections", "hide_map", "INTEGER NOT NULL DEFAULT 0"),   # 24.10e: клиенту — без карты и точек (решает автор подборки)   # 24.10c: своё фото обложки подборки (/photos/pk/…); пусто — градиент цвета подборки
     ("client_items", "pick_id", "INTEGER"),        # в какой подборке отправлен (статусы из подборки уходят вместе с ней)
     ("client_items", "sent_at", "INTEGER"),
     ("client_items", "opened_at", "INTEGER"),

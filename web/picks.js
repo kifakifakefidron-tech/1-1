@@ -98,7 +98,20 @@
   async function loadSide() {   // избранное (добавлять) — один раз
     if (favs === null) { const r = await call("/api/favorites"); favs = r.ok ? r.data.items.filter((f) => f.favorite !== false) : []; }
     if (recent === null) { const r = await call("/api/recent"); recent = r.ok ? r.data.items : []; }
-    renderDetail();
+    refreshAdd();
+  }
+  // 24.10e (Артём: «список обновляется и путает»): панель «Добавить объект» обновляется на месте — без перерисовки подборки
+  function refreshAdd() {
+    const p = list.find((x) => x.id === open);
+    if (!p || !$("pkFavs")) return;
+    $("pkFavs").innerHTML = addStrip(p);
+    document.querySelectorAll("[data-addsrc]").forEach((b) => {
+      b.classList.toggle("on", b.dataset.addsrc === addSrc);
+      const n = b.dataset.addsrc === "recent" ? recent : favs;
+      const c = b.querySelector("b");
+      if (n && c) c.textContent = n.length;
+      else if (n && !c) b.insertAdjacentHTML("beforeend", `<b>${n.length}</b>`);
+    });
   }
 
   // ─── сводка ───────────────────────────────────────────────────────
@@ -231,9 +244,11 @@
     return `<div class="pk2-wn" title="Журнал — видите только вы"><span class="pk2-wn-k k-${esc(n.kind)}">${NK[n.kind] || "Заметка"} · ${esc(when(n.ts))}</span>
       ${n.text ? `<p>${esc(n.text)}</p>` : ""}${ns.length > 1 ? `<small>ещё ${ns.length - 1} в журнале объекта</small>` : ""}</div>`;
   }
-  function favCard(f, p) {   // 24.10d: та же карточка, что везде, с полным описанием и кнопкой «Добавить»
-    return LCard.html(f, { desc: true, meta: "",
-      foot: `<div class="lc-acts"><button type="button" class="lc-btn main" data-add="${f.id}" data-pid="${p.id}">${ic("plus")}Добавить в подборку</button></div>` });
+  function favCard(f, p, added) {   // 24.10d: та же карточка, что везде, с полным описанием; 24.10e — добавленный остаётся, с отметкой
+    return LCard.html(f, { desc: true, meta: "", cls: added ? "picked" : "",
+      top: added ? `<span class="lc-tag gold">${ic("check")}В подборке</span>` : "",
+      foot: `<div class="lc-acts">${added ? `<span class="lc-btn done">${ic("check")}Добавлено</span>`
+        : `<button type="button" class="lc-btn main" data-add="${f.id}" data-pid="${p.id}">${ic("plus")}Добавить в подборку</button>`}</div>` });
   }
   function baseStrip(p) {
     if (!baseQ.trim()) return `<p class="pk2-hint">Пишите как в поиске на главной: «2к фмр до 7 млн», «студия самолёт», улица — покажем 20 объектов.</p>`;
@@ -247,11 +262,11 @@
     if (src === null) return `<p class="pk2-hint">Загружаем…</p>`;
     const inPick = new Set(p.items.map((x) => x.listing_id));
     const s = favQ.trim().toLowerCase();
-    const add = src.filter((f) => !inPick.has(f.id) && (!s || `${f.title} ${f.complex || ""} ${f.district || ""} ${f.street || ""}`.toLowerCase().includes(s)));
+    const add = src.filter((f) => !s || `${f.title} ${f.complex || ""} ${f.district || ""} ${f.street || ""}`.toLowerCase().includes(s));
     if (!src.length) return `<div class="pk7-none">${ic(addSrc === "recent" ? "eye" : "heart")}<b>${addSrc === "recent" ? "Вы ещё ничего не открывали" : "Избранное пусто"}</b>
       <span>${addSrc === "recent" ? "Открывайте объекты на поиске — они появятся здесь." : "Отмечайте объекты сердечком на поиске — они появятся здесь."}</span></div>`;
-    if (!add.length) return `<p class="pk2-hint">${s ? "Ничего не нашлось." : "Все эти объекты уже в подборке."}</p>`;
-    return LCard.grid(add.slice(0, 40).map((f) => favCard(f, p)).join(""), "sm");
+    if (!add.length) return `<p class="pk2-hint">Ничего не нашлось.</p>`;
+    return LCard.grid(add.slice(0, 40).map((f) => favCard(f, p, inPick.has(f.id))).join(""), "sm");
   }
 
   function renderDetail() {
@@ -299,7 +314,7 @@ ${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
         ${p.items.length ? `<p class="pk2-hint">Клиент увидит объекты в этом порядке — ${isPhone() ? "стрелки «Выше / Ниже» в «Настроить»" : "перетащите строку за ⠿, чтобы поменять"}.</p>
           <div class="pk2-grid pk5-list" id="pkGrid">${p.items.map((it, i) => objCard(p, it, i)).join("")}</div>`
           : `<div class="pk2-noitems">${ic("home")}<b>В подборке пока нет объектов</b><span>Добавьте из избранного ниже или кнопкой «Клиенту» в окне объекта на поиске.</span></div>`}
-        ${addOpen || !p.items.length ? `<section class="pk7-add">
+        <section class="pk7-add"${addOpen || !p.items.length ? "" : " hidden"}>
           <div class="pk7-add-h"><div><h3>Добавить объект</h3><p>Выберите из своего списка — объект сразу встанет в конец подборки.</p></div>
             ${p.items.length ? `<button type="button" class="pk7-x" data-addopen aria-label="Свернуть">${ic("x")}</button>` : ""}</div>
           <div class="pk7-bar"><div class="pk7-seg" role="tablist">
@@ -308,9 +323,10 @@ ${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
             <label class="pk2-search sm pk7-q"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
               <input id="pkFavQ" type="search" value="${esc(favQ)}" placeholder="ЖК, улица, район" aria-label="Найти"></label></div>
           <div id="pkFavs">${addStrip(p)}</div>
-          <p class="pk7-tip">${ic("help")}Нужного нет? Найдите объект на <a href="/">поиске</a> и нажмите «Клиенту» в окне объекта — он сразу попадёт в эту подборку.</p>
-        </section>` : `<button type="button" class="pk7-open" data-addopen><span class="pk7-oi">${ic("plus")}</span>
-          <span><b>Добавить объект</b><small>из избранного или недавно просмотренных</small></span>${ic("chevron")}</button>`}` : `
+          <p class="pk7-tip">${ic("help")}<span>Нужного нет? Найдите объект на <a href="/">поиске</a> и нажмите «Клиенту» в окне объекта — он сразу попадёт в эту подборку.</span></p>
+        </section>
+        <button type="button" class="pk7-open" data-addopen${addOpen || !p.items.length ? " hidden" : ""}><span class="pk7-oi">${ic("plus")}</span>
+          <span><b>Добавить объект</b><small>из избранного или недавно просмотренных</small></span>${ic("chevron")}</button>` : `
         <form class="pk2-form" data-edit="${p.id}">
           <label class="agent-field"><span>Название — видите только вы</span><input name="title" maxlength="120" value="${esc(p.title)}"></label>
           <label class="agent-field"><span>Заголовок для клиента</span><input name="client_title" maxlength="120" value="${esc(p.client_title || "")}"
@@ -321,6 +337,8 @@ ${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
             <label class="agent-field"><span>Ваше имя</span><input name="contact_name" maxlength="100" value="${esc(p.contact_name || "")}" placeholder="Как клиенту вас называть"></label>
             <label class="agent-field"><span>Ваш телефон</span><input name="contact_phone" maxlength="30" inputmode="tel" value="${esc(p.contact_phone || "")}" placeholder="+7…"></label>
           </div>
+          <label class="pk2-hide"><input type="checkbox" data-hide-map="${p.id}"${p.hide_map ? " checked" : ""}>
+            <span><b>Не показывать карту</b><small>Клиент не увидит карту и точки объектов — только адрес текстом</small></span></label>
           <label class="pk2-hide"><input type="checkbox" data-hide-addr="${p.id}"${p.hide_address ? " checked" : ""}>
             <span><b>Скрыть точный адрес</b><small>Клиент увидит улицу без номера дома, точка на карте — примерно в пределах квартала</small></span></label>
           <div class="agent-field"><span>Цвет подборки в списке</span><div class="pk2-colors">${COLORS.map((c) =>
@@ -395,10 +413,21 @@ ${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
     if (!t || t.closest("#pkText") || t.closest(".pk-panel")) return;
     if (t.dataset.row) {   // 24.10: «Настроить» / «Свернуть» строку объекта
       const lid = Number(t.dataset.row);
-      if (openRows.has(lid)) openRows.delete(lid); else openRows.add(lid);
-      renderDetail(); return;
+      const was = openRows.has(lid);
+      openRows.clear();   // 24.10e: одна раскрытая строка — не путаемся, какой объект настраиваем
+      if (!was) openRows.add(lid);
+      renderDetail();
+      if (!was) requestAnimationFrame(() => { const row = document.querySelector(`.pk5-row[data-lid="${lid}"]`); if (row) row.scrollIntoView({ behavior: "smooth", block: "start" }); });
+      return;
     }
-    if (t.hasAttribute("data-addopen")) { addOpen = !addOpen; renderDetail(); if (addOpen) loadSide(); return; }
+    if (t.hasAttribute("data-addopen")) {   // 24.10e: просто открыть/закрыть панель на месте
+      addOpen = !addOpen;
+      const panel = document.querySelector(".pk7-add"), btn = document.querySelector(".pk7-open");
+      if (panel) panel.hidden = !addOpen;
+      if (btn) btn.hidden = addOpen;
+      if (addOpen) { refreshAdd(); loadSide(); if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" }); }
+      return;
+    }
     if (t.dataset.tab && t.closest(".pk5-more")) t.closest(".pk5-more").open = false;
     if (t.dataset.open) {
       open = Number(t.dataset.open); tab = "items"; favQ = "";
@@ -417,12 +446,21 @@ ${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
       catch { prompt("Скопируйте ссылку:", link(p)); }
       return;
     }
-    if (t.dataset.addsrc) { addSrc = t.dataset.addsrc; renderDetail(); return; }
+    if (t.dataset.addsrc) { addSrc = t.dataset.addsrc; refreshAdd(); return; }
     if (t.dataset.add) {
       t.disabled = true;
       const r = await call(`/api/picks/${pid}/items`, { listing_id: Number(t.dataset.add), add: true });
       if (!r.ok) { toast(r.data.detail || "Не получилось"); t.disabled = false; return; }
-      toast("Добавлено в подборку"); await reload(); return;
+      // 24.10e: карточка остаётся на месте и становится «Добавлено»; подборка перерисовывается так, чтобы панель не прыгала
+      const card = t.closest(".lc");
+      if (card) card.classList.add("picked");
+      t.outerHTML = `<span class="lc-btn done">${ic("check")}Добавлено</span>`;
+      toast("Добавлено в подборку");
+      const panel = document.querySelector(".pk7-add"), top0 = panel ? panel.getBoundingClientRect().top : 0;
+      await reload();
+      const panel2 = document.querySelector(".pk7-add");
+      if (panel2) scrollBy(0, panel2.getBoundingClientRect().top - top0);
+      return;
     }
     if (t.dataset.text) { openText(pid, Number(t.dataset.text)); return; }
     if (t.dataset.rm) {
@@ -561,6 +599,13 @@ ${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
       if (p) { try { await navigator.clipboard.writeText(link(p)); toast("Сохранено. Ссылка скопирована — отправьте её клиенту", 3000); window.pickSent(link(p)); }
         catch { prompt("Скопируйте ссылку:", link(p)); } }
     }
+  });
+  document.addEventListener("change", async (e) => {   // 24.10e: карта в подборке — на выбор автора
+    const c = e.target;
+    if (!c.dataset || !c.dataset.hideMap) return;
+    const r = await call("/api/picks", { id: Number(c.dataset.hideMap), hide_map: c.checked });
+    toast(r.ok ? (c.checked ? "Клиент не увидит карту" : "Клиент снова видит карту") : "Не получилось");
+    if (r.ok) { const p = list.find((x) => x.id === Number(c.dataset.hideMap)); if (p) p.hide_map = c.checked ? 1 : 0; }
   });
   document.addEventListener("change", async (e) => {
     const c = e.target;

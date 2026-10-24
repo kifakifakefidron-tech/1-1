@@ -299,3 +299,23 @@ dialog:not(.pv-lb).closing { animation: pvLbOut .2s ease forwards; }
 :root[data-theme="teal"] .pv-hero h1, :root[data-theme="slate"] .pv-hero h1 { color: var(--accent); }
 /* чуть стильнее для всех тем: мягкий свет за заголовком и тонкая линия акцента под шапкой */
 .pv-hero-in::after { content: ""; display: block; width: 56px; height: 3px; margin-top: 26px; border-radius: 3px; background: var(--accent); opacity: .85; }
+
+/* 24.10e: примерка темы (из настроек агента) — полоса с темами сверху */
+.pk-agentbar.themes { flex-wrap: nowrap; gap: 10px; overflow-x: auto; scrollbar-width: none; }
+.pk-agentbar.themes::-webkit-scrollbar { display: none; }
+.pk-themes { display: flex; gap: 6px; flex: 1; }
+.pk-th { display: inline-flex; align-items: center; gap: 6px; flex: none; padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 500;
+  text-decoration: none; color: inherit; background: rgba(255, 255, 255, .12); white-space: nowrap; }
+.pk-th i { width: 14px; height: 14px; border-radius: 50%; background: #f5f5f7; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .25); }
+.pk-th.on { background: #fff; color: #1d1d1f; font-weight: 600; }
+.pk-th.t-gold i { background: #e8d39a; } .pk-th.t-teal i { background: #0c3b39; } .pk-th.t-sky i { background: #7cc4f5; }
+.pk-th.t-violet i { background: #b9a3f5; } .pk-th.t-coral i { background: #f29a7e; } .pk-th.t-rose i { background: #f08fb6; }
+.pk-th.t-lime i { background: #b6db7a; } .pk-th.t-slate i { background: #1f2228; }
+.pk-pick { flex: none; padding: 7px 14px; border-radius: 999px; background: #fff; color: #1d1d1f; font-weight: 600; font-size: 13px; text-decoration: none; white-space: nowrap; }
+.pk-agentbar.themes .pk-back { white-space: nowrap; }
+@media (max-width: 760px) {
+  .pk-agentbar.themes { flex-wrap: wrap; overflow: visible; row-gap: 8px; }
+  .pk-agentbar.themes .pk-pick { margin-left: auto; }
+  .pk-themes { order: 3; flex: 1 1 100%; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .pk-themes::-webkit-scrollbar { display: none; }
+}

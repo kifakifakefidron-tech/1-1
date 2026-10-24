@@ -92,7 +92,7 @@
     rail.innerHTML = `<a class="rail-logo" href="/" aria-label="1+1 — к поиску"><img src="/static/favicon.svg" alt="" width="38" height="38"><span class="rail-word"><b>1+1</b><small>поиск объектов Краснодара</small></span></a>`
       // компьютер — все разделы слева; телефон — Объекты, Клиенты, Запросы, Избранное и «Ещё» (остальное, сверху — Кабинет)
       + items.map((it) => it.sep ? `<span class="rail-sep"></span>`
-        : `<a class="rail-a${isOn(it) ? " on" : ""}${it.main ? " main" : ""}" href="${it.href}" aria-label="${it.tip}">${ic(it.icon)}<span class="rail-lbl">${it.short || it.tip}</span>${it.bell ? `<b class="rail-n" hidden></b>` : badge(it)}${tipHTML(it.tip, badge(it) ? `${it.desc} · ${it.countTip(it.count(counts))}` : it.desc)}</a>`).join("")
+        : `<a class="rail-a${isOn(it) ? " on" : ""}${it.main ? " main" : ""}" href="${it.href}" aria-label="${it.tip}">${ic(it.icon)}<span class="rail-lbl">${it.short || it.tip}</span>${it.bell ? `<b class="rail-n" hidden></b>` : badge(it)}${tipHTML(it.tip, it.desc)}</a>`).join("")
       + `<span class="rail-gap"></span>`
       + `<button type="button" class="rail-a main rail-more${items.some((it) => !it.main && !it.sep && isOn(it)) ? " on" : ""}" aria-label="Все разделы" aria-expanded="false">${ic("more")}<span class="rail-lbl">Ещё</span><b class="rail-n" hidden></b>${tipHTML("Ещё", "Кабинет, подборки, мои объекты, уведомления, настройки")}</button>`
       + (me ? `<a class="rail-ava${me.photo ? " has-photo" : ""}" href="/cabinet" aria-label="Профиль"${me.photo ? ` style="background-image:url('${encodeURI(String(me.photo)).replace(/['"()]/g, "")}')"` : ""}>${me.photo ? "" : ((me.name || me.email || "1").trim()[0] || "1").toUpperCase()}${tipHTML("Профиль и кабинет", who)}</a>`

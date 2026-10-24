@@ -32,3 +32,4 @@ def test_recent_views_keep_last():
     r = listingstats.recent(conn, 7, 3)
     assert r[0]["id"] == ids[0] and len(r) == 3
     assert conn.execute("SELECT COUNT(*) FROM recent_views WHERE user_id = 7").fetchone()[0] == listingstats.RECENT_KEEP
+
