@@ -115,21 +115,24 @@ def _norm_street(v: str | None) -> str | None:
 
 
 def same_elsewhere(conn: sqlite3.Connection, row: sqlite3.Row, limit: int = 10) -> list[dict]:
-    """Тот же объект у других агентов. Строго: тот же тип, сделка, комнаты, этаж, площадь ±1 м²,
-    и место совпадает — улица (если указана у обоих) и ЖК (если указан у обоих); хотя бы одно из них есть."""
-    if row["area"] is None or row["floor"] is None or not (row["complex"] or row["street"]):
+    """Тот же объект у других агентов. 24.10j (Артём: «похожие редко вылезают»): раньше нужны были И площадь, И этаж —
+    у объявлений без них похожих не было вовсе. Теперь: тот же тип, сделка, комнаты и место (ЖК или улица; дом — если у обоих),
+    явные различия (этаж, этажность, площадь > 3 % / 2 м²) — не он; и хотя бы ДВА совпадения из: площадь, этаж, этажность,
+    цена в пределах 7 %."""
+    if not (row["complex"] or row["street"]) or row["rooms"] is None and row["type"] in ("flat", "new"):
         return []
     phones = set(json.loads(row["phones"] or "[]"))
     rows = conn.execute(
-        """SELECT id, price, title, last_seen, phones, complex, street, house FROM listings
-           WHERE is_active = 1 AND id != ? AND deal = ? AND type IN (?, ?) AND area BETWEEN ? AND ?
-             AND rooms IS ? AND floor = ?
-             AND (district IS NOT NULL OR complex IS NOT NULL OR street IS NOT NULL OR settlement IS NOT NULL)
-           LIMIT 100""",
-        (row["id"], row["deal"], row["type"], "new" if row["type"] == "flat" else row["type"],
-         row["area"] - 1, row["area"] + 1, row["rooms"], row["floor"])).fetchall()
+        """SELECT id, price, title, last_seen, phones, complex, street, house, area, floor, floors FROM listings
+           WHERE is_active = 1 AND id != ? AND deal = ? AND type IN (?, ?) AND rooms IS ?
+             AND (complex IS NOT NULL OR street IS NOT NULL)
+           ORDER BY last_seen DESC LIMIT 600""",
+        (row["id"], row["deal"], row["type"], "new" if row["type"] == "flat" else row["type"], row["rooms"])).fetchall()
     key = geo.complex_key(row["complex"]) if row["complex"] else None
     street = _norm_street(row["street"])
+
+    def close(a, b, rel, abs_):
+        return None if a is None or b is None else abs(a - b) <= max(abs_, rel * max(a, b))
     out = []
     for r in rows:
         r_key = geo.complex_key(r["complex"]) if r["complex"] else None
@@ -143,6 +146,14 @@ def same_elsewhere(conn: sqlite3.Connection, row: sqlite3.Row, limit: int = 10) 
         if not ((key and r_key) or (street and r_street)):   # место должно совпасть хоть по чему-то
             continue
         if phones & set(json.loads(r["phones"] or "[]")):
+            continue
+        checks = [close(row["area"], r["area"], 0.03, 2),
+                  None if row["floor"] is None or r["floor"] is None else row["floor"] == r["floor"],
+                  None if row["floors"] is None or r["floors"] is None else row["floors"] == r["floors"],
+                  close(row["price"], r["price"], 0.07, 0)]
+        if any(c is False for c in checks[:3]):   # другой этаж / дом / площадь — другая квартира
+            continue
+        if sum(1 for c in checks if c) < 2:
             continue
         out.append({"id": r["id"], "price": r["price"], "title": r["title"], "last_seen": r["last_seen"]})
     out.sort(key=lambda x: (x["price"] is None, x["price"] or 0))

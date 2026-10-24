@@ -148,6 +148,10 @@ def tick(conn) -> dict:
     gc = geoaudit.auto_cleanup(conn)   # один раз (акт 14.10): уборка правил и справочников, отчёт — в «Обзоре»
     if gc:
         stats["geo_cleanup"] = gc.get("listings", 0)
+    from . import dupfix   # один раз (24.10j): склеить уже созданные дубли «тот же текст и номер, другая цена»
+    dx = dupfix.maybe_run(conn)
+    if dx:
+        stats["dup_text"] = dx["merged"]
     from . import cxnorm
     cx = cxnorm.maybe_run(conn)   # один раз (ТЗ v2, P1.7): одно название на один ЖК, отчёт — в админке
     if cx:

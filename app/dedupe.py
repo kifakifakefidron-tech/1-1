@@ -50,6 +50,42 @@ def _house_eq(a: str | None, b: str | None) -> bool | None:
     return na == nb
 
 
+# 24.10j (Артём: «текст 1 в 1 с другого номера, но цена другая — создаётся новое объявление»): тот же текст, где поменялись
+# только числа (цена) — это переслали то же объявление, а не «рынок» от другого агента. Склеиваем, даже если номера разные.
+_PRICE_WORDS = {"млн", "тыс", "т", "р", "руб", "рублей", "тр", "миллиона", "миллионов", "миллион", "тысяч"}
+_PRICE_BEFORE = {"цена", "цены", "стоимость", "за"}
+
+
+def text_twin(a: str | None, b: str | None, short_ok: bool = False) -> bool:
+    """Фрагменты совпадают слово в слово, кроме нескольких чисел (и слов вроде «млн»): цену поменяли, остальное — то же.
+    short_ok — короткий текст («ЖК Абрикосово, евро-2, 6 млн») тоже, если вызывающий проверил место и цену."""
+    import difflib
+    # 24.10j (Артём): дубль — если совпадают номера В ТЕКСТЕ (кто переслал — неважно). Номера — часть текста: другой номер в тексте —
+    # другой агент, отдельная карточка; номеров нет в обоих — совпадает сам текст
+    from .rules import find_phones
+    if {p[2] for p in find_phones(a or "")} != {p[2] for p in find_phones(b or "")}:   # (начало, конец, номер) — сравниваем номера
+        return False
+    ta, tb = words(a or "").split(), words(b or "").split()
+    if min(len(ta), len(tb)) < (4 if short_ok else 12):   # короткий текст — слишком легко совпасть случайно
+        return False
+    sm = difflib.SequenceMatcher(None, ta, tb, autojunk=False)
+    changed = []
+    for op, i1, i2, j1, j2 in sm.get_opcodes():
+        if op != "equal":
+            part = ta[i1:i2] + tb[j1:j2]
+            # изменённое число должно быть ЦЕНОЙ: рядом «млн / тыс / руб» или перед ним «цена» (площадь, этаж — другое объявление)
+            nxt = {ta[i2] if i2 < len(ta) else "", tb[j2] if j2 < len(tb) else ""}
+            prv = {ta[i1 - 1] if i1 else "", tb[j1 - 1] if j1 else ""}
+            if not (nxt & _PRICE_WORDS or prv & _PRICE_BEFORE or set(part) & _PRICE_WORDS):
+                return False
+            changed += part
+    if not changed:
+        return True
+    if len(changed) > 6 or sm.ratio() < (0.7 if short_ok else 0.9):
+        return False
+    return all(t.isdigit() or t in _PRICE_WORDS for t in changed)
+
+
 def same_object(o: ParsedObject, row: sqlite3.Row) -> tuple[bool, str]:
     """Решение «это тот же объект» + причина (для отладки)."""
     rooms = None if o.rooms is None or row["rooms"] is None else o.rooms == row["rooms"]
@@ -71,6 +107,12 @@ def same_object(o: ParsedObject, row: sqlite3.Row) -> tuple[bool, str]:
         if v is False:
             return False, f"разные: {k}"
 
+    # Тот же текст, поменялись только числа (цена) — одно объявление, с какого бы номера его ни переслали
+    if text_twin(o.fragment, row["fragment"]):
+        return True, "тот же текст, другая цена"
+    # короткий текст («ЖК Абрикосово, ЕВРО 2 квартира, 6 млн») — только если место совпало и цена почти та же (до 10 %)
+    if (cx or street) and _close(o.price, row["price"], 0.10, 0) and text_twin(o.fragment, row["fragment"], short_ok=True):
+        return True, "тот же короткий текст, цена почти та же"
     # Один и тот же объект от разных агентов — это рынок: показываем отдельно.
     # Склеиваем только повторы одного агента (тот же номер телефона).
     if not phone:
