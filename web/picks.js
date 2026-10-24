@@ -174,7 +174,7 @@
     const mine = new Set(it.my_photos || []);
     const vis = it.photos_all || [], hid = it.photos_hidden || [];
     return `<div class="pk2-own" data-phs="${it.listing_id}" data-pid="${p.id}">
-      <span class="pk2-own-h">Фото для клиента <small>— перетащите, чтобы поменять порядок; первое — обложка</small></span>
+      <h4>${ic("layers")}Фото для клиента</h4><span class="pk2-own-h"><small>Перетащите, чтобы поменять порядок; первое — обложка. × — скрыть или удалить своё</small></span>
       <div class="pk2-own-list">${vis.map((u, k) => `<span class="pk2-own-ph pk2-pt${k === 0 ? " first" : ""}" data-u="${esc(u)}" draggable="false">
           <img src="${esc(u)}" alt="" loading="lazy" draggable="false">${k === 0 ? `<em>Обложка</em>` : ""}
           ${mine.has(u) ? `<button type="button" data-ph-del="${esc(u)}" data-lid="${it.listing_id}" data-pid="${p.id}" aria-label="Удалить своё фото" title="Удалить своё фото">${ic("x")}</button>`
@@ -188,7 +188,7 @@
   function pointHTML(p, it) {
     const has = it.lat != null || it.map_lat != null;
     return `<div class="pk8-pt" data-pt="${it.listing_id}" data-pid="${p.id}">
-      <span class="pk2-own-h">Точка на карте для клиента <small>— ${it.map_off ? "убрана: клиент не увидит этот объект на карте"
+      <h4>${ic("pin")}Точка на карте</h4><span class="pk2-own-h"><small>${it.map_off ? "убрана: клиент не увидит этот объект на карте"
         : it.map_lat != null ? "вы поставили свою" : has ? "как в объявлении; перетащите метку или нажмите на карту" : "в объявлении нет точки — нажмите на карту"}</small></span>
       <div class="pk8-map${it.map_off ? " off" : ""}" data-pmap="${it.listing_id}" data-pid="${p.id}"
         data-lat="${it.map_lat ?? it.lat ?? ""}" data-lon="${it.map_lon ?? it.lon ?? ""}"></div>
@@ -239,27 +239,33 @@
       </div>
       ${on ? `<div class="pk5-body">
         ${it.is_active ? "" : `<button type="button" class="pk2-sim" data-sim="${it.listing_id}" data-pid="${p.id}">${ic("repeat")}Снят — показать похожие</button>`}
-        <div class="pk5-cols">
+        <div class="pk5-cols pk9">
           <div class="pk5-col">
-            <label class="pk2-pin money-wrap"><span>Цена для клиента <small>· в объявлении ${esc(money(it.price, it.deal))}</small></span>
-              <span class="pk5-pin"><input data-pprice="${it.listing_id}" data-pid="${p.id}" data-deal="${it.deal}" data-money="${it.deal === "rent" ? "rent" : "sale"}" inputmode="decimal" autocomplete="off"
-                value="${it.my_price ? esc(priceIn(it.my_price, it.deal)) : ""}" placeholder="${esc(priceIn(it.price, it.deal) || "впишите")}"
-                aria-label="Цена для клиента"${it.hide_price ? " disabled" : ""}><em>${it.deal === "rent" ? "тыс. ₽/мес" : "млн ₽"}</em></span></label>
-            <label class="pk2-phide"><input type="checkbox" data-phide="${it.listing_id}" data-pid="${p.id}"${it.hide_price ? " checked" : ""}>Скрыть цену от клиента</label>
-            ${photosHTML(p, it)}
-            ${pointHTML(p, it)}
-            ${p.client_id ? `<label class="pk2-pst"><span>Статус для ${esc(p.client_name || "клиента")}</span><select data-pst="${it.listing_id}" data-pid="${p.id}" aria-label="Статус">
-              ${Object.entries(PAIR).map(([k, v]) => `<option value="${k}"${st === k ? " selected" : ""}>${v}</option>`).join("")}</select></label>` : ""}
+            <section class="pk9-s"><h4>${ic("tag")}Цена для клиента</h4>
+              <label class="pk2-pin money-wrap"><span>В объявлении — ${esc(money(it.price, it.deal))}. Можно поставить свою</span>
+                <span class="pk5-pin"><input data-pprice="${it.listing_id}" data-pid="${p.id}" data-deal="${it.deal}" data-money="${it.deal === "rent" ? "rent" : "sale"}" inputmode="decimal" autocomplete="off"
+                  value="${it.my_price ? esc(priceIn(it.my_price, it.deal)) : ""}" placeholder="${esc(priceIn(it.price, it.deal) || "впишите")}"
+                  aria-label="Цена для клиента"${it.hide_price ? " disabled" : ""}><em>${it.deal === "rent" ? "тыс. ₽/мес" : "млн ₽"}</em></span></label>
+              <label class="pk2-phide pk9-sw"><input type="checkbox" data-phide="${it.listing_id}" data-pid="${p.id}"${it.hide_price ? " checked" : ""}><span></span>Скрыть цену — клиент увидит «Цена по запросу»</label>
+            </section>
+            <section class="pk9-s">${photosHTML(p, it)}</section>
+            <section class="pk9-s">${pointHTML(p, it)}</section>
           </div>
           <div class="pk5-col">
-            <label class="pk2-ptext"><span>Текст для клиента <small>· сохраняется сам</small></span>
-              <textarea data-ptext="${it.listing_id}" data-pid="${p.id}" data-grow rows="6" maxlength="5000">${esc(it.text || it.orig || "")}</textarea>
-              ${it.text ? `<button type="button" class="pk2-ptext-reset" data-ptext-reset="${it.listing_id}" data-pid="${p.id}">Вернуть исходный текст</button>` : ""}</label>
-            <label class="pk5-com"><span>Ваш комментарий — клиент увидит</span>
-              <input class="pk2-com" data-com="${it.listing_id}" data-pid="${p.id}" maxlength="1000" value="${esc(it.note || "")}"
-                placeholder="Например: «Хозяин торгуется»" aria-label="Комментарий для клиента"></label>
-            ${it.reaction_text ? `<p class="pk2-hint">Клиент написал: «${esc(it.reaction_text)}»</p>` : ""}
-            ${notesFor(p, it)}
+            <section class="pk9-s"><h4>${ic("note")}Что прочитает клиент</h4>
+              <label class="pk2-ptext"><span>Текст объявления <small>· сохраняется сам, номера телефонов вырезаются</small></span>
+                <textarea data-ptext="${it.listing_id}" data-pid="${p.id}" data-grow rows="6" maxlength="5000">${esc(it.text || it.orig || "")}</textarea>
+                ${it.text ? `<button type="button" class="pk2-ptext-reset" data-ptext-reset="${it.listing_id}" data-pid="${p.id}">Вернуть исходный текст</button>` : ""}</label>
+              <label class="pk5-com"><span>Ваш комментарий — отдельной плашкой над текстом</span>
+                <input class="pk2-com" data-com="${it.listing_id}" data-pid="${p.id}" maxlength="1000" value="${esc(it.note || "")}"
+                  placeholder="Например: «Хозяин торгуется»" aria-label="Комментарий для клиента"></label>
+            </section>
+            ${p.client_id ? `<section class="pk9-s"><h4>${ic("user")}${esc(p.client_name || "Клиент")}</h4>
+              <label class="pk2-pst"><span>Статус объекта у клиента</span><select data-pst="${it.listing_id}" data-pid="${p.id}" aria-label="Статус">
+                ${Object.entries(PAIR).map(([k, v]) => `<option value="${k}"${st === k ? " selected" : ""}>${v}</option>`).join("")}</select></label>
+              ${it.reaction_text ? `<p class="pk9-said">Клиент написал: «${esc(it.reaction_text)}»</p>` : ""}
+              ${notesFor(p, it)}
+            </section>` : notesFor(p, it) ? `<section class="pk9-s">${notesFor(p, it)}</section>` : ""}
           </div>
         </div>
         <div class="pk5-acts">

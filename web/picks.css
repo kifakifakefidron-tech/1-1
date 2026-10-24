@@ -650,3 +650,32 @@
 .pk8-acts svg { width: 14px; height: 14px; }
 .lc-btn.done { cursor: pointer; }
 .lc-btn.done:hover { background: rgba(248, 113, 113, .14); color: var(--bad); }
+
+/* ═══ 24.10g (Артём: «меню настройки объекта — под наш новый стиль»): разделы — тёмные карточки с золотыми надписями,
+   как окно клиента; переключатель вместо галочки; кнопки внизу — капсулами ═══ */
+.pk5-row.on { background: rgba(0, 20, 20, .18); }
+.pk5-body { padding: 4px 16px 16px; }
+.pk9 { gap: 12px !important; }
+.pk9 .pk5-col { display: grid; gap: 12px; align-content: start; }
+.pk9-s { display: grid; gap: 10px; padding: 16px 18px; border-radius: 20px; background: rgba(0, 20, 20, .34); }
+.pk9-s h4 { display: flex; align-items: center; gap: 8px; margin: 0; font: 600 11.5px var(--body); letter-spacing: .16em; text-transform: uppercase;
+  color: var(--gold-200, var(--gold)); }
+.pk9-s h4 svg { width: 15px; height: 15px; color: var(--gold-300, var(--gold)); }
+.pk9-s > label > span:first-child, .pk9-s .pk2-own-h { color: var(--ink-3); font-size: 12.5px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+.pk9-s .pk2-own-h small { font-size: inherit; color: inherit; }
+.pk9-s .pk2-own, .pk9-s .pk8-pt { margin: 0; padding: 0; border: 0; background: none; }
+.pk9-s input:not([type=checkbox]), .pk9-s textarea, .pk9-s select { border-radius: 14px; border: 1px solid var(--glass-line); background: rgba(0, 0, 0, .2);
+  color: var(--ink); font-size: 15px; }
+.pk9-s textarea { line-height: 1.55; padding: 12px 14px; }
+.pk9-s .pk5-pin input { font: 600 22px var(--head, var(--display)); }
+.pk9-sw { position: relative; display: flex !important; align-items: center; gap: 10px; cursor: pointer; font-size: 13.5px; color: var(--ink-2); }
+.pk9-sw input { position: absolute; opacity: 0; pointer-events: none; }
+.pk9-sw > span { position: relative; flex: none; width: 40px; height: 24px; border-radius: 12px; background: rgba(255, 255, 255, .14); transition: background .25s; }
+.pk9-sw > span::after { content: ""; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff;
+  transition: transform .3s var(--spring, ease); }
+.pk9-sw input:checked + span { background: var(--gold); }
+.pk9-sw input:checked + span::after { transform: translateX(16px); }
+.pk9-said { margin: 0; padding: 10px 12px; border-radius: 12px; background: rgba(227, 203, 143, .12); color: var(--ink); font-size: 14px; }
+.pk5-acts { margin-top: 12px; padding: 12px 14px; border-radius: 18px; background: rgba(0, 20, 20, .22); }
+.pk5-acts .chip { border-radius: 999px; }
+.pk8-map { height: 200px; }

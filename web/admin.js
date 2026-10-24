@@ -27,34 +27,48 @@
   // ─── обзор ──────────────────────────────────────────────────────────────
   async function overview() {
     const o = await call("/api/admin/overview");
-    const card = (n, label) => `<div class="adm-card"><b>${esc(n)}</b><span>${esc(label)}</span></div>`;
+    // 24.10g (Артём: «всё съехавшее — сделай удобнее и в стиле прошлых страниц»): карточки по смысловым группам,
+    // подпись сверху, крупная цифра снизу; карточка-ссылка — со стрелкой; тревожное — красным
+    const card = (n, label, opt = {}) => {
+      const inner = `<span>${esc(label)}</span><b>${esc(n)}</b>${opt.extra || ""}${opt.href ? `<i class="adm-go">→</i>` : ""}`;
+      const cls = `adm-card${opt.warn ? " warn" : ""}${opt.ok ? " ok" : ""}`;
+      return opt.href ? `<a class="${cls}" href="${opt.href}" target="_blank">${inner}</a>` : `<div class="${cls}">${inner}</div>`;
+    };
+    const sec = (title, cards) => `<section class="adm2-sec"><h3>${title}</h3><div class="adm-cards">${cards.filter(Boolean).join("")}</div></section>`;
     $("overview").innerHTML = [
-      card(o.listings, "объектов на сайте"), card(o.listings_feed, "из них — СТРЕЛЫ (фид)"),
-      card(o.listings_no_district, "без района (не находятся фильтром)"), card(o.listings_no_map, "без точки на карте"),
-      card(o.listings_no_place, "скрыты: нет адреса, ЖК и района"),
-      ...(o.repair ? [`<a class="adm-card" href="/?rep=yes" target="_blank"><b>${esc(o.repair.yes)}</b><span>с ремонтом (квартиры и дома) — проверить</span></a>`,
-        `<a class="adm-card" href="/?rep=no" target="_blank"><b>${esc(o.repair.no)}</b><span>без ремонта: ПЧО, черновая, под ремонт — проверить</span></a>`,
-        card(o.repair.none, "состояние в тексте не указано")] : []),
-      `<div class="adm-card"><b>${esc(o.queue)}</b><span>сообщений ждут разбора</span>${o.queue ? `<span class="adm-q-btns">
-        <button type="button" class="pill light" data-queue="6">Пропустить старше 6 ч</button>
-        <button type="button" class="pill light" data-queue="all">Сбросить всю очередь</button></span>` : ""}</div>`,
-      card(o.users, "пользователей"),
-      ...(o.agent_consent ? [card(`${o.agent_consent.verified} из ${o.agent_consent.agents}`, "агентов подтвердили номер"),
-        card(o.agent_consent.published, "дали согласие на показ номера (/agent)"), card(o.agent_consent.hidden, "агентов скрыли номер")] : []),
-      card(o.users_access, "с открытым доступом"), card(o.users_paid, "оплатили подписку"),
-      card(o.views_24h, "открытий номеров за сутки"), card(o.complaints_new, "новых жалоб"),
-      card(o.optouts, "скрытых номеров"),
-      ...(o.p0_report ? [card(o.p0_report.phones, "номеров вырезано из описаний"),
-        card(o.p0_report.prices, "цена в карточке ≠ цене в тексте")] : []),
-      ...(o.cx_report ? [card(o.cx_report.listings, `объектов: одно название ЖК (групп ${o.cx_report.groups})`)] : []),
-      ...(o.geo_daily ? [card((o.geo_daily.rules || 0), "ошибочных правил отключено сегодня (уборка раз в сутки)")] : []),
-      ...(o.geo_cleanup ? [card((o.geo_cleanup.rules || 0) + (o.geo_cleanup.aliases || 0), "плохих правил отключено (уборка)"),
-        card(o.geo_cleanup.junk || 0, "мусорных «ЖК» убрано"), card(o.geo_cleanup.listings || 0, "объектов поправлено уборкой")] : []),
-      ...(o.price_report ? [card(o.price_report.scale, "цен «в тысячах» исправлено"),
-        card(o.price_report.text, "цен вернули к цене из текста"), card(o.price_report.doubt, "цен «под вопросом»")] : []),
-      card(o.wappi_enabled ? "включён" : "на паузе", "сбор из чатов (Wappi)"),
-      card(o.payments ? "включена" : "выключена", `оплата (${o.price} ₽ / ${o.period_days} дн.)`),
-      card(day(o.feed_synced), "фид СТРЕЛ обновлён"),
+      sec("Объекты", [
+        card(o.listings, "на сайте"), card(o.listings_feed, "из них — СТРЕЛЫ (фид)"),
+        card(o.listings_no_district, "без района — не находятся фильтром", { warn: o.listings_no_district > 0, href: "/fix?kind=nodistrict" }),
+        card(o.listings_no_map, "без точки на карте", { warn: o.listings_no_map > 0, href: "/fix?kind=nogeo" }),
+        card(o.listings_no_place, "скрыты: нет адреса, ЖК и района"),
+        ...(o.repair ? [card(o.repair.yes, "с ремонтом — проверить", { href: "/?rep=yes" }), card(o.repair.no, "без ремонта — проверить", { href: "/?rep=no" }),
+          card(o.repair.none, "ремонт не указан")] : []),
+        card(o.queue, "сообщений ждут разбора", { warn: o.queue > 500, extra: o.queue ? `<span class="adm-q-btns">
+          <button type="button" class="chip" data-queue="6">Пропустить старше 6 ч</button>
+          <button type="button" class="chip" data-queue="all">Сбросить очередь</button></span>` : "" }),
+      ]),
+      sec("Люди и доступ", [
+        card(o.users, "пользователей"), card(o.users_access, "с открытым доступом", { ok: true }), card(o.users_paid, "оплатили подписку", { ok: o.users_paid > 0 }),
+        ...(o.agent_consent ? [card(`${o.agent_consent.verified} из ${o.agent_consent.agents}`, "агентов подтвердили номер"),
+          card(o.agent_consent.published, "дали согласие на показ номера"), card(o.agent_consent.hidden, "агентов скрыли номер")] : []),
+        card(o.views_24h, "открытий номеров за сутки"), card(o.complaints_new, "новых жалоб", { warn: o.complaints_new > 0 }),
+        card(o.optouts, "скрытых номеров"),
+      ]),
+      sec("Сервис", [
+        card(o.wappi_enabled ? "включён" : "на паузе", "сбор из чатов (Wappi)", { ok: o.wappi_enabled, warn: !o.wappi_enabled }),
+        card(o.payments ? "включена" : "выключена", `оплата (${o.price} ₽ / ${o.period_days} дн.)`, { ok: o.payments }),
+        card(day(o.feed_synced), "фид СТРЕЛ обновлён"),
+      ]),
+      sec("Автоматические проверки", [
+        ...(o.p0_report ? [card(o.p0_report.phones, "номеров вырезано из описаний"),
+          card(o.p0_report.prices, "цена в карточке ≠ цене в тексте", { warn: o.p0_report.prices > 0 })] : []),
+        ...(o.cx_report ? [card(o.cx_report.listings, `объектов: одно название ЖК (групп ${o.cx_report.groups})`)] : []),
+        ...(o.geo_daily ? [card((o.geo_daily.rules || 0), "ошибочных правил отключено сегодня")] : []),
+        ...(o.geo_cleanup ? [card((o.geo_cleanup.rules || 0) + (o.geo_cleanup.aliases || 0), "плохих правил отключено (уборка)"),
+          card(o.geo_cleanup.junk || 0, "мусорных «ЖК» убрано"), card(o.geo_cleanup.listings || 0, "объектов поправлено уборкой")] : []),
+        ...(o.price_report ? [card(o.price_report.scale, "цен «в тысячах» исправлено"),
+          card(o.price_report.text, "цен вернули к цене из текста"), card(o.price_report.doubt, "цен «под вопросом»")] : []),
+      ]),
     ].join("") + (o.p0_report && o.p0_report.price_examples.length ? `<details class="adm-p0"><summary>Цена в карточке ≠ цене в тексте —
       ${o.p0_report.prices} (проверьте и поправьте цену в окне объекта)</summary><ul>${o.p0_report.price_examples.map((e) =>
         `<li><a href="/?open=${e.id}" target="_blank">${esc(e.title)}</a> — в карточке ${esc(Number(e.card).toLocaleString("ru-RU"))} ₽,
@@ -635,6 +649,12 @@
 
   const loaders = { overview, users, promos, optouts, complaints, edits, chats, districts, banned, phones };
 
+  // 24.10g: разделы — слева списком с иконками (на телефоне — полосой)
+  const TAB_IC = { overview: "dashboard", users: "users", promos: "ticket", optouts: "ban", complaints: "alert", edits: "edit", chats: "chat",
+    districts: "map", phones: "phone", banned: "trash" };
+  document.querySelectorAll(".adm-tabs [data-tab]").forEach((b) => { if (window.ic && TAB_IC[b.dataset.tab]) b.insertAdjacentHTML("afterbegin", window.ic(TAB_IC[b.dataset.tab])); });
+  const lrn = document.querySelector(".adm-tabs .seg-link");
+  if (lrn && window.ic) lrn.insertAdjacentHTML("afterbegin", window.ic("layers"));
   function show(tab) {
     document.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
     document.querySelectorAll("[data-pane]").forEach((s) => { s.hidden = s.dataset.pane !== tab; });
@@ -768,7 +788,7 @@
   (async () => {
     try {
       await call("/api/admin/overview");
-      $("app").hidden = false;
+      $("app").hidden = false; $("admHead").hidden = false;
       const tab = new URLSearchParams(location.search).get("tab");   // /admin?tab=districts — сразу нужная вкладка
       if (tab === "geo" || tab === "place") { location.replace("/learn"); return; }   // старые вкладки — теперь «Обучение и разбор»
       show(tab && loaders[tab] ? tab : "overview");

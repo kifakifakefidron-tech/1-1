@@ -325,11 +325,14 @@
     if (seq !== reqSeq) return;
     const counts = new Map(f.districts.map((d) => [d.name, d.n]));
     districtCounts = counts;
-    const names = [...f.districts.map((d) => d.name), ...state.districts.filter((d) => !counts.has(d))];
+    // 24.10g (Артём): районы и ЖК в фильтрах — по алфавиту (ё = е, без «ЖК» и кавычек)
+    const abc = (a, b) => String(a).replace(/^(жк|мкр)\s+/i, "").replace(/[«»"]/g, "").localeCompare(String(b).replace(/^(жк|мкр)\s+/i, "").replace(/[«»"]/g, ""), "ru", { sensitivity: "base", numeric: true });
+    const names = [...f.districts.map((d) => d.name), ...state.districts.filter((d) => !counts.has(d))].sort(abc);
     // районы и ЖК — список с поиском и галочками (pickers.js); выбранные — ещё и чипами ниже (✕ — убрать)
     $("fDistricts").innerHTML = names.map((n) => `<option value="${esc(n)}" data-meta="${counts.get(n) ?? 0}"${state.districts.includes(n) ? " selected" : ""}>${esc(n)}</option>`).join("");
     facetComplexes = f.complexes;   // для выпадающего списка ЖК
-    const cx = [...f.complexes, ...state.complexes.filter((c) => !f.complexes.some((x) => x.name === c)).map((c) => ({ name: c, n: 0 }))];
+    const cx = [...f.complexes, ...state.complexes.filter((c) => !f.complexes.some((x) => x.name === c)).map((c) => ({ name: c, n: 0 }))]
+      .sort((a, b) => abc(a.name, b.name));
     $("fComplexes").innerHTML = cx.map((c) => `<option value="${esc(c.name)}" data-meta="${c.n}"${state.complexes.includes(c.name) ? " selected" : ""}>${esc(c.name)}</option>`).join("");
     renderDistrictChosen();
   }

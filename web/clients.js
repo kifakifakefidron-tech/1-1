@@ -385,7 +385,7 @@
   function fillComplexes() {
     const sel = $("fComplexes");
     const chosen = form.wishes.complexes || [];
-    const names = [...new Set([...chosen, ...complexes])];
+    const names = [...new Set([...chosen, ...complexes])].sort((a, b) => a.localeCompare(b, "ru", { sensitivity: "base", numeric: true }));   // 24.10g: по алфавиту
     sel.innerHTML = names.map((n) => `<option value="${esc(n)}"${chosen.includes(n) ? " selected" : ""}>${esc(n)}</option>`).join("");
     sel.dispatchEvent(new Event("pk-refresh"));
   }
@@ -738,6 +738,7 @@ ${lines.join("\n")}`;
     fillComplexes();
     const m = await call("/api/meta");
     districts = (m.ok && m.data.districts) || [];
+    districts.sort((a, b) => a.localeCompare(b, "ru", { sensitivity: "base" }));   // 24.10g: по алфавиту
     $("fDistrictAdd").innerHTML = districts.map((d) => `<option value="${esc(d)}"${form.districts.includes(d) ? " selected" : ""}>${esc(d)}</option>`).join("");
     if (window.Pick) {
       const f = $("pCard");

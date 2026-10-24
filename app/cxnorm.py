@@ -30,6 +30,10 @@ def _pick(variants: dict[str, tuple[int, int]]) -> str:
         rec = geo.resolve_complex(name)
         if rec and geo.complex_key(rec.name) == geo.complex_key(name):
             return rec.name
+    # 24.10g: «Самолёт» / «Самолёт 1» / «Самолёты» — основным берём написание без номера и без множественного числа
+    plain = [n for n in variants if geo._cx_words(n).replace(" ", "") == geo.complex_key(n)]
+    if plain and len(plain) < len(variants):
+        variants = {n: variants[n] for n in plain}
     return max(variants, key=lambda n: (variants[n][1] > 0, variants[n][0], "ё" in n.lower(), -len(n)))
 
 
@@ -144,7 +148,16 @@ def _rekey(conn: sqlite3.Connection) -> int:
 
 def maybe_run(conn: sqlite3.Connection) -> dict | None:
     if conn.execute("SELECT 1 FROM state WHERE key = 'cx_norm_v3'").fetchone():
-        return None
+        if conn.execute("SELECT 1 FROM state WHERE key = 'cx_norm_v4'").fetchone():
+            return None
+        # v4 (24.10g): «Самолёт 1» и «Самолёты» = «Самолёт» (geo.CX_SAME) — склеить написания и ключи правил/точек
+        res = run(conn, apply=True)
+        res["rekeyed"] = _rekey(conn)
+        conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('cx_norm_report', ?)",
+                     (json.dumps({**res, "ts": int(time.time())}, ensure_ascii=False),))
+        conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('cx_norm_v4', '1')")
+        conn.commit()
+        return res
     # v3 (акт 14.10): ключ без пробелов и латиницы, «Самолёт 1» ≠ «Самолёт» — сначала вернуть потерянные номера очередей
     numbers = restore_numbers(conn)
     res = run(conn, apply=True)
@@ -153,5 +166,6 @@ def maybe_run(conn: sqlite3.Connection) -> dict | None:
     conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('cx_norm_report', ?)",
                  (json.dumps({**res, "ts": int(time.time())}, ensure_ascii=False),))
     conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('cx_norm_v3', '1')")
+    conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('cx_norm_v4', '1')")
     conn.commit()
     return res

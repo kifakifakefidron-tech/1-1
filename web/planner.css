@@ -418,19 +418,22 @@ a.evv-row:hover { background: rgba(255, 255, 255, .1); }
 .ev-view .evv .evv-day { font-size: 14.5px; }
 .ev-view .evv-acts .pill { white-space: nowrap; font-size: 14px; padding: 0 12px; }
 
-/* 24.10e (Артём): сегодняшний день — залит целиком, цветом, которого нет у дел (беж, синий, фиолетовый, зелёный):
-   жемчужно-белый с тёмным текстом; дела на нём — плотнее, с тёмным текстом, чтобы не сливались */
-.pv-cell.today { background: linear-gradient(160deg, #f6f3ec, #dde8e5) !important; border-color: transparent;
-  box-shadow: 0 10px 26px rgba(0, 20, 20, .3); }
-.pv-cell.today .pv-num { width: auto; height: auto; margin: 0; background: none; color: #0f2f2e; }
-.pv-cell.today::after { content: "Сегодня"; position: absolute; right: 8px; top: 8px; font: 700 10px var(--body); letter-spacing: .08em;
-  text-transform: uppercase; color: rgba(15, 47, 46, .6); }
-.pv-cell.today .pv-pill { background: color-mix(in srgb, var(--c) 55%, #ffffff); color: #12302f; font-weight: 600; }
-.pv-cell.today .pv-pill:hover { background: color-mix(in srgb, var(--c) 75%, #ffffff); }
-.pv-cell.today .pv-pill i { background: color-mix(in srgb, var(--c) 70%, #0f2f2e); }
-.pv-cell.today * { color: inherit; }
-.pv-cell.today { color: #12302f; }
-.pv-cell.today.on { box-shadow: 0 10px 26px rgba(0, 20, 20, .3), inset 0 0 0 2px rgba(124, 196, 245, .9); }
-@media (max-width: 640px) { .pv-cell.today::after { display: none; } }
-.pv-cell.today .pv-dots i { box-shadow: 0 0 0 1.5px rgba(15, 47, 46, .45); }
-@media (max-width: 1180px) { .pv-cell.today::after { display: none; } }
+
+/* 24.10g (Артём): сегодняшний день — золотом, как неделя в кабинете; дела на нём — тёмными плашками (не сливаются с золотом);
+   число и «сегодня» — в одной строке шапки ячейки и переносятся, а не наезжают. Планер шире — ячейки просторнее */
+.pv { max-width: 1640px; }
+.pv-board { grid-template-columns: minmax(0, 1fr) 380px; }
+.pv-cell { min-height: 112px; }
+.pv-cell-h { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 2px 6px; min-width: 0; }
+.pv-today-l { display: none; font: 700 9.5px/1 var(--body); letter-spacing: .1em; text-transform: uppercase; font-style: normal; }
+.pv-cell.today { background: linear-gradient(160deg, var(--gold-100, #f3e8bc), var(--gold-300, #d9bf7f)) !important; border-color: transparent;
+  box-shadow: 0 12px 30px rgba(0, 20, 20, .3); color: #12302f; }
+.pv-cell.today .pv-num { width: auto; height: auto; margin: 0; background: none; color: #12302f; font-size: 19px; }
+.pv-cell.today .pv-today-l { display: inline; color: rgba(18, 48, 47, .72); }
+.pv-cell.today .pv-pill { background: rgba(4, 50, 49, .88); color: #f3e8bc; font-weight: 600; }
+.pv-cell.today .pv-pill:hover { background: rgba(4, 50, 49, 1); }
+.pv-cell.today .pv-more { color: rgba(18, 48, 47, .75); }
+.pv-cell.today .pv-dots i { box-shadow: 0 0 0 1.5px rgba(18, 48, 47, .55); }
+.pv-cell.today.on { box-shadow: 0 12px 30px rgba(0, 20, 20, .3), inset 0 0 0 2px #0f2f2e; }
+@media (max-width: 1100px) { .pv-board { grid-template-columns: minmax(0, 1fr) 320px; } .pv-cell { min-height: 96px; } }
+@media (max-width: 640px) { .pv-cell { min-height: 0; } .pv-cell.today .pv-today-l { display: none; } }

@@ -16,16 +16,11 @@
 <link rel="stylesheet" href="/static/vendor/fonts/fonts.css?v=1">
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
-<link rel="stylesheet" href="/static/admin.css?v=17">
+<link rel="stylesheet" href="/static/admin.css?v=22">
 <link rel="stylesheet" href="/static/theme.css?v=16">
 <link rel="stylesheet" href="/static/glass.css?v=95">
 </head>
 <body>
-<header class="top">
-  <a class="brand" href="/" aria-label="1+1 — на главную">1<span aria-hidden="true">+</span>1</a>
-  <span class="brand-sub">админка</span>
-  <a class="access-btn" href="/">← на сайт</a>
-</header>
 <main class="wrap">
   <section class="adm-login" id="denied" hidden>
     <img src="/static/favicon.svg" alt="" width="56" height="56">
@@ -38,7 +33,12 @@
     </form>
     <p class="adm-err" id="admLoginErr" hidden></p>
   </section>
-  <div id="app" hidden>
+  <header class="adm2-head" id="admHead" hidden>
+    <div><p class="adm2-eyebrow">Администратор</p><h1>Админка</h1>
+      <p class="adm2-lead">Состояние сервиса, пользователи, чаты, справочник и номера — в одном месте. Разбор объявлений — в «Обучении и разборе».</p></div>
+    <a class="pill light" href="/learn">Обучение и разбор →</a>
+  </header>
+  <div id="app" class="adm2" hidden>
     <nav class="adm-tabs" role="tablist">
       <button class="seg on" data-tab="overview">Обзор</button>
       <button class="seg" data-tab="users">Пользователи</button>
@@ -159,6 +159,6 @@
 <script src="/static/max.js?v=2"></script>
 <script src="/static/rail.js?v=33"></script>
 <script src="/static/combo.js?v=3"></script>
-<script src="/static/admin.js?v=47"></script>
+<script src="/static/admin.js?v=48"></script>
 </body>
 </html>

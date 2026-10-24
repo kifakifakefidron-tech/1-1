@@ -48,7 +48,10 @@ def test_one_time_run_returns_text_price_and_flags_doubt():
 def test_complex_numbers_variants_and_junk():
     """Акт 14.10, С1–С2: «Самолёт 1» — отдельный ЖК и номер не теряется; варианты написания — один ЖК; районы — не ЖК."""
     from app import cxnorm, geo, geoaudit
-    assert geo.complex_key("Самолёт 1") != geo.complex_key("Самолёт")
+    # 24.10g (Артём): «Самолёт 1» и «Самолёты» — это «Самолёт»; «Самолёт 2, 3…» — свои ЖК; у других ЖК «X 1» ≠ «X»
+    assert geo.complex_key("Самолёт 1") == geo.complex_key("Самолёт") == geo.complex_key("ЖК Самолеты")
+    assert geo.complex_key("Самолёт 2") != geo.complex_key("Самолёт") and geo.complex_key("Самолет-3") == geo.complex_key("самолёт 3")
+    assert geo.complex_key("Акварели 1") != geo.complex_key("Акварели")
     for a, b in (("Акварели2", "Акварели 2"), ("СказкаГрад", "Сказка град"), ("ХорошаяПогода", "Хорошая погода"),
                  ("Новыйгород", "Новый Город"), ("Времена Года3", "Времена года 3"), ("URAL (Урал)", "Урал (Ural)"),
                  ("Альфа (Кино)", "Альфа")):
@@ -153,3 +156,16 @@ def test_admin_price_clears_doubt():
     m = ingest.add_message(conn, source="wa", text=text, chat_id="c2", msg_id="d2", ts=now + 60)
     ingest.process_message(conn, m, use_llm=False)   # повтор того же текста
     assert conn.execute("SELECT price, price_doubt FROM listings WHERE id = ?", (lid,)).fetchone()[:] == (16_000_000, None)
+
+
+def test_samolet_variants_merge_to_one_name():
+    """24.10g: «Самолет 1» (3 объекта), «Самолеты», «Самолет» → один ЖК «Самолет»; «Самолет 2» остаётся своим."""
+    from app import cxnorm, db
+    conn = db.connect(":memory:")
+    for cx in ("Самолет 1", "Самолет 1", "Самолет 1", "Самолеты", "Самолет", "Самолет 2"):
+        conn.execute("""INSERT INTO listings (type, deal, title, complex, first_seen, last_seen, seen_count, is_active, source, search_text)
+                        VALUES ('flat','sale','2-к', ?, 1, 1, 1, 1, 'chat', '')""", (cx,))
+    conn.commit()
+    cxnorm.run(conn, apply=True)
+    names = sorted({r[0] for r in conn.execute("SELECT complex FROM listings")})
+    assert names == ["Самолет", "Самолет 2"], names

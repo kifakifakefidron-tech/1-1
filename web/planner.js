@@ -144,7 +144,7 @@
       const cls = ["pv-cell", d.getMonth() !== month.getMonth() ? "out" : "", k === today ? "today" : "", k === selDay ? "on" : "",
         i % 7 >= 5 ? "we" : "", list.length ? "has" : "", d < fromKey(today) ? "past" : ""].filter(Boolean).join(" ");
       html += `<div class="${cls}" data-day="${k}" role="button" tabindex="0" aria-label="${esc(dayName(k))}${list.length ? `, событий: ${list.length}` : ""}">
-        <span class="pv-num">${d.getDate()}</span>
+        <span class="pv-cell-h"><span class="pv-num">${d.getDate()}</span>${k === today ? `<em class="pv-today-l">сегодня</em>` : ""}</span>
         <div class="pv-pills">${list.slice(0, 3).map(pill).join("")}${list.length > 3 ? `<span class="pv-more">ещё ${list.length - 3}</span>` : ""}</div>
         <span class="pv-dots">${list.slice(0, 5).map((e) => `<i class="c-${colorOf(e)}"></i>`).join("")}</span>
         <button type="button" class="pv-plus" data-add-day="${k}" aria-label="Добавить в этот день" tabindex="-1">${ic("plus")}</button></div>`;
