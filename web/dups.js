@@ -68,6 +68,7 @@
       ["Этаж", fl], ["ЖК", (c) => c.complex], ["Улица, дом", addr], ["Район", (c) => c.district || c.settlement],
       ["Цена", (c) => mln(c.price, c.deal), false, true],
       ["Номер в тексте", (c) => (c.text_phones || []).join(", ") || null],
+      ["Прислал", (c) => (c.sender_phones || [])[0] || null],
     ];
     return R.map(([label, f, always, price]) => {
       const va = f(a), vb = f(b);
@@ -93,9 +94,10 @@
         · присылали ${n0(c.seen_count)} раз${c.chat ? ` · ${esc(c.chat)}` : ""}</p>
       ${used.length ? `<p class="dp-used">${used.map(esc).join(" · ")}</p>` : ""}
       <div class="dp-text">${marked}</div>
-      <div class="dp-phone">${(c.text_phones || []).length
-        ? `<span>Номер в объявлении</span><b>${c.text_phones.map(esc).join(", ")}</b>`
-        : `<span>В тексте номера нет${(c.sender_phones || []).length ? " · прислал в чат" : ""}</span><b>${(c.sender_phones || []).map(esc).join(", ") || "—"}</b>`}</div>
+      <div class="dp-phones">
+        <div class="dp-phone"><span>Номер в объявлении</span><b>${(c.text_phones || []).map(esc).join(", ") || "в тексте нет"}</b></div>
+        <div class="dp-phone snd"><span>Прислал в чат</span><b>${(c.sender_phones || []).slice(0, 2).map(esc).join(", ") || "не виден"}</b></div>
+      </div>
     </article>`;
   }
 

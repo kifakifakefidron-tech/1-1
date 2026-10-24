@@ -442,7 +442,15 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
         roles = json.loads(r["phone_roles"] or "{}") if "phone_roles" in r.keys() else {}
     except (TypeError, ValueError):
         roles = {}
-    sender = [ph for ph, role in roles.items() if role == "sender" and ph not in text_ph]
+    # 25.10 (Артём): «номер, который отправил, тоже нужен рядом» — кто прислал последнее сообщение об объекте (и раньше, если другие)
+    from .rules import normalize_phone
+    sender = []
+    for (raw,) in conn.execute("""SELECT m.sender FROM listing_events e JOIN messages m ON m.id = e.message_id
+                                  WHERE e.listing_id = ? AND COALESCE(m.sender, '') != '' ORDER BY e.ts DESC LIMIT 20""", (lid,)):
+        ph = normalize_phone(str(raw).split("@")[0])
+        if ph and ph not in sender:
+            sender.append(ph)
+    sender += [ph for ph, role in roles.items() if role == "sender" and ph not in sender]
     return {"id": r["id"], "title": r["title"], "text_phones": [_pretty(x) for x in text_ph],
             "sender_phones": [_pretty(x) for x in sender], "type": r["type"], "deal": r["deal"], "price": r["price"],
             "price_m2": r["price_m2"], "rooms": r["rooms"], "room_kind": r["room_kind"], "area": r["area"],

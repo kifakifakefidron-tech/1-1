@@ -118,3 +118,12 @@ def test_pair_newer_on_right_and_text_phone_shown():
     p = dupreview.pairs(conn)["pairs"][0]
     assert (p["a"]["id"], p["b"]["id"]) == (c, a)       # справа — та, что пришла позже
     assert p["b"]["text_phones"] == ["+7 918 111-22-33"]
+
+
+def test_card_shows_sender_number_next_to_text_number():
+    conn = db.connect(":memory:")
+    m = ingest.add_message(conn, source="wa", text=NO_FLOOR, chat_id="c1", msg_id="s1", ts=int(time.time()),
+                           sender="79184445566@c.us")
+    lid = ingest.process_message(conn, m, use_llm=False)["results"][0]["listing_id"]
+    c = dupreview._card(conn, lid)
+    assert c["text_phones"] == ["+7 918 111-22-33"] and c["sender_phones"] == ["+7 918 444-55-66"]
