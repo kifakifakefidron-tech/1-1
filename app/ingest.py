@@ -416,12 +416,20 @@ def process_message(conn: sqlite3.Connection, message_id: int, use_llm: bool | N
     # Тот же текст уже разбирали (его разослали по десяткам чатов) — не тратим
     # нейросеть второй раз, просто отмечаем, что объект снова присылали.
     prev = conn.execute(
-        "SELECT id, kind FROM messages WHERE text_hash = ? AND status = 'done' AND id != ? ORDER BY id LIMIT 1",
+        "SELECT id, kind, objects FROM messages WHERE text_hash = ? AND status = 'done' AND id != ? ORDER BY id DESC LIMIT 1",
         (m["text_hash"], m["id"]),
     ).fetchone()
+    listing_ids = []
     if prev is not None:
+        # только объекты, которые ещё есть в базе (удалённые по сроку — пропали вместе с карточкой)
         listing_ids = [r["listing_id"] for r in conn.execute(
-            "SELECT DISTINCT listing_id FROM listing_events WHERE message_id = ?", (prev["id"],))]
+            """SELECT DISTINCT e.listing_id FROM listing_events e JOIN listings l ON l.id = e.listing_id
+               WHERE e.message_id = ?""", (prev["id"],))]
+        # 24.10j: текст уже разбирали, но его объект(ы) удалили по сроку — разбираем заново, а не теряем объявление
+        # (удалённое админом сюда не доходит: его текст в banned и отсекается выше)
+        if not listing_ids and (prev["objects"] or 0) > 0 and prev["kind"] != "request":
+            prev = None
+    if prev is not None:
         for lid in listing_ids:
             conn.execute(
                 "UPDATE listings SET last_seen = MAX(last_seen, ?), seen_count = seen_count + 1, "
