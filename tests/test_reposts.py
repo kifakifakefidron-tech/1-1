@@ -199,3 +199,18 @@ def test_dupfix_keeps_card_with_photo():
     dupfix.run(conn, apply=True)
     assert conn.execute("SELECT is_active FROM listings WHERE id = ?", (new,)).fetchone()[0] == 1
     assert conn.execute("SELECT hidden_reason, merged_into FROM listings WHERE id = ?", (old,)).fetchone()[:] == ("dup_text", new)
+
+
+def test_same_text_parsed_into_different_streets_is_one_object():
+    """Пример Артёма (10678 / 10564): «Гондаря Беличенко 86» разобралось то одной улицей, то другой — это одна карточка."""
+    from app import dupfix
+    conn = db.connect(":memory:")
+    frag = "ЖК Самолет-6 Западный обход Гондаря Беличенко 86 ЕВРО-2 2 этаж 36 м² Новый современный ремонт кухня мебель 5 850 000 89181234567"
+    ids = [conn.execute("""INSERT INTO listings (type, deal, title, rooms, area, floor, complex, street, house, price, fragment, phones,
+                           photos, first_seen, last_seen, seen_count, is_active, source, search_text)
+                           VALUES ('flat','sale','2-к',2,36,2,'Самолет 6',?,'86',5850000,?,'["+79181234567"]','[]',?,?,1,1,'chat','')""",
+                        (st, frag, ts, ts)).lastrowid for st, ts in (("Константина Гондаря", 100), ("Ивана Беличенко", 200))]
+    conn.commit()
+    assert dupfix.run(conn, apply=True)["merged"] == 1
+    assert conn.execute("SELECT COUNT(*) FROM listings WHERE is_active = 1").fetchone()[0] == 1
+    assert ids

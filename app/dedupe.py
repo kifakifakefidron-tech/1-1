@@ -101,15 +101,17 @@ def same_object(o: ParsedObject, row: sqlite3.Row) -> tuple[bool, str]:
     phone = bool(phones_row & set(o.phones)) if o.phones and phones_row else None
     price = _close(o.price, row["price"], 0.15, 0)
 
+    # Тот же текст (поменялась разве что цена) — одно объявление, с какого бы номера его ни переслали.
+    # 24.10m (пример Артёма 10678/10564): ПРОВЕРЯЕМ ДО «явных различий» — один и тот же текст «Гондаря Беличенко 86» разобрался
+    # то улицей Гондаря, то Беличенко, и правило «разные улицы» делало две карточки. Площадь/этаж в тексте разные — это не близнецы.
+    if text_twin(o.fragment, row["fragment"]):
+        return True, "тот же текст, другая цена"
+
     # Явные различия — это разные объекты (две квартиры в одном доме).
     for k, v in (("комнаты", rooms), ("этаж", floor), ("площадь", area), ("участок", land),
                  ("ЖК", cx), ("район", district), ("улица", street), ("дом", house if street else None)):
         if v is False:
             return False, f"разные: {k}"
-
-    # Тот же текст, поменялись только числа (цена) — одно объявление, с какого бы номера его ни переслали
-    if text_twin(o.fragment, row["fragment"]):
-        return True, "тот же текст, другая цена"
     # короткий текст («ЖК Абрикосово, ЕВРО 2 квартира, 6 млн») — только если место совпало и цена почти та же (до 10 %)
     if (cx or street) and _close(o.price, row["price"], 0.10, 0) and text_twin(o.fragment, row["fragment"], short_ok=True):
         return True, "тот же короткий текст, цена почти та же"

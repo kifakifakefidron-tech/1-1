@@ -56,9 +56,11 @@ def run(conn: sqlite3.Connection, apply: bool = False) -> dict:
                            AND COALESCE(owner_user_id, 0) = 0 AND fragment IS NOT NULL""").fetchall()
     groups: dict[tuple, list] = defaultdict(list)
     for r in rows:
-        p = _place(r)
-        if p:
-            groups[(r["type"] if r["type"] != "new" else "flat", r["deal"], r["rooms"], p)].append(r)
+        # 24.10m: группа — сам текст без чисел (а не ЖК/улица: одинаковый текст мог разобраться в разные улицы);
+        # точная проверка «отличается только цена» — дальше, в _twins / dedupe.text_twin
+        tk = " ".join(t for t in words(r["fragment"] or "").split() if not t.isdigit())
+        if len(tk) >= 10:
+            groups[(r["type"] if r["type"] != "new" else "flat", r["deal"], tk)].append(r)
     merged, examples = 0, []
     for items in groups.values():
         if len(items) < 2:
@@ -94,11 +96,13 @@ def run(conn: sqlite3.Connection, apply: bool = False) -> dict:
 
 
 def maybe_run(conn: sqlite3.Connection) -> dict | None:
-    if db.get_state(conn, "dup_text_v1"):
+    # v2 (24.10m): повтор с фото остаётся главным; одинаковый текст склеивается, даже если улица разобралась по-разному
+    if db.get_state(conn, "dup_text_v2"):
         return None
     res = run(conn, apply=True)
     db.set_state(conn, "dup_text_report", json.dumps({**res, "ts": int(time.time())}, ensure_ascii=False))
     db.set_state(conn, "dup_text_v1", "1")
+    db.set_state(conn, "dup_text_v2", "1")
     conn.commit()
     return res
 
