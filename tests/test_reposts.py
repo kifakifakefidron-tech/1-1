@@ -182,3 +182,20 @@ def test_similar_price_counts_only_with_area_or_floor():
     conn.commit()
     row = conn.execute("SELECT * FROM listings WHERE id = ?", (a,)).fetchone()
     assert [x["id"] for x in hooks.same_elsewhere(conn, row)] == [c]
+
+
+def test_dupfix_keeps_card_with_photo():
+    """24.10m (Артём): явный повтор — остаётся карточка с фото, даже если она появилась позже."""
+    from app import dupfix
+    conn = db.connect(":memory:")
+    def add(photos, ts):
+        return conn.execute("""INSERT INTO listings (type, deal, title, rooms, complex, price, fragment, phones, photos, first_seen, last_seen,
+                               seen_count, is_active, source, search_text) VALUES ('flat','sale','Евро-2',2,'Абрикосово',5990000,
+                               'ЖК Абрикосово ЕВРО 2 квартира Ремонт Мебель Лучшая цена 5 990 000 ₽','[]',?,?,?,1,1,'chat','')""",
+                            (photos, ts, ts)).lastrowid
+    old = add("[]", 100)
+    new = add('["/photos/7/a.jpg"]', 200)
+    conn.commit()
+    dupfix.run(conn, apply=True)
+    assert conn.execute("SELECT is_active FROM listings WHERE id = ?", (new,)).fetchone()[0] == 1
+    assert conn.execute("SELECT hidden_reason, merged_into FROM listings WHERE id = ?", (old,)).fetchone()[:] == ("dup_text", new)

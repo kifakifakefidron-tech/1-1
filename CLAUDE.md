@@ -953,6 +953,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   вернуть strely_photo и ошибочные strely/own_dup (свежие — на сайт, старые — в архив). listings.merged_into — куда приклеена копия
   (ownmatch._move, dupfix, копии с артикулом в feed.sync); окно снятого объекта пишет НАСТОЯЩУЮ причину (server._gone_reason: продано,
   задаток, копия, повтор, админ, срок) и у копии — «Открыть основную карточку» (старым dup_text основная ищется dupfix.find_main).
+  Явный повтор — остаётся карточка С ФОТО (dupfix: сначала с фото, потом самая ранняя; решение Артёма 24.10).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

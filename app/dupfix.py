@@ -1,7 +1,7 @@
 """24.10j (Артём: «одинаковый текст, другая цена — создаётся новое объявление»): разовая уборка уже созданных дублей.
 
 Карточки из чатов с тем же текстом, теми же номерами В ТЕКСТЕ и тем же местом/комнатами, где поменялась только цена
-(dedupe.text_twin), склеиваются в самую раннюю: избранное, клиенты, подборки, планер и история повторов переезжают туда
+(dedupe.text_twin), склеиваются в карточку С ФОТО (нет фото ни у одной — в самую раннюю): избранное, клиенты, подборки, планер и история повторов переезжают туда
 (ownmatch._move), цена и текст — из самого свежего сообщения, остальные карточки скрываются (hidden_reason 'dup_text').
 Запуск — один раз из worker (state dup_text_v1), отчёт — state dup_text_report. Проверка без изменений: `python -m app.dupfix`."""
 from __future__ import annotations
@@ -63,7 +63,8 @@ def run(conn: sqlite3.Connection, apply: bool = False) -> dict:
     for items in groups.values():
         if len(items) < 2:
             continue
-        items.sort(key=lambda r: (r["first_seen"] or 0, r["id"]))
+        # 24.10m (Артём: «если явный повтор — оставлять объект, который с фото»): сначала карточки с фото, потом самая ранняя
+        items.sort(key=lambda r: (-len(json.loads(r["photos"] or "[]")), r["first_seen"] or 0, r["id"]))
         used = set()
         for i, a in enumerate(items):
             if a["id"] in used:
