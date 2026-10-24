@@ -152,6 +152,14 @@ def tick(conn) -> dict:
     dx = dupfix.maybe_run(conn)
     if dx:
         stats["dup_text"] = dx["merged"]
+    from . import dupreview   # 24.10: новые карточки — наверняка тот же объект склеить, сомнительные пары — в «Возможно, повтор»
+    try:
+        dr = dupreview.run(conn)
+        if dr.get("auto") or dr.get("queued"):
+            stats["dups"] = dr
+    except Exception:  # noqa: BLE001
+        log.exception("проверка повторов не прошла")
+    lap("повторы")
     from . import cxnorm
     cx = cxnorm.maybe_run(conn)   # один раз (ТЗ v2, P1.7): одно название на один ЖК, отчёт — в админке
     if cx:

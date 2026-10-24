@@ -23,7 +23,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import (accounts, agent, autolearn, callcheck, bankrates, brain, buyers, clients, dashboard, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
-               market, notify, payments, picks, planner, region, search, settings, stats, tg, wappi, widgets, worklog)
+               dupreview, market, notify, payments, picks, planner, region, search, settings, stats, tg, wappi, widgets, worklog)
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -523,6 +523,7 @@ _GONE = {
     "strely_photo": ("Это копия объекта агентства", "Пост агентства с фото: основная карточка — на сайте агентства."),
     "own_dup": ("Это повтор", "Этот объект уже есть в другой карточке."),
     "dup_text": ("Это повтор", "Тот же текст и номер с другой ценой — объект есть в другой карточке."),
+    "dup_same": ("Это повтор", "Тот же объект уже есть в другой карточке — избранное и клиенты перенесены туда."),
     "admin": ("Скрыт администратором", ""), "phone": ("Скрыт администратором", ""),
     "rent_rule": ("Скрыт правилом аренды", ""),
 }
@@ -2741,6 +2742,47 @@ def learn_page(request: Request, body: dict | None = None):
     return _page("learn.html")
 
 
+def dups_page(request: Request, body: dict | None = None):
+    return _page("dups.html")
+
+
+def api_admin_dups(request: Request, body: dict | None = None):
+    """24.10 «Возможно, повтор»: GET ?status=open|auto|done&offset= — пары; POST {id, verdict: same|diff|reopen, keep}
+    — решение; {id, split} — разделить склейку; {id, ai} — подсказка нейросети; {trust: вид, on} — доверить склейку."""
+    user, err = _need_admin(request)
+    if err:
+        return err
+    conn = db.get()
+    if request.method == "POST":
+        b = body or {}
+        if b.get("trust"):
+            return JSONResponse({"ok": True, "trusted": dupreview.set_trust(conn, str(b["trust"]), bool(b.get("on")))})
+        try:
+            pid = int(b.get("id") or 0)
+        except (TypeError, ValueError):
+            return _err("Нет пары")
+        if b.get("ai"):
+            return JSONResponse(dupreview.ask_ai(conn, pid))
+        if b.get("split"):
+            ok = dupreview.split(conn, pid, user["id"])
+        else:
+            keep = b.get("keep")
+            res = dupreview.decide(conn, pid, str(b.get("verdict") or ""), user["id"],
+                                   int(keep) if str(keep or "").isdigit() else None)
+            conn.commit()
+            _bump_cache()
+            return JSONResponse(res)
+        conn.commit()
+        _bump_cache()
+        return JSONResponse({"ok": ok})
+    q = request.query_params
+    try:
+        off = max(0, int(q.get("offset") or 0))
+    except ValueError:
+        off = 0
+    return JSONResponse(dupreview.pairs(conn, q.get("status", "open"), 30, off))
+
+
 def api_admin_recheck(request: Request, body: dict | None = None):
     """Перепроверка всех объектов по справочнику адресов и нарисованным районам: {action: run | rollback}."""
     _, err = _need_admin(request)
@@ -2907,6 +2949,8 @@ routes = [
     Route("/api/admin/banks", threaded(api_admin_banks), methods=["POST"]),
     Route("/api/admin/learn/knowledge", threaded(api_admin_knowledge), methods=["GET", "POST"]),
     Route("/learn", threaded(learn_page)),
+    Route("/dups", threaded(dups_page)),
+    Route("/api/admin/dups", threaded(api_admin_dups), methods=["GET", "POST"]),
     Route("/api/stats", threaded(api_stats)),
     Route("/api/login", threaded(api_login), methods=["POST"]),
     Route("/api/auth/tg/start", threaded(api_tg_start), methods=["POST"]),

@@ -127,6 +127,10 @@ def same_object(o: ParsedObject, row: sqlite3.Row) -> tuple[bool, str]:
     details_ok = bool(details) and all(details)
 
     if o.type in ("flat", "new", "room"):
+        # 24.10 (уровень 1, решение Артёма): тот же агент, то же место, те же комнаты и этаж (у обоих указаны), площадь не спорит —
+        # один объект, даже если текст и цена другие. Всё, что «почти совпадает», — в очередь «Возможно, повтор» (dupreview)
+        if (cx or street) and rooms and floor:
+            return True, "тот же агент + место + комнаты + этаж"
         if addr and (size_ok or details_ok):
             return True, "адрес + параметры"
         if cx and size_ok and details_ok:
@@ -188,8 +192,13 @@ def find_match(conn: sqlite3.Connection, o: ParsedObject, frag_hash: str, now: i
             ORDER BY last_seen DESC LIMIT 400""",
         params,
     ).fetchall()
+    found = []
     for r in rows:
         ok, why = same_object(o, r)
         if ok:
-            return r, why
-    return None, ""
+            found.append((r, why))
+    if len(found) > 1:   # 24.10: подходят несколько карточек (вы решили, что это разные квартиры) — та, чей текст ближе
+        import difflib
+        ta = words(o.fragment or "").split()
+        found.sort(key=lambda f: -difflib.SequenceMatcher(None, ta, words(f[0]["fragment"] or "").split(), autojunk=False).ratio())
+    return found[0] if found else (None, "")

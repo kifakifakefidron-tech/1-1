@@ -35,10 +35,10 @@
         <i class="ln-bar"><i style="width:${pct}%"></i></i></div>
       <div class="ln-stat"><b>${n0(waiting)}</b><span>ждут решения (объект может быть в нескольких очередях)</span></div>`;
     const first = d.queues.find((q) => q.n && !["auto", "fixed"].includes(q.key));
-    $("lnGo").href = `/fix?kind=${first ? first.key : "auto"}`;
+    $("lnGo").href = first && first.href ? first.href : `/fix?kind=${first ? first.key : "auto"}`;
     $("lnGo").innerHTML = `${ic("chevron")} Разбирать${first ? ` · ${esc(first.label.toLowerCase())}` : ""}`;
     $("lnQueues").innerHTML = d.queues.map((q) => `
-      <a class="ln-q${q.key === "conflict" && q.n ? " hot" : ""}${q.n ? "" : " empty"}" href="/fix?kind=${q.key}">
+      <a class="ln-q${["conflict", "dups"].includes(q.key) && q.n ? " hot" : ""}${q.n ? "" : " empty"}" href="${q.href || `/fix?kind=${q.key}`}">
         <b>${n0(q.n)}</b><strong>${esc(q.label)}</strong><span>${esc(q.hint)}</span>
         <em>${q.n ? "Разбирать →" : "Пусто"}</em></a>`).join("");
     const pipe = (title, steps) => `<div class="ln-pipe"><h3>${title}</h3><ol>${steps.map((s) => `

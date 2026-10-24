@@ -329,6 +329,15 @@ CREATE TABLE IF NOT EXISTS auto_reviews (
     listing_id INTEGER NOT NULL, src TEXT NOT NULL, ok INTEGER NOT NULL, ts INTEGER NOT NULL,
     PRIMARY KEY (listing_id, src)
 );
+-- 24.10 (Артём: «сомневается — в спорные, решу сам и обучу»): пары «возможно, один объект» (app/dupreview.py).
+-- status: open — ждёт админа; same — админ склеил; diff — админ: разные (больше не спрашиваем, сами не склеиваем);
+-- auto — склеил сервис; split — склейку разделили (= разные); gone — одной карточки уже нет на сайте
+CREATE TABLE IF NOT EXISTS dup_pairs (
+    id INTEGER PRIMARY KEY, a INTEGER NOT NULL, b INTEGER NOT NULL, kind TEXT NOT NULL, score REAL, why TEXT,
+    status TEXT NOT NULL DEFAULT 'open', keep_id INTEGER, drop_id INTEGER, undo TEXT, ai TEXT,
+    created_at INTEGER NOT NULL, decided_at INTEGER, user_id INTEGER, UNIQUE (a, b)
+);
+CREATE INDEX IF NOT EXISTS ix_dup_pairs_status ON dup_pairs (status);
 CREATE TABLE IF NOT EXISTS notes (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
     text TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)

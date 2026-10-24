@@ -109,6 +109,14 @@ def counts(conn: sqlite3.Connection) -> dict:
             for q in QUEUES}
 
 
+def _with_dups(conn: sqlite3.Connection, queues: list[dict]) -> list[dict]:
+    """24.10: очередь «Возможно, повтор» (пары карточек, app/dupreview.py) — сразу после «Спорных»."""
+    from . import dupreview
+    q = {"key": "dups", "mode": "place", "label": "Спорные: возможно, повтор", "href": "/dups", "n": dupreview.open_count(conn),
+         "hint": "Две карточки почти совпадают — один это объект или разные, решаете вы. Ваши ответы сервис запоминает"}
+    return queues[:1] + [q] + queues[1:]
+
+
 def overview(conn: sqlite3.Connection) -> dict:
     """Сводка для страницы «Обучение»: что готово, что ждёт вас, как сервис решает и что выучил."""
     one = lambda sql, *p: conn.execute(sql, p).fetchone()[0]  # noqa: E731
@@ -139,8 +147,8 @@ def overview(conn: sqlite3.Connection) -> dict:
     return {
         "uncontoured": uncontoured,
         "accuracy": accuracy(conn),
-        "total": total, "ready": ready, "queues": [{k: q[k] for k in ("key", "label", "hint", "mode")} | {"n": c[q["key"]]}
-                                                   for q in QUEUES],
+        "total": total, "ready": ready, "queues": _with_dups(conn, [{k: q[k] for k in ("key", "label", "hint", "mode")}
+                                                                    | {"n": c[q["key"]]} for q in QUEUES]),
         "pipeline": {
             "district": [
                 {"key": "yours", "label": "Ваши правки объекта", "n": dist.get("yours", 0)},
