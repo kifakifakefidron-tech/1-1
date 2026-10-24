@@ -1434,6 +1434,9 @@ def api_pick_items(request: Request, body: dict | None = None):
         res = picks.item_photo(db.get(), user["id"], cid, int(body.get("listing_id") or 0),
                                order=[str(x) for x in po][:60] if isinstance(po, list) else None,
                                hide=str(body.get("photo_hide") or "") or None, unhide=str(body.get("photo_unhide") or "") or None)
+    elif "point" in body or "point_off" in body or "point_reset" in body:   # 24.10f: точка объекта для клиента
+        res = picks.item_point(db.get(), user["id"], cid, int(body.get("listing_id") or 0), point=body.get("point"),
+                               off=bool(body["point_off"]) if "point_off" in body else None, reset=bool(body.get("point_reset")))
     elif "status" in body:   # статус объекта в подборке клиента (понравился, не подходит, показ…)
         res = picks.set_status(db.get(), user["id"], cid, int(body.get("listing_id") or 0), str(body["status"]))
     else:

@@ -126,9 +126,17 @@ def test_p2_contact_hidden_address_and_similar(env):
     p = c.post("/api/picks", json={"title": "Тест", "listing_id": a}).json()["pick"]
     assert p["contact_name"] == ""                       # служебное имя в подборку не попадает
     token = p["url"].rsplit("/", 1)[1]
+    # 24.10f: «скрыть точный адрес» убрано — вместо него автор двигает или убирает точку объекта
     c.post("/api/picks", json={"id": p["id"], "hide_address": True})
     it = c.get(f"/api/c/{token}?as=agent").json()["items"][0]
-    assert it["house"] is None and it["approx"] and abs(it["lat"] - 45.0123) < 0.003 and it["lat"] != 45.0123
+    assert it["lat"] == 45.0123
+    c.post(f"/api/picks/{p['id']}/items", json={"listing_id": a, "point": [45.02, 38.99]})
+    assert c.get(f"/api/c/{token}?as=agent").json()["items"][0]["lat"] == 45.02
+    c.post(f"/api/picks/{p['id']}/items", json={"listing_id": a, "point_off": True})
+    assert c.get(f"/api/c/{token}?as=agent").json()["items"][0]["lat"] is None
+    c.post(f"/api/picks/{p['id']}/items", json={"listing_id": a, "point_reset": True})
+    assert c.get(f"/api/c/{token}?as=agent").json()["items"][0]["lat"] == 45.0123
+    assert c.post(f"/api/picks/{p['id']}/items", json={"listing_id": a, "point": [55.7, 37.6]}).status_code == 400
     # объект сняли — клиенту без описания; агенту — похожие и замена на то же место
     conn.execute("UPDATE listings SET is_active = 0 WHERE id = ?", (a,))
     conn.commit()

@@ -184,6 +184,41 @@
       ${hid.length ? `<div class="pk2-hid"><span>Скрыто от клиента:</span>${hid.map((u) => `<button type="button" class="pk2-hid-ph" data-ph-unhide="${esc(u)}" data-lid="${it.listing_id}" data-pid="${p.id}" title="Вернуть клиенту"><img src="${esc(u)}" alt="" loading="lazy"><i>${ic("plus")}</i></button>`).join("")}</div>` : ""}
     </div>`;
   }
+  // 24.10f (Артём): точка объекта для клиента — подвинуть метку, убрать точку или вернуть как в объявлении
+  function pointHTML(p, it) {
+    const has = it.lat != null || it.map_lat != null;
+    return `<div class="pk8-pt" data-pt="${it.listing_id}" data-pid="${p.id}">
+      <span class="pk2-own-h">Точка на карте для клиента <small>— ${it.map_off ? "убрана: клиент не увидит этот объект на карте"
+        : it.map_lat != null ? "вы поставили свою" : has ? "как в объявлении; перетащите метку или нажмите на карту" : "в объявлении нет точки — нажмите на карту"}</small></span>
+      <div class="pk8-map${it.map_off ? " off" : ""}" data-pmap="${it.listing_id}" data-pid="${p.id}"
+        data-lat="${it.map_lat ?? it.lat ?? ""}" data-lon="${it.map_lon ?? it.lon ?? ""}"></div>
+      <div class="pk8-acts">
+        ${it.map_off ? `<button type="button" class="chip" data-pt-on="${it.listing_id}" data-pid="${p.id}">${ic("pin")}Показывать точку</button>`
+          : `<button type="button" class="chip" data-pt-off="${it.listing_id}" data-pid="${p.id}">${ic("x")}Убрать точку</button>`}
+        ${it.map_lat != null ? `<button type="button" class="chip" data-pt-reset="${it.listing_id}" data-pid="${p.id}">${ic("repeat")}Как в объявлении</button>` : ""}
+      </div></div>`;
+  }
+  function initPointMaps() {
+    if (!window.L) return;
+    document.querySelectorAll("[data-pmap]:not([data-ready])").forEach((el) => {
+      el.dataset.ready = "1";
+      const lat = parseFloat(el.dataset.lat), lon = parseFloat(el.dataset.lon), has = Number.isFinite(lat) && Number.isFinite(lon);
+      const m = L.map(el, { zoomControl: true, attributionControl: false, scrollWheelZoom: false }).setView(has ? [lat, lon] : [45.035, 38.975], has ? 16 : 12);
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(m);
+      const icon = L.divIcon({ className: "", html: `<span class="pk8-pin"></span>`, iconSize: [26, 26], iconAnchor: [13, 26] });
+      let mk = has ? L.marker([lat, lon], { draggable: true, icon }).addTo(m) : null;
+      const save = async (ll) => {
+        const r = await call(`/api/picks/${el.dataset.pid}/items`, { listing_id: Number(el.dataset.pmap), point: [ll.lat, ll.lng] });
+        toast(r.ok ? "Точка сохранена — клиент увидит объект здесь" : r.data.detail || "Не получилось");
+        if (r.ok) { const it = (list.find((x) => x.id === Number(el.dataset.pid)) || { items: [] }).items.find((x) => x.listing_id === Number(el.dataset.pmap));
+          if (it) { it.map_lat = r.data.map_lat; it.map_lon = r.data.map_lon; it.map_off = 0; } }
+      };
+      if (mk) mk.on("dragend", () => save(mk.getLatLng()));
+      m.on("click", (e) => { if (mk) mk.setLatLng(e.latlng); else { mk = L.marker(e.latlng, { draggable: true, icon }).addTo(m); mk.on("dragend", () => save(mk.getLatLng())); } save(e.latlng); });
+      setTimeout(() => m.invalidateSize(), 60);
+    });
+  }
+
   // 24.10 (образец Артёма «Подборки — максимально просто»): объект — строка (⠿, номер, фото, название, цена, статус,
   // «Настроить»); всё для клиента — в раскрытой строке: цена, фото, статус, текст, комментарий, порядок, запись, убрать
   const ST_CLS = { added: "added", sent: "sent", opened: "open", liked: "ok", rejected: "bad", show: "ok", talks: "ok", deal: "ok", lost: "bad", matched: "sent" };
@@ -212,6 +247,7 @@
                 aria-label="Цена для клиента"${it.hide_price ? " disabled" : ""}><em>${it.deal === "rent" ? "тыс. ₽/мес" : "млн ₽"}</em></span></label>
             <label class="pk2-phide"><input type="checkbox" data-phide="${it.listing_id}" data-pid="${p.id}"${it.hide_price ? " checked" : ""}>Скрыть цену от клиента</label>
             ${photosHTML(p, it)}
+            ${pointHTML(p, it)}
             ${p.client_id ? `<label class="pk2-pst"><span>Статус для ${esc(p.client_name || "клиента")}</span><select data-pst="${it.listing_id}" data-pid="${p.id}" aria-label="Статус">
               ${Object.entries(PAIR).map(([k, v]) => `<option value="${k}"${st === k ? " selected" : ""}>${v}</option>`).join("")}</select></label>` : ""}
           </div>
@@ -247,7 +283,7 @@
   function favCard(f, p, added) {   // 24.10d: та же карточка, что везде, с полным описанием; 24.10e — добавленный остаётся, с отметкой
     return LCard.html(f, { desc: true, meta: "", cls: added ? "picked" : "",
       top: added ? `<span class="lc-tag gold">${ic("check")}В подборке</span>` : "",
-      foot: `<div class="lc-acts">${added ? `<span class="lc-btn done">${ic("check")}Добавлено</span>`
+      foot: `<div class="lc-acts">${added ? `<button type="button" class="lc-btn done" data-unadd="${f.id}" data-pid="${p.id}" title="Нажмите ещё раз, чтобы убрать из подборки">${ic("check")}Добавлено · убрать</button>`
         : `<button type="button" class="lc-btn main" data-add="${f.id}" data-pid="${p.id}">${ic("plus")}Добавить в подборку</button>`}</div>` });
   }
   function baseStrip(p) {
@@ -339,14 +375,13 @@ ${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
           </div>
           <label class="pk2-hide"><input type="checkbox" data-hide-map="${p.id}"${p.hide_map ? " checked" : ""}>
             <span><b>Не показывать карту</b><small>Клиент не увидит карту и точки объектов — только адрес текстом</small></span></label>
-          <label class="pk2-hide"><input type="checkbox" data-hide-addr="${p.id}"${p.hide_address ? " checked" : ""}>
-            <span><b>Скрыть точный адрес</b><small>Клиент увидит улицу без номера дома, точка на карте — примерно в пределах квартала</small></span></label>
           <div class="agent-field"><span>Цвет подборки в списке</span><div class="pk2-colors">${COLORS.map((c) =>
             `<button type="button" class="pk2-color c-${c}${c === p.color ? " on" : ""}" data-color="${c}" aria-label="Цвет ${c}"></button>`).join("")}</div></div>
           <p class="pk2-hint">Цвет, обложку и подпись подборок можно задать в <a href="/settings">Настройках</a> — для всех подборок сразу.</p>
           <div class="pk2-form-acts"><button type="submit" class="pill">Сохранить</button></div>
         </form>`}`;
     if (window.Pick) box.querySelectorAll("select").forEach((s) => Pick.select(s, { searchPlaceholder: "Найти клиента" }));
+    requestAnimationFrame(initPointMaps);
   }
   function render() { stats(); fillClientFilter(); renderList(); renderDetail(); }
 
@@ -447,6 +482,28 @@ ${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
       return;
     }
     if (t.dataset.addsrc) { addSrc = t.dataset.addsrc; refreshAdd(); return; }
+    if (t.dataset.ptOff || t.dataset.ptOn || t.dataset.ptReset) {   // 24.10f: точка объекта — убрать / показать / как в объявлении
+      const lid = Number(t.dataset.ptOff || t.dataset.ptOn || t.dataset.ptReset);
+      const body = { listing_id: lid, ...(t.dataset.ptReset ? { point_reset: true } : { point_off: !!t.dataset.ptOff }) };
+      const r = await call(`/api/picks/${pid}/items`, body);
+      toast(r.ok ? (t.dataset.ptOff ? "Точку не покажем клиенту" : t.dataset.ptOn ? "Точка снова видна клиенту" : "Точка — как в объявлении") : r.data.detail || "Не получилось");
+      if (r.ok) await reload();
+      return;
+    }
+    if (t.dataset.unadd) {   // 24.10e: повторное нажатие — убрать из подборки, карточка остаётся на месте
+      t.disabled = true;
+      const r = await call(`/api/picks/${pid}/items`, { listing_id: Number(t.dataset.unadd), add: false });
+      if (!r.ok) { toast(r.data.detail || "Не получилось"); t.disabled = false; return; }
+      const card = t.closest(".lc");
+      if (card) { card.classList.remove("picked"); const tag = card.querySelector(".lc-top"); if (tag) tag.innerHTML = ""; }
+      t.outerHTML = `<button type="button" class="lc-btn main" data-add="${t.dataset.unadd}" data-pid="${pid}">${ic("plus")}Добавить в подборку</button>`;
+      toast("Убрано из подборки");
+      const panel = document.querySelector(".pk7-add"), top0 = panel ? panel.getBoundingClientRect().top : 0;
+      await reload();
+      const panel2 = document.querySelector(".pk7-add");
+      if (panel2) scrollBy(0, panel2.getBoundingClientRect().top - top0);
+      return;
+    }
     if (t.dataset.add) {
       t.disabled = true;
       const r = await call(`/api/picks/${pid}/items`, { listing_id: Number(t.dataset.add), add: true });
@@ -454,7 +511,7 @@ ${link(p)}`)}">${ic("share")}<span>Поделиться</span></button>
       // 24.10e: карточка остаётся на месте и становится «Добавлено»; подборка перерисовывается так, чтобы панель не прыгала
       const card = t.closest(".lc");
       if (card) card.classList.add("picked");
-      t.outerHTML = `<span class="lc-btn done">${ic("check")}Добавлено</span>`;
+      t.outerHTML = `<button type="button" class="lc-btn done" data-unadd="${t.dataset.add}" data-pid="${pid}" title="Нажмите ещё раз, чтобы убрать из подборки">${ic("check")}Добавлено · убрать</button>`;
       toast("Добавлено в подборку");
       const panel = document.querySelector(".pk7-add"), top0 = panel ? panel.getBoundingClientRect().top : 0;
       await reload();

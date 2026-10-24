@@ -50,7 +50,7 @@ def mine(conn: sqlite3.Connection, user_id: int) -> list[dict]:
         d["items"] = [dict(x) for x in conn.execute(
             """SELECT i.listing_id, i.note, i.text, i.pos, i.price AS my_price, i.hide_price, i.photos AS my_photos, i.photo_order, l.title, l.price, l.deal, l.is_active, l.photos,
                       l.description AS orig, l.type, l.rooms, l.area, l.land, l.floor, l.floors, l.complex, l.district,
-                      l.street, l.house
+                      l.street, l.house, l.lat, l.lon, i.map_lat, i.map_lon, i.map_off
                FROM collection_items i JOIN listings l ON l.id = i.listing_id
                WHERE i.collection_id = ? ORDER BY i.pos, i.added""", (r["id"],))]
         pairs = {x["listing_id"]: dict(x) for x in conn.execute(
@@ -438,6 +438,45 @@ def _mail_agent(conn: sqlite3.Connection, user_id: int, subject: str, body: str)
     threading.Thread(target=mailer.send_text, args=(row["email"], f"1+1 · {subject}"[:150], msg), daemon=True).start()
 
 
+def _point(r, no_map: bool) -> tuple:
+    """Точка объекта для клиента: карта выключена / точка убрана — нет; автор поставил свою — она; иначе точка дома из объявления."""
+    if no_map or r["map_off"]:
+        return None, None
+    if r["map_lat"] is not None and r["map_lon"] is not None:
+        return r["map_lat"], r["map_lon"]
+    if search.geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house":
+        return r["lat"], r["lon"]
+    return None, None
+
+
+def item_point(conn: sqlite3.Connection, user_id: int, cid: int, listing_id: int, point=None, off: bool | None = None,
+               reset: bool = False) -> dict:
+    """24.10f: точка объекта в подборке — подвинуть (point=[lat, lon]), убрать (off=True) / вернуть (off=False), как в объявлении (reset)."""
+    if not conn.execute("SELECT 1 FROM collections WHERE id = ? AND user_id = ?", (cid, user_id)).fetchone():
+        return {"error": "Подборка не найдена."}
+    if not conn.execute("SELECT 1 FROM collection_items WHERE collection_id = ? AND listing_id = ?", (cid, listing_id)).fetchone():
+        return {"error": "Объекта нет в подборке."}
+    if point is not None:
+        try:
+            lat, lon = float(point[0]), float(point[1])
+        except (TypeError, ValueError, IndexError):
+            return {"error": "Не понял координаты."}
+        if not (43.5 <= lat <= 46.8 and 36.5 <= lon <= 41.5):
+            return {"error": "Точка далеко от Краснодарского края."}
+        conn.execute("UPDATE collection_items SET map_lat = ?, map_lon = ?, map_off = 0 WHERE collection_id = ? AND listing_id = ?",
+                     (round(lat, 6), round(lon, 6), cid, listing_id))
+    if off is not None:
+        conn.execute("UPDATE collection_items SET map_off = ? WHERE collection_id = ? AND listing_id = ?", (1 if off else 0, cid, listing_id))
+    if reset:
+        conn.execute("UPDATE collection_items SET map_lat = NULL, map_lon = NULL, map_off = 0 WHERE collection_id = ? AND listing_id = ?",
+                     (cid, listing_id))
+    conn.execute("UPDATE collections SET updated = ? WHERE id = ?", (int(time.time()), cid))
+    conn.commit()
+    r = conn.execute("SELECT map_lat, map_lon, map_off FROM collection_items WHERE collection_id = ? AND listing_id = ?",
+                     (cid, listing_id)).fetchone()
+    return {"ok": True, "map_lat": r[0], "map_lon": r[1], "map_off": r[2]}
+
+
 def _coarse(v, hide: bool):
     """Скрыть точный адрес: точка округляется примерно до 300 м (клиент видит квартал, а не дом)."""
     return None if v is None else (round(v / 0.003) * 0.003 if hide else v)
@@ -491,7 +530,7 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
     if count_view:
         count_open(conn, c["id"], device or "unknown")
     items = []
-    hide = bool(c["hide_address"])
+    hide = False   # 24.10f (Артём): «скрыть точный адрес» убрано — чётко скрыть нельзя; точку правят или убирают у объекта
     no_map = bool(c["hide_map"]) if "hide_map" in c.keys() else False   # 24.10e: автор подборки убрал карту
     # ответ этого устройства по каждому объекту (последний) — клиент видит, что уже ответил
     mine_r = {r[0]: r[1] for r in conn.execute(
@@ -499,7 +538,7 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
            ORDER BY ts""",
         (c["id"], device or "-"))} if device else {}
     for r in conn.execute("""SELECT l.*, i.note AS item_note, i.text AS item_text, i.price AS my_price, i.hide_price, i.photos AS my_photos,
-                                    i.photo_order FROM collection_items i JOIN listings l ON l.id = i.listing_id
+                                    i.photo_order, i.map_lat, i.map_lon, i.map_off FROM collection_items i JOIN listings l ON l.id = i.listing_id
                              WHERE i.collection_id = ? ORDER BY i.pos, i.added""", (c["id"],)):
         items.append({
             "id": r["id"], "title": r["title"], "type": r["type"], "deal": r["deal"],
@@ -510,8 +549,7 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
             "price_hidden": bool(r["hide_price"]), "rooms": r["rooms"], "room_kind": r["room_kind"], "area": r["area"], "land": r["land"],
             "floor": r["floor"], "floors": r["floors"], "district": r["district"], "complex": r["complex"],
             "settlement": r["settlement"], "street": r["street"], "house": None if hide else r["house"],
-            "lat": _coarse(r["lat"], hide) if not no_map and search.geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house" else None,
-            "lon": _coarse(r["lon"], hide) if not no_map and search.geo_level(r["lat"], r["geo_status"], r["geo_src"]) == "house" else None,
+            "lat": _point(r, no_map)[0], "lon": _point(r, no_map)[1],
             "approx": hide,
             # фото в порядке агента (перетаскиванием в /picks), скрытые — не показываем; свои агента — первыми.
             # 19.10: автор объявления не разрешил тексты и фото (/agent) — клиенту только свои фото агента подборки, без текста

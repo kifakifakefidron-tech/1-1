@@ -417,3 +417,20 @@ a.evv-row:hover { background: rgba(255, 255, 255, .1); }
 .ev-view .evv .evv-time span { font-size: .5em; }
 .ev-view .evv .evv-day { font-size: 14.5px; }
 .ev-view .evv-acts .pill { white-space: nowrap; font-size: 14px; padding: 0 12px; }
+
+/* 24.10e (Артём): сегодняшний день — залит целиком, цветом, которого нет у дел (беж, синий, фиолетовый, зелёный):
+   жемчужно-белый с тёмным текстом; дела на нём — плотнее, с тёмным текстом, чтобы не сливались */
+.pv-cell.today { background: linear-gradient(160deg, #f6f3ec, #dde8e5) !important; border-color: transparent;
+  box-shadow: 0 10px 26px rgba(0, 20, 20, .3); }
+.pv-cell.today .pv-num { width: auto; height: auto; margin: 0; background: none; color: #0f2f2e; }
+.pv-cell.today::after { content: "Сегодня"; position: absolute; right: 8px; top: 8px; font: 700 10px var(--body); letter-spacing: .08em;
+  text-transform: uppercase; color: rgba(15, 47, 46, .6); }
+.pv-cell.today .pv-pill { background: color-mix(in srgb, var(--c) 55%, #ffffff); color: #12302f; font-weight: 600; }
+.pv-cell.today .pv-pill:hover { background: color-mix(in srgb, var(--c) 75%, #ffffff); }
+.pv-cell.today .pv-pill i { background: color-mix(in srgb, var(--c) 70%, #0f2f2e); }
+.pv-cell.today * { color: inherit; }
+.pv-cell.today { color: #12302f; }
+.pv-cell.today.on { box-shadow: 0 10px 26px rgba(0, 20, 20, .3), inset 0 0 0 2px rgba(124, 196, 245, .9); }
+@media (max-width: 640px) { .pv-cell.today::after { display: none; } }
+.pv-cell.today .pv-dots i { box-shadow: 0 0 0 1.5px rgba(15, 47, 46, .45); }
+@media (max-width: 1180px) { .pv-cell.today::after { display: none; } }

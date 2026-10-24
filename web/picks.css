@@ -638,3 +638,15 @@
   .pk7-seg button { justify-content: center; padding: 9px 8px; font-size: 13px; border-radius: 12px; }
 }
 @media (max-width: 760px) { .pk7-seg { width: 100%; } .pk7-seg button { white-space: normal; line-height: 1.15; min-width: 0; } }
+
+/* 24.10f: точка объекта для клиента — мини-карта в «Настроить» */
+.pk8-pt { display: grid; gap: 8px; }
+.pk8-map { height: 190px; border-radius: 16px; overflow: hidden; isolation: isolate; border: 1px solid var(--glass-line); background: rgba(0, 0, 0, .2); }
+.pk8-map.off { opacity: .45; filter: grayscale(.6); }
+.pk8-pin { display: block; width: 26px; height: 26px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: var(--gold);
+  box-shadow: 0 0 0 3px #035352, 0 6px 14px rgba(0, 0, 0, .35); }
+.pk8-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.pk8-acts .chip { display: inline-flex; align-items: center; gap: 5px; }
+.pk8-acts svg { width: 14px; height: 14px; }
+.lc-btn.done { cursor: pointer; }
+.lc-btn.done:hover { background: rgba(248, 113, 113, .14); color: var(--bad); }
