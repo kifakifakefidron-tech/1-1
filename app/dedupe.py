@@ -63,9 +63,16 @@ def text_twin(a: str | None, b: str | None, short_ok: bool = False) -> bool:
     # 24.10j (Артём): дубль — если совпадают номера В ТЕКСТЕ (кто переслал — неважно). Номера — часть текста: другой номер в тексте —
     # другой агент, отдельная карточка; номеров нет в обоих — совпадает сам текст
     from .rules import find_phones
-    if {p[2] for p in find_phones(a or "")} != {p[2] for p in find_phones(b or "")}:   # (начало, конец, номер) — сравниваем номера
+    from .phonegroups import canon_set   # 25.10: номера одного агента (phonegroups) — один номер
+    pa, pb = find_phones(a or ""), find_phones(b or "")
+    if canon_set(p[2] for p in pa) != canon_set(p[2] for p in pb):   # (начало, конец, номер)
         return False
-    ta, tb = words(a or "").split(), words(b or "").split()
+
+    def cut(t, spans):   # номера уже сравнили — из слов их убираем (другой номер того же агента — не «другие цифры»)
+        for s0, e0, _ in sorted(spans, reverse=True):
+            t = t[:s0] + " " + t[e0:]
+        return t
+    ta, tb = words(cut(a or "", pa)).split(), words(cut(b or "", pb)).split()
     if min(len(ta), len(tb)) < (4 if short_ok else 12):   # короткий текст — слишком легко совпасть случайно
         return False
     sm = difflib.SequenceMatcher(None, ta, tb, autojunk=False)
@@ -97,8 +104,9 @@ def same_object(o: ParsedObject, row: sqlite3.Row) -> tuple[bool, str]:
     cx = _eq(o.complex, row["complex"])
     district = _eq(o.district, row["district"])
     settlement = _eq(o.settlement, row["settlement"])
-    phones_row = set(json.loads(row["phones"] or "[]"))
-    phone = bool(phones_row & set(o.phones)) if o.phones and phones_row else None
+    from .phonegroups import canon_set
+    phones_row = canon_set(json.loads(row["phones"] or "[]"))
+    phone = bool(phones_row & canon_set(o.phones)) if o.phones and phones_row else None
     price = _close(o.price, row["price"], 0.15, 0)
 
     # Тот же текст (поменялась разве что цена) — одно объявление, с какого бы номера его ни переслали.
@@ -164,6 +172,8 @@ def same_object(o: ParsedObject, row: sqlite3.Row) -> tuple[bool, str]:
 
 
 def find_match(conn: sqlite3.Connection, o: ParsedObject, frag_hash: str, now: int) -> tuple[sqlite3.Row | None, str]:
+    from . import phonegroups
+    phonegroups.refresh(conn)
     # 1) Дословный репост того же текста
     row = conn.execute(
         """SELECT l.* FROM listing_events e JOIN listings l ON l.id = e.listing_id

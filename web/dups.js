@@ -122,12 +122,48 @@
       <p class="note dp-legend"><i class="eq"></i> совпало <i class="ne"></i> различается <i class="miss"></i> указано не у обоих
         · в тексте подсвечены слова, которых нет в другой карточке</p>
       <div class="dp-sides">${side(p.a, p.b, p.keep === p.a.id, ma)}${side(p.b, p.a, p.keep === p.b.id, mb)}</div>
+      ${otherNums(p) ? `<div class="dp-same-agent"><span>Номера разные: ${esc(otherNums(p).pretty)}. Если это один агент или агентство —</span>
+        <button type="button" class="pill light" data-group="${esc(otherNums(p).raw.join(","))}">Это один агент — объединить номера</button></div>` : ""}
       <div class="dp-acts">
         <button type="button" class="pill dp-same" data-v="same">${ic("check")} Один объект <kbd>1</kbd></button>
         <button type="button" class="pill light dp-diff" data-v="diff">Разные объекты <kbd>2</kbd></button>
         <button type="button" class="pill light dp-skip" data-v="skip">Пропустить <kbd>→</kbd></button>
       </div>
     </section>`;
+  }
+
+  // номера двух карточек не пересекаются — предложить «это один агент»
+  function otherNums(p) {
+    const a = p.a.raw_phones || [], b = p.b.raw_phones || [];
+    if (!a.length || !b.length || a.some((x) => b.includes(x))) return null;
+    const inGroup = (x) => (data.phone_groups || []).find((g) => g.phones.some((n) => n.phone === x));
+    const ga = inGroup(a[0]);
+    if (ga && b.some((x) => ga.phones.some((n) => n.phone === x))) return null;
+    const raw = [...new Set([...a, ...b])].slice(0, 6);
+    return { raw, pretty: [...(p.a.text_phones || []).concat(p.a.sender_phones || []).slice(0, 1),
+      ...(p.b.text_phones || []).concat(p.b.sender_phones || []).slice(0, 1)].join(" и ") };
+  }
+
+  // ─── «Один агент — несколько номеров» ───
+  function groupsHTML(G) {
+    return `${G.length ? G.map((g, i) => `<div class="dp-group" data-gi="${i}">
+        <div class="dp-gnums">${g.phones.map((n) => `<span class="chip">${esc(n.pretty)} <small>${n.n} на сайте</small></span>`).join("")}</div>
+        <button type="button" class="pill light" data-gdel="${i}">Убрать группу</button></div>`).join("")
+      : `<p class="dp-empty sm">Групп пока нет.</p>`}
+      <form class="dp-gadd" id="dpGAdd">
+        <label for="dpGIn">Новая группа — номера одного агента через запятую</label>
+        <div class="dp-grow"><input id="dpGIn" type="text" inputmode="tel" autocomplete="off"
+          placeholder="+7 918 000-00-00, +7 960 000-00-00">
+        <button type="submit" class="pill">Добавить</button></div>
+      </form>`;
+  }
+  const groupsText = (G) => G.map((g) => g.phones.map((n) => n.phone).join(", ")).join("\n");
+  async function saveGroups(body, msg) {
+    const r = await call("/api/admin/dups", body);
+    if (!r.ok || r.data.ok === false) { toast(r.data.error || "Не сохранилось"); return; }
+    data.phone_groups = r.data.phone_groups || [];
+    toast(`${msg}${r.data.merged ? ` · склеено карточек: ${r.data.merged}` : ""}`);
+    load(true);
   }
 
   const STATUS = { auto: "Склеил сервис", same: "Вы: один объект", diff: "Вы: разные", split: "Разделено" };
@@ -166,6 +202,7 @@
         : `<p class="dp-empty">${ic("check")} Всё разобрано. Новые пары появятся сами, когда в чатах придут похожие объявления.</p>`;
     } else $("dpBody").innerHTML = listHTML();
     $("dpStats").innerHTML = statsHTML(data.stats || []);
+    if (!document.activeElement || document.activeElement.id !== "dpGIn") $("dpGroups").innerHTML = groupsHTML(data.phone_groups || []);
   }
 
   async function load(keepIdx) {
@@ -196,8 +233,17 @@
   }
 
   document.addEventListener("click", async (e) => {
-    const t = e.target.closest("[data-tab], [data-v], [data-ai], [data-split], [data-reopen], [data-trust], .dp-side");
+    const t = e.target.closest("[data-tab], [data-v], [data-ai], [data-split], [data-reopen], [data-trust], [data-group], [data-gdel], .dp-side");
     if (!t) return;
+    if (t.dataset.group) {
+      t.disabled = true;
+      return saveGroups({ phone_group_add: t.dataset.group.split(",") }, "Номера объединены: теперь это один агент");
+    }
+    if (t.dataset.gdel) {
+      const G = (data.phone_groups || []).filter((_, i) => i !== Number(t.dataset.gdel));
+      if (!confirm("Убрать группу? Уже склеенные карточки останутся склеенными, новые объявления с этих номеров — отдельно.")) return;
+      return saveGroups({ phone_groups: groupsText(G) }, "Группа убрана");
+    }
     if (t.dataset.tab) { tab = t.dataset.tab; return load(); }
     if (t.dataset.v) return decide(t.dataset.v);
     if (t.dataset.ai) {
@@ -226,6 +272,16 @@
       const inp = t.querySelector('input[name="dpKeep"]');
       if (inp) { inp.checked = true; document.querySelectorAll(".dp-side").forEach((s) => s.classList.toggle("keep", s === t)); }
     }
+  });
+  document.addEventListener("submit", (e) => {
+    if (e.target.id !== "dpGAdd") return;
+    e.preventDefault();
+    const v = $("dpGIn").value.trim();
+    const n = v.split(/[,;\n]/).filter((x) => x.replace(/\D/g, "").length >= 10).length;
+    if (n < 2) { toast("Впишите хотя бы два номера через запятую"); return; }
+    $("dpGIn").blur();
+    const G = groupsText(data.phone_groups || []);
+    saveGroups({ phone_groups: (G ? G + "\n" : "") + v }, "Группа добавлена");
   });
   document.addEventListener("change", (e) => {
     if (e.target.name === "dpKeep") document.querySelectorAll(".dp-side").forEach((s) =>

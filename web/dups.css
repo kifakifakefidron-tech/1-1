@@ -105,3 +105,20 @@
   .dp-acts kbd { display: none; }
   .dp-row { flex-wrap: wrap; }
 }
+
+/* 25.10: «Один агент — несколько номеров» */
+.dp-same-agent { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 14px; padding: 10px 14px;
+  border-radius: var(--r-md); border: 1px dashed var(--line-2, var(--line)); font-size: 13px; color: var(--ink-2); }
+.dp-groups { display: flex; flex-direction: column; gap: 10px; }
+.dp-group { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 12px 14px;
+  background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-md); }
+.dp-gnums { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.dp-gnums .chip { font-size: 14px; font-weight: 600; }
+.dp-gnums small { font-weight: 400; color: var(--ink-3); margin-left: 4px; }
+.dp-gadd { padding: 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper); }
+.dp-gadd label { display: block; font-size: 13px; color: var(--ink-3); margin-bottom: 8px; }
+.dp-grow { display: flex; gap: 8px; }
+.dp-grow input { flex: 1; min-width: 0; font-size: 16px; padding: 10px 14px; border-radius: 99px; border: 1px solid var(--line);
+  background: transparent; color: var(--ink); }
+.dp-empty.sm { padding: 6px 0; text-align: left; font-size: 14px; }
+@media (max-width: 760px) { .dp-grow { flex-direction: column; } }

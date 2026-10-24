@@ -2748,7 +2748,8 @@ def dups_page(request: Request, body: dict | None = None):
 
 def api_admin_dups(request: Request, body: dict | None = None):
     """24.10 «Возможно, повтор»: GET ?status=open|auto|done&offset= — пары; POST {id, verdict: same|diff|reopen, keep}
-    — решение; {id, split} — разделить склейку; {id, ai} — подсказка нейросети; {trust: вид, on} — доверить склейку."""
+    — решение; {id, split} — разделить склейку; {id, ai} — подсказка нейросети; {trust: вид, on} — доверить склейку;
+    {phone_groups: текст} — номера одного агента (строка — группа), {phone_group_add: [номера]} — добавить группу."""
     user, err = _need_admin(request)
     if err:
         return err
@@ -2757,6 +2758,15 @@ def api_admin_dups(request: Request, body: dict | None = None):
         b = body or {}
         if b.get("trust"):
             return JSONResponse({"ok": True, "trusted": dupreview.set_trust(conn, str(b["trust"]), bool(b.get("on")))})
+        if "phone_groups" in b or "phone_group_add" in b:   # 25.10: «Один агент — несколько номеров»
+            from . import phonegroups
+            if "phone_groups" in b:
+                phonegroups.save(conn, str(b.get("phone_groups") or ""))
+            else:
+                phonegroups.add(conn, [str(x) for x in (b.get("phone_group_add") or [])][:10])
+            res = dupreview.scan(conn, budget_s=5)   # перепроверить сразу (остаток — worker следующим циклом)
+            _bump_cache()
+            return JSONResponse({"ok": True, "phone_groups": phonegroups.listing(conn), "merged": res.get("auto", 0)})
         try:
             pid = int(b.get("id") or 0)
         except (TypeError, ValueError):

@@ -200,6 +200,9 @@ SMSRU_API_ID = os.getenv("SMSRU_API_ID", "").strip()
 # 18.10 (Артём): номера, которые ВСЕГДА «Проверенный агент» (свои / агентства), без подтверждения; ещё — ALWAYS_VERIFIED в .env
 ALWAYS_VERIFIED = sorted({"+79618571772", "+79183326033", "+79604811577"}
                          | {p.strip() for p in os.getenv("ALWAYS_VERIFIED", "").split(",") if p.strip().startswith("+7")})
+# 25.10 (Артём): «объекты от этих номеров одинаковые, отправляются с разных номеров» — один агент (app/phonegroups.py).
+# Правится админом на /dups («Один агент — несколько номеров»); это — только начальный список
+PHONE_GROUPS = [["+79181477114", "+79604988303", "+79182651283", "+79282218147"]]
 # Через какие мессенджеры принимаем код (профили Wappi): max, wa
 VERIFY_CHANNELS = [c.strip() for c in os.getenv("VERIFY_CHANNELS", "max").split(",") if c.strip()]
 OWN_LISTING_DAYS = int(os.getenv("OWN_LISTING_DAYS", "20"))  # сколько живёт свой объект без подтверждения

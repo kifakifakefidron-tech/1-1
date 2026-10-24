@@ -69,15 +69,18 @@ def _tokens(frag: str | None) -> list[str]:
 
 
 def _phones(raw) -> set[str]:
+    """Номера карточки; номера одного агента (phonegroups) — одним номером."""
+    from .phonegroups import canon_set
     try:
-        return set(json.loads(raw or "[]"))
+        return canon_set(json.loads(raw or "[]"))
     except (TypeError, ValueError):
         return set()
 
 
 def _text_phones(frag: str | None) -> frozenset:
+    from .phonegroups import canon_set
     from .rules import find_phones
-    return frozenset(p[2] for p in find_phones(frag or ""))
+    return frozenset(canon_set(p[2] for p in find_phones(frag or "")))
 
 
 def similarity(a: str | None, b: str | None) -> float:
@@ -126,7 +129,8 @@ def classify(a, b, info: dict | None = None) -> tuple[str, float, list[str]] | N
     if c:
         return None
     agent = bool(_phones(a["phones"]) & _phones(b["phones"]))
-    why = ["тот же агент (номер)"] if agent else []
+    same_num = bool(set(json.loads(a["phones"] or "[]")) & set(json.loads(b["phones"] or "[]")))
+    why = (["тот же агент (номер)"] if same_num else ["тот же агент (номера одного агента)"]) if agent else []
     eq = lambda k: a[k] is not None and b[k] is not None and a[k] == b[k]  # noqa: E731
     area_eq = _close(a["area"], b["area"], 0.03, 1.5) is True
     land_eq = _close(a["land"], b["land"], 0.04, 0.3) is True
@@ -201,7 +205,7 @@ def merge(conn: sqlite3.Connection, keep: int, drop: int, kind: str, status: str
     _move(conn, drop, keep)
     conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'dup_same' WHERE id = ?", (drop,))
     if (d["last_seen"] or 0) > (k["last_seen"] or 0) and not k["price_fixed"]:   # свежее сообщение — его цена и текст
-        phones = sorted(_phones(k["phones"]) | _phones(d["phones"]))
+        phones = sorted(set(json.loads(k["phones"] or "[]")) | set(json.loads(d["phones"] or "[]")))
         conn.execute("UPDATE listings SET price = ?, price_m2 = ?, fragment = ?, description = ?, phones = ? WHERE id = ?",
                      (d["price"], d["price_m2"], d["fragment"], d["description"], json.dumps(phones, ensure_ascii=False), keep))
     a, b = _pair_key(keep, drop)
@@ -292,6 +296,8 @@ def _candidates(conn: sqlite3.Connection):
 def scan(conn: sqlite3.Connection, budget_s: float = 15.0, full: bool = False) -> dict:
     """Новые карточки (id больше курсора dup_scan_id) — против всех на сайте: наверняка — склеить, сомнительно — в очередь."""
     t0 = time.time()
+    from . import phonegroups
+    phonegroups.refresh(conn, force=True)
     cur = 0 if full else int(db.get_state(conn, "dup_scan_id") or 0)
     rows = _candidates(conn)
     if not rows or rows[-1]["id"] <= cur:
@@ -376,6 +382,9 @@ def tidy(conn: sqlite3.Connection) -> int:
 
 
 def run(conn: sqlite3.Connection) -> dict:
+    if not db.get_state(conn, "phone_groups_v1"):   # 25.10: номера одного агента — перепроверить все карточки заново
+        db.set_state(conn, "phone_groups_v1", "1")
+        db.set_state(conn, "dup_scan_id", "0")
     res = scan(conn)
     n = tidy(conn)
     conn.commit()
@@ -451,7 +460,7 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
         if ph and ph not in sender:
             sender.append(ph)
     sender += [ph for ph, role in roles.items() if role == "sender" and ph not in sender]
-    return {"id": r["id"], "title": r["title"], "text_phones": [_pretty(x) for x in text_ph],
+    return {"id": r["id"], "title": r["title"], "text_phones": [_pretty(x) for x in text_ph], "raw_phones": text_ph + sender,
             "sender_phones": [_pretty(x) for x in sender], "type": r["type"], "deal": r["deal"], "price": r["price"],
             "price_m2": r["price_m2"], "rooms": r["rooms"], "room_kind": r["room_kind"], "area": r["area"],
             "land": r["land"], "floor": r["floor"], "floors": r["floors"], "complex": r["complex"],
@@ -498,7 +507,8 @@ def pairs(conn: sqlite3.Connection, status: str = "open", limit: int = 30, offse
                     "ai": json.loads(p["ai"]) if p["ai"] else None, "decided_at": p["decided_at"],
                     "sim": round(similarity(a["text"], b["text"]), 3)})
     counts = dict(conn.execute("SELECT status, COUNT(*) FROM dup_pairs GROUP BY status").fetchall())
-    return {"pairs": out, "counts": {"open": open_count(conn), "auto": counts.get("auto", 0),
+    from . import phonegroups
+    return {"phone_groups": phonegroups.listing(conn), "pairs": out, "counts": {"open": open_count(conn), "auto": counts.get("auto", 0),
                                      "done": sum(counts.get(k, 0) for k in ("same", "diff", "split"))},
             "stats": stats(conn), "ai_enabled": bool(config.DEEPSEEK_API_KEY)}
 
