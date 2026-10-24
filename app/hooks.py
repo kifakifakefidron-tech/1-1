@@ -118,7 +118,7 @@ def same_elsewhere(conn: sqlite3.Connection, row: sqlite3.Row, limit: int = 10) 
     """Тот же объект у других агентов. 24.10j (Артём: «похожие редко вылезают»): раньше нужны были И площадь, И этаж —
     у объявлений без них похожих не было вовсе. Теперь: тот же тип, сделка, комнаты и место (ЖК или улица; дом — если у обоих),
     явные различия (этаж, этажность, площадь > 3 % / 2 м²) — не он; и хотя бы ДВА совпадения из: площадь, этаж, этажность,
-    цена в пределах 7 %."""
+    цена в пределах 7 % (цена — только вместе с совпавшей площадью или этажом)."""
     if not (row["complex"] or row["street"]) or row["rooms"] is None and row["type"] in ("flat", "new"):
         return []
     phones = set(json.loads(row["phones"] or "[]"))
@@ -153,6 +153,8 @@ def same_elsewhere(conn: sqlite3.Connection, row: sqlite3.Row, limit: int = 10) 
                   close(row["price"], r["price"], 0.07, 0)]
         if any(c is False for c in checks[:3]):   # другой этаж / дом / площадь — другая квартира
             continue
+        if checks[3] and not (checks[0] or checks[1]):   # 24.10j (Артём): цена считается, только если совпала площадь или этаж
+            checks[3] = None
         if sum(1 for c in checks if c) < 2:
             continue
         out.append({"id": r["id"], "price": r["price"], "title": r["title"], "last_seen": r["last_seen"]})

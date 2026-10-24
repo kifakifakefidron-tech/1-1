@@ -129,9 +129,9 @@ def test_similar_elsewhere_without_area_and_floor():
         return conn.execute("""INSERT INTO listings (type, deal, title, rooms, complex, price, floors, area, phones, first_seen, last_seen,
                                seen_count, is_active, source, search_text) VALUES ('flat','sale','Евро-2',2,'Абрикосово',?,?,?,?,1,1,1,1,'chat','')""",
                             (price, floors, area, f'["{phone}"]')).lastrowid
-    a = add("+79180000001", 6_000_000)
-    b = add("+79180000002", 5_900_000)
-    add("+79180000003", 5_950_000, floors=9)   # другой дом по этажности — не он
+    a = add("+79180000001", 6_000_000, area=58)
+    b = add("+79180000002", 5_900_000, area=58)   # этажа нет ни у кого: площадь + этажность + цена
+    add("+79180000003", 5_950_000, floors=9, area=58)   # другой дом по этажности — не он
     conn.commit()
     row = conn.execute("SELECT * FROM listings WHERE id = ?", (a,)).fetchone()
     assert [x["id"] for x in hooks.same_elsewhere(conn, row)] == [b]
@@ -166,3 +166,19 @@ def test_dupfix_merges_existing_twins():
     assert tuple(keep) == (1, 6_000_000)
     assert conn.execute("SELECT hidden_reason FROM listings WHERE id = ?", (ids[1],)).fetchone()[0] == "dup_text"
     assert conn.execute("SELECT COUNT(*) FROM listings WHERE is_active = 1").fetchone()[0] == 2
+
+
+def test_similar_price_counts_only_with_area_or_floor():
+    """24.10j (Артём): «похожие» — цена засчитывается, только если совпала площадь или этаж (одна этажность + цена — не похожие)."""
+    from app import hooks
+    conn = db.connect(":memory:")
+    def add(phone, price, floors=16, area=None, floor=None):
+        return conn.execute("""INSERT INTO listings (type, deal, title, rooms, complex, price, floors, area, floor, phones, first_seen,
+                               last_seen, seen_count, is_active, source, search_text) VALUES ('flat','sale','Евро-2',2,'Абрикосово',?,?,?,?,?,1,1,1,1,'chat','')""",
+                            (price, floors, area, floor, f'["{phone}"]')).lastrowid
+    a = add("+79180000001", 6_000_000, area=58)
+    add("+79180000002", 5_900_000)                    # только этажность и цена — уже не похожие
+    c = add("+79180000003", 6_100_000, area=58.5)     # площадь + цена (+ этажность)
+    conn.commit()
+    row = conn.execute("SELECT * FROM listings WHERE id = ?", (a,)).fetchone()
+    assert [x["id"] for x in hooks.same_elsewhere(conn, row)] == [c]
