@@ -191,10 +191,10 @@ YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "").strip()
 YOOKASSA_SECRET = os.getenv("YOOKASSA_SECRET", "").strip()
 
 # ─── Кабинет агента ────────────────────────────────────────────────────────
-# 24.10k (Артём): поддержка — вопросы, ошибки, подтверждение номера — один номер (звонок и MAX)
+# 24.10k (Артём): поддержка — вопросы и ошибки (звонок и MAX); подтверждение номера — свой номер VERIFY_NUMBER
 SUPPORT_PHONE = os.getenv("SUPPORT_PHONE", "+79384222830").strip()
-# Наш номер, на который агент пишет код из MAX или WhatsApp (номер профиля Wappi); по умолчанию — номер поддержки
-VERIFY_NUMBER = os.getenv("VERIFY_NUMBER", "").strip() or SUPPORT_PHONE
+# Наш номер, на который агент пишет код из MAX или WhatsApp (номер профиля Wappi) — НЕ номер поддержки (решение Артёма 24.10)
+VERIFY_NUMBER = os.getenv("VERIFY_NUMBER", "").strip()
 # 17.10: подтверждение номера звонком (основной способ) — SMS.ru «Авторизация по звонку», ключ api_id из их кабинета
 SMSRU_API_ID = os.getenv("SMSRU_API_ID", "").strip()
 # 18.10 (Артём): номера, которые ВСЕГДА «Проверенный агент» (свои / агентства), без подтверждения; ещё — ALWAYS_VERIFIED в .env
