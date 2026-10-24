@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/doc.css?v=3">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=97">
+<link rel="stylesheet" href="/static/glass.css?v=98">
 </head>
 <body>
 <header class="nav"><div class="nav-in">
@@ -36,6 +36,14 @@
     <li>Плательщик налога на профессиональный доход (самозанятый). Чеки формируются в приложении «Мой налог»
       и приходят на почту после оплаты.</li>
   </ul>
+  <h2 id="support">Поддержка</h2>
+  <div class="support-box">
+    <p>Вопросы по сервису, ошибки, не получается подтвердить номер или войти — звоните или пишите в MAX:</p>
+    <p class="support-num"><a href="tel:{{SUPPORT_TEL}}">{{SUPPORT_PHONE}}</a></p>
+    <p class="support-acts"><a class="pill" href="tel:{{SUPPORT_TEL}}">Позвонить</a>
+      <button type="button" class="pill light" data-max="{{SUPPORT_TEL}}">Написать в MAX</button></p>
+    <p class="meta">Этот же номер — для подтверждения вашего номера кодом в MAX.</p>
+  </div>
   <h2>Связь</h2>
   <ul>
     <li>Почта для обращений, претензий и вопросов о персональных данных: <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a></li>
@@ -48,7 +56,7 @@
 <script src="/static/icons.js?v=10"></script>
 <script src="/static/pickers.js?v=18"></script>
 <script src="/static/max.js?v=2"></script>
-<script src="/static/rail.js?v=33"></script>
+<script src="/static/rail.js?v=34"></script>
 <script src="/static/bell.js?v=7"></script>
 </body>
 </html>

@@ -286,6 +286,12 @@ def _price_cards() -> str:
     return "".join(f'<li class="hw-price {k}"><small>{a}</small><b>{b}</b><span>{c}</span><em>{e}</em></li>' for a, b, c, e, k in cards)
 
 
+def _pretty_phone(p: str) -> str:
+    """+79384222830 → +7 938 422-28-30."""
+    d = re.sub(r"\D", "", p or "")
+    return f"+7 {d[1:4]} {d[4:7]}-{d[7:9]}-{d[9:11]}" if len(d) == 11 else (p or "")
+
+
 def _page(name: str) -> Response:
     """Текстовая страница с подстановкой данных оператора и условий подписки."""
     from . import consent
@@ -298,6 +304,7 @@ def _page(name: str) -> Response:
         "SUB_DAYS": config.SUB_DAYS, "STALE_DAYS": config.STALE_DAYS, "ARCHIVE_DAYS": config.ARCHIVE_DAYS, "KEEP_DAYS": config.KEEP_DAYS,
         "PRICE_CARDS": _price_cards(), "REF_DAYS": config.REF_DAYS, "OWN_DAYS": config.OWN_LISTING_DAYS,
         "AGENT_BONUS_DAYS": consent.BONUS_DAYS,
+        "SUPPORT_PHONE": _pretty_phone(config.SUPPORT_PHONE), "SUPPORT_TEL": config.SUPPORT_PHONE,
     }.items():
         html = html.replace("{{" + key + "}}", str(val))
     return Response(html, media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
@@ -347,7 +354,7 @@ def api_meta(request: Request, body: dict | None = None):
     user = current_user(request)
     learning.rules(db.get())   # подтянуть районы, добавленные админом (раз в минуту)
     return JSONResponse({
-        "title": config.SITE_TITLE,
+        "title": config.SITE_TITLE, "support_phone": config.SUPPORT_PHONE, "support_pretty": _pretty_phone(config.SUPPORT_PHONE),
         "types": TYPE_LABELS,
         "districts": geo.all_district_names(),
         "access": has_access(request, user),

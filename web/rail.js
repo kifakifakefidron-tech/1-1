@@ -51,6 +51,8 @@
     { href: "/pay", icon: "card", tip: "Подписка", desc: "Тарифы и доступ к номерам" },
     { href: "/settings", icon: "gear", tip: "Настройки", desc: "Профиль, подборки, вход, почта", user: true },
     { href: "/how", icon: "help", tip: "Как это работает", desc: "Инструкция и ответы на вопросы" },
+    // 24.10k (Артём): вопросы и ошибки — на номер поддержки (звонок и MAX)
+    { href: "/contacts#support", icon: "chat", tip: "Поддержка", desc: "Вопросы и ошибки — +7 938 422-28-30" },
     { sep: true, admin: true },
     { href: "/learn", icon: "layers", tip: "Обучение и разбор", desc: "Очереди разбора и правила", admin: true, also: ["/fix", "/admin/map"] },
     { href: "/admin", icon: "sliders", tip: "Админка", desc: "Пользователи, чаты, статистика", admin: true },

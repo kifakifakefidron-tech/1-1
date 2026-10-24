@@ -1456,3 +1456,11 @@ summary { transition: color .2s var(--m-out); }
   box-shadow: 0 18px 50px rgba(0, 0, 0, .42), inset 0 1px 0 rgba(255, 255, 255, .07) !important; font-size: 14.5px !important; }
 .toast::before { width: 22px; height: 22px; margin-top: -1px; border-radius: 50%; box-shadow: none;
   background: var(--gold) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230f2f2e' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4 8-9'/%3E%3C/svg%3E") center / 14px no-repeat; }
+
+/* 24.10k: поддержка на странице «Контакты» */
+.support-box { margin: 8px 0 24px; padding: 18px 20px; border-radius: 22px; border: 1px solid rgba(227, 203, 143, .35);
+  background: linear-gradient(135deg, rgba(227, 203, 143, .1), rgba(255, 255, 255, .02)); }
+.support-box p { margin: 0 0 10px; }
+.support-num a { font: 600 clamp(26px, 4vw, 34px)/1.1 var(--head); color: var(--gold-100, var(--ink)); text-decoration: none; }
+.support-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.support-acts .pill { text-decoration: none; }
