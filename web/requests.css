@@ -65,3 +65,45 @@
 .rq-foot { margin-top: auto; padding-top: 10px; }
 .rq-phones { margin-top: 0; padding-top: 8px; }
 .rq-chips { min-height: 28px; align-content: flex-start; }
+
+/* ═══ 24.10b ЗАПРОСЫ v3 (образец Артёма) ═══ */
+.rq2 { max-width: 1280px; }
+.rq2-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; margin-bottom: 6px; }
+.rq2-eyebrow { margin: 0 0 6px; font: 600 12px var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
+.rq2 .rq2-head h1 { margin: 0 0 8px; font: 600 clamp(38px, 5vw, 64px)/1 var(--head); color: var(--gold-100, var(--ink)); }
+.rq2 .rq2-head .lead { margin: 0; max-width: 760px; }
+.rq2-nums { display: flex; gap: 28px; }
+.rq2-nums span { display: grid; justify-items: start; }
+.rq2-nums b { font: 600 clamp(40px, 5vw, 58px)/1 var(--head); color: var(--gold-100, var(--ink)); }
+.rq2-nums .up b { color: #b7e4c7; }
+.rq2-nums small { color: var(--ink-3); font-size: 13px; }
+.rq2-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 14px 0 4px; }
+.rq2-bar .pill { display: inline-flex; align-items: center; gap: 8px; }
+.rq2-bar .ic { width: 16px; height: 16px; }
+.rq-list { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 1100px) { .rq-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .rq-list { grid-template-columns: 1fr; } }
+.rq2-item { padding: 18px 20px !important; border-radius: 24px !important; background: rgba(4, 64, 62, .55) !important; }
+.rq2-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rq2-top small { margin-left: auto; color: var(--ink-3); font-size: 12.5px; }
+.rq2-deal { padding: 4px 11px; border-radius: 999px; background: var(--gold); color: #0f2f2e; font: 600 12.5px var(--body); }
+.rq2-deal.rent { background: #b7e4c7; color: #0d3b26; }
+.rq2 .rq2-budget { margin: 12px 0 8px !important; font: 600 38px/1 var(--head); color: var(--gold-100, var(--ink)); }
+.rq2 .rq2-budget small { margin-left: 4px; font: 600 18px var(--head); color: var(--gold); }
+.rq2 .rq2-budget.none { font-size: 28px; color: rgba(243, 232, 188, .38); }
+.rq2-item .rq-chips .chip { background: #032b2a; border: 0; color: var(--ink); font-size: 13px; padding: 6px 11px; border-radius: 10px; }
+.rq2-item .rq-text { color: var(--ink); font-size: 14.5px !important; line-height: 1.5; }
+.rq2-item .rq-more { text-decoration: underline; text-underline-offset: 3px; font-weight: 600; }
+.rq2-phones { display: grid !important; gap: 8px; }
+.rq2-ph { display: flex; gap: 8px; }
+.rq2-ph .pill { flex: 1; justify-content: center; display: inline-flex; align-items: center; gap: 8px; min-height: 46px; font-size: 14.5px !important; }
+.rq2-ph .pill.light { background: transparent; border: 1.5px solid var(--gold); color: var(--gold-100, var(--ink)); }
+.rq2-max, .rq2-del { flex: none; min-width: 52px; min-height: 46px; border-radius: 14px; border: 1px solid var(--glass-line); cursor: pointer;
+  background: rgba(255, 255, 255, .04); color: var(--ink); font: 700 12.5px var(--body); display: grid; place-items: center; }
+.rq2-del { background: #032b2a; color: var(--ink-2); } .rq2-del:hover { color: #ffb4a3; }
+.rq2-del svg { width: 16px; height: 16px; }
+.rq2-dlg .agent-field { display: grid; gap: 6px; margin: 12px 0; }
+.rq2-dlg textarea { width: 100%; font-size: 16px; }
+.rq2-dlg { width: min(520px, calc(100vw - 24px)); overflow-x: hidden; }
+.rq2-dlg .dlg-body { overflow-x: hidden; }
+.rq2-dlg .dlg-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 14px; }

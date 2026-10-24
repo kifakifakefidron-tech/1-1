@@ -508,3 +508,17 @@ def notify_matches(conn: sqlite3.Connection) -> int:
         conn.execute("UPDATE buyer_requests SET notified = 1 WHERE id = ?", (r["id"],))
     conn.commit()
     return sent
+
+
+def publish_state(conn: sqlite3.Connection, user_id: int) -> dict:
+    """24.10b: кнопка «Опубликовать свой запрос» на /requests — номер подтверждён и согласие на показ номера дано;
+    клиенты-покупатели и арендаторы агента и опубликован ли у них запрос."""
+    from . import consent
+    phones = [r[0] for r in conn.execute("SELECT phone FROM agent_phones WHERE user_id = ?", (user_id,))]
+    agreed = any((consent.current(conn, p) or {}).get("publish") for p in phones)
+    pub = {r[0]: r[1] for r in conn.execute("""SELECT client_id, last_seen FROM buyer_requests WHERE source = 'agent' AND user_id = ?
+                                               AND is_active = 1 AND removed = 0""", (user_id,))}
+    clients = [{"id": r["id"], "name": r["name"], "kind": r["kind"], "published": r["id"] in pub}
+               for r in conn.execute("""SELECT id, name, kind FROM clients WHERE user_id = ? AND archived = 0
+                                        AND kind IN ('buyer', 'tenant') ORDER BY updated DESC LIMIT 200""", (user_id,))]
+    return {"verified": bool(phones), "consent": agreed, "can": bool(phones) and agreed, "clients": clients}

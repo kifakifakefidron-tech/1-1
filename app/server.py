@@ -1626,6 +1626,7 @@ def api_requests(request: Request, body: dict | None = None):
     d = buyers.feed(conn, True, q.get("deal", ""), q.get("district", ""), _num(q.get("rooms"), int), q.get("q", ""),
                     _num(q.get("page"), int) or 1, user_id=user["id"], first=_num(q.get("id"), int))
     d["admin"] = bool(user["is_admin"])
+    d["publish"] = buyers.publish_state(conn, user["id"])   # 24.10b: «Опубликовать свой запрос»
     return JSONResponse(d)
 
 
@@ -2577,6 +2578,9 @@ def api_client_action(request: Request, body: dict | None = None):
             return JSONResponse({"ok": buyers.unpublish(conn, user["id"], cid), "published": None})
         if not has_access(request, user):
             return _err("Публиковать запросы можно с подпиской.", 403)
+        if not buyers.publish_state(conn, user["id"])["consent"] and buyers.publish_state(conn, user["id"])["verified"]:
+            return JSONResponse({"detail": "Дайте согласие на показ вашего номера коллегам — страница «Ваш номер на 1+1».",
+                                 "need_consent": True}, status_code=400)
         res = buyers.publish(conn, user["id"], d["client"], str(body.get("comment", ""))[:600])
         if "error" in res:
             return JSONResponse({"detail": res["error"], "need_verify": bool(res.get("need_verify"))}, status_code=400)
