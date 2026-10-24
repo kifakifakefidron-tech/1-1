@@ -107,3 +107,14 @@ def test_classify_similar_text_needs_same_text_phones():
     assert c and c[0] == "similar"
     d = dict(b, fragment=t2.replace("89181112233", "89187776655"))   # другой номер в тексте — другой агент
     assert dupreview.classify(a, d) is None
+
+
+def test_pair_newer_on_right_and_text_phone_shown():
+    conn = db.connect(":memory:")
+    a = _lid(_send(conn, A))
+    c = _lid(_send(conn, NO_FLOOR, "c2"))
+    conn.execute("UPDATE listings SET last_seen = last_seen + 100 WHERE id = ?", (a,))   # первую карточку прислали снова, позже
+    dupreview.run(conn)
+    p = dupreview.pairs(conn)["pairs"][0]
+    assert (p["a"]["id"], p["b"]["id"]) == (c, a)       # справа — та, что пришла позже
+    assert p["b"]["text_phones"] == ["+7 918 111-22-33"]

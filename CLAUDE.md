@@ -969,6 +969,8 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   прежние цену/текст (undo в dup_pairs; избранное остаётся на основной). stats — ответы по видам; set_trust (state dup_trust) —
   «склеивать такие сами» после 20 ответов и ≥ 95 %. ask_ai — подсказка DeepSeek по кнопке (одна пара — один запрос). /learn —
   карточка «Спорные: возможно, повтор» сразу после «Спорных» (brain._with_dups, href /dups). Фото пока не сравниваем.
+  25.10 (Артём): в паре СПРАВА — присланная позже (по last_seen), внизу каждой карточки — номер ИЗ ТЕКСТА объявления
+  (_card text_phones; нет в тексте — «прислал в чат», sender_phones), строка «Номер в тексте» в таблице.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

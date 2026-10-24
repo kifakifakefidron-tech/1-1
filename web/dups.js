@@ -67,6 +67,7 @@
       ["Участок", (c) => c.land ? `${String(c.land).replace(".", ",")} сот.` : null],
       ["Этаж", fl], ["ЖК", (c) => c.complex], ["Улица, дом", addr], ["Район", (c) => c.district || c.settlement],
       ["Цена", (c) => mln(c.price, c.deal), false, true],
+      ["Номер в тексте", (c) => (c.text_phones || []).join(", ") || null],
     ];
     return R.map(([label, f, always, price]) => {
       const va = f(a), vb = f(b);
@@ -90,9 +91,11 @@
       <div class="dp-price">${esc(mln(c.price, c.deal))}</div>
       <p class="dp-meta">№ ${c.id} · впервые ${esc(day(c.first_seen))} · последнее ${esc(day(c.last_seen))}
         · присылали ${n0(c.seen_count)} раз${c.chat ? ` · ${esc(c.chat)}` : ""}</p>
-      ${(c.phones || []).length ? `<p class="dp-meta">Номер: ${c.phones.map(esc).join(", ")}</p>` : ""}
       ${used.length ? `<p class="dp-used">${used.map(esc).join(" · ")}</p>` : ""}
       <div class="dp-text">${marked}</div>
+      <div class="dp-phone">${(c.text_phones || []).length
+        ? `<span>Номер в объявлении</span><b>${c.text_phones.map(esc).join(", ")}</b>`
+        : `<span>В тексте номера нет${(c.sender_phones || []).length ? " · прислал в чат" : ""}</span><b>${(c.sender_phones || []).map(esc).join(", ") || "—"}</b>`}</div>
     </article>`;
   }
 
@@ -111,7 +114,7 @@
       </header>
       <div class="chips dp-why">${(p.why || []).map((w) => `<span class="chip">${esc(w)}</span>`).join("")}</div>
       ${ai}
-      <div class="dp-table"><div class="dp-tr dp-th"><span></span><span>Карточка 1</span><span>Карточка 2</span></div>
+      <div class="dp-table"><div class="dp-tr dp-th"><span></span><span>Раньше · ${esc(day(p.a.last_seen))}</span><span>Новее · ${esc(day(p.b.last_seen))}</span></div>
         ${R.map((r) => `<div class="dp-tr ${r.cls}"><span>${esc(r.label)}</span><b>${esc(r.va ?? "не указано")}</b><b>${esc(r.vb ?? "не указано")}</b></div>`).join("")}
       </div>
       <p class="note dp-legend"><i class="eq"></i> совпало <i class="ne"></i> различается <i class="miss"></i> указано не у обоих

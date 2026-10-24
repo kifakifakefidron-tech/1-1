@@ -435,7 +435,16 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
     chat = conn.execute("""SELECT m.chat_name FROM listing_events e JOIN messages m ON m.id = e.message_id
                            WHERE e.listing_id = ? AND COALESCE(m.chat_name, '') != '' ORDER BY e.ts DESC LIMIT 1""",
                         (lid,)).fetchone() if _has_col(conn, "listing_events", "message_id") else None
-    return {"id": r["id"], "title": r["title"], "type": r["type"], "deal": r["deal"], "price": r["price"],
+    # 25.10 (Артём): внизу карточки — номер ИЗ ТЕКСТА объявления; нет в тексте — кто прислал в чат
+    from .rules import find_phones
+    text_ph = list(dict.fromkeys(p[2] for p in find_phones(r["fragment"] or r["description"] or "")))
+    try:
+        roles = json.loads(r["phone_roles"] or "{}") if "phone_roles" in r.keys() else {}
+    except (TypeError, ValueError):
+        roles = {}
+    sender = [ph for ph, role in roles.items() if role == "sender" and ph not in text_ph]
+    return {"id": r["id"], "title": r["title"], "text_phones": [_pretty(x) for x in text_ph],
+            "sender_phones": [_pretty(x) for x in sender], "type": r["type"], "deal": r["deal"], "price": r["price"],
             "price_m2": r["price_m2"], "rooms": r["rooms"], "room_kind": r["room_kind"], "area": r["area"],
             "land": r["land"], "floor": r["floor"], "floors": r["floors"], "complex": r["complex"],
             "district": r["district"], "street": r["street"], "house": r["house"], "settlement": r["settlement"],
@@ -444,6 +453,12 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
             "seen_count": r["seen_count"], "is_active": r["is_active"], "hidden_reason": r["hidden_reason"],
             "favorites": used["favorites"], "clients": used["client_items"], "picks": used["collection_items"],
             "chat": chat[0] if chat else None}
+
+
+def _pretty(p: str) -> str:
+    """+79384222830 → +7 938 422-28-30."""
+    d = "".join(ch for ch in p or "" if ch.isdigit())
+    return f"+7 {d[1:4]} {d[4:7]}-{d[7:9]}-{d[9:11]}" if len(d) == 11 else (p or "")
 
 
 _COLS_CACHE: dict = {}
@@ -467,6 +482,8 @@ def pairs(conn: sqlite3.Connection, status: str = "open", limit: int = 30, offse
         a, b = _card(conn, p["a"]), _card(conn, p["b"])
         if a is None or b is None:
             continue
+        if (a["last_seen"] or 0, a["id"]) > (b["last_seen"] or 0, b["id"]):   # 25.10 (Артём): справа — присланное позже
+            a, b = b, a
         keep = p["keep_id"] or choose_keep(conn, p["a"], p["b"])[0]
         out.append({"id": p["id"], "kind": p["kind"], "kind_label": KINDS.get(p["kind"], p["kind"]), "score": p["score"],
                     "why": json.loads(p["why"] or "[]"), "status": p["status"], "a": a, "b": b, "keep": keep,
