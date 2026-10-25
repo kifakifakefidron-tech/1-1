@@ -993,6 +993,10 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   галочка #agentChk (показ номера и имени — /consent-publish + тексты и фото — /license, одной галочкой, не отмечена заранее);
   server._no_consent требует consent, terms И agent (или publish+license); agent → publish+license (_agent_opts, в опросе входа
   по номеру и Telegram — ?agent=1). CONSENT_ERR — «все три галочки». Согласие на обработку ПДн осталось отдельной галочкой.
+  25.10 (ветка signup-soft, Артём: «вход и без третьей галочки, но написать так, чтобы не боялись»): #agentChk снова ПО ЖЕЛАНИЮ
+  (_no_consent — только consent+terms), текст: «Я агент — показывайте мой номер в моих объявлениях, чтобы коллеги звонили мне
+  напрямую…» + мелко .ac-note «Без рекламы и рассылок: номер виден только в ваших объявлениях и только вошедшим риелторам,
+  отключить — одной кнопкой» и ссылки на документы. Не отметил — галочки ещё раз в форме подтверждения номера (verify.js).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

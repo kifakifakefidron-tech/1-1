@@ -29,7 +29,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=100">
+<link rel="stylesheet" href="/static/glass.css?v=101">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -304,9 +304,12 @@
           <span>Даю <a href="/consent" target="_blank">согласие на обработку персональных данных</a></span></label>
         <label class="consent-chk"><input type="checkbox" id="termsChk">
           <span>Принимаю <a href="/terms" target="_blank">пользовательское соглашение</a> и <a href="/offer" target="_blank">оферту</a></span></label>
-        <label class="consent-chk"><input type="checkbox" id="agentChk">
-          <span>Даю <a href="/consent-publish" target="_blank">согласие на распространение</a> моего номера и имени в моих объявлениях
-            на 1+1 и <a href="/license" target="_blank">разрешаю использовать тексты и фото</a> моих объявлений</span></label>
+        <label class="consent-chk agent-chk"><input type="checkbox" id="agentChk">
+          <span><b>Я агент — показывайте мой номер в моих объявлениях</b>, чтобы коллеги звонили мне напрямую, а мои объекты
+            показывались с фото и описанием.
+            <small class="ac-note">Без рекламы и рассылок: номер виден только в ваших же объявлениях и только вошедшим риелторам.
+              Отключить — одной кнопкой в любой момент. Документы: <a href="/consent-publish" target="_blank">согласие на показ номера</a>,
+              <a href="/license" target="_blank">разрешение на тексты и фото</a>.</small></span></label>
         <div class="lg-tabs" id="lgTabs" role="tablist" hidden>
           <button type="button" role="tab" data-lt="phone">По номеру телефона</button>
           <button type="button" role="tab" data-lt="email">По почте</button></div>
@@ -461,7 +464,7 @@
 <script src="/static/yasel.js?v=4"></script>
 <script src="/static/bell.js?v=7"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/app.js?v=139"></script>
+<script src="/static/app.js?v=140"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>

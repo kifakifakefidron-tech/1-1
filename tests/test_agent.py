@@ -364,12 +364,12 @@ def test_signup_checkboxes_apply_to_phone_confirmed_later(env, monkeypatch):
 
 
 
-def test_login_needs_third_checkbox(env, monkeypatch):
-    """25.10 (Артём): согласие на показ номера и на тексты/фото — обязательная третья галочка при входе."""
+def test_third_checkbox_optional_but_saved(env, monkeypatch):
+    """25.10 (Артём): третья галочка («Я агент — показывайте мой номер») по желанию; отмеченная — оба согласия в аккаунте."""
     c, conn, _ = env
     monkeypatch.setattr(accounts, "check_email_code", lambda *a: (True, ""))
-    r = c.post("/api/auth/email/verify", json={"consent": True, "terms": True, "email": "x3@example.ru", "code": "1"})
-    assert r.status_code == 400 and "три галочки" in r.json()["detail"]
+    r = c.post("/api/auth/email/verify", json={"consent": True, "terms": True, "email": "x2@example.ru", "code": "1"})
+    assert r.status_code == 200
     r = c.post("/api/auth/email/verify", json={"consent": True, "terms": True, "agent": True, "email": "x3@example.ru", "code": "1"})
     assert r.status_code == 200
     from app import consent

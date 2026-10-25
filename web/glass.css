@@ -1464,3 +1464,8 @@ summary { transition: color .2s var(--m-out); }
 .support-num a { font: 600 clamp(26px, 4vw, 34px)/1.1 var(--head); color: var(--gold-100, var(--ink)); text-decoration: none; }
 .support-acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .support-acts .pill { text-decoration: none; }
+
+/* 25.10: третья галочка входа — «Я агент» (по желанию), с пояснением мелко */
+.consent-chk.agent-chk { border-color: rgba(227, 203, 143, .4); background: rgba(227, 203, 143, .06); }
+.consent-chk.agent-chk b { color: var(--gold-100, var(--ink)); font-weight: 600; }
+.consent-chk .ac-note { display: block; margin-top: 5px; font-size: 11.5px; line-height: 1.45; color: var(--ink-3); }
