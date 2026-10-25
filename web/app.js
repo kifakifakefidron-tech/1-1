@@ -557,11 +557,13 @@
   // 18.10 (приёмка п. 9): две отдельные галочки — согласие на обработку ПДн отдельно от соглашения и оферты (закон с 01.09.2025)
   // 25.10: галочки агента из окна входа (по желанию) — уходят вместе со входом, дальше ничего подтверждать не нужно
   function agentOpts() {
-    return { publish: !!($("pubChk") && $("pubChk").checked), license: !!($("licChk") && $("licChk").checked) };
+    const on = !!($("agentChk") && $("agentChk").checked);   // 25.10: одна обязательная галочка = оба согласия
+    return { agent: on, publish: on, license: on };
   }
   function consentOk() {
     const boxes = [["consentChk", "Отметьте согласие на обработку персональных данных — без него вход невозможен."],
-      ["termsChk", "Отметьте, что принимаете пользовательское соглашение и оферту."]];
+      ["termsChk", "Отметьте, что принимаете пользовательское соглашение и оферту."],
+      ["agentChk", "Отметьте согласие на показ номера и имени в ваших объявлениях и на использование текстов и фото."]];
     for (const [id, text] of boxes) {
       const c = $(id);
       if (c && !c.checked) {
@@ -1835,7 +1837,7 @@
     const btn = $("phoneForm").querySelector(".lg-go");
     btn.disabled = true; btn.textContent = "Готовим номер для звонка…";
     $("loginErr").hidden = true;
-    const r = await call("/api/auth/phone", { phone, consent: true, terms: true });
+    const r = await call("/api/auth/phone", { phone, consent: true, terms: true, ...agentOpts() });
     btn.disabled = false; btn.textContent = "Войти звонком";
     if (!r.ok) { loginError(r.data.detail || "Не получилось — попробуйте ещё раз или войдите по почте."); return; }
     const { tid, call_phone: to, call_pretty: pretty, phone: ph, ttl } = r.data;
@@ -1856,7 +1858,7 @@
     phoneTick = setInterval(() => { left = Math.max(0, left - 1); show(); }, 1000);
     phonePoll = setInterval(async () => {
       const ao = agentOpts();
-      const s = await call(`/api/auth/phone?tid=${encodeURIComponent(tid)}${ao.publish ? "&pub=1" : ""}${ao.license ? "&lic=1" : ""}`);
+      const s = await call(`/api/auth/phone?tid=${encodeURIComponent(tid)}${ao.agent ? "&agent=1" : ""}`);
       if (!s.ok) return;
       if (s.data.status === "ok" || s.data.status === "used") { stopPhone(); $("phoneCall").querySelector(".pv-wait").innerHTML = `${ic("check-circle")}<b>Номер подтверждён — входим…</b>`; await afterLogin(); return; }
       if (s.data.status === "expired" || left <= 0) {
@@ -1894,7 +1896,7 @@
   async function startTelegram(link) {
     if (!link && !consentOk()) return;
     const w = window.open("", "_blank");  // открываем сразу, иначе браузер заблокирует окно
-    const r = await call("/api/auth/tg/start", link ? { link: true } : { consent: true, terms: true });
+    const r = await call("/api/auth/tg/start", link ? { link: true } : { consent: true, terms: true, ...agentOpts() });
     if (!r.ok) {
       if (w) w.close();
       if (!$("loginDlg").open) openLogin();
@@ -1910,7 +1912,7 @@
     const started = Date.now();
     tgPoll = setInterval(async () => {
       if (Date.now() - started > 30 * 60 * 1000) { clearInterval(tgPoll); return; }
-      const st = await call(`/api/auth/tg/status?t=${encodeURIComponent(r.data.token)}`);
+      const st = await call(`/api/auth/tg/status?t=${encodeURIComponent(r.data.token)}${agentOpts().agent ? "&agent=1" : ""}`);
       if (st.ok && st.data.status === "ok") {
         clearInterval(tgPoll);
         await afterLogin();
@@ -2626,7 +2628,7 @@
       btn.disabled = true;
       btn.textContent = "Отправляем код…";
       $("loginErr").hidden = true;
-      const r = await call("/api/auth/email/start", { email, consent: consentOk(), terms: true });
+      const r = await call("/api/auth/email/start", { email, consent: consentOk(), terms: true, ...agentOpts() });
       btn.disabled = false;
       btn.textContent = label;
       if (!r.ok) { loginError(r.data.detail || `Не получилось отправить код (ошибка ${r.status}). Попробуйте ещё раз чуть позже.`); return; }

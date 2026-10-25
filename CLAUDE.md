@@ -989,6 +989,10 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   consent.at_signup: users.agent_consent {publish, license, ts, ip, version} + сразу на подтверждённые номера; номер, подтверждённый
   позже (agent._confirm), — consent.apply_signup (номера без записи; отозванные не трогаем). verify.js видит signup
   (/api/agent/consent → signup) и вместо галочек пишет «Согласия вы дали при регистрации».
+  25.10 (ветка signup-one, Артём: «обязательной галочкой и совместить в 1»): вместо блока #agentChks — ТРЕТЬЯ ОБЯЗАТЕЛЬНАЯ
+  галочка #agentChk (показ номера и имени — /consent-publish + тексты и фото — /license, одной галочкой, не отмечена заранее);
+  server._no_consent требует consent, terms И agent (или publish+license); agent → publish+license (_agent_opts, в опросе входа
+  по номеру и Telegram — ?agent=1). CONSENT_ERR — «все три галочки». Согласие на обработку ПДн осталось отдельной галочкой.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

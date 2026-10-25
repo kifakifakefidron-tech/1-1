@@ -720,13 +720,16 @@ def _stats() -> dict:
 
 
 # ─── промокод для коллег (временный) ───────────────────────────────────────
-CONSENT_ERR = "Отметьте обе галочки — согласие на обработку персональных данных и пользовательское соглашение."
+CONSENT_ERR = ("Отметьте все три галочки — согласие на обработку персональных данных, пользовательское соглашение "
+               "и согласие на показ номера в ваших объявлениях.")
 
 
 def _no_consent(body: dict | None) -> bool:
     """152-ФЗ (с 01.09.2025): согласие — отдельный документ и отдельная галочка; без неё не входим."""
     # 18.10 (приёмка п. 9): и согласие на ПДн, и соглашение — две отдельные галочки
-    return not ((body or {}).get("consent") and (body or {}).get("terms"))
+    # 25.10 (Артём): третья обязательная — показ номера и имени (ст. 10.1) + тексты и фото объявлений, одной галочкой
+    b = body or {}
+    return not (b.get("consent") and b.get("terms") and (b.get("agent") or (b.get("publish") and b.get("license"))))
 
 
 def _save_consent(conn, user_id: int, request: Request | None = None, agent_opts: dict | None = None) -> None:
@@ -747,7 +750,9 @@ def _agent_opts(body: dict | None, request: Request | None = None) -> dict:
     """Галочки агента: из тела запроса или из адреса (вход по номеру проверяется GET-запросом)."""
     b = body or {}
     q = request.query_params if request is not None else {}
-    return {"publish": bool(b.get("publish")) or q.get("pub") == "1", "license": bool(b.get("license")) or q.get("lic") == "1"}
+    one = bool(b.get("agent")) or q.get("agent") == "1"   # 25.10: одна галочка = оба согласия
+    return {"publish": one or bool(b.get("publish")) or q.get("pub") == "1",
+            "license": one or bool(b.get("license")) or q.get("lic") == "1"}
 
 
 def api_login(request: Request, body: dict | None = None):
@@ -796,7 +801,7 @@ def api_tg_status(request: Request, body: dict | None = None):
         conn.execute("UPDATE tg_tokens SET status = 'used' WHERE token = ?", (row["token"],))
         conn.commit()
         user = accounts.get_user(conn, row["result_user"])
-        _save_consent(conn, user["id"])   # вход через Telegram начинался с галочки согласия (api_tg_start)
+        _save_consent(conn, user["id"], request, _agent_opts(None, request))   # галочки — с начала входа (api_tg_start)
         token = accounts.create_session(conn, user["id"], request.headers.get("user-agent", ""))
         return _session_response(request, {"status": "ok", "me": accounts.me(conn, user)}, token)
     return JSONResponse({"status": row["status"]})

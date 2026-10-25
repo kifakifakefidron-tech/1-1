@@ -1464,9 +1464,3 @@ summary { transition: color .2s var(--m-out); }
 .support-num a { font: 600 clamp(26px, 4vw, 34px)/1.1 var(--head); color: var(--gold-100, var(--ink)); text-decoration: none; }
 .support-acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .support-acts .pill { text-decoration: none; }
-
-/* 25.10: галочки агента в окне входа (по желанию) */
-.consent-agent { display: grid; gap: 8px; padding: 10px 12px 2px; border-radius: 16px; border: 1px dashed rgba(227, 203, 143, .35); }
-.consent-agent .ca-h { margin: 0; font-size: 12.5px; color: var(--gold-100, var(--ink-2)); line-height: 1.4; }
-.consent-agent .consent-chk { margin: 0 0 8px; }
-.login-dlg.step2 .consent-agent { display: none; }

@@ -213,7 +213,7 @@ def test_referral_no_bonus_since_2510(env, monkeypatch):
     c.post("/api/c/consent", json={"choice": "all", "ref": code})   # «Принять все» — приглашение запомнили
     assert c.cookies.get("ref") == code
     monkeypatch.setattr(accounts, "check_email_code", lambda *a: (True, ""))   # вход по почте без письма
-    c.post("/api/auth/email/verify", json={"consent": True, "terms": True, "email": "new@example.ru", "code": "1"})
+    c.post("/api/auth/email/verify", json={"consent": True, "terms": True, "agent": True, "email": "new@example.ru", "code": "1"})
     new = conn.execute("SELECT * FROM users WHERE email = 'new@example.ru'").fetchone()
     assert new["referred_by"] == inviter["id"]
     server._hits.clear()   # лимит «подтверждений в час» общий для всех тестов
@@ -302,7 +302,7 @@ def test_login_by_phone_call(env, monkeypatch):
     with TestClient(server.app) as g:
         assert g.get("/api/meta").json().get("phone_login") is True
         assert g.post("/api/auth/phone", json={"phone": "+7 918 555-44-33"}).status_code == 400   # без согласия
-        r = g.post("/api/auth/phone", json={"phone": "+7 918 555-44-33", "consent": True, "terms": True}).json()
+        r = g.post("/api/auth/phone", json={"phone": "+7 918 555-44-33", "consent": True, "terms": True, "agent": True}).json()
         tid = r["tid"]
         assert g.get(f"/api/auth/phone?tid={tid}").json()["status"] == "pending"
         st["s"] = "401"
@@ -314,7 +314,7 @@ def test_login_by_phone_call(env, monkeypatch):
         assert g.get(f"/api/auth/phone?tid={tid}").json()["status"] == "used"   # повторно по той же метке не войти
         uid = me["id"]
     with TestClient(server.app) as g2:   # второй вход тем же номером — тот же аккаунт
-        tid = g2.post("/api/auth/phone", json={"phone": "89185554433", "consent": True, "terms": True}).json()["tid"]
+        tid = g2.post("/api/auth/phone", json={"phone": "89185554433", "consent": True, "terms": True, "agent": True}).json()["tid"]
         conn.execute("UPDATE phone_codes SET checked_at = NULL"); conn.commit()
         assert g2.get(f"/api/auth/phone?tid={tid}").json()["status"] == "ok"
         assert g2.get("/api/me").json()["me"]["id"] == uid
@@ -351,7 +351,7 @@ def test_signup_checkboxes_apply_to_phone_confirmed_later(env, monkeypatch):
     from app import consent
     c, conn, _ = env
     monkeypatch.setattr(accounts, "check_email_code", lambda *a: (True, ""))
-    r = c.post("/api/auth/email/verify", json={"consent": True, "terms": True, "email": "ag@example.ru", "code": "1",
+    r = c.post("/api/auth/email/verify", json={"consent": True, "terms": True, "agent": True, "email": "ag@example.ru", "code": "1",
                                               "publish": True, "license": True})
     assert r.status_code == 200
     uid = conn.execute("SELECT id FROM users WHERE email = 'ag@example.ru'").fetchone()[0]
@@ -361,3 +361,18 @@ def test_signup_checkboxes_apply_to_phone_confirmed_later(env, monkeypatch):
     cur = consent.current(conn, "+79183334455")
     assert cur and cur["publish"] == 1 and cur["license"] == 1
     assert c.get("/api/agent/consent").json()["signup"]["license"] is True
+
+
+
+def test_login_needs_third_checkbox(env, monkeypatch):
+    """25.10 (Артём): согласие на показ номера и на тексты/фото — обязательная третья галочка при входе."""
+    c, conn, _ = env
+    monkeypatch.setattr(accounts, "check_email_code", lambda *a: (True, ""))
+    r = c.post("/api/auth/email/verify", json={"consent": True, "terms": True, "email": "x3@example.ru", "code": "1"})
+    assert r.status_code == 400 and "три галочки" in r.json()["detail"]
+    r = c.post("/api/auth/email/verify", json={"consent": True, "terms": True, "agent": True, "email": "x3@example.ru", "code": "1"})
+    assert r.status_code == 200
+    from app import consent
+    uid = conn.execute("SELECT id FROM users WHERE email = 'x3@example.ru'").fetchone()[0]
+    ch = consent.signup_choice(conn, uid)
+    assert ch["publish"] is True and ch["license"] is True

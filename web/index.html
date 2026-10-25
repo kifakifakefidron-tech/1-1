@@ -29,7 +29,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=99">
+<link rel="stylesheet" href="/static/glass.css?v=100">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -304,13 +304,9 @@
           <span>Даю <a href="/consent" target="_blank">согласие на обработку персональных данных</a></span></label>
         <label class="consent-chk"><input type="checkbox" id="termsChk">
           <span>Принимаю <a href="/terms" target="_blank">пользовательское соглашение</a> и <a href="/offer" target="_blank">оферту</a></span></label>
-        <div class="consent-agent" id="agentChks">
-          <p class="ca-h">Вы агент? Отметьте сразу — и подтверждать больше ничего не придётся (по желанию):</p>
-          <label class="consent-chk"><input type="checkbox" id="pubChk">
-            <span>Показывать мой номер и имя в моих объявлениях на 1+1 — даю <a href="/consent-publish" target="_blank">согласие на распространение персональных данных</a></span></label>
-          <label class="consent-chk"><input type="checkbox" id="licChk">
-            <span>Разрешаю <a href="/license" target="_blank">использовать тексты и фото</a> моих объявлений — в карточках и подборках для клиентов коллег</span></label>
-        </div>
+        <label class="consent-chk"><input type="checkbox" id="agentChk">
+          <span>Даю <a href="/consent-publish" target="_blank">согласие на распространение</a> моего номера и имени в моих объявлениях
+            на 1+1 и <a href="/license" target="_blank">разрешаю использовать тексты и фото</a> моих объявлений</span></label>
         <div class="lg-tabs" id="lgTabs" role="tablist" hidden>
           <button type="button" role="tab" data-lt="phone">По номеру телефона</button>
           <button type="button" role="tab" data-lt="email">По почте</button></div>
@@ -465,7 +461,7 @@
 <script src="/static/yasel.js?v=4"></script>
 <script src="/static/bell.js?v=7"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/app.js?v=138"></script>
+<script src="/static/app.js?v=139"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>
