@@ -555,6 +555,10 @@
   }, true);
   // галочка согласия на обработку ПДн в окне входа (152-ФЗ): без неё сервер вход не пропустит — подсказываем заранее
   // 18.10 (приёмка п. 9): две отдельные галочки — согласие на обработку ПДн отдельно от соглашения и оферты (закон с 01.09.2025)
+  // 25.10: галочки агента из окна входа (по желанию) — уходят вместе со входом, дальше ничего подтверждать не нужно
+  function agentOpts() {
+    return { publish: !!($("pubChk") && $("pubChk").checked), license: !!($("licChk") && $("licChk").checked) };
+  }
   function consentOk() {
     const boxes = [["consentChk", "Отметьте согласие на обработку персональных данных — без него вход невозможен."],
       ["termsChk", "Отметьте, что принимаете пользовательское соглашение и оферту."]];
@@ -1851,7 +1855,8 @@
     stopPhone();
     phoneTick = setInterval(() => { left = Math.max(0, left - 1); show(); }, 1000);
     phonePoll = setInterval(async () => {
-      const s = await call(`/api/auth/phone?tid=${encodeURIComponent(tid)}`);
+      const ao = agentOpts();
+      const s = await call(`/api/auth/phone?tid=${encodeURIComponent(tid)}${ao.publish ? "&pub=1" : ""}${ao.license ? "&lic=1" : ""}`);
       if (!s.ok) return;
       if (s.data.status === "ok" || s.data.status === "used") { stopPhone(); $("phoneCall").querySelector(".pv-wait").innerHTML = `${ic("check-circle")}<b>Номер подтверждён — входим…</b>`; await afterLogin(); return; }
       if (s.data.status === "expired" || left <= 0) {
@@ -1865,7 +1870,7 @@
   function openLogin(lead) {
     lgMode = meta.phone_login ? "phone" : "email";
     stopPhone();
-    $("loginLead").innerHTML = lead || `Номера агентов открываются после входа. Новым — <b>${meta.trial_days || 7} дней бесплатно</b>.`;
+    $("loginLead").innerHTML = lead || `Номера агентов открываются после входа. Новым — <b>${meta.trial_days || 14} дней бесплатно</b>.`;
     document.querySelectorAll("#loginDlg [data-lic]").forEach((el) => { el.outerHTML = ic(el.dataset.lic); });
     loginStats();
     $("tgLogin").hidden = !meta.tg_login;
@@ -1933,12 +1938,12 @@
   function ss(k) { try { return sessionStorage.getItem(k); } catch { return null; } }
   if (ss("justIn")) { try { sessionStorage.removeItem("justIn"); } catch { /* */ } setTimeout(() => toast("Вы вошли"), 400); }
 
-  // «Приведи коллегу — неделя бесплатно»
+  // «Приведи коллегу» (25.10: без бонуса — просто ссылка коллеге)
   function refHTML(r) {
     const link = `${location.origin}/?ref=${r.code}`;
     const text = `Пользуюсь 1+1 — все объекты Краснодара из риелторских чатов в одном поиске, с картой и номерами агентов. Попробуй: ${link}`;
     return `<div class="cab-ref">
-      <p class="note">Отправьте ссылку коллеге-риелтору. Когда он войдёт и подтвердит свой номер агента, вам добавится ${r.days} дней доступа.
+      <p class="note">Отправьте ссылку коллеге-риелтору. ${r.days > 0 ? `Когда он войдёт и подтвердит свой номер агента, вам добавится ${r.days} дней доступа.` : "Новым — 14 дней бесплатно."}
         ${r.invited ? `Пришли по ссылке: ${r.invited}, подтвердили номер: ${r.rewarded}.` : ""}</p>
       <div class="cab-ref-row"><input readonly value="${esc(link)}" aria-label="Ваша ссылка">
         <button type="button" class="pill light" data-copy-ref="${esc(link)}">Копировать</button>
@@ -1988,7 +1993,7 @@
       <div class="cab-accs">
         <details class="dv-acc"><summary><span class="dv-acc-ic">🔔</span><span class="dv-acc-t">Слежу за поисками</span><span class="dv-acc-h" id="cabSavedN"></span></summary>
           <div class="dv-acc-b"><div class="cab-saved" id="cabSaved"></div></div></details>
-        ${u.ref ? `<details class="dv-acc"><summary><span class="dv-acc-ic">🎁</span><span class="dv-acc-t">Приведи коллегу — +${u.ref.days} дней</span>
+        ${u.ref && u.ref.days > 0 ? `<details class="dv-acc"><summary><span class="dv-acc-ic">🎁</span><span class="dv-acc-t">Приведи коллегу — +${u.ref.days} дней</span>
           <span class="dv-acc-h">${u.ref.rewarded ? `+${u.ref.rewarded * u.ref.days} дн.` : ""}</span></summary><div class="dv-acc-b">${refHTML(u.ref)}</div></details>` : ""}
         <details class="dv-acc"><summary><span class="dv-acc-ic">🎟</span><span class="dv-acc-t">Промокод</span></summary><div class="dv-acc-b">
           <form class="inline-form" id="promoForm"><input id="promoInput" autocomplete="off" placeholder="Введите промокод" aria-label="Промокод">
@@ -2645,7 +2650,7 @@
       e.preventDefault();
       const btn = $("codeForm").querySelector(".lg-go");
       btn.disabled = true; btn.textContent = "Проверяем…";
-      const r = await call("/api/auth/email/verify", { email: $("emailInput").value.trim(), code: $("codeInput").value.trim(), consent: consentOk(), terms: true });
+      const r = await call("/api/auth/email/verify", { email: $("emailInput").value.trim(), code: $("codeInput").value.trim(), consent: consentOk(), terms: true, ...agentOpts() });
       btn.disabled = false; btn.textContent = "Войти";
       if (!r.ok) { loginError(r.data.detail || "Код не подошёл."); $("codeInput").select(); $("codeForm").classList.add("shake"); setTimeout(() => $("codeForm").classList.remove("shake"), 500); return; }
       btn.textContent = "Входим…";
@@ -2655,7 +2660,7 @@
       e.preventDefault();
       const code = $("accessCode").value.trim();
       if (!code) return;
-      const r = await call("/api/login", { code, consent: consentOk(), terms: true });
+      const r = await call("/api/login", { code, consent: consentOk(), terms: true, ...agentOpts() });
       if (!r.ok) { loginError(r.data.detail || "Код не подошёл. Проверьте и введите ещё раз."); return; }
       await afterLogin();
     });

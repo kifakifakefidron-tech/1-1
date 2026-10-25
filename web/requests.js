@@ -107,7 +107,7 @@
       $("rqLocked").hidden = false;
       $("rqLocked").innerHTML = `<b>${(d.total || 0).toLocaleString("ru-RU")} запросов покупателей сейчас</b>
         <span>${d.new_24h ? `${d.new_24h} новых за сутки. ` : ""}Кто что ищет, бюджет, районы и номер агента — по подписке.</span>
-        <a class="pill" href="${d.guest ? "/?login=1" : "/pay"}">${d.guest ? "Войти — неделя бесплатно" : "Оформить доступ"}</a>`;
+        <a class="pill" href="${d.guest ? "/?login=1" : "/pay"}">${d.guest ? "Войти — 14 дней бесплатно" : "Оформить доступ"}</a>`;
       $("rqList").innerHTML = "";
       return;
     }

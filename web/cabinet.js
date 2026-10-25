@@ -404,7 +404,7 @@
     const link = `${location.origin}/?ref=${r.code}`;
     const text = `Пользуюсь 1+1 — все объекты Краснодара из риелторских чатов в одном поиске: ${link}`;
     put("wRef", `${head("gift", "Приведи коллегу")}
-      <p class="g-sub" style="margin:0">Коллега подтвердит номер агента — вам <b>+${r.days} дней</b> доступа.${r.invited ? ` Пришли: ${r.invited}, подтвердили: ${r.rewarded}.` : ""}</p>
+      <p class="g-sub" style="margin:0">Отправьте ссылку коллеге — новым 14 дней бесплатно.${r.invited ? ` Пришли по ссылке: ${r.invited}.` : ""}</p>
       <div class="wr-link"><input readonly value="${esc(link)}" aria-label="Ваша ссылка"><button type="button" class="pill light" id="refCopy">${ic("link")}</button>
         <button type="button" class="pill light" data-share-text="${esc(text)}" aria-label="Поделиться">${ic("share")}</button></div>`, 12);
   }

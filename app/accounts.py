@@ -297,7 +297,7 @@ def reward_referrer(conn: sqlite3.Connection, user_id: int) -> bool:
     """Приглашённый подтвердил свой номер агента — пригласившему +REF_DAYS дней (один раз за коллегу)."""
     from . import notices
     u = get_user(conn, user_id)
-    if u is None or not u["referred_by"] or u["ref_rewarded"]:
+    if config.REF_DAYS <= 0 or u is None or not u["referred_by"] or u["ref_rewarded"]:   # 25.10: подарков нет
         return False
     conn.execute("UPDATE users SET ref_rewarded = 1 WHERE id = ?", (user_id,))
     extend(conn, u["referred_by"], config.REF_DAYS)

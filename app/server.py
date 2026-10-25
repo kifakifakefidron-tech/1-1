@@ -460,7 +460,7 @@ def api_listings(request: Request, body: dict | None = None):
     guest = _is_guest(request)
     lim = GUEST_LIST_RATE if guest else USER_LIST_RATE
     if not _loadtest(request) and _too_often(request, "list", lim[0], lim[1], who=_ip_key(request) if guest else None):
-        return _err("Слишком много запросов подряд. Подождите пару минут" + (" или войдите — неделя бесплатно." if guest else "."), 429)
+        return _err("Слишком много запросов подряд. Подождите пару минут" + (" или войдите — 14 дней бесплатно." if guest else "."), 429)
     if guest and (_num(request.query_params.get("page"), int) or 1) > GUEST_PAGES:
         return JSONResponse({"items": [], "total": 0, "page": GUEST_PAGES + 1, "pages": GUEST_PAGES, "guest_limit": True})
     hider = _hider(request)
@@ -640,7 +640,7 @@ def _guest_map(request: Request) -> Response:
     """18.10 (приёмка п. 8, вариант А): гость не выкачивает все точки одним ответом. Без области или в большой области —
     только кружки «N объектов» по сетке; приблизил карту (≤ 300 объектов в видимой области) — метки с ценой в этой области."""
     if not _loadtest(request) and _too_often(request, "gmap", 300, 600, who=_ip_key(request)):
-        return _err("Слишком много запросов подряд. Подождите пару минут или войдите — неделя бесплатно.", 429)
+        return _err("Слишком много запросов подряд. Подождите пару минут или войдите — 14 дней бесплатно.", 429)
     qp = request.query_params
     key = "&".join(f"{k}={v}" for k, v in sorted(qp.multi_items()) if k != "bbox")
     hit = _map_full.get(key)
@@ -729,10 +729,25 @@ def _no_consent(body: dict | None) -> bool:
     return not ((body or {}).get("consent") and (body or {}).get("terms"))
 
 
-def _save_consent(conn, user_id: int) -> None:
+def _save_consent(conn, user_id: int, request: Request | None = None, agent_opts: dict | None = None) -> None:
     conn.execute("UPDATE users SET consent_at = COALESCE(consent_at, ?), consent_ver = ? WHERE id = ?",
                  (int(time.time()), config.POLICY_DATE, user_id))
     conn.commit()
+    # 25.10: галочки агента из окна входа (необязательные, отдельные от согласия на обработку) — запомнить и применить к номерам
+    o = agent_opts or {}
+    if o.get("publish") or o.get("license"):
+        from . import consent
+        ip = ""
+        if request is not None:
+            ip = (request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else ""))
+        consent.at_signup(conn, user_id, bool(o.get("publish")), bool(o.get("license")), ip)
+
+
+def _agent_opts(body: dict | None, request: Request | None = None) -> dict:
+    """Галочки агента: из тела запроса или из адреса (вход по номеру проверяется GET-запросом)."""
+    b = body or {}
+    q = request.query_params if request is not None else {}
+    return {"publish": bool(b.get("publish")) or q.get("pub") == "1", "license": bool(b.get("license")) or q.get("lic") == "1"}
 
 
 def api_login(request: Request, body: dict | None = None):
@@ -745,7 +760,7 @@ def api_login(request: Request, body: dict | None = None):
     if config.ACCESS_CODE and hmac.compare_digest(code, config.ACCESS_CODE.encode()):
         conn = db.get()
         user = current_user(request) or accounts.create_promo_user(conn)
-        _save_consent(conn, user["id"])
+        _save_consent(conn, user["id"], request, _agent_opts(body))
         token = accounts.create_session(conn, user["id"], request.headers.get("user-agent", ""))
         resp = _session_response(request, {"ok": True, "me": accounts.me(conn, accounts.get_user(conn, user["id"]))},
                                  token)
@@ -821,7 +836,7 @@ def api_email_verify(request: Request, body: dict | None = None):
     user = accounts.upsert_email_user(conn, email)
     if user["blocked"]:
         return _err("Аккаунт заблокирован.", 403)
-    _save_consent(conn, user["id"])
+    _save_consent(conn, user["id"], request, _agent_opts(body))
     if accounts.attach_referrer(conn, user["id"], request.cookies.get("ref") or str(body.get("ref") or "")):
         user = accounts.get_user(conn, user["id"])
     token = accounts.create_session(conn, user["id"], request.headers.get("user-agent", ""))
@@ -850,7 +865,7 @@ def api_phone_login(request: Request, body: dict | None = None):
     user = accounts.upsert_phone_user(conn, phone)
     if user["blocked"]:
         return _err("Аккаунт заблокирован.", 403)
-    _save_consent(conn, user["id"])
+    _save_consent(conn, user["id"], request, _agent_opts(None, request))   # галочки — в адресе опроса (?pub=1&lic=1)
     if accounts.attach_referrer(conn, user["id"], request.cookies.get("ref") or ""):
         user = accounts.get_user(conn, user["id"])
     accounts.reward_referrer(conn, user["id"])   # номер подтверждён звонком — пригласившему бонус
@@ -1795,6 +1810,11 @@ def _agent_items(conn, user) -> list[dict]:
     return out
 
 
+def _signup_choice(conn, user_id: int) -> dict | None:
+    from . import consent
+    return consent.signup_choice(conn, user_id)
+
+
 def api_agent(request: Request, body: dict | None = None):
     user, err = _need_user(request)
     if err:
@@ -1806,6 +1826,7 @@ def api_agent(request: Request, body: dict | None = None):
         # способы подтверждения номера: звонок — основной (если подключён SMS.ru), код в MAX — запасной
         "verify_methods": [m for m, on in (("call", callcheck.enabled()), ("max", bool(config.VERIFY_NUMBER))) if on],
         "own_days": config.OWN_LISTING_DAYS, "max_photos": config.MAX_PHOTOS, "items": _agent_items(conn, user),
+        "signup_consent": _signup_choice(conn, user["id"]),
     })
 
 
@@ -1831,6 +1852,7 @@ def api_agent_consent(request: Request, body: dict | None = None):
         _bump_cache()
         return JSONResponse({**res, "phones": consent.status(conn, user["id"])})
     return JSONResponse({"phones": consent.status(conn, user["id"]), "bonus_days": consent.BONUS_DAYS, "version": consent.VERSION,
+                         "signup": consent.signup_choice(conn, user["id"]),
                          "verify_methods": [m for m, on in (("call", callcheck.enabled()), ("max", bool(config.VERIFY_NUMBER))) if on]})
 
 

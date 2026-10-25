@@ -59,7 +59,6 @@
   // 24.10e: этот же блок стоит в «Настройках» (там нет шапки и подтверждения — только номера и согласия)
   function render() {
     const phones = data.phones || [];
-    if ($("anBonus")) $("anBonus").textContent = `${data.bonus_days || 30} дней`;
     if ($("anVerifyCard")) {   // 24.10h: согласия — сразу в форме подтверждения (verify.js)
       $("anVerifyCard").hidden = false;
       $("anVerifyH").textContent = phones.length ? "Подтвердить ещё один номер" : "Подтвердите номер из объявлений";

@@ -75,7 +75,9 @@ def _confirm(conn: sqlite3.Connection, row_id: int, phone: str, user_id: int) ->
     conn.execute("UPDATE phone_codes SET status = 'ok' WHERE id = ?", (row_id,))
     conn.commit()
     user_id, _ = accounts.claim_phone(conn, user_id, phone)   # номер был у другого аккаунта — объединяем
-    accounts.reward_referrer(conn, user_id)   # «Приведи коллегу»: пригласившему +неделя
+    accounts.reward_referrer(conn, user_id)   # «Приведи коллегу» (с 25.10 без бонуса)
+    from . import consent
+    consent.apply_signup(conn, user_id)   # 25.10: галочки из регистрации — сразу на этот номер
 
 
 def start_call(conn: sqlite3.Connection, user_id: int, phone_raw: str, ip: str = "") -> tuple[dict | None, str | None]:

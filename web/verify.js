@@ -28,22 +28,37 @@
     let timer = 0, tick = 0;
     const stop = () => { clearInterval(timer); clearInterval(tick); };
     let agree = { publish: false, license: false };
+    let fromSignup = false;   // 25.10: галочки отмечены при регистрации — сервер сам применит их к номеру
     const done = async (ph) => {
       stop();
-      let saved = false;
-      if (ph && (agree.publish || agree.license)) {
+      let saved = fromSignup;
+      if (!fromSignup && ph && (agree.publish || agree.license)) {
         const r = await call("/api/agent/consent", { phone: ph, publish: agree.publish, license: agree.license, show_name: true, allow_max: true });
         saved = r.ok;
       }
       box.innerHTML = `<p class="pv-ok">${ic("check-circle")}Номер подтверждён${saved ? " · согласия сохранены" : ""}</p>`;
       opt.onDone && opt.onDone();
     };
-    const consentHTML = () => opt.consent === false ? "" : `<div class="pv-agree">
+    const consentHTML = () => opt.consent === false ? "" : fromSignup
+      ? `<p class="note pv-agree-done">${ic("check-circle")}Согласия вы дали при регистрации — они применятся к номеру сами.</p>`
+      : `<div class="pv-agree">
         <label class="pv-chk"><input type="checkbox" data-agree="publish"${agree.publish ? " checked" : ""}><span>Показывать мой номер и имя в моих объявлениях на 1+1 —
           даю <a href="/consent-publish" target="_blank">согласие на распространение персональных данных</a> (только вошедшим с доступом; отозвать можно в любой момент)</span></label>
         <label class="pv-chk"><input type="checkbox" data-agree="license"${agree.license ? " checked" : ""}><span>Разрешаю <a href="/license" target="_blank">использовать тексты и фото</a>
           моих объявлений — в карточках, превью ссылок и подборках для клиентов коллег</span></label>
         <small class="note">Отметьте сразу — после подтверждения всё сохранится само. Без первой галочки номер будет скрыт.</small></div>`;
+
+    if (opt.consent !== false) {
+      call("/api/agent/consent").then((r) => {
+        const s = r && r.ok && r.data && r.data.signup;
+        if (s && (s.publish || s.license)) {
+          fromSignup = true;
+          agree = { publish: !!s.publish, license: !!s.license };
+          const old = box.querySelector(".pv-agree");
+          if (old) old.outerHTML = consentHTML();
+        }
+      }).catch(() => {});
+    }
 
     function form(method) {
       stop();

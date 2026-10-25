@@ -16,7 +16,7 @@ import time
 
 from . import accounts, config, rules
 
-BONUS_DAYS = 30
+BONUS_DAYS = 0   # 25.10 (Артём): подарка за подтверждение номера больше нет — только 14 дней при первом входе
 VERSION = "19.10.2026"   # редакция /consent-publish и /license — меняется вместе с текстами
 
 
@@ -52,7 +52,7 @@ def give(conn: sqlite3.Connection, user_id: int, phone: str, publish: bool, lice
     row = conn.execute("SELECT method FROM phone_codes WHERE phone = ? AND status IN ('ok', 'used') ORDER BY id DESC LIMIT 1",
                        (p,)).fetchone()
     method = (row[0] if row else None) or "max"
-    first_bonus = publish and not conn.execute("SELECT 1 FROM agent_consents WHERE phone = ? AND bonus = 1", (p,)).fetchone()
+    first_bonus = BONUS_DAYS > 0 and publish and not conn.execute("SELECT 1 FROM agent_consents WHERE phone = ? AND bonus = 1", (p,)).fetchone()
     show_name = allow_max = True   # 24.10i: не спрашиваем — имя и кнопка MAX всегда
     conn.execute("""INSERT INTO agent_consents (phone, user_id, ts, method, version, publish, license, show_name, allow_max, ip, bonus)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
@@ -63,7 +63,7 @@ def give(conn: sqlite3.Connection, user_id: int, phone: str, publish: bool, lice
     else:         # без согласия на показ — номер скрыт во всех объявлениях
         conn.execute("INSERT OR IGNORE INTO optout_phones (phone, ts, source) VALUES (?,?, 'agent')", (p, int(time.time())))
     conn.commit()
-    if first_bonus:
+    if first_bonus and BONUS_DAYS > 0:
         accounts.extend(conn, user_id, BONUS_DAYS)
     _bump()
     return {"ok": True, "bonus": BONUS_DAYS if first_bonus else 0}
@@ -130,3 +130,38 @@ def overview(conn: sqlite3.Connection) -> dict:
     pub = prefs(conn)["published"]
     return {"agents": len(phones), "verified": len(phones & verified), "published": len(phones & pub),
             "hidden": len(phones & accounts.optout_set(conn))}
+
+
+def at_signup(conn: sqlite3.Connection, user_id: int, publish: bool, license_: bool, ip: str = "") -> None:
+    """25.10 (Артём: «галочки при регистрации — и больше никаких подтверждений»): выбор из окна входа запоминается в аккаунте
+    и сразу применяется к его подтверждённым номерам; номер, подтверждённый позже, получает тот же выбор (apply_signup)."""
+    if not (publish or license_):
+        return
+    conn.execute("UPDATE users SET agent_consent = ? WHERE id = ?",
+                 (json.dumps({"publish": bool(publish), "license": bool(license_), "ts": int(time.time()), "ip": ip[:45],
+                              "version": VERSION}), user_id))
+    conn.commit()
+    apply_signup(conn, user_id)
+
+
+def signup_choice(conn: sqlite3.Connection, user_id: int) -> dict | None:
+    r = conn.execute("SELECT agent_consent FROM users WHERE id = ?", (user_id,)).fetchone()
+    try:
+        return json.loads(r[0]) if r and r[0] else None
+    except ValueError:
+        return None
+
+
+def apply_signup(conn: sqlite3.Connection, user_id: int) -> int:
+    """Номера аккаунта без записи согласия (и без отзыва) — получают выбор, сделанный при регистрации."""
+    ch = signup_choice(conn, user_id)
+    if not ch:
+        return 0
+    _ensure(conn)
+    n = 0
+    for (p,) in conn.execute("SELECT phone FROM agent_phones WHERE user_id = ?", (user_id,)).fetchall():
+        if conn.execute("SELECT 1 FROM agent_consents WHERE phone = ? AND user_id = ?", (p, user_id)).fetchone():
+            continue   # по этому номеру уже есть выбор (или отзыв) — не трогаем
+        give(conn, user_id, p, bool(ch.get("publish")), bool(ch.get("license")), True, True, str(ch.get("ip") or ""))
+        n += 1
+    return n

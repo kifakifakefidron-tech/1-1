@@ -29,7 +29,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=98">
+<link rel="stylesheet" href="/static/glass.css?v=99">
 </head>
 <body>
 <header class="nav" id="nav">
@@ -78,7 +78,7 @@
     </div>
     <div class="hero-actions">
       <button type="button" class="pill" id="heroMap" data-tab="map">Открыть карту</button>
-      <button type="button" class="pill light" id="heroLogin" hidden>Войти — неделя бесплатно</button>
+      <button type="button" class="pill light" id="heroLogin" hidden>Войти — 14 дней бесплатно</button>
       <a class="pill light" href="/cabinet" id="heroCabinet" hidden>Мой кабинет</a>
     </div>
   </section>
@@ -224,7 +224,7 @@
   <p class="map-note" id="mapNote" hidden></p>
   <ol class="results" id="results"></ol>
   <div class="more-results"><button type="button" id="loadMore" class="pill" hidden>Показать ещё</button>
-    <div class="guest-more" id="guestMore" hidden><b>Дальше — после входа</b><span>Без входа видны первые 5 страниц. Войдите по номеру телефона — неделя бесплатно.</span>
+    <div class="guest-more" id="guestMore" hidden><b>Дальше — после входа</b><span>Без входа видны первые 5 страниц. Войдите по номеру телефона — 14 дней бесплатно.</span>
       <a class="pill" href="/?login=1">Войти</a></div></div>
 </main>
 
@@ -304,6 +304,13 @@
           <span>Даю <a href="/consent" target="_blank">согласие на обработку персональных данных</a></span></label>
         <label class="consent-chk"><input type="checkbox" id="termsChk">
           <span>Принимаю <a href="/terms" target="_blank">пользовательское соглашение</a> и <a href="/offer" target="_blank">оферту</a></span></label>
+        <div class="consent-agent" id="agentChks">
+          <p class="ca-h">Вы агент? Отметьте сразу — и подтверждать больше ничего не придётся (по желанию):</p>
+          <label class="consent-chk"><input type="checkbox" id="pubChk">
+            <span>Показывать мой номер и имя в моих объявлениях на 1+1 — даю <a href="/consent-publish" target="_blank">согласие на распространение персональных данных</a></span></label>
+          <label class="consent-chk"><input type="checkbox" id="licChk">
+            <span>Разрешаю <a href="/license" target="_blank">использовать тексты и фото</a> моих объявлений — в карточках и подборках для клиентов коллег</span></label>
+        </div>
         <div class="lg-tabs" id="lgTabs" role="tablist" hidden>
           <button type="button" role="tab" data-lt="phone">По номеру телефона</button>
           <button type="button" role="tab" data-lt="email">По почте</button></div>
@@ -312,14 +319,14 @@
             <input id="phoneInput" type="tel" inputmode="tel" autocomplete="tel" placeholder="+7 918 123-45-67" aria-label="Номер телефона"></label>
           <button type="submit" class="pill lg-go">Войти звонком</button>
           <p class="lg-small">Позвоните со своего номера на номер, который покажем, — звонок бесплатный и сбросится сам. Пароль и коды не нужны,
-            а номер сразу станет «Проверенный агент». Неделя бесплатно, без карты.</p>
+            а номер сразу станет «Проверенный агент». 14 дней бесплатно, без карты.</p>
         </form>
         <div id="phoneCall" class="lg-form" hidden></div>
         <form id="emailForm" class="lg-form" novalidate>
           <label class="lg-field"><span>Ваша почта</span>
             <input id="emailInput" type="email" autocomplete="email" inputmode="email" placeholder="name@mail.ru" aria-label="Почта"></label>
           <button type="submit" class="pill lg-go">Получить код на почту</button>
-          <p class="lg-small">Пароль не нужен: пришлём 6 цифр — вводите и вы внутри. Неделя бесплатно, без карты.</p>
+          <p class="lg-small">Пароль не нужен: пришлём 6 цифр — вводите и вы внутри. 14 дней бесплатно, без карты.</p>
         </form>
         <form id="codeForm" class="lg-form" hidden novalidate>
           <label class="lg-field"><span>Код из письма <button type="button" class="lg-link" id="lgChange">изменить почту</button></span>
@@ -453,12 +460,12 @@
 <script src="/static/icons.js?v=10"></script>
 <script src="/static/pickers.js?v=18"></script>
 <script src="/static/max.js?v=2"></script>
-<script src="/static/rail.js?v=34"></script>
+<script src="/static/rail.js?v=35"></script>
 <script src="/static/combo.js?v=3"></script>
 <script src="/static/yasel.js?v=4"></script>
 <script src="/static/bell.js?v=7"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/app.js?v=137"></script>
+<script src="/static/app.js?v=138"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>

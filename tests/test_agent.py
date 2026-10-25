@@ -201,7 +201,8 @@ def test_own_listing_needs_place(env):
     assert r.status_code == 400 and "район" in r.json()["detail"]
 
 
-def test_referral_bonus_after_phone_confirmed(env, monkeypatch):
+def test_referral_no_bonus_since_2510(env, monkeypatch):
+    """25.10 (Артём: «никаких больше подарков»): приглашение запоминается, но дней пригласившему не добавляется."""
     c, conn, _ = env
     inviter = _login(c, conn, email="boss@example.ru")
     code = c.get("/api/me").json()["me"]["ref"]["code"]
@@ -216,11 +217,8 @@ def test_referral_bonus_after_phone_confirmed(env, monkeypatch):
     new = conn.execute("SELECT * FROM users WHERE email = 'new@example.ru'").fetchone()
     assert new["referred_by"] == inviter["id"]
     server._hits.clear()   # лимит «подтверждений в час» общий для всех тестов
-    _verify(c, conn, phone="+7 918 222-33-44", sender="79182223344")   # подтвердил номер — бонус
-    after = accounts.get_user(conn, inviter["id"])["paid_until"]
-    assert after - before >= 7 * 86400 - 5
-    _verify(c, conn, phone="+7 918 222-33-55", sender="79182223355")   # второй номер — бонуса нет
-    assert accounts.get_user(conn, inviter["id"])["paid_until"] == after
+    _verify(c, conn, phone="+7 918 222-33-44", sender="79182223344")   # подтвердил номер — бонуса больше нет
+    assert accounts.get_user(conn, inviter["id"])["paid_until"] == before
 
 
 def test_admin_phone_base(env):
@@ -346,3 +344,20 @@ def test_accounts_merge_by_email_and_phone(env, monkeypatch):
     assert accounts.get_user(conn, new["id"]) is None
     # теперь вход по этому номеру ведёт в тот же аккаунт
     assert accounts.upsert_phone_user(conn, "+79185550001")["id"] == old["id"]
+
+
+def test_signup_checkboxes_apply_to_phone_confirmed_later(env, monkeypatch):
+    """25.10: галочки агента в окне входа → номер, подтверждённый потом, сразу с согласием (больше ничего не спрашиваем)."""
+    from app import consent
+    c, conn, _ = env
+    monkeypatch.setattr(accounts, "check_email_code", lambda *a: (True, ""))
+    r = c.post("/api/auth/email/verify", json={"consent": True, "terms": True, "email": "ag@example.ru", "code": "1",
+                                              "publish": True, "license": True})
+    assert r.status_code == 200
+    uid = conn.execute("SELECT id FROM users WHERE email = 'ag@example.ru'").fetchone()[0]
+    assert consent.signup_choice(conn, uid)["publish"] is True
+    server._hits.clear()
+    _verify(c, conn, phone="+7 918 333-44-55", sender="79183334455")
+    cur = consent.current(conn, "+79183334455")
+    assert cur and cur["publish"] == 1 and cur["license"] == 1
+    assert c.get("/api/agent/consent").json()["signup"]["license"] is True

@@ -98,7 +98,7 @@
       + `<span class="rail-gap"></span>`
       + `<button type="button" class="rail-a main rail-more${items.some((it) => !it.main && !it.sep && isOn(it)) ? " on" : ""}" aria-label="Все разделы" aria-expanded="false">${ic("more")}<span class="rail-lbl">Ещё</span><b class="rail-n" hidden></b>${tipHTML("Ещё", "Кабинет, подборки, мои объекты, уведомления, настройки")}</button>`
       + (me ? `<a class="rail-ava${me.photo ? " has-photo" : ""}" href="/cabinet" aria-label="Профиль"${me.photo ? ` style="background-image:url('${encodeURI(String(me.photo)).replace(/['"()]/g, "")}')"` : ""}>${me.photo ? "" : ((me.name || me.email || "1").trim()[0] || "1").toUpperCase()}${tipHTML("Профиль и кабинет", who)}</a>`
-        : `<a class="rail-a main" href="/?login=1" aria-label="Войти">${ic("user")}<span class="rail-lbl">Войти</span>${tipHTML("Войти", "Неделя бесплатно — без карты")}</a>`);
+        : `<a class="rail-a main" href="/?login=1" aria-label="Войти">${ic("user")}<span class="rail-lbl">Войти</span>${tipHTML("Войти", "14 дней бесплатно — без карты")}</a>`);
     document.body.prepend(rail);
     fitRail(rail);
     // 24.10: компьютер — навели на меню (0,12 с) → раскрывается целиком: все разделы с описанием; ушла мышь — сворачивается
@@ -116,7 +116,7 @@
     sheet.setAttribute("popover", "manual");   // сами закрываем: тап мимо не должен нажимать то, что под шторкой
     sheet.innerHTML = `<div class="rs-in"><span class="rs-grab" data-rs-close></span>
       <div class="rs-top"><b class="rs-h">Все разделы</b><button type="button" class="rs-x" data-rs-close aria-label="Закрыть">✕</button></div>`
-      + (me ? "" : `<a class="rs-a" href="/?login=1">${ic("user")}<span><b>Войти</b><small>Неделя бесплатно — без карты</small></span></a>`)
+      + (me ? "" : `<a class="rs-a" href="/?login=1">${ic("user")}<span><b>Войти</b><small>14 дней бесплатно — без карты</small></span></a>`)
       + items.filter((it) => !it.sep).map((it) => `<a class="rs-a${isOn(it) ? " on" : ""}" href="${it.href}"${it.main ? " data-main" : ""}>${ic(it.icon)}<span><b>${it.tip}</b><small>${it.desc || ""}</small></span>${badge(it)}</a>`).join("")
       + `</div>`;
     document.body.appendChild(sheet);

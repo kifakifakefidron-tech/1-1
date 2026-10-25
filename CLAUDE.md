@@ -980,6 +980,15 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   карточек у каждого номера, «Добавить», «Убрать группу»; в сравнении пары с разными номерами — «Это один агент — объединить
   номера» (phonegroups.add сливает с группой, где номер уже есть). Сохранение → курсор dup_scan_id = 0, перепроверка сразу
   (scan 5 с) и дальше worker; разово при обновлении — state phone_groups_v1.
+- 25.10 (ветка signup-consent, решения Артёма): ПОДАРОК ОДИН — TRIAL_DAYS 14 дней при первом входе (config._days, старое «7»
+  из .env не действует); бонуса 30 дней за подтверждение номера нет (consent.BONUS_DAYS 0), «Приведи коллегу» без бонуса
+  (config.REF_DAYS 0, reward_referrer ничего не добавляет, ссылка осталась); дни сверху — только промокодом. Все «неделя бесплатно» →
+  «14 дней бесплатно». ГАЛОЧКИ АГЕНТА ПРИ РЕГИСТРАЦИИ: в окне входа под двумя обязательными — блок #agentChks «Вы агент?» с двумя
+  НЕобязательными, НЕотмеченными галочками (показ номера и имени — ст. 10.1, /consent-publish; тексты и фото — /license). Уходят со
+  входом (email/verify и /api/login — publish/license в теле; вход по номеру — ?pub=1&lic=1 в опросе) → server._save_consent →
+  consent.at_signup: users.agent_consent {publish, license, ts, ip, version} + сразу на подтверждённые номера; номер, подтверждённый
+  позже (agent._confirm), — consent.apply_signup (номера без записи; отозванные не трогаем). verify.js видит signup
+  (/api/agent/consent → signup) и вместо галочек пишет «Согласия вы дали при регистрации».
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

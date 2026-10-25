@@ -346,6 +346,9 @@ CREATE TABLE IF NOT EXISTS notes (
 
 # Новые поля в уже существующих таблицах (база на сервере обновится сама при запуске)
 MIGRATIONS = [
+    # 25.10: галочки агента при регистрации (показ номера и имени — ст. 10.1; тексты и фото) — {publish, license, ts, ip, version};
+    # применяются к каждому номеру, который человек подтвердит (consent.apply_signup)
+    ("users", "agent_consent", "TEXT"),
     # 19.10: запросы покупателей — всем с подпиской; удаление админом, реклама, запрос клиента от агента сайта
     ("buyer_requests", "removed", "INTEGER NOT NULL DEFAULT 0"),   # 1 — удалил админ, 2 — реклама
     ("buyer_requests", "source", "TEXT NOT NULL DEFAULT 'chat'"),  # chat | agent (опубликовал агент на сайте)
