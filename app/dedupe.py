@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import re
@@ -56,15 +57,29 @@ _PRICE_WORDS = {"млн", "тыс", "т", "р", "руб", "рублей", "тр"
 _PRICE_BEFORE = {"цена", "цены", "стоимость", "за"}
 
 
+@functools.lru_cache(maxsize=8192)
+def _phones_in(text: str) -> tuple:
+    """26.10 (нагрузка): номера в тексте — один раз на текст (поиск идёт со сдвигом по символу и дорог)."""
+    from .rules import find_phones
+    return tuple(find_phones(text))
+
+
+@functools.lru_cache(maxsize=8192)
+def _words_list(text: str) -> tuple:
+    return tuple(words(text).split())
+
+
 def text_twin(a: str | None, b: str | None, short_ok: bool = False) -> bool:
     """Фрагменты совпадают слово в слово, кроме нескольких чисел (и слов вроде «млн»): цену поменяли, остальное — то же.
     short_ok — короткий текст («ЖК Абрикосово, евро-2, 6 млн») тоже, если вызывающий проверил место и цену."""
     import difflib
     # 24.10j (Артём): дубль — если совпадают номера В ТЕКСТЕ (кто переслал — неважно). Номера — часть текста: другой номер в тексте —
     # другой агент, отдельная карточка; номеров нет в обоих — совпадает сам текст
-    from .rules import find_phones
     from .phonegroups import canon_set   # 25.10: номера одного агента (phonegroups) — один номер
-    pa, pb = find_phones(a or ""), find_phones(b or "")
+    la, lb = len(_words_list(a or "")), len(_words_list(b or ""))
+    if min(la, lb) < (4 if short_ok else 12) or abs(la - lb) > 8:   # 26.10: коротко или длина сильно разная — дальше не считаем
+        return False
+    pa, pb = _phones_in(a or ""), _phones_in(b or "")
     if canon_set(p[2] for p in pa) != canon_set(p[2] for p in pb):   # (начало, конец, номер)
         return False
 

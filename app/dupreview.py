@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import difflib
+import functools
 import json
 import sqlite3
 import time
@@ -46,6 +47,7 @@ def _group(t: str | None) -> str:
     return "flat" if t in ("flat", "new") else (t or "")
 
 
+@functools.lru_cache(maxsize=4096)
 def _cxk(name: str | None) -> str:
     return (geo.complex_key(name) or words(name)) if name else ""
 
@@ -61,6 +63,7 @@ def _places(r) -> set[str]:
     return out
 
 
+@functools.lru_cache(maxsize=16384)
 def _text_key(frag: str | None) -> str:
     return " ".join(t for t in words(frag or "").split() if not t.isdigit())
 
@@ -299,7 +302,7 @@ def _candidates(conn: sqlite3.Connection):
                             AND COALESCE(owner_user_id, 0) = 0 AND fragment IS NOT NULL ORDER BY id""").fetchall()
 
 
-def scan(conn: sqlite3.Connection, budget_s: float = 15.0, full: bool = False) -> dict:
+def scan(conn: sqlite3.Connection, budget_s: float = 8.0, full: bool = False) -> dict:
     """Новые карточки (id больше курсора dup_scan_id) — против всех на сайте: наверняка — склеить, сомнительно — в очередь."""
     t0 = time.time()
     from . import phonegroups
@@ -344,6 +347,11 @@ def scan(conn: sqlite3.Connection, budget_s: float = 15.0, full: bool = False) -
                     continue
                 seen.add(o["id"])
                 if _pair_key(r["id"], o["id"]) in decided:
+                    continue
+                # 26.10 (нагрузка): разные комнаты / этаж у обоих — разные квартиры, дорогое сравнение текста не нужно
+                if (r["rooms"] is not None and o["rooms"] is not None and r["rooms"] != o["rooms"]
+                        or r["floor"] is not None and o["floor"] is not None and r["floor"] != o["floor"]) \
+                        and _text_key(r["fragment"]) != _text_key(o["fragment"]):
                     continue
                 if r["id"] not in info:
                     info[r["id"]] = (_text_phones(r["fragment"]),)
