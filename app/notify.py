@@ -92,6 +92,9 @@ def wappi_hint(err: str) -> str:
     if "driver not ready" in e or "not authorized" in e or "qr" in e:
         return ("номер в Wappi отключён (телефон вышел из WhatsApp/мессенджера или разрядился). "
                 "Откройте кабинет wappi.pro → профиль → если просит QR-код — отсканируйте его телефоном заново.")
+    if "peer not found" in e:
+        return ("Telegram не нашёл чат: номер вышел из группы или её удалили. Остальные чаты собираются; такой чат сервис "
+                "пропускает сутки. Если группа нужна — добавьте номер в неё заново.")
     if "timed out" in e or "timeout" in e:
         return "Wappi долго не отвечает — у них перегрузка или сеть. Обычно проходит само; если держится часами — напишите в поддержку Wappi."
     if "чуть позже" in e or "429" in e or "too many" in e:

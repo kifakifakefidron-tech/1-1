@@ -46,8 +46,16 @@ def _get(path: str, params: dict, token: str) -> dict | list:
         return json.loads(resp.read())
 
 
-def _call(profile: str, path: str, params: dict, token: str) -> dict | list | None:
-    """Запрос к Wappi; при ошибке пишет понятную строку в журнал и возвращает None."""
+# 26.10 («Wappi tg не отвечает 1295 мин: peer not found»): ошибка ОДНОГО чата (номер вышел из группы, группу удалили) —
+# не сбой всего номера. Такой чат пропускаем сутки (потом пробуем снова), в письмо о сбое Wappi он не попадает.
+DEAD_CHAT_S = 86400
+_dead_chats: dict[tuple[str, str], float] = {}
+chat_errors: dict[str, str] = {}
+
+
+def _call(profile: str, path: str, params: dict, token: str, chat: str | None = None) -> dict | list | None:
+    """Запрос к Wappi; при ошибке пишет понятную строку в журнал и возвращает None.
+    chat — запрос сообщений одного чата: его ошибка не считается сбоем номера (errors), только chat_errors."""
     try:
         return _get(path, params, token)
     except urllib.error.HTTPError as e:
@@ -57,6 +65,11 @@ def _call(profile: str, path: str, params: dict, token: str) -> dict | list | No
             hint = " — Wappi не принял токен: проверьте WAPPI_TOKEN_* в .env"
         elif e.code == 404:
             hint = " — такого адреса нет в Wappi"
+        if chat is not None and e.code in (400, 403, 404):   # чат недоступен номеру — пропустить его на сутки
+            _dead_chats[(profile, chat)] = time.time()
+            chat_errors[f"{profile}:{chat}"] = f"HTTP {e.code} {body.decode(errors='replace')[:200]}"
+            log.warning("Wappi %s: чат %s недоступен (%s) — пропускаю сутки", profile, chat, body[:120])
+            return None
         log.error("Wappi %s %s: HTTP %s %s%s", profile, path, e.code, body, hint)
         errors[profile] = f"HTTP {e.code} {body.decode(errors='replace')}{hint}"
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
@@ -272,11 +285,13 @@ def _poll_by_chats(conn, profile, source, profile_id, token, cursor) -> tuple[in
             continue
         if not c.get("_personal") and region.is_excluded(conn, source, chat_id, chat_name):
             continue   # чат отключён или другого города — сообщения даже не скачиваем
+        if time.time() - _dead_chats.get((profile, chat_id), 0) < DEAD_CHAT_S:
+            continue   # 26.10: чат недавно ответил «peer not found» — номер в нём больше не состоит
         for page in range(MAX_PAGES):
             params = {"profile_id": profile_id, "chat_id": chat_id, "limit": CHAT_PAGE,
                       "offset": page * CHAT_PAGE, "date": _since(cursor), "order": "desc", "mark_all": "false"}
             db.flush(conn)
-            payload = _call(profile, f"{PREFIX[source]}/messages/get", params, token)
+            payload = _call(profile, f"{PREFIX[source]}/messages/get", params, token, chat=chat_id)
             if payload is None:
                 break
             batch = _list(payload, ("messages", "data", "result"))

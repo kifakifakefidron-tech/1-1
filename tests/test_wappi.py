@@ -220,3 +220,30 @@ def test_wappi_error_hints():
     assert "само" in notify.wappi_hint("The read operation timed out")
     assert "позже" in notify.wappi_hint('HTTP 400 {"detail":"повторите запрос чуть позже"}')
     assert notify.WAPPI_GRACE_S >= 15 * 60
+
+
+def test_one_dead_chat_is_not_profile_failure(conn, monkeypatch):
+    """26.10: «peer not found» в одном чате (номер вышел из группы) — не сбой номера; чат пропускаем сутки, другие читаем."""
+    import io
+    import urllib.error
+    monkeypatch.setattr(config, "WAPPI_TOKENS", {"wa": "", "tg": "tt", "max": ""})
+    monkeypatch.setattr(config, "WAPPI_PROFILES", ["tg:p2"])
+    monkeypatch.setattr(wappi.time, "sleep", lambda s: None)
+    wappi._dead_chats.clear()
+    asked = []
+
+    def fake_get(path, params, token):
+        if path.endswith("/chats/get"):
+            return {"dialogs": [{"id": "gone", "name": "Ушли", "isGroup": True, "last_timestamp": NOW},
+                                {"id": "ok", "name": "Риелторы", "isGroup": True, "last_timestamp": NOW}]}
+        asked.append(params["chat_id"])
+        if params["chat_id"] == "gone":
+            raise urllib.error.HTTPError("u", 400, "Bad", {}, io.BytesIO(b'{"status":"error","detail":"error peer not found"}'))
+        return {"messages": [{"id": "x1", "chatId": "ok", "time": NOW, "from": "79181112233", "body": AD}]}
+
+    monkeypatch.setattr(wappi, "_get", fake_get)
+    assert wappi.poll_all(conn) == 1          # живой чат прочитан
+    assert "tg:p2" not in wappi.errors       # и номер не считается сломанным
+    asked.clear()
+    wappi.poll_all(conn)
+    assert "gone" not in asked               # пропавший чат сутки не трогаем
