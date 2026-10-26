@@ -22,7 +22,7 @@
   const state = {
     q: "", deal: "sale", types: [], rooms: [],
     priceMin: "", priceMax: "", areaMin: "", areaMax: "", landMin: "", landMax: "",
-    notFirst: false, notLast: false, fresh: "", hot: false, districts: [], complexes: [], repair: "", street: "", house: "",
+    notFirst: false, notLast: false, fresh: "", hot: false, districts: [], complexes: [], repair: "", photo: "", street: "", house: "",
     sort: "new", view: "list",
   };
   const DEFAULTS = JSON.parse(JSON.stringify(state));
@@ -101,7 +101,7 @@
   // ─── адрес страницы ↔ фильтры ────────────────────────────────────────────
   const URL_KEYS = {
     q: "q", deal: "deal", types: "type", rooms: "rooms", priceMin: "pmin", priceMax: "pmax",
-    areaMin: "amin", areaMax: "amax", landMin: "lmin", landMax: "lmax", notFirst: "nf", repair: "rep",
+    areaMin: "amin", areaMax: "amax", landMin: "lmin", landMax: "lmax", notFirst: "nf", repair: "rep", photo: "ph",
     notLast: "nl", fresh: "fresh", hot: "hot", districts: "district", complexes: "complex", sort: "sort", view: "view",
     street: "street", house: "house",   // 19.10: «следить за этим домом»
   };
@@ -147,6 +147,7 @@
     }
     if (state.notFirst) p.set("not_first", "1");
     if (state.repair === "yes" || state.repair === "no") p.set("cond", state.repair === "yes" ? "repair" : "norepair");
+    if (state.photo === "yes" || state.photo === "no") p.set("photo", state.photo);   // 26.10: с фото / без фото
     if (state.hot) p.set("hot", "1");   // «🔥 Горячее»
     if (state.fresh === "new1") p.set("new_days", "1");   // «Новое сегодня»: впервые появились за сутки
     else if (state.fresh) p.set("fresh_days", state.fresh);
@@ -238,6 +239,7 @@
     for (const k of ["priceMin", "priceMax", "areaMin", "areaMax", "landMin", "landMax"]) $(k).value = state[k];
     $("notFirst").checked = state.notFirst;
     $("repair").value = state.repair;
+    $("photoF").value = state.photo || "";
     $("fresh").value = state.fresh;
     $("newTodayBtn").classList.toggle("on", state.fresh === "new1");
     $("newTodayBtn").setAttribute("aria-pressed", state.fresh === "new1");
@@ -251,7 +253,7 @@
     $("filterBadge").hidden = !fc;
     $("filterBadge").textContent = fc;
     // сколько выбрано среди «ещё фильтров» — видно на кнопке, даже когда они свёрнуты
-    const mc = [state.areaMin || state.areaMax, state.landMin || state.landMax, state.notFirst, state.fresh, state.repair]
+    const mc = [state.areaMin || state.areaMax, state.landMin || state.landMax, state.notFirst, state.fresh, state.repair, state.photo]
       .filter(Boolean).length + state.districts.length + state.complexes.length;
     $("moreN").hidden = !mc;
     $("moreN").textContent = mc;
@@ -1710,7 +1712,7 @@
   })();
   function filtersCount() {
     return state.types.length + state.rooms.length + state.districts.length + state.complexes.length
-      + ["priceMin", "priceMax", "areaMin", "areaMax", "landMin", "landMax", "fresh", "repair"].filter((k) => state[k]).length
+      + ["priceMin", "priceMax", "areaMin", "areaMax", "landMin", "landMax", "fresh", "repair", "photo"].filter((k) => state[k]).length
       + (state.notFirst ? 1 : 0) + (state.notLast ? 1 : 0) + (state.hot ? 1 : 0) + (state.deal === "rent" ? 1 : 0);
   }
 
@@ -1781,7 +1783,7 @@
     const n = u ? u.favorites.length : 0;
     if ($("favBtn")) $("favBtn").innerHTML = `Избранное${n ? `<i class="nav-badge">${n}</i>` : ""}`;
 
-    if (u && $("hero")) $("hero").hidden = true;   // акт 14.10: вошедшему агенту приветствие не занимает первый экран
+    // 26.10 (Артём): блок с логотипом и числом объектов — всегда, и вошедшим (раньше вошедшим прятали — акт 14.10)
     if ($("heroLogin")) { $("heroLogin").hidden = !!u; $("heroCabinet").hidden = !u; }
     if (window.yaSelect) window.yaSelect(!!(u && u.is_admin));   // выделил адрес → «В Яндекс Картах»
     const unread = u ? u.unread || 0 : 0;
@@ -2457,6 +2459,7 @@
     $("notFirst").addEventListener("change", () => { state.notFirst = $("notFirst").checked; refresh(); });
     $("fresh").addEventListener("change", () => { state.fresh = $("fresh").value; refresh(); });
     $("repair").addEventListener("change", () => { state.repair = $("repair").value; refresh(); });
+    $("photoF").addEventListener("change", () => { state.photo = $("photoF").value; refresh(); });
     $("sort").addEventListener("change", () => { state.sort = $("sort").value; refresh(); });
 
     // районы и ЖК в фильтре — широкий список с поиском, галочками и числом объектов
@@ -2485,7 +2488,7 @@
     $("resetBtn").addEventListener("click", () => {
       Object.assign(state, {
         types: [], rooms: [], priceMin: "", priceMax: "", areaMin: "", areaMax: "", landMin: "", landMax: "",
-        notFirst: false, notLast: false, fresh: "", districts: [], complexes: [], q: "", repair: "",
+        notFirst: false, notLast: false, fresh: "", districts: [], complexes: [], q: "", repair: "", photo: "",
       });
       $("q").value = "";
       syncControls();
@@ -2704,16 +2707,10 @@
   async function initHero() {
     const hero = $("hero");
     if (!hero) return;
-    let hidden = false;
-    try { hidden = localStorage.getItem("heroHidden") === "1"; } catch { /* */ }
-    if (hidden && !hero.hidden) document.cookie = "hh=1; max-age=31536000; path=/; samesite=lax";   // дальше прячет сервер
-    if (hidden || hero.hidden) { hero.hidden = true; return; }
-    $("heroX").addEventListener("click", () => {
-      hero.style.transition = "opacity .35s, transform .35s"; hero.style.opacity = "0"; hero.style.transform = "translateY(-8px)";
-      setTimeout(() => { hero.hidden = true; }, 340);
-      try { localStorage.setItem("heroHidden", "1"); } catch { /* */ }
-      document.cookie = "hh=1; max-age=31536000; path=/; samesite=lax";   // 18.10: в следующий раз сервер сам не пришлёт приветствие
-    });
+    // 26.10 (Артём): блок всегда на странице поиска, закрыть нельзя; старые отметки «скрыть» убираем
+    hero.hidden = false;
+    try { localStorage.removeItem("heroHidden"); } catch { /* */ }
+    document.cookie = "hh=; max-age=0; path=/";
     $("heroLogin").addEventListener("click", () => openLogin());
     if (hero.querySelector("[data-ssr]")) return;   // 18.10: цифры уже пришли с сервера — без «докрутки» (страница не прыгает)
     try {
@@ -2743,7 +2740,7 @@
     renderTypes();
     renderAccount();
     if (state.areaMin || state.areaMax || state.landMin || state.landMax || state.notFirst || state.notLast
-        || state.fresh || state.repair || state.districts.length || state.complexes.length) {
+        || state.fresh || state.repair || state.photo || state.districts.length || state.complexes.length) {
       $("more").hidden = false;
       $("moreBtn").setAttribute("aria-expanded", "true");
       $("moreBtn").querySelector("span").textContent = "Скрыть фильтры";

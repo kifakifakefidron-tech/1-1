@@ -45,3 +45,17 @@ def test_public_text_hides_names_commission_and_broken_phones():
     t = parser.public_text("2к 58 м2\nРемонт\nПлачу 3%\nЗвоните 8918384538 Наталия\nЕлена 892825773125\nВячеслав Цветков")
     assert t == "2к 58 м2\nРемонт"
     assert parser.mask_names("Звоните Вячеслав Цветков", "[имя]") == "Звоните [имя]"
+
+
+def test_photo_filter_and_hero_always(c):
+    """26.10 (Артём): фильтр «с фото / без фото»; первый экран с числом объектов — всегда, без крестика."""
+    client, lid = c
+    conn = db.get()
+    assert client.get("/api/listings?photo=no").json()["total"] == 1
+    assert client.get("/api/listings?photo=yes").json()["total"] == 0
+    conn.execute("UPDATE listings SET photos = ? WHERE id = ?", ('["/photos/1/a.jpg"]', lid))
+    conn.commit()
+    assert client.get("/api/listings?photo=yes&size=31").json()["total"] == 1   # другой размер страницы — мимо 15-секундного кэша
+    client.cookies.set("hh", "1")   # раньше кука «скрыть приветствие» прятала блок
+    html = client.get("/").text
+    assert '<section class="hero" id="hero" aria-label' in html and 'id="heroX"' not in html

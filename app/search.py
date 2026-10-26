@@ -65,6 +65,7 @@ class Query:
     # подбор под клиента (ТЗ v2)
     exclude_client: int | None = None   # без объектов, уже связанных с клиентом, и тех, что «не подходит»
     with_photo: bool = False
+    photo: str = ""   # 26.10 (Артём): фильтр поиска «с фото» (yes) / «без фото» (no)
     cond: list[str] = field(default_factory=list)   # pcho | repair | furniture — по тексту объявления
     no_encumbrance: bool = False
     mortgage: bool = False              # клиенту нужна ипотека — без «только наличные»
@@ -105,6 +106,7 @@ def query_from_params(qp) -> Query:
         street=qp.get("street", "")[:80].strip(), house=qp.get("house", "")[:20].strip(),
         not_first=qp.get("not_first") == "1", not_last=qp.get("not_last") == "1",
         cond=[c for c in _list(qp, "cond") if c in COND_SQL],
+        photo=qp.get("photo") if qp.get("photo") in ("yes", "no") else "",
         fresh_days=num_param(qp.get("fresh_days"), int), new_days=num_param(qp.get("new_days"), int),
         since=num_param(qp.get("since"), int), hl=num_param(qp.get("hl"), int), hot=qp.get("hot") == "1",
         sort=qp.get("sort", "new"),
@@ -452,8 +454,10 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
         w.append("""NOT EXISTS (SELECT 1 FROM client_items ci WHERE ci.client_id = ? AND ci.listing_id = l.id)
                     AND NOT EXISTS (SELECT 1 FROM client_hidden ch WHERE ch.client_id = ? AND ch.listing_id = l.id)""")
         p += [qr.exclude_client, qr.exclude_client]
-    if qr.with_photo:
+    if qr.with_photo or qr.photo == "yes":
         w.append("json_array_length(COALESCE(l.photos, '[]')) > 0")
+    elif qr.photo == "no":
+        w.append("json_array_length(COALESCE(l.photos, '[]')) = 0")
     conds = [COND_SQL[c] for c in qr.cond if c in COND_SQL]
     if conds:
         w.append("(" + " OR ".join(conds) + ")")

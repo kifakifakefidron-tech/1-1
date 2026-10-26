@@ -216,7 +216,7 @@ def noted_ids(conn: sqlite3.Connection, user_id: int) -> list[int]:
 
 # ─── подписки на поиск ─────────────────────────────────────────────────────
 _KEEP = ("q", "deal", "type", "rooms", "price_min", "price_max", "area_min", "area_max", "land_min", "land_max",
-         "district", "complex", "not_first", "not_last", "hot", "street", "house", "cond")
+         "district", "complex", "not_first", "not_last", "hot", "street", "house", "cond", "photo")
 
 
 def clean_params(query: str) -> str:
@@ -296,7 +296,7 @@ def page_from_params(params: str) -> str:
         if one(api).isdigit():
             out.append((page, f"{int(one(api)) / (1000 if rent else 1e6):g}"))
     for api, page in (("area_min", "amin"), ("area_max", "amax"), ("land_min", "lmin"), ("land_max", "lmax"),
-                      ("not_first", "nf"), ("not_last", "nl"), ("hot", "hot")):
+                      ("not_first", "nf"), ("not_last", "nl"), ("hot", "hot"), ("photo", "ph")):
         if one(api):
             out.append((page, one(api)))
     for k in ("district", "complex"):

@@ -200,8 +200,7 @@ def _hero_ssr(request: Request, html_text: str) -> str:
     """18.10 (приёмка п. 3, 6): первый экран — с сервера. Цифры сразу в HTML (превью и поисковики видят «8 486», а не «—»);
     вошедшему или закрывшему приветствие (кука hh) блок не отправляем — раньше его прятал скрипт после загрузки и
     страница на телефоне «прыгала» (CLS 0,93)."""
-    if request.cookies.get("hh") == "1" or (request.cookies.get(SESSION) and current_user(request)):
-        return html_text.replace('<section class="hero" id="hero"', '<section class="hero" id="hero" hidden', 1)
+    # 26.10 (Артём): первый экран с логотипом и числом объектов — ВСЕГДА (и вошедшим), без крестика; кука hh больше не действует
     s = _stats_fast()
     for k in ("sale", "rent", "new_24h", "districts"):
         v = s.get(k)
