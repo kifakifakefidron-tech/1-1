@@ -331,7 +331,8 @@ CREATE TABLE IF NOT EXISTS auto_reviews (
 );
 -- 24.10 (Артём: «сомневается — в спорные, решу сам и обучу»): пары «возможно, один объект» (app/dupreview.py).
 -- status: open — ждёт админа; same — админ склеил; diff — админ: разные (больше не спрашиваем, сами не склеиваем);
--- auto — склеил сервис; split — склейку разделили (= разные); gone — одной карточки уже нет на сайте
+-- auto — склеил сервис; split — склейку разделили (= разные); gone — одной карточки уже нет на сайте;
+-- market — один объект, но разные агенты (карточки отдельно, связаны в «Этот объект у других агентов»)
 CREATE TABLE IF NOT EXISTS dup_pairs (
     id INTEGER PRIMARY KEY, a INTEGER NOT NULL, b INTEGER NOT NULL, kind TEXT NOT NULL, score REAL, why TEXT,
     status TEXT NOT NULL DEFAULT 'open', keep_id INTEGER, drop_id INTEGER, undo TEXT, ai TEXT,

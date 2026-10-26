@@ -126,6 +126,7 @@
         <button type="button" class="pill light" data-group="${esc(otherNums(p).raw.join(","))}">Это один агент — объединить номера</button></div>` : ""}
       <div class="dp-acts">
         <button type="button" class="pill dp-same" data-v="same">${ic("check")} Один объект <kbd>1</kbd></button>
+        <button type="button" class="pill light dp-mkt" data-v="market">Один объект — разные агенты <kbd>3</kbd></button>
         <button type="button" class="pill light dp-diff" data-v="diff">Разные объекты <kbd>2</kbd></button>
         <button type="button" class="pill light dp-skip" data-v="skip">Пропустить <kbd>→</kbd></button>
       </div>
@@ -166,7 +167,8 @@
     load(true);
   }
 
-  const STATUS = { auto: "Склеил сервис", same: "Вы: один объект", diff: "Вы: разные", split: "Разделено" };
+  const STATUS = { auto: "Склеил сервис", same: "Вы: один объект", diff: "Вы: разные", split: "Разделено",
+    market: "Вы: один объект, разные агенты" };
   function listHTML() {
     if (!pairs.length) return `<p class="dp-empty">${tab === "auto" ? "Сервис пока ничего не склеивал сам." : "Решений пока нет."}</p>`;
     return `<div class="dp-list">${pairs.map((p) => `<div class="dp-row" data-pid="${p.id}">
@@ -175,7 +177,7 @@
         <small>${esc(p.kind_label)} · ${esc((p.why || []).slice(0, 3).join(", "))} · ${esc(day(p.decided_at))}</small>
         <small>№ ${p.a.id} ${esc(mln(p.a.price, p.a.deal))} · № ${p.b.id} ${esc(mln(p.b.price, p.b.deal))}</small></div>
       ${["auto", "same"].includes(p.status) ? `<button type="button" class="pill light" data-split="${p.id}">Разделить</button>`
-        : p.status === "diff" ? `<button type="button" class="pill light" data-reopen="${p.id}">Вернуть в очередь</button>` : ""}
+        : ["diff", "market"].includes(p.status) ? `<button type="button" class="pill light" data-reopen="${p.id}">Вернуть в очередь</button>` : ""}
     </div>`).join("")}</div>`;
   }
 
@@ -184,7 +186,7 @@
       const share = s.share == null ? "—" : `${Math.round(s.share * 100)} %`;
       const tail = s.auto_kind
         ? `<small>Склеивает сам: ${n0(s.auto)}. Разделили вы: ${n0(s.diff)}.</small>`
-        : `<small>Ваши ответы: один объект — ${n0(s.same)}, разные — ${n0(s.diff)}. В очереди: ${n0(s.open)}.</small>
+        : `<small>Ваши ответы: один объект — ${n0(s.same)}, разные — ${n0(s.diff)}${s.market ? `, один объект у разных агентов — ${n0(s.market)}` : ""}. В очереди: ${n0(s.open)}.</small>
            ${s.trusted ? `<button type="button" class="pill light" data-trust="${s.kind}" data-on="0">Перестать склеивать сами</button>`
              : s.can_trust ? `<button type="button" class="pill" data-trust="${s.kind}" data-on="1">Склеивать такие сами</button>`
              : `<small class="dp-wait">Склеивать сам сервис сможет после 20 ваших ответов, если «один объект» будет в 95 % и чаще.</small>`}`;
@@ -224,7 +226,8 @@
     const r = await call("/api/admin/dups", { id: p.id, verdict: v, keep });
     busy = false;
     if (!r.ok || r.data.ok === false) { toast(r.data.error || "Не получилось — попробуйте ещё раз"); }
-    else toast(v === "same" ? "Склеено: осталась одна карточка" : "Запомнил: разные объекты");
+    else toast(v === "same" ? "Склеено: осталась одна карточка"
+      : v === "market" ? "Запомнил: один объект у разных агентов — карточки связаны" : "Запомнил: разные объекты");
     pairs.splice(idx, 1);
     data.counts.open = Math.max(0, data.counts.open - 1);
     if (!pairs.length) return load();
@@ -291,6 +294,7 @@
     if (tab !== "open" || e.target.closest("input, textarea, select") || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === "1") decide("same");
     else if (e.key === "2") decide("diff");
+    else if (e.key === "3") decide("market");
     else if (e.key === "ArrowRight") decide("skip");
   });
   load();

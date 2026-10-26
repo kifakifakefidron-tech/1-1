@@ -122,3 +122,6 @@
   background: transparent; color: var(--ink); }
 .dp-empty.sm { padding: 6px 0; text-align: left; font-size: 14px; }
 @media (max-width: 760px) { .dp-grow { flex-direction: column; } }
+
+/* 26.10: «Один объект — разные агенты» */
+.dp-acts .dp-mkt { border-color: color-mix(in srgb, var(--gold) 45%, transparent); }

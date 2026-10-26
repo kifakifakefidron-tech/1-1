@@ -127,3 +127,23 @@ def test_card_shows_sender_number_next_to_text_number():
     lid = ingest.process_message(conn, m, use_llm=False)["results"][0]["listing_id"]
     c = dupreview._card(conn, lid)
     assert c["text_phones"] == ["+7 918 111-22-33"] and c["sender_phones"] == ["+7 918 444-55-66"]
+
+
+def test_market_verdict_links_cards_diff_hides_them():
+    """26.10: «Один объект — разные агенты» — карточки отдельно, но в «Этот объект у других агентов»; «Разные» — оттуда убирает."""
+    from app import hooks
+    conn = db.connect(":memory:")
+    a = _lid(_send(conn, A))
+    c = _lid(_send(conn, NO_FLOOR, "c2"))
+    dupreview.run(conn)
+    pid = dupreview.pairs(conn)["pairs"][0]["id"]
+    assert dupreview.decide(conn, pid, "market")["status"] == "market"
+    assert len(_active(conn)) == 2                       # не склеили
+    row = conn.execute("SELECT * FROM listings WHERE id = ?", (a,)).fetchone()
+    assert [x["id"] for x in hooks.same_elsewhere(conn, row)] == [c]
+    st = {s["kind"]: s for s in dupreview.stats(conn)}
+    assert st["nodetail"]["market"] == 1 and st["nodetail"]["decided"] == 0
+    dupreview.decide(conn, pid, "reopen")
+    dupreview.decide(conn, pid, "diff")
+    assert hooks.same_elsewhere(conn, row) == []
+    assert dupreview.pairs(conn, "done")["counts"]["done"] == 1

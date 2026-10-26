@@ -119,8 +119,17 @@ def same_elsewhere(conn: sqlite3.Connection, row: sqlite3.Row, limit: int = 10) 
     у объявлений без них похожих не было вовсе. Теперь: тот же тип, сделка, комнаты и место (ЖК или улица; дом — если у обоих),
     явные различия (этаж, этажность, площадь > 3 % / 2 м²) — не он; и хотя бы ДВА совпадения из: площадь, этаж, этажность,
     цена в пределах 7 % (цена — только вместе с совпавшей площадью или этажом)."""
+    # 26.10: решения админа на /dups — «один объект, разные агенты» показываем всегда, «разные объекты» — никогда
+    linked, banned = [], set()
+    for a, b, st in conn.execute("SELECT a, b, status FROM dup_pairs WHERE (a = ? OR b = ?) AND status IN ('market', 'diff', 'split')",
+                                 (row["id"], row["id"])):
+        other = b if a == row["id"] else a
+        (linked.append(other) if st == "market" else banned.add(other))
+    pinned = [dict(r) for r in conn.execute(
+        f"""SELECT id, price, title, last_seen FROM listings WHERE is_active = 1 AND id IN ({','.join('?' * len(linked))})""",
+        linked)] if linked else []
     if not (row["complex"] or row["street"]) or row["rooms"] is None and row["type"] in ("flat", "new"):
-        return []
+        return pinned[:limit]
     phones = set(json.loads(row["phones"] or "[]"))
     rows = conn.execute(
         """SELECT id, price, title, last_seen, phones, complex, street, house, area, floor, floors FROM listings
@@ -135,6 +144,8 @@ def same_elsewhere(conn: sqlite3.Connection, row: sqlite3.Row, limit: int = 10) 
         return None if a is None or b is None else abs(a - b) <= max(abs_, rel * max(a, b))
     out = []
     for r in rows:
+        if r["id"] in banned or r["id"] in linked:
+            continue
         r_key = geo.complex_key(r["complex"]) if r["complex"] else None
         r_street = _norm_street(r["street"])
         if key and r_key and key != r_key:
@@ -159,7 +170,7 @@ def same_elsewhere(conn: sqlite3.Connection, row: sqlite3.Row, limit: int = 10) 
             continue
         out.append({"id": r["id"], "price": r["price"], "title": r["title"], "last_seen": r["last_seen"]})
     out.sort(key=lambda x: (x["price"] is None, x["price"] or 0))
-    return out[:limit]
+    return (pinned + out)[:limit]
 
 
 # ─── заметки ───────────────────────────────────────────────────────────────

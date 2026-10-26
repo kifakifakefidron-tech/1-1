@@ -7,7 +7,8 @@
   * «почти совпадает» — в очередь «Возможно, повтор» (/dups): админ смотрит две карточки рядом и решает
       similar  — текст похож на 80 %+ (числа не считаем), номера в тексте те же;
       nodetail — тот же агент и место, но этаж/площадь указаны не у обоих — различить нечем.
-Решения запоминаются: «Разные» — эту пару больше не спрашиваем и сами не склеиваем; по каждому виду пары считается,
+Решения запоминаются: «Разные» — эту пару больше не спрашиваем и сами не склеиваем; «Один объект — разные агенты»
+(market) — карточки остаются отдельными (рынок), но связаны: в окне объекта «Этот объект у других агентов» (hooks.same_elsewhere); по каждому виду пары считается,
 как часто вы говорите «один объект», — виду с надёжной статистикой можно доверить склейку (state dup_trust).
 Склейка — ownmatch._move: избранное, клиенты, подборки, планер и история переезжают на оставшуюся карточку
 (с фото, иначе самую раннюю), цена и текст — из самого свежего сообщения; «Разделить» возвращает копию."""
@@ -267,8 +268,13 @@ def decide(conn: sqlite3.Connection, pid: int, verdict: str, user_id: int = 0, k
             split(conn, pid, user_id)
         conn.execute("UPDATE dup_pairs SET status = 'diff', decided_at = ?, user_id = ? WHERE id = ?", (now, user_id, pid))
         return {"ok": True, "status": "diff"}
-    if verdict == "reopen":   # передумал «разные» — вернуть в очередь
-        conn.execute("UPDATE dup_pairs SET status = 'open', decided_at = NULL WHERE id = ? AND status = 'diff'", (pid,))
+    if verdict == "market":   # 26.10 (Артём): одна квартира, продают разные агенты — карточки отдельно, но связаны
+        if p["status"] in ("same", "auto"):
+            split(conn, pid, user_id)
+        conn.execute("UPDATE dup_pairs SET status = 'market', decided_at = ?, user_id = ? WHERE id = ?", (now, user_id, pid))
+        return {"ok": True, "status": "market"}
+    if verdict == "reopen":   # передумал «разные» / «разные агенты» — вернуть в очередь
+        conn.execute("UPDATE dup_pairs SET status = 'open', decided_at = NULL WHERE id = ? AND status IN ('diff', 'market')", (pid,))
         return {"ok": True, "status": "open"}
     if verdict != "same":
         return {"ok": False, "error": "Не понял решение"}
@@ -404,9 +410,11 @@ def open_count(conn: sqlite3.Connection) -> int:
 def stats(conn: sqlite3.Connection) -> list[dict]:
     """По видам пар: сколько раз вы сказали «один объект» / «разные» (и разделили склейку сервиса)."""
     rows = conn.execute("SELECT kind, status, COUNT(*) FROM dup_pairs GROUP BY kind, status").fetchall()
-    by: dict[str, dict] = {k: {"same": 0, "diff": 0, "auto": 0, "open": 0} for k in KINDS}
+    by: dict[str, dict] = {k: {"same": 0, "diff": 0, "auto": 0, "open": 0, "market": 0} for k in KINDS}
     for kind, st, n in rows:
-        d = by.setdefault(kind, {"same": 0, "diff": 0, "auto": 0, "open": 0})
+        d = by.setdefault(kind, {"same": 0, "diff": 0, "auto": 0, "open": 0, "market": 0})
+        if st == "market":   # тот же объект, но разные агенты — не склейка, в долю «один объект» не входит
+            d["market"] += n
         if st == "same":
             d["same"] += n
         elif st in ("diff", "split"):
@@ -490,7 +498,7 @@ def _has_col(conn: sqlite3.Connection, table: str, col: str) -> bool:
 
 def pairs(conn: sqlite3.Connection, status: str = "open", limit: int = 30, offset: int = 0) -> dict:
     tidy(conn)
-    st = {"open": ("open",), "auto": ("auto",), "done": ("same", "diff", "split")}.get(status, ("open",))
+    st = {"open": ("open",), "auto": ("auto",), "done": ("same", "diff", "split", "market")}.get(status, ("open",))
     order = "p.score DESC, p.id" if status == "open" else "p.decided_at DESC, p.id DESC"
     rows = conn.execute(f"""SELECT p.* FROM dup_pairs p WHERE p.status IN ({','.join('?' * len(st))})
                             ORDER BY {order} LIMIT ? OFFSET ?""", (*st, limit, offset)).fetchall()
@@ -509,7 +517,7 @@ def pairs(conn: sqlite3.Connection, status: str = "open", limit: int = 30, offse
     counts = dict(conn.execute("SELECT status, COUNT(*) FROM dup_pairs GROUP BY status").fetchall())
     from . import phonegroups
     return {"phone_groups": phonegroups.listing(conn), "pairs": out, "counts": {"open": open_count(conn), "auto": counts.get("auto", 0),
-                                     "done": sum(counts.get(k, 0) for k in ("same", "diff", "split"))},
+                                     "done": sum(counts.get(k, 0) for k in ("same", "diff", "split", "market"))},
             "stats": stats(conn), "ai_enabled": bool(config.DEEPSEEK_API_KEY)}
 
 
