@@ -163,7 +163,7 @@
     const r = await call("/api/admin/dups", body);
     if (!r.ok || r.data.ok === false) { toast(r.data.error || "Не сохранилось"); return; }
     data.phone_groups = r.data.phone_groups || [];
-    toast(`${msg}${r.data.merged ? ` · склеено карточек: ${r.data.merged}` : ""}`);
+    toast(`${msg} · карточки с этими номерами перепроверятся в течение пары минут`);
     load(true);
   }
 

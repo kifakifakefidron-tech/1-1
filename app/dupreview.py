@@ -364,6 +364,7 @@ def scan(conn: sqlite3.Connection, budget_s: float = 8.0, full: bool = False) ->
                 if kind in AUTO or kind in trust:
                     k, d = choose_keep(conn, o["id"], r["id"])
                     merge(conn, k, d, kind, status="auto", why=why, score=score)
+                    conn.commit()   # 26.10 («database is locked»): запись короткая — базу не держим весь проход
                     decided.add(_pair_key(k, d))
                     gone.add(d)
                     res["auto"] += 1
@@ -382,6 +383,8 @@ def scan(conn: sqlite3.Connection, budget_s: float = 8.0, full: bool = False) ->
                             VALUES (?,?,?,?,?, 'open', ?)""", (a, b, kind, score, json.dumps(why, ensure_ascii=False), now))
             decided.add((a, b))
             res["queued"] += 1
+        if doubts:
+            conn.commit()
     db.set_state(conn, "dup_scan_id", str(last))
     conn.commit()
     return res
@@ -505,10 +508,12 @@ def _has_col(conn: sqlite3.Connection, table: str, col: str) -> bool:
 
 
 def pairs(conn: sqlite3.Connection, status: str = "open", limit: int = 30, offset: int = 0) -> dict:
-    tidy(conn)
+    # 26.10 («database is locked»): только чтение — раньше здесь была запись (tidy), и база ждала, пока посчитаются карточки
     st = {"open": ("open",), "auto": ("auto",), "done": ("same", "diff", "split", "market")}.get(status, ("open",))
     order = "p.score DESC, p.id" if status == "open" else "p.decided_at DESC, p.id DESC"
-    rows = conn.execute(f"""SELECT p.* FROM dup_pairs p WHERE p.status IN ({','.join('?' * len(st))})
+    alive = ("""AND EXISTS (SELECT 1 FROM listings WHERE id = p.a AND is_active = 1)
+                AND EXISTS (SELECT 1 FROM listings WHERE id = p.b AND is_active = 1)""" if status == "open" else "")
+    rows = conn.execute(f"""SELECT p.* FROM dup_pairs p WHERE p.status IN ({','.join('?' * len(st))}) {alive}
                             ORDER BY {order} LIMIT ? OFFSET ?""", (*st, limit, offset)).fetchall()
     out = []
     for p in rows:

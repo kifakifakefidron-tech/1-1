@@ -2789,9 +2789,9 @@ def api_admin_dups(request: Request, body: dict | None = None):
                 phonegroups.save(conn, str(b.get("phone_groups") or ""))
             else:
                 phonegroups.add(conn, [str(x) for x in (b.get("phone_group_add") or [])][:10])
-            res = dupreview.scan(conn, budget_s=5)   # перепроверить сразу (остаток — worker следующим циклом)
+            # перепроверка — в фоновой работе (курсор сброшен в phonegroups.save): сайт базу надолго не занимает
             _bump_cache()
-            return JSONResponse({"ok": True, "phone_groups": phonegroups.listing(conn), "merged": res.get("auto", 0)})
+            return JSONResponse({"ok": True, "phone_groups": phonegroups.listing(conn), "merged": 0})
         try:
             pid = int(b.get("id") or 0)
         except (TypeError, ValueError):
