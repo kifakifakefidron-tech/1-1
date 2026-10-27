@@ -1067,15 +1067,28 @@ def _need_admin(request: Request):
 ONLINE_S = 150   # «на сайте сейчас» — был сигнал за последние 2,5 минуты
 
 
+_BOT_UA = re.compile(r"bot|crawl|spider|preview|slurp|facebookexternalhit|whatsapp|telegram|curl|python|headless", re.I)
+
+
 def api_ping(request: Request, body: dict | None = None):
-    """Сигнал «я на сайте» раз в минуту с открытой страницы (для админки: кто сейчас на сайте). Ничего лишнего не храним:
-    ключ — хеш сессии или случайный номер браузера, страница и телефон/компьютер; старше суток — удаляется."""
+    """Сигнал «я на сайте» раз в минуту с открытой страницы (для админки: кто сейчас на сайте и посещения по дням).
+    Ничего лишнего не храним: ключ — хеш сессии, или метка браузера (если человек принял необязательные cookie), или —
+    27.10, чтобы считать и гостей без согласия — анонимная метка ДНЯ: хеш (секрет + дата + адрес + браузер); сам адрес не
+    хранится, а метка меняется каждые сутки — одного человека в разные дни не связать. presence — сутки, visits_daily — 90 дней."""
     body = body or {}
+    ua = request.headers.get("user-agent", "")
+    if _BOT_UA.search(ua):
+        return JSONResponse({"ok": True})   # роботы и превью ссылок — не посетители
     tok = request.cookies.get(SESSION)
     user = current_user(request) if tok else None
-    raw = ("s:" + tok) if tok else ("g:" + str(body.get("g") or "")[:40])
-    if len(raw) < 6:
-        return JSONResponse({"ok": True})
+    msk_day = time.strftime("%Y-%m-%d", time.gmtime(time.time() + 3 * 3600))
+    g = str(body.get("g") or "")[:40]
+    if user:
+        raw = "s:" + tok
+    elif len(g) >= 6:
+        raw = "g:" + g
+    else:
+        raw = "a:" + config.SECRET_KEY + msk_day + _ip_key(request) + ua[:200]
     key = hashlib.sha256(raw.encode()).hexdigest()[:24]
     path = str(body.get("path") or "/")[:60].split("?")[0]
     mobile = 1 if re.search(r"Mobi|Android|iPhone", request.headers.get("user-agent", "")) else 0
@@ -1084,8 +1097,14 @@ def api_ping(request: Request, body: dict | None = None):
     try:
         conn.execute("INSERT OR REPLACE INTO presence (key, user_id, ts, path, mobile) VALUES (?,?,?,?,?)",
                      (key, user["id"] if user else None, now, path, mobile))
+        conn.execute("""INSERT INTO visits_daily (day, key, user_id, mobile) VALUES (?,?,?,?)
+                        ON CONFLICT (day, key) DO UPDATE SET pages = pages + 1,
+                          user_id = COALESCE(excluded.user_id, visits_daily.user_id)""",
+                     (msk_day, key, user["id"] if user else None, mobile))
         if now % 50 == 0:
             conn.execute("DELETE FROM presence WHERE ts < ?", (now - 86400,))
+            conn.execute("DELETE FROM visits_daily WHERE day < ?",
+                         (time.strftime("%Y-%m-%d", time.gmtime(now + 3 * 3600 - 90 * 86400)),))
         conn.commit()
     except sqlite3.OperationalError:   # база занята — не беда, отметимся через минуту
         conn.rollback()
@@ -1109,6 +1128,11 @@ def _online(conn: sqlite3.Connection) -> dict:
     return {"now": len(seen) + sum(1 for r in rows if not r["user_id"]), "users": len(seen),
             "guests": sum(1 for r in rows if not r["user_id"]), "mobile": sum(1 for r in rows if r["mobile"]),
             "hour": hour, "day": day, "people": people[:50],
+            # 27.10: посещения по дням за 14 дней — разных людей (вошедшие + гости), с телефона, просмотров страниц
+            "days": [dict(r) for r in conn.execute("""SELECT day, COUNT(*) AS total, COUNT(DISTINCT user_id) AS users,
+                                                         SUM(user_id IS NULL) AS guests, SUM(mobile) AS mobile, SUM(pages) AS pages
+                                                  FROM visits_daily WHERE day >= ? GROUP BY day ORDER BY day DESC""",
+                                               (time.strftime("%Y-%m-%d", time.gmtime(now + 3 * 3600 - 13 * 86400)),))],
             "pages": [dict(r) for r in conn.execute("""SELECT path, COUNT(*) AS n FROM presence WHERE ts >= ?
                                                        GROUP BY path ORDER BY n DESC LIMIT 8""", (now - ONLINE_S,))]}
 

@@ -131,7 +131,14 @@
         <small>вошли: ${o.users} · гости: ${o.guests} · с телефона: ${o.mobile} · за час: ${o.hour} · за сутки: ${o.day}</small></div>
       ${o.people.length ? `<ul class="ao-list">${o.people.map((p) => `<li><b>${esc(p.name)}</b>${p.admin ? ' <span class="note">(админ)</span>' : ""}
         <span>${esc(PAGE_NAMES[p.path] || p.path)}</span><small>${p.mobile ? "телефон" : "компьютер"} · ${ago(p.ago)}</small></li>`).join("")}</ul>` : ""}
-      ${o.pages.length ? `<p class="note">Где сейчас: ${o.pages.map((x) => `${esc(PAGE_NAMES[x.path] || x.path)} — ${x.n}`).join(", ")}</p>` : ""}`;
+      ${o.pages.length ? `<p class="note">Где сейчас: ${o.pages.map((x) => `${esc(PAGE_NAMES[x.path] || x.path)} — ${x.n}`).join(", ")}</p>` : ""}
+      ${(o.days || []).length ? `<details class="ao-days"><summary>Посещения по дням — сегодня ${o.days[0].total}
+          (вошли ${o.days[0].users}, гости ${o.days[0].guests})</summary>
+        <div class="ao-tbl"><table><thead><tr><th>День</th><th>Всего</th><th>Вошли</th><th>Гости</th><th>С телефона</th><th>Просмотров</th></tr></thead>
+        <tbody>${o.days.map((d) => `<tr><td>${esc(new Date(d.day + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "short", weekday: "short" }))}</td>
+          <td><b>${d.total}</b></td><td>${d.users}</td><td>${d.guests}</td><td>${d.mobile}</td><td>${d.pages}</td></tr>`).join("")}</tbody></table></div>
+        <p class="note">Гостей без согласия на cookie считаем анонимно: метка меняется каждые сутки, адрес не храним. Один человек на
+          телефоне и компьютере — это два посещения.</p></details>` : ""}`;
     clearTimeout(online.t);
     online.t = setTimeout(() => { if (!document.hidden && $("onlineBox")) online(); }, 30000);
   }

@@ -236,3 +236,24 @@ def test_admin_users_list_all_with_last_visit(tmp_path, monkeypatch):
         assert all("last_seen" in x and "n_clients" in x and "login" in x for x in d["items"])
         emails = [x["email"] for x in d["items"]]
         assert emails.index("agent2@example.ru") < emails.index("agent0@example.ru")   # недавно заходившие — выше
+
+
+def test_ping_counts_guests_without_cookie_consent(tmp_path, monkeypatch):
+    """27.10: гостя без согласия на cookie тоже считаем — анонимной меткой дня; роботов — нет."""
+    from starlette.testclient import TestClient
+    from app import config, db, server
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "v.db"))
+    monkeypatch.setattr(db._local, "conn", None, raising=False)
+    conn = db.get()
+    with TestClient(server.app) as c:
+        h = {"user-agent": "Mozilla/5.0 (iPhone) Mobile"}
+        c.post("/api/ping", json={"path": "/"}, headers=h)            # гость без согласия (без метки браузера)
+        c.post("/api/ping", json={"path": "/how"}, headers=h)         # тот же гость — то же посещение
+        c.post("/api/ping", json={"path": "/"}, headers={"user-agent": "TelegramBot (like TwitterBot)"})   # робот
+    rows = conn.execute("SELECT key, user_id, mobile, pages FROM visits_daily").fetchall()
+    assert len(rows) == 1 and rows[0]["user_id"] is None and rows[0]["mobile"] == 1 and rows[0]["pages"] == 2
+    assert conn.execute("SELECT COUNT(*) FROM presence").fetchone()[0] == 1
+    o = server._online(conn)
+    assert o["guests"] == 1 and o["days"][0]["total"] == 1
+    conn.close()
+    db._local.conn = None

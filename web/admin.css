@@ -278,12 +278,14 @@ tr.peek td { background: rgba(0, 0, 0, .12); }
 @media (max-width: 900px) {
   .adm2:not([hidden]) { grid-template-columns: minmax(0, 1fr); }
   .adm2 > section { grid-column: 1; }
-  .adm2 > .adm-tabs { grid-column: 1; grid-row: auto; position: sticky; top: 0; z-index: 5; display: flex; overflow-x: auto; scrollbar-width: none;
-    border-radius: 999px; padding: 4px; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
-  .adm2 > .adm-tabs::-webkit-scrollbar { display: none; }
-  .adm2 .adm-tabs .seg { flex: none; width: auto; padding: 8px 12px; border-radius: 999px; font-size: 13px; }
-  .adm2 .adm-tabs .seg svg { display: none; }
-  .adm2 .adm-tabs .seg-link { margin: 0; border: 0; padding-top: 8px; border-radius: 999px; }
+  /* 27.10 (Артём: «в моб версии плохо отображаются пункты меню»): раньше — овальная полоса с переносом, края пунктов обрезались.
+     Теперь — все разделы сразу, сеткой в 2 колонки, с иконками */
+  .adm2 > .adm-tabs { grid-column: 1; grid-row: auto; position: static; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px; padding: 6px; border-radius: 20px; flex-wrap: nowrap; }
+  .adm2 .adm-tabs .seg { width: 100%; min-width: 0; padding: 10px 10px; border-radius: 14px; font-size: 13.5px; gap: 8px; }
+  .adm2 .adm-tabs .seg > span, .adm2 .adm-tabs .seg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .adm2 .adm-tabs .seg svg { display: block; width: 16px; height: 16px; }
+  .adm2 .adm-tabs .seg-link { margin: 0; border: 0; padding-top: 10px; border-radius: 14px; }
   .adm2 .adm-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .adm2 .adm-card > b { font-size: 26px; }
 }
@@ -302,3 +304,12 @@ tr.peek td { background: rgba(0, 0, 0, .12); }
   border: 1px solid var(--glass-line); background: rgba(0, 0, 0, .2); color: var(--ink); }
 .adm2 .sp-new button { flex: none; height: 40px; border-radius: 999px; }
 .adm2 .sp-list, .adm2 .sp-card { background: rgba(0, 20, 20, .28); border: 1px solid var(--glass-line); }
+/* 27.10: посещения по дням (блок «на сайте сейчас») */
+.ao-days { margin-top: 12px; }
+.ao-days summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+.ao-tbl { margin-top: 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 14px; border: 1px solid var(--glass-line); }
+.ao-tbl table { width: 100%; border-collapse: collapse; font-size: 13px; white-space: nowrap; }
+.ao-tbl th, .ao-tbl td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--glass-line); }
+.ao-tbl th:first-child, .ao-tbl td:first-child { text-align: left; }
+.ao-tbl th { color: var(--ink-3); font-weight: 500; font-size: 11.5px; }
+@media (max-width: 480px) { .ao-tbl table { font-size: 12px; } .ao-tbl th, .ao-tbl td { padding: 7px 6px; } }

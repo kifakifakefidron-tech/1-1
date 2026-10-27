@@ -295,6 +295,11 @@ CREATE TABLE IF NOT EXISTS presence (   -- кто сейчас на сайте (
     key TEXT PRIMARY KEY, user_id INTEGER, ts INTEGER NOT NULL, path TEXT, mobile INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS ix_presence_ts ON presence(ts);
+-- 27.10: посещения по дням (день по Москве) — для админки «за 14 дней»; гость без согласия на cookie — анонимная метка дня
+CREATE TABLE IF NOT EXISTS visits_daily (
+    day TEXT NOT NULL, key TEXT NOT NULL, user_id INTEGER, mobile INTEGER NOT NULL DEFAULT 0, pages INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (day, key)
+);
 CREATE TABLE IF NOT EXISTS hidden_listings (   -- агент скрыл объект только для себя (продан, не сотрудничает…)
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
     reason TEXT, ts INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)

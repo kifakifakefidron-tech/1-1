@@ -10,7 +10,7 @@
     navigator.serviceWorker.register("/sw.js").catch(() => { /* без помощника сайт работает как обычно */ });
   }
   // «я на сайте» — раз в минуту, пока страница открыта и видна (для админки: кто сейчас на сайте)
-  // статистика «кто на сайте» — только с согласием на необязательные cookie (cookies.js: ck=all)
+  // метка браузера для статистики — только с согласием на необязательные cookie (cookies.js: ck=all); без согласия — анонимно
   const statsOk = () => /(?:^|;\s*)ck=all/.test(document.cookie);
   if (!path.startsWith("/c/") && !new URLSearchParams(location.search).has("embed")) {
     const gid = () => {   // метка браузера для статистики — заводится только после согласия
@@ -19,8 +19,9 @@
       return g;
     };
     let lastPing = 0;   // не чаще раза в 30 с (вкладку часто прячут/показывают — без этого были пачки запросов)
-    const ping = () => { if (Date.now() - lastPing < 30000) return; if (!document.hidden && statsOk()) { lastPing = Date.now(); fetch("/api/ping", { method: "POST", credentials: "same-origin",
-      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, g: gid() }), keepalive: true }).catch(() => {}); } };
+    // 27.10: сигнал — от всех (гостей без согласия сервер считает анонимной меткой дня); метка браузера — только с согласием
+    const ping = () => { if (Date.now() - lastPing < 30000) return; if (!document.hidden) { lastPing = Date.now(); fetch("/api/ping", { method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, g: statsOk() ? gid() : "" }), keepalive: true }).catch(() => {}); } };
     setTimeout(ping, 1500);
     setInterval(ping, 60000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) ping(); });
