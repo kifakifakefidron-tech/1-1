@@ -116,6 +116,96 @@
   const PAGE_NAMES = { "/": "поиск", "/cabinet": "кабинет", "/planner": "планер", "/clients": "клиенты", "/work": "избранное",
     "/my": "мои объекты", "/my/edit": "правка объекта", "/picks": "подборки", "/market": "аналитика", "/notifications": "уведомления",
     "/settings": "настройки", "/pay": "оплата", "/admin": "админка", "/learn": "обучение", "/fix": "разбор", "/how": "как это работает" };
+  // ─── 27.10: график посещений за 30 дней (одна ось — все ряды в людях/заходах; просмотры — в подсказке и таблице) ───
+  const VC_SERIES = [
+    { k: "sessions", label: "Сессии", hint: "заходов на сайт (перерыв 30 мин — новая)" },
+    { k: "total", label: "Посетители", hint: "разных людей" },
+    { k: "users", label: "Вошли", hint: "с аккаунтом" },
+    { k: "guests", label: "Гости", hint: "без входа" },
+    { k: "mobile", label: "С телефона", hint: "посетителей с телефона" },
+  ];
+  const vcOn = new Set(["sessions", "total"]);   // что показано — переживает обновление блока раз в 30 с
+  let vcDays = [];
+  function dayLabel(d, full) {
+    return new Date(d + "T12:00:00").toLocaleDateString("ru-RU", full ? { day: "numeric", month: "short", weekday: "short" }
+      : { day: "numeric", month: "short" }).replace(".", "");
+  }
+  function niceMax(v) {
+    if (v <= 4) return 4;
+    const p = Math.pow(10, Math.floor(Math.log10(v))), m = v / p;
+    return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p;
+  }
+  function visitsChart(days) {
+    vcDays = days.slice().reverse();   // старые слева
+    const box = $("visitsChart");
+    if (!box) return;
+    const sum = (k) => vcDays.reduce((a, d) => a + (d[k] || 0), 0);
+    const today = vcDays[vcDays.length - 1] || {};
+    box.innerHTML = `<div class="vc-head"><div class="vc-kpi"><span>Сессии за 30 дней</span><b>${sum("sessions").toLocaleString("ru-RU")}</b></div>
+        <div class="vc-kpi"><span>Сегодня</span><b>${(today.sessions || 0).toLocaleString("ru-RU")}</b>
+          <small>${today.total || 0} чел. · ${today.views || 0} просм.</small></div></div>
+      <div class="vc-legend" role="group" aria-label="Что показать на графике">${VC_SERIES.map((s, i) => `<button type="button"
+          class="vc-lg" data-vc="${s.k}" aria-pressed="${vcOn.has(s.k)}" style="--c: var(--vc-${i + 1})" title="${esc(s.hint)}">
+          <i></i>${esc(s.label)}</button>`).join("")}</div>
+      <div class="vc-plot"><svg role="img" aria-label="Посещения за 30 дней"></svg><div class="vc-tip" hidden></div></div>`;
+    drawVisits();
+  }
+  function drawVisits() {
+    const box = $("visitsChart");
+    if (!box || !vcDays.length) return;
+    const plot = box.querySelector(".vc-plot"), svg = plot.querySelector("svg"), tip = plot.querySelector(".vc-tip");
+    const W = Math.max(280, plot.clientWidth), H = W < 520 ? 200 : 240;
+    const L = 34, R = 10, T = 12, B = 26, iw = W - L - R, ih = H - T - B;
+    const shown = VC_SERIES.map((s, i) => ({ ...s, i })).filter((s) => vcOn.has(s.k));
+    const max = niceMax(Math.max(1, ...vcDays.flatMap((d) => shown.map((s) => d[s.k] || 0))));
+    const n = vcDays.length, x = (i) => L + (n === 1 ? iw / 2 : (i * iw) / (n - 1)), y = (v) => T + ih - (v / max) * ih;
+    const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(max * f));
+    const step = W < 520 ? 7 : 5;
+    let s = `<g class="vc-grid">${ticks.map((t) => `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/>
+      <text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${t}</text>`).join("")}</g>
+      <g class="vc-x">${vcDays.map((d, i) => ((n - 1 - i) % step === 0 ? `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${esc(dayLabel(d.day))}</text>` : "")).join("")}</g>`;
+    for (const sr of shown.slice().reverse()) {   // первый ряд — сверху
+      const pts = vcDays.map((d, i) => `${x(i).toFixed(1)},${y(d[sr.k] || 0).toFixed(1)}`).join(" ");
+      if (sr.k === "sessions") s += `<polygon class="vc-area" points="${x(0)},${y(0)} ${pts} ${x(n - 1)},${y(0)}" style="fill: var(--vc-${sr.i + 1})"/>`;
+      s += `<polyline class="vc-line" points="${pts}" style="stroke: var(--vc-${sr.i + 1})"/>`;
+    }
+    s += `<line class="vc-cross" x1="0" x2="0" y1="${T}" y2="${T + ih}" visibility="hidden"/><g class="vc-dots"></g>
+      <rect class="vc-hit" x="${L}" y="${T}" width="${iw}" height="${ih}"/>`;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("width", W);
+    svg.setAttribute("height", H);
+    svg.innerHTML = s;
+    const cross = svg.querySelector(".vc-cross"), dots = svg.querySelector(".vc-dots");
+    const show = (clientX) => {
+      const r = svg.getBoundingClientRect();
+      const i = Math.max(0, Math.min(n - 1, Math.round(((clientX - r.left) * (W / r.width) - L) / (iw / Math.max(1, n - 1)))));
+      const d = vcDays[i];
+      cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+      dots.innerHTML = shown.map((sr) => `<circle cx="${x(i)}" cy="${y(d[sr.k] || 0)}" r="4.5" style="fill: var(--vc-${sr.i + 1})"/>`).join("");
+      tip.innerHTML = `<b>${esc(dayLabel(d.day, true))}</b>${VC_SERIES.map((sr, j) => `<span class="${vcOn.has(sr.k) ? "" : "off"}">
+          <i style="background: var(--vc-${j + 1})"></i>${esc(sr.label)}<em>${d[sr.k] || 0}</em></span>`).join("")}
+        <span class="views">Просмотры<em>${d.views || 0}</em></span>`;
+      tip.hidden = false;
+      const px = (x(i) / W) * r.width;
+      tip.style.left = `${Math.min(Math.max(px - tip.offsetWidth / 2, 0), r.width - tip.offsetWidth)}px`;
+    };
+    const hide = () => { cross.setAttribute("visibility", "hidden"); dots.innerHTML = ""; tip.hidden = true; };
+    const hit = svg.querySelector(".vc-hit");
+    hit.addEventListener("pointermove", (e) => show(e.clientX));
+    hit.addEventListener("pointerdown", (e) => show(e.clientX));
+    hit.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") hide(); });
+  }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-vc]");
+    if (!b) return;
+    const k = b.dataset.vc;
+    if (vcOn.has(k)) { if (vcOn.size > 1) vcOn.delete(k); } else vcOn.add(k);   // хотя бы одна линия остаётся
+    document.querySelectorAll("[data-vc]").forEach((x) => x.setAttribute("aria-pressed", vcOn.has(x.dataset.vc)));
+    drawVisits();
+  });
+  let vcResize = 0;
+  window.addEventListener("resize", () => { clearTimeout(vcResize); vcResize = setTimeout(drawVisits, 150); });
+
   async function online() {
     const o = await call("/api/admin/online");
     if (!o || o.now == null) return;
@@ -132,13 +222,15 @@
       ${o.people.length ? `<ul class="ao-list">${o.people.map((p) => `<li><b>${esc(p.name)}</b>${p.admin ? ' <span class="note">(админ)</span>' : ""}
         <span>${esc(PAGE_NAMES[p.path] || p.path)}</span><small>${p.mobile ? "телефон" : "компьютер"} · ${ago(p.ago)}</small></li>`).join("")}</ul>` : ""}
       ${o.pages.length ? `<p class="note">Где сейчас: ${o.pages.map((x) => `${esc(PAGE_NAMES[x.path] || x.path)} — ${x.n}`).join(", ")}</p>` : ""}
-      ${(o.days || []).length ? `<details class="ao-days"><summary>Посещения по дням — сегодня ${o.days[0].total}
-          (вошли ${o.days[0].users}, гости ${o.days[0].guests})</summary>
-        <div class="ao-tbl"><table><thead><tr><th>День</th><th>Всего</th><th>Вошли</th><th>Гости</th><th>С телефона</th><th>Просмотров</th></tr></thead>
-        <tbody>${o.days.map((d) => `<tr><td>${esc(new Date(d.day + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "short", weekday: "short" }))}</td>
-          <td><b>${d.total}</b></td><td>${d.users}</td><td>${d.guests}</td><td>${d.mobile}</td><td>${d.pages}</td></tr>`).join("")}</tbody></table></div>
-        <p class="note">Гостей без согласия на cookie считаем анонимно: метка меняется каждые сутки, адрес не храним. Один человек на
-          телефоне и компьютере — это два посещения.</p></details>` : ""}`;
+      ${(o.days || []).length ? `<div class="vc" id="visitsChart"></div>
+        <details class="ao-days"><summary>Таблица по дням</summary>
+        <div class="ao-tbl"><table><thead><tr><th>День</th><th>Сессии</th><th>Посетители</th><th>Вошли</th><th>Гости</th><th>С телефона</th><th>Просмотры</th></tr></thead>
+        <tbody>${o.days.map((d) => `<tr><td>${esc(dayLabel(d.day, true))}</td>
+          <td><b>${d.sessions}</b></td><td>${d.total}</td><td>${d.users}</td><td>${d.guests}</td><td>${d.mobile}</td><td>${d.views}</td></tr>`).join("")}</tbody></table></div>
+        <p class="note">Сессия — один заход: обновления и переходы по страницам в течение 30 минут — та же сессия, вернулся позже —
+          новая (как в статистике Тильды). Посетители — разные люди за день. Гостей без согласия на cookie считаем анонимно: метка
+          меняется каждые сутки, адрес не храним; один человек на телефоне и компьютере — два посетителя.</p></details>` : ""}`;
+    if ((o.days || []).length) visitsChart(o.days);
     clearTimeout(online.t);
     online.t = setTimeout(() => { if (!document.hidden && $("onlineBox")) online(); }, 30000);
   }

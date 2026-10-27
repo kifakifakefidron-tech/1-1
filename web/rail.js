@@ -20,8 +20,9 @@
     };
     let lastPing = 0;   // не чаще раза в 30 с (вкладку часто прячут/показывают — без этого были пачки запросов)
     // 27.10: сигнал — от всех (гостей без согласия сервер считает анонимной меткой дня); метка браузера — только с согласием
+    let first = 1;   // 27.10: первый сигнал страницы = просмотр (load); дальше раз в минуту — только «я ещё тут»
     const ping = () => { if (Date.now() - lastPing < 30000) return; if (!document.hidden) { lastPing = Date.now(); fetch("/api/ping", { method: "POST", credentials: "same-origin",
-      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, g: statsOk() ? gid() : "" }), keepalive: true }).catch(() => {}); } };
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, g: statsOk() ? gid() : "", load: first }), keepalive: true }).catch(() => {}); first = 0; } };
     setTimeout(ping, 1500);
     setInterval(ping, 60000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) ping(); });

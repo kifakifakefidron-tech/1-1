@@ -1067,6 +1067,7 @@ def _need_admin(request: Request):
 ONLINE_S = 150   # «на сайте сейчас» — был сигнал за последние 2,5 минуты
 
 
+SESSION_GAP_S = 30 * 60   # перерыв дольше 30 минут — новая сессия (как в статистике Тильды)
 _BOT_UA = re.compile(r"bot|crawl|spider|preview|slurp|facebookexternalhit|whatsapp|telegram|curl|python|headless", re.I)
 
 
@@ -1097,10 +1098,16 @@ def api_ping(request: Request, body: dict | None = None):
     try:
         conn.execute("INSERT OR REPLACE INTO presence (key, user_id, ts, path, mobile) VALUES (?,?,?,?,?)",
                      (key, user["id"] if user else None, now, path, mobile))
-        conn.execute("""INSERT INTO visits_daily (day, key, user_id, mobile) VALUES (?,?,?,?)
-                        ON CONFLICT (day, key) DO UPDATE SET pages = pages + 1,
+        # 27.10 (Артём: «обновляю страницу — счётчик растёт; считать сессии как у Тильды, 30 мин»): сессия — новый заход после
+        # перерыва больше SESSION_GAP_S; обновления и переходы внутри 30 минут — та же сессия. Просмотр — только открытие страницы
+        # (load=1 в первом сигнале), а не сигнал «я ещё тут» раз в минуту.
+        load = 1 if body.get("load") else 0
+        conn.execute("""INSERT INTO visits_daily (day, key, user_id, mobile, sessions, last_ts, views) VALUES (?,?,?,?,1,?,?)
+                        ON CONFLICT (day, key) DO UPDATE SET pages = pages + 1, views = views + excluded.views,
+                          sessions = sessions + (CASE WHEN excluded.last_ts - COALESCE(visits_daily.last_ts, 0) > ? THEN 1 ELSE 0 END),
+                          last_ts = excluded.last_ts,
                           user_id = COALESCE(excluded.user_id, visits_daily.user_id)""",
-                     (msk_day, key, user["id"] if user else None, mobile))
+                     (msk_day, key, user["id"] if user else None, mobile, now, load, SESSION_GAP_S))
         if now % 50 == 0:
             conn.execute("DELETE FROM presence WHERE ts < ?", (now - 86400,))
             conn.execute("DELETE FROM visits_daily WHERE day < ?",
@@ -1109,6 +1116,19 @@ def api_ping(request: Request, body: dict | None = None):
     except sqlite3.OperationalError:   # база занята — не беда, отметимся через минуту
         conn.rollback()
     return JSONResponse({"ok": True})
+
+
+def _visit_days(conn: sqlite3.Connection, now: int, n: int) -> list[dict]:
+    """Посещения по дням (день по Москве) за n дней, новые первыми; дни без посещений — нулями (на графике нет «дыр»)."""
+    start = time.strftime("%Y-%m-%d", time.gmtime(now + 3 * 3600 - (n - 1) * 86400))
+    got = {r["day"]: dict(r) for r in conn.execute(
+        """SELECT day, SUM(sessions) AS sessions, COUNT(*) AS total, COUNT(DISTINCT user_id) AS users, SUM(user_id IS NULL) AS guests,
+                  SUM(mobile) AS mobile, SUM(views) AS views FROM visits_daily WHERE day >= ? GROUP BY day""", (start,))}
+    out = []
+    for i in range(n):
+        d = time.strftime("%Y-%m-%d", time.gmtime(now + 3 * 3600 - i * 86400))
+        out.append(got.get(d) or {"day": d, "sessions": 0, "total": 0, "users": 0, "guests": 0, "mobile": 0, "views": 0})
+    return out
 
 
 def _online(conn: sqlite3.Connection) -> dict:
@@ -1128,11 +1148,8 @@ def _online(conn: sqlite3.Connection) -> dict:
     return {"now": len(seen) + sum(1 for r in rows if not r["user_id"]), "users": len(seen),
             "guests": sum(1 for r in rows if not r["user_id"]), "mobile": sum(1 for r in rows if r["mobile"]),
             "hour": hour, "day": day, "people": people[:50],
-            # 27.10: посещения по дням за 14 дней — разных людей (вошедшие + гости), с телефона, просмотров страниц
-            "days": [dict(r) for r in conn.execute("""SELECT day, COUNT(*) AS total, COUNT(DISTINCT user_id) AS users,
-                                                         SUM(user_id IS NULL) AS guests, SUM(mobile) AS mobile, SUM(pages) AS pages
-                                                  FROM visits_daily WHERE day >= ? GROUP BY day ORDER BY day DESC""",
-                                               (time.strftime("%Y-%m-%d", time.gmtime(now + 3 * 3600 - 13 * 86400)),))],
+            # 27.10: посещения по дням за 30 дней — сессии (перерыв > 30 мин), разные люди (вошедшие + гости), с телефона, просмотры
+            "days": _visit_days(conn, now, 30),
             "pages": [dict(r) for r in conn.execute("""SELECT path, COUNT(*) AS n FROM presence WHERE ts >= ?
                                                        GROUP BY path ORDER BY n DESC LIMIT 8""", (now - ONLINE_S,))]}
 

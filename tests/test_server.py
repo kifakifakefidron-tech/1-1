@@ -257,3 +257,29 @@ def test_ping_counts_guests_without_cookie_consent(tmp_path, monkeypatch):
     assert o["guests"] == 1 and o["days"][0]["total"] == 1
     conn.close()
     db._local.conn = None
+
+
+def test_sessions_like_tilda_30_min(tmp_path, monkeypatch):
+    """27.10: обновление страницы и переходы в течение 30 минут — та же сессия; возврат позже — новая. Просмотр — только load."""
+    from starlette.testclient import TestClient
+    from app import config, db, server
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "s.db"))
+    monkeypatch.setattr(db._local, "conn", None, raising=False)
+    conn = db.get()
+    clock = [1_800_000_000.0]
+    monkeypatch.setattr(server.time, "time", lambda: clock[0])
+    h = {"user-agent": "Mozilla/5.0 (Windows NT 10.0)"}
+    with TestClient(server.app) as c:
+        c.post("/api/ping", json={"path": "/", "load": 1}, headers=h)    # открыл
+        clock[0] += 60
+        c.post("/api/ping", json={"path": "/"}, headers=h)               # «я ещё тут» — не просмотр
+        clock[0] += 60
+        c.post("/api/ping", json={"path": "/", "load": 1}, headers=h)    # обновил страницу
+        clock[0] += 40 * 60
+        c.post("/api/ping", json={"path": "/", "load": 1}, headers=h)    # вернулся через 40 минут
+    r = conn.execute("SELECT sessions, views FROM visits_daily").fetchone()
+    assert (r["sessions"], r["views"]) == (2, 3)
+    days = server._visit_days(conn, int(clock[0]), 30)
+    assert len(days) == 30 and days[0]["sessions"] == 2 and days[1]["sessions"] == 0
+    conn.close()
+    db._local.conn = None
