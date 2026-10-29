@@ -376,3 +376,20 @@ def test_third_checkbox_optional_but_saved(env, monkeypatch):
     uid = conn.execute("SELECT id FROM users WHERE email = 'x3@example.ru'").fetchone()[0]
     ch = consent.signup_choice(conn, uid)
     assert ch["publish"] is True and ch["license"] is True
+
+
+def test_admin_sees_complainant_phone(env):
+    """29.10 (Артём): в жалобах видно, какой номер её подал."""
+    c, conn, lid = env
+    u = accounts.upsert_phone_user(conn, "+79185557788")
+    c.cookies.set(server.SESSION, accounts.create_session(conn, u["id"]))
+    assert c.post("/api/complaints", json={"listing_id": lid, "reason": "sold", "text": "продан"}).status_code == 200
+    c.cookies.clear()
+    c.post("/api/complaints", json={"listing_id": lid, "reason": "other", "text": "гость"})   # гость без входа
+    admin = _login(c, conn, email="boss2@example.ru")
+    conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (admin["id"],))
+    conn.commit()
+    items = c.get("/api/admin/complaints").json()["items"]
+    mine = next(i for i in items if i["text"] == "продан")
+    assert mine["who"]["phones"] == ["+7 918 555-77-88"]
+    assert next(i for i in items if i["text"] == "гость")["who"] is None

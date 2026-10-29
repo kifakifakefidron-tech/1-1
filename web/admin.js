@@ -398,8 +398,12 @@
   async function complaints() {
     const { items } = await call("/api/admin/complaints");
     const reason = { sold: "продан/неактуален", wrong: "неверные данные", my_phone: "это мой номер", photo: "чужие фото", other: "другое" };
-    $("complaints").innerHTML = `<tr><th>Когда</th><th>Объект</th><th>Причина</th><th>Текст</th><th>Статус</th><th></th></tr>` +
-      items.map((c) => `<tr><td>${day(c.ts)}</td>
+    // 29.10: кто подал жалобу — номер (звонок в одно нажатие), имя, почта; без входа — «гость»
+    const who = (w) => !w ? `<span class="note">гость (не вошёл)</span>`
+      : `${w.phones.length ? w.phones.map((p, i) => `<a class="cmp-tel" href="tel:${esc(w.tel[i])}">${esc(p)}</a>`).join("<br>") : `<span class="note">номера нет</span>`}
+         ${w.name ? `<br><small>${esc(w.name)}</small>` : ""}${w.email ? `<br><small>${esc(w.email)}</small>` : ""}`;
+    $("complaints").innerHTML = `<tr><th>Когда</th><th>Кто подал</th><th>Объект</th><th>Причина</th><th>Текст</th><th>Статус</th><th></th></tr>` +
+      items.map((c) => `<tr><td>${day(c.ts)}</td><td class="cmp-who">${who(c.who)}</td>
         <td>${c.listing_id ? `<a href="/?open=${c.listing_id}" target="_blank">${esc(c.title || "#" + c.listing_id)}</a>` : "—"}</td>
         <td>${esc(reason[c.reason] || c.reason)}</td><td>${esc((c.text || "").replace(/^Фото: .*$/gm, "").trim())}
           ${(() => { const own = (() => { try { return JSON.parse(c.photos || "[]"); } catch { return []; } })();

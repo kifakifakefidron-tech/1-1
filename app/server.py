@@ -1393,9 +1393,19 @@ def api_admin_complaints(request: Request, body: dict | None = None):
                          (cid,))
         conn.commit()
         return JSONResponse({"ok": True})
-    rows = conn.execute("""SELECT c.*, l.title, l.photos FROM complaints c LEFT JOIN listings l ON l.id = c.listing_id
+    # 29.10 (Артём: «в жалобах должно быть видно, какой номер её подаёт»): кто подал — имя, почта, номер аккаунта и подтверждённые номера
+    rows = conn.execute("""SELECT c.*, l.title, l.photos, u.name AS u_name, u.email AS u_email, u.phone AS u_phone,
+                                  (SELECT GROUP_CONCAT(a.phone, ',') FROM agent_phones a WHERE a.user_id = c.user_id) AS u_phones
+                           FROM complaints c LEFT JOIN listings l ON l.id = c.listing_id LEFT JOIN users u ON u.id = c.user_id
                            ORDER BY c.status = 'new' DESC, c.ts DESC LIMIT 300""").fetchall()
-    return JSONResponse({"items": [dict(r) for r in rows]})
+    out = []
+    for r in rows:
+        d = dict(r)
+        phones = list(dict.fromkeys([p for p in [d.pop("u_phone")] + (d.pop("u_phones") or "").split(",") if p]))
+        d["who"] = {"name": d.pop("u_name"), "email": d.pop("u_email"), "phones": [_pretty_phone(p) for p in phones],
+                    "tel": phones} if d.get("user_id") else None
+        out.append(d)
+    return JSONResponse({"items": out})
 
 
 # ─── заметки и подписки на поиск ───────────────────────────────────────────

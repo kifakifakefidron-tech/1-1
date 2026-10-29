@@ -344,3 +344,8 @@ tr.peek td { background: rgba(0, 0, 0, .12); }
 .vc-tip span i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .vc-tip span.views { margin-top: 3px; padding-top: 4px; border-top: 1px solid var(--glass-line); }
 .vc-tip em { margin-left: auto; padding-left: 14px; font-style: normal; font-weight: 600; color: var(--ink); }
+
+/* 29.10: жалобы — кто подал */
+.cmp-who { min-width: 150px; white-space: nowrap; }
+.cmp-who .cmp-tel { font-weight: 600; color: var(--gold-100, var(--ink)); text-decoration: none; }
+.cmp-who small { color: var(--ink-3); }
