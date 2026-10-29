@@ -1513,3 +1513,15 @@ summary { transition: color .2s var(--m-out); }
 @keyframes flameSpark { 0% { opacity: 0; transform: translateY(1px); } 15% { opacity: .95; } 70% { opacity: 0; transform: translateY(-6px); }
   100% { opacity: 0; transform: translateY(-6px); } }
 @media (prefers-reduced-motion: reduce) { .flame .f-body, .flame .f-in, .flame .f-spark { animation: none; } }
+/* 29.10 (Артём: «кнопку Горячие предложения заливку сделать золотистой»): кнопка золотая всегда; нажатая — тёмный ободок и галочка */
+.chip.hot-chip { background: linear-gradient(160deg, var(--gold-100, #f3e8bc), var(--gold-300, #d9b56f)); color: #0f2f2e; border-color: transparent;
+  font-weight: 600; box-shadow: 0 4px 14px rgba(227, 203, 143, .22); }
+.chip.hot-chip:hover { filter: brightness(1.05); }
+.chip.hot-chip .hot-n { background: rgba(15, 47, 46, .14); color: #0f2f2e; }
+.chip.hot-chip .flame { filter: none; }
+.chip.hot-chip .flame .f-out { fill: rgba(15, 47, 46, .1); stroke: #0f2f2e; }
+.chip.hot-chip .flame .f-in { stroke: #0f2f2e; opacity: .7; }
+.chip.hot-chip .flame .f-spark { fill: #0f2f2e; }
+.chip.hot-chip[aria-pressed="true"] { background: linear-gradient(160deg, var(--gold-200, #ecd9a3), var(--gold-300, #d9b56f));
+  box-shadow: inset 0 0 0 2px #0f2f2e, 0 6px 18px rgba(227, 203, 143, .35); }
+.chip.hot-chip[aria-pressed="true"]::after { content: "✓"; margin-left: 7px; font-weight: 700; }
