@@ -1004,10 +1004,13 @@ def api_promo(request: Request, body: dict | None = None):
 
 
 def api_complaint(request: Request, body: dict | None = None):
+    # 29.10 (Артём): жалоба — только вошедшим (админ видит, кто подал и с какого номера)
+    user, err = _need_user(request)
+    if err:
+        return _err("Чтобы сообщить об ошибке, войдите — это займёт минуту.", 401)
     if _too_often(request, "complaint", 10, 3600):
         return _err("Слишком много жалоб — попробуйте позже.", 429)
     body = body or {}
-    user = current_user(request)
     conn = db.get()
     lid = _num(body.get("listing_id"), int)
     text = str(body.get("text", ""))[:1000]

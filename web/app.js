@@ -1586,6 +1586,10 @@
   }
 
   function reportHTML(o) {
+    // 29.10 (Артём): жалоба — только после входа (в админке видно, кто подал и с какого номера)
+    if (!me()) return `<details class="dv-acc d-report"><summary><span class="dv-acc-ic">⚠</span><span class="dv-acc-t">Ошибка?</span><span class="dv-acc-h">сообщить</span></summary>
+      <div class="report-form"><p class="note">Сообщить об ошибке могут те, кто вошёл, — так мы сможем уточнить детали.</p>
+        <button type="button" class="pill" data-login>Войти и сообщить</button></div></details>`;
     return `<details class="dv-acc d-report"><summary><span class="dv-acc-ic">⚠</span><span class="dv-acc-t">Ошибка?</span><span class="dv-acc-h">сообщить</span></summary>
       <form class="report-form" data-report="${o.id}">
         <select name="reason">

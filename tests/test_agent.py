@@ -385,11 +385,12 @@ def test_admin_sees_complainant_phone(env):
     c.cookies.set(server.SESSION, accounts.create_session(conn, u["id"]))
     assert c.post("/api/complaints", json={"listing_id": lid, "reason": "sold", "text": "продан"}).status_code == 200
     c.cookies.clear()
-    c.post("/api/complaints", json={"listing_id": lid, "reason": "other", "text": "гость"})   # гость без входа
+    r = c.post("/api/complaints", json={"listing_id": lid, "reason": "other", "text": "гость"})   # гость — нельзя (29.10)
+    assert r.status_code == 401
     admin = _login(c, conn, email="boss2@example.ru")
     conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (admin["id"],))
     conn.commit()
     items = c.get("/api/admin/complaints").json()["items"]
     mine = next(i for i in items if i["text"] == "продан")
     assert mine["who"]["phones"] == ["+7 918 555-77-88"]
-    assert next(i for i in items if i["text"] == "гость")["who"] is None
+    assert not any(i["text"] == "гость" for i in items)
