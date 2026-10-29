@@ -1490,38 +1490,28 @@ summary { transition: color .2s var(--m-out); }
 .hot-mkt-bar s { position: absolute; left: 50%; top: -3px; width: 2px; height: 12px; background: rgba(255, 255, 255, .55); }
 .hot-why { margin: 2px 0 4px; font-size: 12.5px; font-weight: 600; color: var(--gold-100, var(--gold)); }
 
-/* 29.10: огонёк «Горячего» (Артём: «красивым и стильным, а не мигающий смайлик») — тонкий контур в стиле значков сайта,
-   перелив шампань → коралл (градиенты #flameStroke/#flameFill в index.html), спокойно покачивается, сердцевина «дышит»,
-   изредка поднимаются две искры. На золотом фоне (лента, нажатая кнопка) — тёмный контур. prefers-reduced-motion — без движения */
-.flame-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
-.flame { display: inline-block; flex: none; width: 15px; height: 18px; margin-right: 6px; vertical-align: -4px; overflow: visible;
-  filter: drop-shadow(0 0 4px rgba(242, 170, 110, .35)); }
-.flame .f-body { transform-box: fill-box; transform-origin: 50% 100%; animation: flameSway 2.8s ease-in-out infinite; }
-.flame .f-out { fill: url(#flameFill); stroke: url(#flameStroke); stroke-width: 1.25; stroke-linejoin: round; }
-.flame .f-in { fill: none; stroke: #ffe1a3; stroke-width: 1.05; stroke-linejoin: round; transform-box: fill-box; transform-origin: 50% 100%;
-  animation: flameBreath 2s ease-in-out infinite; }
-.flame .f-spark { fill: #ffd9a0; opacity: 0; transform-box: fill-box; animation: flameSpark 3.2s ease-out infinite; }
-.flame .f-spark.s2 { animation-delay: 1.6s; }
-.hot-ribbon .flame { width: 11px; height: 13px; margin-right: 5px; vertical-align: -2px; filter: none; }
-.hot-ribbon .flame .f-out, .hot-chip[aria-pressed="true"] .flame .f-out { fill: rgba(15, 47, 46, .1); stroke: #0f2f2e; }
-.hot-ribbon .flame .f-in, .hot-chip[aria-pressed="true"] .flame .f-in { stroke: #0f2f2e; opacity: .7; }
-.hot-ribbon .flame .f-spark, .hot-chip[aria-pressed="true"] .flame .f-spark { fill: #0f2f2e; }
-.hot-chip[aria-pressed="true"] .flame { filter: none; }
-.hot-chip { display: inline-flex; align-items: center; }
-@keyframes flameSway { 0%, 100% { transform: rotate(-3deg) scaleY(.98); } 50% { transform: rotate(3deg) scaleY(1.02); } }
-@keyframes flameBreath { 0%, 100% { transform: scale(.94, .9); } 50% { transform: scale(1.04, 1.08); } }
-@keyframes flameSpark { 0% { opacity: 0; transform: translateY(1px); } 15% { opacity: .95; } 70% { opacity: 0; transform: translateY(-6px); }
-  100% { opacity: 0; transform: translateY(-6px); } }
-@media (prefers-reduced-motion: reduce) { .flame .f-body, .flame .f-in, .flame .f-spark { animation: none; } }
 /* 29.10 (Артём: «кнопку Горячие предложения заливку сделать золотистой»): кнопка золотая всегда; нажатая — тёмный ободок и галочка */
 .chip.hot-chip { background: linear-gradient(160deg, var(--gold-100, #f3e8bc), var(--gold-300, #d9b56f)); color: #0f2f2e; border-color: transparent;
   font-weight: 600; box-shadow: 0 4px 14px rgba(227, 203, 143, .22); }
 .chip.hot-chip:hover { filter: brightness(1.05); }
 .chip.hot-chip .hot-n { background: rgba(15, 47, 46, .14); color: #0f2f2e; }
-.chip.hot-chip .flame { filter: none; }
-.chip.hot-chip .flame .f-out { fill: rgba(15, 47, 46, .1); stroke: #0f2f2e; }
-.chip.hot-chip .flame .f-in { stroke: #0f2f2e; opacity: .7; }
-.chip.hot-chip .flame .f-spark { fill: #0f2f2e; }
 .chip.hot-chip[aria-pressed="true"] { background: linear-gradient(160deg, var(--gold-200, #ecd9a3), var(--gold-300, #d9b56f));
   box-shadow: inset 0 0 0 2px #0f2f2e, 0 6px 18px rgba(227, 203, 143, .35); }
 .chip.hot-chip[aria-pressed="true"]::after { content: "✓"; margin-left: 7px; font-weight: 700; }
+
+/* 29.10 (Артём: огонёк — вариант 4 «Угольки»): пламя с заливкой (рыжий → янтарь, градиент #flameFire в index.html) покачивается,
+   вверх непрерывно летят четыре искры; на золоте (кнопка, лента) искры темнее. prefers-reduced-motion — без движения */
+.flame-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.hot-chip { display: inline-flex; align-items: center; }
+.flame { display: inline-block; flex: none; width: 14px; height: 17px; margin-right: 6px; vertical-align: -3px; overflow: visible; }
+.flame .f-body { transform-box: fill-box; transform-origin: 50% 100%; animation: flameSway 2.2s ease-in-out infinite; }
+.flame .f-out { fill: url(#flameFire); }
+.flame .f-spark { fill: #ffb36b; opacity: 0; transform-box: fill-box; animation: flameEmber 2.4s linear infinite; }
+.flame .f-spark:nth-of-type(2) { animation-delay: .6s; }
+.flame .f-spark:nth-of-type(3) { animation-delay: 1.2s; }
+.flame .f-spark:nth-of-type(4) { animation-delay: 1.8s; }
+.hot-chip .flame .f-spark, .hot-ribbon .flame .f-spark { fill: #b8461a; }
+.hot-ribbon .flame { width: 11px; height: 13px; margin-right: 5px; vertical-align: -2px; }
+@keyframes flameSway { 0%, 100% { transform: rotate(-3deg) scaleY(.98); } 50% { transform: rotate(3deg) scaleY(1.02); } }
+@keyframes flameEmber { 0% { opacity: 0; transform: translate(0, 2px); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(2px, -9px); } }
+@media (prefers-reduced-motion: reduce) { .flame .f-body, .flame .f-spark { animation: none; } .flame .f-spark { opacity: 0; } }

@@ -29,10 +29,10 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=106">
+<link rel="stylesheet" href="/static/glass.css?v=107">
 </head>
 <body>
-<svg class="flame-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs><linearGradient id="flameStroke" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#f29a7e"/><stop offset="1" stop-color="#f3e8bc"/></linearGradient><linearGradient id="flameFill" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#f29a7e" stop-opacity=".55"/><stop offset=".45" stop-color="#e8b56f" stop-opacity=".22"><animate attributeName="offset" values=".3;.6;.3" dur="3.2s" repeatCount="indefinite"/></stop><stop offset="1" stop-color="#f3e8bc" stop-opacity="0"/></linearGradient></defs></svg>
+<svg class="flame-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs><linearGradient id="flameFire" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#d9541e"/><stop offset="1" stop-color="#f6b36b"/></linearGradient></defs></svg>
 <header class="nav" id="nav">
   <div class="nav-in">
     <a class="brand" href="/" id="brand" aria-label="1+1 — на главную">
@@ -208,7 +208,7 @@
       <button type="button" class="chip reset-chip" id="resetBtn" hidden>✕ Сбросить фильтры</button>
       <button type="button" class="chip view-chip" id="viewChip" data-tab="map">Карта</button>
       <button type="button" class="chip" id="newTodayBtn" aria-pressed="false">Новое сегодня</button>
-      <button type="button" class="chip hot-chip" id="hotBtn" aria-pressed="false" title="Цена снизилась на 10 % и больше за неделю или объект на 15–45 % дешевле средней по ЖК или району"><svg class="flame" viewBox="0 0 16 20" aria-hidden="true"><g class="f-body"><path class="f-out" d="M8 19.5c3.6 0 6-2.5 6-5.9 0-3.7-2.8-5.7-3.8-9.3-.6 2.1-1.7 3.4-2.9 3.9.3-2.8-.9-5.6-3.1-7.2.1 3.4-2.5 5.8-2.5 9.7 0 4.4 2.8 8.8 6.3 8.8z"/><path class="f-in" d="M8 18.8c1.7 0 2.9-1.2 2.9-2.8 0-1.8-1.3-2.7-1.9-4.4-.3 1-.9 1.6-1.4 1.9.1-1.3-.4-2.7-1.5-3.5 0 1.7-1.2 2.8-1.2 4.7 0 2.3 1.4 4.1 3.1 4.1z"/></g><circle class="f-spark s1" cx="12.6" cy="4.6" r=".75"/><circle class="f-spark s2" cx="3.4" cy="6.4" r=".6"/></svg>Горячие предложения<span class="hot-n" id="hotN" hidden></span></button>
+      <button type="button" class="chip hot-chip" id="hotBtn" aria-pressed="false" title="Цена снизилась на 10 % и больше за неделю или объект на 15–45 % дешевле средней по ЖК или району"><svg class="flame" viewBox="0 0 16 20" aria-hidden="true"><g class="f-body"><path class="f-out" d="M8 19.5c3.6 0 6-2.5 6-5.9 0-3.7-2.8-5.7-3.8-9.3-.6 2.1-1.7 3.4-2.9 3.9.3-2.8-.9-5.6-3.1-7.2.1 3.4-2.5 5.8-2.5 9.7 0 4.4 2.8 8.8 6.3 8.8z"/></g><circle class="f-spark" cx="12.6" cy="4.6" r=".75"/><circle class="f-spark" cx="3.4" cy="6.4" r=".6"/><circle class="f-spark" cx="9.5" cy="2.5" r=".55"/><circle class="f-spark" cx="5.8" cy="3.2" r=".5"/></svg>Горячие предложения<span class="hot-n" id="hotN" hidden></span></button>
       <button type="button" class="chip" id="watchBtn" title="Поиск сохранится в «Мои поиски», а о новых объектах по нему придёт уведомление и письмо">🔔 Сохранить поиск и следить</button>
       <button type="button" class="chip" id="shareSearchBtn" title="Ссылка на этот поиск со всеми выбранными фильтрами">Поделиться</button>
     </div>
@@ -472,7 +472,7 @@
 <script src="/static/yasel.js?v=4"></script>
 <script src="/static/bell.js?v=7"></script>
 <script src="/static/lightbox.js?v=3"></script>
-<script src="/static/app.js?v=149"></script>
+<script src="/static/app.js?v=150"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>
