@@ -333,6 +333,7 @@
     // районы и ЖК — список с поиском и галочками (pickers.js); выбранные — ещё и чипами ниже (✕ — убрать)
     $("fDistricts").innerHTML = names.map((n) => `<option value="${esc(n)}" data-meta="${counts.get(n) ?? 0}"${state.districts.includes(n) ? " selected" : ""}>${esc(n)}</option>`).join("");
     facetComplexes = f.complexes;   // для выпадающего списка ЖК
+    if ($("hotN")) { $("hotN").hidden = f.hot == null; $("hotN").textContent = f.hot ?? ""; }   // 29.10: число на кнопке
     const cx = [...f.complexes, ...state.complexes.filter((c) => !f.complexes.some((x) => x.name === c)).map((c) => ({ name: c, n: 0 }))]
       .sort((a, b) => abc(a.name, b.name));
     $("fComplexes").innerHTML = cx.map((c) => `<option value="${esc(c.name)}" data-meta="${c.n}"${state.complexes.includes(c.name) ? " selected" : ""}>${esc(c.name)}</option>`).join("");
@@ -419,10 +420,11 @@
     if (o.source === "feed") b.push(`<span class="mark partner" title="Объект партнёра «СТРЕЛЫ»">${STRELY}СТРЕЛЫ</span>`);
     if (o.verified && o.source !== "feed") b.push(`<span class="mark verified" title="Агент подтвердил свой номер в 1+1">✓ ${innerWidth < 640 ? "Проверен" : "Проверенный агент"}</span>`);
     if (o.first_seen > now - 86400) b.push(`<span class="mark new">Новое</span>`);
-    if (o.prev_price && o.price && o.prev_price > o.price && o.price_changed_at > now - 14 * 86400) {
+    if (o.prev_price && o.price && o.prev_price > o.price && o.price_changed_at > now - 14 * 86400 && o.hot !== "drop") {   // у горячей — строка под ценой
       b.push(`<span class="mark down">Цена ↓ ${esc(fmtShortPrice(o.prev_price - o.price, o.deal))}</span>`);
     }
-    if (o.market_diff != null) b.push(`<span class="mark good" title="${o.market_n ? `сравнили с ${o.market_n} похожими объектами` : ""}">ниже рынка на ${Math.abs(o.market_diff)}%</span>`);
+    // у горячей карточки «ниже рынка» показывает шкала под ценой — отметкой не дублируем
+    if (o.market_diff != null && !o.hot) b.push(`<span class="mark good" title="${o.market_n ? `сравнили с ${o.market_n} похожими объектами` : ""}">ниже рынка на ${Math.abs(o.market_diff)}%</span>`);
     if (o.price_doubt) b.push(`<span class="mark doubt" title="Цена в объявлении записана неоднозначно — уточните у агента">цена под вопросом</span>`);
     return b.length ? `<div class="marks">${b.join("")}</div>` : "";
   }
@@ -510,6 +512,25 @@
     await cmAdd(r.data.client.id);
   }
 
+  // 29.10 (Артём: «совмести 3 и 4»): горячая карточка — золотая рамка и лента «Горячее»; под ценой — шкала к рынку,
+  // а если горячее из-за снижения цены — сколько и когда снизили
+  function hotHTML(o) {
+    if (!o.hot) return "";
+    const parts = [];
+    if (o.market_diff != null) {
+      const pos = Math.max(4, Math.min(96, 50 + o.market_diff));   // −45 % → 5 % шкалы, средняя — посередине
+      const by = /^ЖК/.test(o.market_base || "") ? "по ЖК" : "по району";
+      parts.push(`<div class="hot-mkt" title="${esc(`${o.market_base ? `Средняя цена за м² — ${o.market_base}` : ""}${o.market_n ? `, сравнили с ${o.market_n} похожими объектами` : ""}`)}">
+        <div class="hot-mkt-t"><span><b>на ${Math.abs(o.market_diff)} % дешевле</b> средней ${by}</span>
+          ${o.market_price ? `<span>${esc(fmtShortPrice(o.market_price, o.deal))}</span>` : ""}</div>
+        <div class="hot-mkt-bar"><s></s><i style="left:${pos}%"></i></div></div>`);
+    }
+    if (o.prev_price && o.price && o.prev_price > o.price && o.hot === "drop") {
+      parts.push(`<p class="hot-why">Цена ↓ ${esc(fmtShortPrice(o.prev_price - o.price, o.deal))} за неделю</p>`);
+    }
+    return parts.join("");
+  }
+
   function itemHTML(o) {
     const hit = hitSince && o.first_seen > hitSince;   // новое в этом поиске — выделяем один раз
     const tag = (hit ? `<div class="marks"><span class="mark hit">Новое в вашем поиске</span></div>` : "") + badgesHTML(o);
@@ -523,11 +544,13 @@
       : `<div class="item-photo none" aria-hidden="true">${LOGO}<span>Фото у агента</span></div>`;
     const fav = me() && me().favorites.includes(o.id);
     const addr = address(o);
-    return `<li class="item has-photo${hit ? " hit" : ""}" tabindex="0" data-id="${o.id}">
-      ${photo}
+    const hotRib = o.hot ? `<span class="hot-ribbon" aria-label="Горячее предложение">Горячее</span>` : "";
+    return `<li class="item has-photo${hit ? " hit" : ""}${o.hot ? " hot" : ""}" tabindex="0" data-id="${o.id}">
+      ${photo.replace('<div class="item-photo', `<div class="item-photo${o.hot ? " has-rib" : ""}`).replace(/(<div class="item-photo[^>]*>)/, `$1${hotRib}`)}
       <button type="button" class="fav-btn${fav ? " on" : ""}" data-fav="${o.id}" aria-label="${fav ? "Убрать из избранного" : "В избранное"}">${HEART}</button>
       ${headline(o) ? `<h3 class="item-head">${esc(headline(o))}</h3>` : ""}
       <div class="item-price"><div class="price">${o.price_doubt ? "Цена уточняется" : esc(fmtPrice(o.price, o.deal))}</div>${o.price_doubt ? "" : m2}</div>
+      ${hotHTML(o)}
       <div class="item-title">${esc(o.title)}</div>
       ${tag}
       ${addr ? `<div class="item-place">${esc(addr)}</div>` : ""}
@@ -2440,7 +2463,7 @@
       state.hot = !state.hot;
       syncControls();
       refresh();
-      if (state.hot) toast("🔥 Цена снизилась за неделю, ниже рынка или «срочно»", 3200);
+      if (state.hot) toast("Горячие предложения: цена снизилась за неделю или объект заметно дешевле рынка", 3200);
     });
     $("watchBtn").addEventListener("click", watchSearch);
     // 17.10 (Артём): «Поделиться» — ссылка ровно с выбранными фильтрами (сделка, тип, комнаты, цена, районы, ЖК, фраза…),

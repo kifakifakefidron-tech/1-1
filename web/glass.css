@@ -1469,3 +1469,23 @@ summary { transition: color .2s var(--m-out); }
 .consent-chk.agent-chk { border-color: rgba(227, 203, 143, .4); background: rgba(227, 203, 143, .06); }
 .consent-chk.agent-chk b { color: var(--gold-100, var(--ink)); font-weight: 600; }
 .consent-chk .ac-note { display: block; margin-top: 5px; font-size: 11.5px; line-height: 1.45; color: var(--ink-3); }
+
+/* 29.10 «Горячие предложения» (Артём: варианты 3 + 4): кнопка с числом, золотая рамка и лента, шкала к рынку */
+.hot-chip .hot-n { margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: rgba(227, 203, 143, .2); font-weight: 700; font-size: 12px; }
+.hot-chip[aria-pressed="true"], .hot-chip.on { background: linear-gradient(160deg, var(--gold-200), var(--gold-300)); color: #0f2f2e; border-color: transparent; }
+.hot-chip[aria-pressed="true"] .hot-n, .hot-chip.on .hot-n { background: rgba(15, 47, 46, .15); }
+.item.hot { box-shadow: 0 0 0 1.5px var(--gold), 0 10px 30px rgba(227, 203, 143, .18); }
+.item-photo.has-rib { overflow: hidden; }
+.hot-ribbon { position: absolute; left: -34px; top: 16px; z-index: 3; transform: rotate(-45deg); width: 140px; text-align: center; padding: 5px 0;
+  background: linear-gradient(160deg, var(--gold-200), var(--gold-300)); color: #0f2f2e; font: 700 11px var(--body); letter-spacing: .12em;
+  text-transform: uppercase; box-shadow: 0 2px 8px rgba(0, 0, 0, .25); pointer-events: none; }
+.hot-mkt { margin: 6px 0 4px; }
+.hot-mkt-t { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--ink-3); }
+.hot-mkt-t > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hot-mkt-t > span + span { flex: none; white-space: nowrap; }
+.hot-mkt-t b { color: #9fdcb8; font-weight: 700; }
+.hot-mkt-bar { position: relative; height: 6px; margin-top: 5px; border-radius: 99px;
+  background: linear-gradient(90deg, #9fdcb8 0%, rgba(255, 255, 255, .18) 50%, #f29a7e 100%); }
+.hot-mkt-bar i { position: absolute; top: -4px; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 3px solid #0b3a39; transform: translateX(-50%); }
+.hot-mkt-bar s { position: absolute; left: 50%; top: -3px; width: 2px; height: 12px; background: rgba(255, 255, 255, .55); }
+.hot-why { margin: 2px 0 4px; font-size: 12.5px; font-weight: 600; color: var(--gold-100, var(--gold)); }

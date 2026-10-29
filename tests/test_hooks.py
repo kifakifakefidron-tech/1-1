@@ -189,3 +189,25 @@ def test_note_status_crm(conn, add):
     assert hooks.get_status(conn, u["id"], lid) is None
     hooks.set_note(conn, u["id"], lid, text="")
     assert conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0] == 0   # ни текста, ни статуса — запись убрана
+
+
+def test_hot_flag_and_count_match_filter():
+    """29.10 (Артём: «Горячее» — варианты 3 + 4): отметка на карточке и число на кнопке — по тому же правилу, что фильтр."""
+    import time as _t
+    from app import db, hooks, ingest, search
+    conn = db.connect(":memory:")
+    now = int(_t.time())
+    m = ingest.add_message(conn, source="wa", text="2-к квартира 58 м², 7/16 эт., ЖК Мозаика, ул. Тургенева 10. 7,5 млн. 89181112233",
+                           chat_id="c", msg_id="h1", ts=now)
+    lid = ingest.process_message(conn, m, use_llm=False)["results"][0]["listing_id"]
+    conn.execute("UPDATE listings SET prev_price = 7800000, price_changed_at = ? WHERE id = ?", (now - 3600, lid))
+    conn.commit()
+    item = search.search(conn, search.Query(), now, False)["items"][0]
+    hooks.annotate(conn, [item])
+    assert item["hot"] == "drop"
+    assert search.facets(conn, search.Query(), now)["hot"] == 1
+    assert search.search(conn, search.Query(hot=True), now, False)["total"] == 1
+    conn.execute("UPDATE listings SET price_changed_at = ? WHERE id = ?", (now - 10 * 86400, lid))   # снижали давно — уже не горячее
+    conn.commit()
+    item = search.search(conn, search.Query(), now, False)["items"][0]
+    assert hooks.annotate(conn, [item])[0]["hot"] is None and search.facets(conn, search.Query(), now)["hot"] == 0

@@ -648,7 +648,10 @@ def facets(conn: sqlite3.Connection, qr: Query, now: int) -> dict:
             g[0], g[1] = name, n
         g[2] += n
     complexes = sorted(({"name": name, "n": total} for name, _, total in groups.values()), key=lambda c: -c["n"])[:300]
-    return {"districts": [dict(r) for r in districts], "complexes": complexes}
+    # 29.10: сколько «Горячих предложений» при остальных фильтрах — число на кнопке
+    hot_where, hot_params = _where(Query(**{**qr.__dict__, "hot": True}), now)
+    hot = conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {hot_where}", hot_params).fetchone()[0]
+    return {"districts": [dict(r) for r in districts], "complexes": complexes, "hot": hot}
 
 
 def listing_detail(conn: sqlite3.Connection, listing_id: int, with_contacts: bool,

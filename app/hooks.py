@@ -97,13 +97,36 @@ def update_market_diff(conn: sqlite3.Connection) -> int:
     return len(changed)
 
 
+def is_hot(it: dict, now: int | None = None) -> str | None:
+    """29.10: почему объект в «Горячих предложениях» — то же правило, что фильтр search._where (hot):
+    'drop' — цена снизилась на 3 %+ за 7 дней (не в 1,5 раза — это скорее исправленная опечатка); 'market' — на 25–45 % дешевле
+    средней по ЖК/району (по 15+ объектам) и объект присылали за неделю. None — не горячее."""
+    from .search import HOT_FLOOR, HOT_MARKET
+    now = int(now or time.time())
+    if it.get("price_doubt") or not it.get("price"):
+        return None
+    pp, p = it.get("prev_price"), it["price"]
+    if pp and p * 1.03 <= pp < p * 1.5 and (it.get("price_changed_at") or 0) >= now - 7 * 86400:
+        return "drop"
+    d = it.get("market_diff_raw")
+    if d is not None and HOT_FLOOR <= d <= HOT_MARKET and (it.get("last_seen") or 0) >= now - 7 * 86400:
+        return "market"
+    return None
+
+
 def annotate(conn: sqlite3.Connection, items: list[dict]) -> list[dict]:
-    """Для карточек в списке: «ниже рынка на N %» (только заметная разница)."""
+    """Для карточек в списке: «ниже рынка на N %» (только заметная разница), отметка «горячее» и шкала к рынку."""
     for it in items:
         mk = market_for(conn, it) if not it.get("price_doubt") else None
         ok = mk and mk["diff"] <= HOT_MIN_DIFF and mk["n"] >= HOT_MIN_N
         it["market_diff"] = mk["diff"] if ok else None
         it["market_n"] = mk["n"] if ok else None   # «ниже рынка на 18 % · по 23 объектам»
+        it["market_diff_raw"] = mk["diff"] if mk and mk["n"] >= HOT_MIN_N else None
+        it["hot"] = is_hot(it)
+        if ok:   # 29.10: для шкалы «к рынку» на горячей карточке — с чем сравнили и средняя цена такой же площади
+            it["market_base"] = mk["base"]
+            it["market_price"] = round(mk["median"] * it["area"]) if it.get("area") else None
+        it.pop("market_diff_raw", None)
     return items
 
 
