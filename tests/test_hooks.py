@@ -200,7 +200,11 @@ def test_hot_flag_and_count_match_filter():
     m = ingest.add_message(conn, source="wa", text="2-к квартира 58 м², 7/16 эт., ЖК Мозаика, ул. Тургенева 10. 7,5 млн. 89181112233",
                            chat_id="c", msg_id="h1", ts=now)
     lid = ingest.process_message(conn, m, use_llm=False)["results"][0]["listing_id"]
-    conn.execute("UPDATE listings SET prev_price = 7800000, price_changed_at = ? WHERE id = ?", (now - 3600, lid))
+    conn.execute("UPDATE listings SET prev_price = 7800000, price_changed_at = ? WHERE id = ?", (now - 3600, lid))   # −4 % — мало
+    conn.commit()
+    item = search.search(conn, search.Query(), now, False)["items"][0]
+    assert hooks.annotate(conn, [item])[0]["hot"] is None   # 29.10: снижение меньше 10 % — не горячее
+    conn.execute("UPDATE listings SET prev_price = 8400000 WHERE id = ?", (lid,))   # −10,7 %
     conn.commit()
     item = search.search(conn, search.Query(), now, False)["items"][0]
     hooks.annotate(conn, [item])

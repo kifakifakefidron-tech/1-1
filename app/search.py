@@ -378,7 +378,8 @@ _NOISE = {"этаж", "этажа", "этаже", "эт", "млн", "тыс", "�
 
 
 
-HOT_MARKET = -25   # «Горячее» (17.10: должно быть 5–8 % базы): дешевле медианы м² на 25–45 % по 15+ сравнимым
+HOT_MARKET = -15   # «Горячее» (29.10, Артём): дешевле медианы м² на 15–45 % по 15+ сравнимым (было 25–45)
+HOT_DROP = 1.10    # …или цена снизилась на 10 %+ за неделю (29.10, Артём; было 3 %)
 HOT_FLOOR = -45    # ещё дешевле — скорее ошибка в цене или площади, чем находка
 
 
@@ -474,7 +475,7 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
         w.append("l.first_seen > ?"); p.append(qr.since)
     if qr.hot:
         # акт 14.10, С6: «Горячее» — 5–8 % базы: цена снизилась за неделю, заметно ниже рынка или «срочно» и дешевле рынка
-        w.append(f"""l.price_doubt IS NOT 1 AND ((l.prev_price >= l.price * 1.03 AND l.prev_price < l.price * 1.5 AND l.price_changed_at >= ?)
+        w.append(f"""l.price_doubt IS NOT 1 AND ((l.prev_price >= l.price * {HOT_DROP} AND l.prev_price < l.price * 1.5 AND l.price_changed_at >= ?)
                      OR (l.market_diff BETWEEN {HOT_FLOOR} AND {HOT_MARKET} AND l.last_seen >= ?))""")
         p += [now - 7 * 86400, now - 7 * 86400]
     # 19.10 (Артём: «находится то, что совпадает в тексте, описании, ЖК и т. п.»): каждое слово, которое не стало фильтром,

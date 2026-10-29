@@ -1489,3 +1489,27 @@ summary { transition: color .2s var(--m-out); }
 .hot-mkt-bar i { position: absolute; top: -4px; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 3px solid #0b3a39; transform: translateX(-50%); }
 .hot-mkt-bar s { position: absolute; left: 50%; top: -3px; width: 2px; height: 12px; background: rgba(255, 255, 255, .55); }
 .hot-why { margin: 2px 0 4px; font-size: 12.5px; font-weight: 600; color: var(--gold-100, var(--gold)); }
+
+/* 29.10: огонёк «Горячего» (Артём: «красивым и стильным, а не мигающий смайлик») — тонкий контур в стиле значков сайта,
+   перелив шампань → коралл (градиенты #flameStroke/#flameFill в index.html), спокойно покачивается, сердцевина «дышит»,
+   изредка поднимаются две искры. На золотом фоне (лента, нажатая кнопка) — тёмный контур. prefers-reduced-motion — без движения */
+.flame-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.flame { display: inline-block; flex: none; width: 15px; height: 18px; margin-right: 6px; vertical-align: -4px; overflow: visible;
+  filter: drop-shadow(0 0 4px rgba(242, 170, 110, .35)); }
+.flame .f-body { transform-box: fill-box; transform-origin: 50% 100%; animation: flameSway 2.8s ease-in-out infinite; }
+.flame .f-out { fill: url(#flameFill); stroke: url(#flameStroke); stroke-width: 1.25; stroke-linejoin: round; }
+.flame .f-in { fill: none; stroke: #ffe1a3; stroke-width: 1.05; stroke-linejoin: round; transform-box: fill-box; transform-origin: 50% 100%;
+  animation: flameBreath 2s ease-in-out infinite; }
+.flame .f-spark { fill: #ffd9a0; opacity: 0; transform-box: fill-box; animation: flameSpark 3.2s ease-out infinite; }
+.flame .f-spark.s2 { animation-delay: 1.6s; }
+.hot-ribbon .flame { width: 11px; height: 13px; margin-right: 5px; vertical-align: -2px; filter: none; }
+.hot-ribbon .flame .f-out, .hot-chip[aria-pressed="true"] .flame .f-out { fill: rgba(15, 47, 46, .1); stroke: #0f2f2e; }
+.hot-ribbon .flame .f-in, .hot-chip[aria-pressed="true"] .flame .f-in { stroke: #0f2f2e; opacity: .7; }
+.hot-ribbon .flame .f-spark, .hot-chip[aria-pressed="true"] .flame .f-spark { fill: #0f2f2e; }
+.hot-chip[aria-pressed="true"] .flame { filter: none; }
+.hot-chip { display: inline-flex; align-items: center; }
+@keyframes flameSway { 0%, 100% { transform: rotate(-3deg) scaleY(.98); } 50% { transform: rotate(3deg) scaleY(1.02); } }
+@keyframes flameBreath { 0%, 100% { transform: scale(.94, .9); } 50% { transform: scale(1.04, 1.08); } }
+@keyframes flameSpark { 0% { opacity: 0; transform: translateY(1px); } 15% { opacity: .95; } 70% { opacity: 0; transform: translateY(-6px); }
+  100% { opacity: 0; transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .flame .f-body, .flame .f-in, .flame .f-spark { animation: none; } }

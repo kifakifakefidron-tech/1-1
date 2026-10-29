@@ -514,6 +514,8 @@
 
   // 29.10 (Артём: «совмести 3 и 4»): горячая карточка — золотая рамка и лента «Горячее»; под ценой — шкала к рынку,
   // а если горячее из-за снижения цены — сколько и когда снизили
+  // 29.10 (Артём): живой огонёк — на кнопке «Горячие предложения» и на ленте карточки (мерцание — glass.css .flame)
+  const FLAME = `<svg class="flame" viewBox="0 0 16 20" aria-hidden="true"><g class="f-body"><path class="f-out" d="M8 19.5c3.6 0 6-2.5 6-5.9 0-3.7-2.8-5.7-3.8-9.3-.6 2.1-1.7 3.4-2.9 3.9.3-2.8-.9-5.6-3.1-7.2.1 3.4-2.5 5.8-2.5 9.7 0 4.4 2.8 8.8 6.3 8.8z"/><path class="f-in" d="M8 18.8c1.7 0 2.9-1.2 2.9-2.8 0-1.8-1.3-2.7-1.9-4.4-.3 1-.9 1.6-1.4 1.9.1-1.3-.4-2.7-1.5-3.5 0 1.7-1.2 2.8-1.2 4.7 0 2.3 1.4 4.1 3.1 4.1z"/></g><circle class="f-spark s1" cx="12.6" cy="4.6" r=".75"/><circle class="f-spark s2" cx="3.4" cy="6.4" r=".6"/></svg>`;
   function hotHTML(o) {
     if (!o.hot) return "";
     const parts = [];
@@ -544,7 +546,7 @@
       : `<div class="item-photo none" aria-hidden="true">${LOGO}<span>Фото у агента</span></div>`;
     const fav = me() && me().favorites.includes(o.id);
     const addr = address(o);
-    const hotRib = o.hot ? `<span class="hot-ribbon" aria-label="Горячее предложение">Горячее</span>` : "";
+    const hotRib = o.hot ? `<span class="hot-ribbon" aria-label="Горячее предложение">${FLAME}Горячее</span>` : "";
     return `<li class="item has-photo${hit ? " hit" : ""}${o.hot ? " hot" : ""}" tabindex="0" data-id="${o.id}">
       ${photo.replace('<div class="item-photo', `<div class="item-photo${o.hot ? " has-rib" : ""}`).replace(/(<div class="item-photo[^>]*>)/, `$1${hotRib}`)}
       <button type="button" class="fav-btn${fav ? " on" : ""}" data-fav="${o.id}" aria-label="${fav ? "Убрать из избранного" : "В избранное"}">${HEART}</button>
@@ -2463,7 +2465,7 @@
       state.hot = !state.hot;
       syncControls();
       refresh();
-      if (state.hot) toast("Горячие предложения: цена снизилась за неделю или объект заметно дешевле рынка", 3200);
+      if (state.hot) toast("Горячие предложения: цена снизилась на 10 %+ за неделю или объект на 15–45 % дешевле средней", 3200);
     });
     $("watchBtn").addEventListener("click", watchSearch);
     // 17.10 (Артём): «Поделиться» — ссылка ровно с выбранными фильтрами (сделка, тип, комнаты, цена, районы, ЖК, фраза…),

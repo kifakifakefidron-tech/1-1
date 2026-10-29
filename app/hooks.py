@@ -99,14 +99,14 @@ def update_market_diff(conn: sqlite3.Connection) -> int:
 
 def is_hot(it: dict, now: int | None = None) -> str | None:
     """29.10: почему объект в «Горячих предложениях» — то же правило, что фильтр search._where (hot):
-    'drop' — цена снизилась на 3 %+ за 7 дней (не в 1,5 раза — это скорее исправленная опечатка); 'market' — на 25–45 % дешевле
+    'drop' — цена снизилась на 10 %+ за 7 дней (не в 1,5 раза — это скорее исправленная опечатка); 'market' — на 15–45 % дешевле
     средней по ЖК/району (по 15+ объектам) и объект присылали за неделю. None — не горячее."""
-    from .search import HOT_FLOOR, HOT_MARKET
+    from .search import HOT_DROP, HOT_FLOOR, HOT_MARKET
     now = int(now or time.time())
     if it.get("price_doubt") or not it.get("price"):
         return None
     pp, p = it.get("prev_price"), it["price"]
-    if pp and p * 1.03 <= pp < p * 1.5 and (it.get("price_changed_at") or 0) >= now - 7 * 86400:
+    if pp and p * HOT_DROP <= pp < p * 1.5 and (it.get("price_changed_at") or 0) >= now - 7 * 86400:
         return "drop"
     d = it.get("market_diff_raw")
     if d is not None and HOT_FLOOR <= d <= HOT_MARKET and (it.get("last_seen") or 0) >= now - 7 * 86400:
