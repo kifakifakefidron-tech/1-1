@@ -198,12 +198,12 @@ def _stats_fast() -> dict:
 
 def _live() -> dict:
     """30.10 (Артём, варианты 2 + 3): живые цифры первого экрана — НАСТОЯЩИЕ (presence и visits_daily, как в админке).
-    online — был сигнал за ONLINE_S (минимум 1: тот, кто смотрит, уже на сайте); today — разных посетителей за сутки по
-    Москве (вошедшие + гости); agents — аккаунтов на сервисе."""
+    online — был сигнал за LIVE_S (30.10, Артём: «за час»; минимум 1 — тот, кто смотрит, уже на сайте); today — разных
+    посетителей за сутки по Москве (вошедшие + гости); agents — аккаунтов на сервисе («агентов с нами»)."""
     conn = db.get()
     now = int(time.time())
     online = conn.execute("SELECT COUNT(DISTINCT COALESCE(user_id, key)) FROM presence WHERE ts >= ?",
-                          (now - ONLINE_S,)).fetchone()[0]
+                          (now - LIVE_S,)).fetchone()[0]
     day = time.strftime("%Y-%m-%d", time.gmtime(now + 3 * 3600))
     today, guests = conn.execute("SELECT COUNT(*), COALESCE(SUM(user_id IS NULL), 0) FROM visits_daily WHERE day = ?",
                                  (day,)).fetchone()
@@ -212,6 +212,7 @@ def _live() -> dict:
     return {"online": online, "today": max(today, online), "guests": guests, "agents": agents}
 
 
+LIVE_S = 3600   # «онлайн за час» на первом экране (админка «кто сейчас» — ONLINE_S, 2,5 мин)
 _live_mem: dict = {"t": 0.0, "v": None}
 
 

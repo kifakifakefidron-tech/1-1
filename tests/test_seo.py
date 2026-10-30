@@ -68,7 +68,7 @@ def test_live_counters(c):
     now = int(time.time())
     day = time.strftime("%Y-%m-%d", time.gmtime(now + 3 * 3600))
     conn.executemany("INSERT INTO presence (key, user_id, ts, path, mobile) VALUES (?,?,?,?,0)",
-                     [("a", None, now, "/"), ("b", None, now - 30, "/"), ("old", None, now - 3600, "/")])
+                     [("a", None, now, "/"), ("b", None, now - 30, "/"), ("old", None, now - 7200, "/")])
     conn.executemany("INSERT INTO visits_daily (day, key, user_id) VALUES (?,?,?)",
                      [(day, "a", None), (day, "b", None), (day, "old", None), (day, "u", 1)])
     conn.execute("INSERT INTO users (email, created) VALUES ('a@b.ru', ?)", (now,))
