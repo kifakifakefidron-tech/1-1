@@ -59,3 +59,22 @@ def test_photo_filter_and_hero_always(c):
     client.cookies.set("hh", "1")   # раньше кука «скрыть приветствие» прятала блок
     html = client.get("/").text
     assert '<section class="hero" id="hero" aria-label' in html and 'id="heroX"' not in html
+
+
+def test_live_counters(c):
+    """30.10 (Артём): «онлайн сейчас · заходили сегодня · агентов» — настоящие цифры, сразу в HTML первого экрана."""
+    client, _ = c
+    conn = db.get()
+    now = int(time.time())
+    day = time.strftime("%Y-%m-%d", time.gmtime(now + 3 * 3600))
+    conn.executemany("INSERT INTO presence (key, user_id, ts, path, mobile) VALUES (?,?,?,?,0)",
+                     [("a", None, now, "/"), ("b", None, now - 30, "/"), ("old", None, now - 3600, "/")])
+    conn.executemany("INSERT INTO visits_daily (day, key, user_id) VALUES (?,?,?)",
+                     [(day, "a", None), (day, "b", None), (day, "old", None), (day, "u", 1)])
+    conn.execute("INSERT INTO users (email, created) VALUES ('a@b.ru', ?)", (now,))
+    conn.commit()
+    server._live_mem.update(t=0.0, v=None)
+    v = client.get("/api/live").json()
+    assert v == {"online": 2, "today": 4, "guests": 3, "agents": 1}
+    html = client.get("/").text
+    assert 'id="heroLive" aria-expanded="false">' in html and 'data-l="online">2<' in html and 'data-l="agents">1<' in html

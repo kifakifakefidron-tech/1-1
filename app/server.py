@@ -196,6 +196,45 @@ def _stats_fast() -> dict:
     return _stats_mem["v"]
 
 
+def _live() -> dict:
+    """30.10 (Артём, варианты 2 + 3): живые цифры первого экрана — НАСТОЯЩИЕ (presence и visits_daily, как в админке).
+    online — был сигнал за ONLINE_S (минимум 1: тот, кто смотрит, уже на сайте); today — разных посетителей за сутки по
+    Москве (вошедшие + гости); agents — аккаунтов на сервисе."""
+    conn = db.get()
+    now = int(time.time())
+    online = conn.execute("SELECT COUNT(DISTINCT COALESCE(user_id, key)) FROM presence WHERE ts >= ?",
+                          (now - ONLINE_S,)).fetchone()[0]
+    day = time.strftime("%Y-%m-%d", time.gmtime(now + 3 * 3600))
+    today, guests = conn.execute("SELECT COUNT(*), COALESCE(SUM(user_id IS NULL), 0) FROM visits_daily WHERE day = ?",
+                                 (day,)).fetchone()
+    agents = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    online = max(1, online)
+    return {"online": online, "today": max(today, online), "guests": guests, "agents": agents}
+
+
+_live_mem: dict = {"t": 0.0, "v": None}
+
+
+def _live_fast() -> dict:
+    if _live_mem["v"] is None or time.time() - _live_mem["t"] > 30:
+        try:
+            _live_mem["v"], _live_mem["t"] = _live(), time.time()
+        except Exception:  # noqa: BLE001 — база занята: блок придёт пустым, скрипт заполнит
+            return _live_mem["v"] or {}
+    return _live_mem["v"]
+
+
+def api_live(request: Request, body: dict | None = None):
+    return _cached(request, _live, ttl=30)
+
+
+def _live_html(v: dict) -> str:
+    """Кружки «кто на сайте» — обезличенные: до 3 кружков и «+N»."""
+    n = v.get("online") or 0
+    dots = "<i></i>" * min(n, 3) + (f"<i>+{n - 3}</i>" if n > 3 else "")
+    return dots
+
+
 def _hero_ssr(request: Request, html_text: str) -> str:
     """18.10 (приёмка п. 3, 6): первый экран — с сервера. Цифры сразу в HTML (превью и поисковики видят «8 486», а не «—»);
     вошедшему или закрывшему приветствие (кука hh) блок не отправляем — раньше его прятал скрипт после загрузки и
@@ -205,8 +244,16 @@ def _hero_ssr(request: Request, html_text: str) -> str:
     for k in ("sale", "rent", "new_24h", "districts"):
         v = s.get(k)
         old = f'<div><b data-k="{k}">—</b>'
-        html_text = html_text.replace(old, f'<div><b data-k="{k}" data-ssr="1">{v:,}</b>'.replace(",", " ") if v
+        html_text = html_text.replace(old, f'<div><b data-k="{k}" data-ssr="1">{v:,}</b>'.replace(",", " ") if v
                                       else f'<div hidden><b data-k="{k}">0</b>', 1)
+    lv = _live_fast()   # 30.10: «онлайн сейчас» сразу в HTML — ряд цифр не прыгает
+    if lv:
+        fmt = lambda x: f"{x:,}".replace(",", " ")  # noqa: E731
+        for k in ("online", "today", "guests", "agents"):
+            html_text = html_text.replace(f'data-l="{k}">—<', f'data-l="{k}">{fmt(lv[k])}<')
+        html_text = html_text.replace('<span class="live-who" aria-hidden="true"></span>',
+                                      f'<span class="live-who" aria-hidden="true">{_live_html(lv)}</span>', 1)
+        html_text = html_text.replace('id="heroLive" aria-expanded="false" hidden>', 'id="heroLive" aria-expanded="false">', 1)
     return html_text
 
 
@@ -3041,6 +3088,7 @@ routes = [
     Route("/dups", threaded(dups_page)),
     Route("/api/admin/dups", threaded(api_admin_dups), methods=["GET", "POST"]),
     Route("/api/stats", threaded(api_stats)),
+    Route("/api/live", threaded(api_live)),
     Route("/api/login", threaded(api_login), methods=["POST"]),
     Route("/api/auth/tg/start", threaded(api_tg_start), methods=["POST"]),
     Route("/api/auth/tg/status", threaded(api_tg_status)),

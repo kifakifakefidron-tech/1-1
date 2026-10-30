@@ -2733,6 +2733,28 @@
     };
     requestAnimationFrame(step);
   }
+  // 30.10: «онлайн сейчас · заходили сегодня · агентов» (настоящие цифры /api/live); на телефоне панель — по нажатию
+  function initLive() {
+    const box = $("heroLive");
+    if (!box) return;
+    const fill = (v) => {
+      for (const k of ["online", "today", "guests", "agents"]) box.querySelectorAll(`[data-l="${k}"]`).forEach((el) => { el.textContent = num(v[k] || 0); });
+      const n = v.online || 0;
+      box.querySelector(".live-who").innerHTML = "<i></i>".repeat(Math.min(n, 3)) + (n > 3 ? `<i>+${n - 3}</i>` : "");
+      box.hidden = false;
+    };
+    const load = () => { if (!document.hidden) getJSON("/api/live").then(fill).catch(() => {}); };
+    if (box.hidden) load();
+    setInterval(load, 60000);
+    box.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const open = !box.classList.contains("open");
+      box.classList.toggle("open", open);
+      box.setAttribute("aria-expanded", String(open));
+    });
+    document.addEventListener("click", () => { box.classList.remove("open"); box.setAttribute("aria-expanded", "false"); });
+  }
+
   async function initHero() {
     const hero = $("hero");
     if (!hero) return;
@@ -2741,6 +2763,7 @@
     try { localStorage.removeItem("heroHidden"); } catch { /* */ }
     document.cookie = "hh=; max-age=0; path=/";
     $("heroLogin").addEventListener("click", () => openLogin());
+    initLive();
     if (hero.querySelector("[data-ssr]")) return;   // 18.10: цифры уже пришли с сервера — без «докрутки» (страница не прыгает)
     try {
       const s = await getJSON("/api/stats");
