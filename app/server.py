@@ -209,9 +209,15 @@ def _live() -> dict:
                                  (day,)).fetchone()
     agents = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     online = max(1, online)
-    return {"online": online, "today": max(today, online), "guests": guests, "agents": agents}
+    # 31.10 «пульс сайта»: разные посетители в каждые 5 минут последнего часа, старые → новые; последний — хотя бы смотрящий
+    b0 = now // PULSE_STEP
+    got = dict(conn.execute("SELECT bucket, COUNT(*) FROM live_buckets WHERE bucket > ? GROUP BY bucket", (b0 - PULSE_N,)).fetchall())
+    pulse = [got.get(b, 0) for b in range(b0 - PULSE_N + 1, b0 + 1)]
+    pulse[-1] = max(pulse[-1], 1)
+    return {"online": online, "today": max(today, online), "guests": guests, "agents": agents, "pulse": pulse}
 
 
+PULSE_STEP, PULSE_N = 300, 12   # «пульс сайта»: 12 столбиков по 5 минут = последний час
 LIVE_S = 3600   # «онлайн за час» на первом экране (админка «кто сейчас» — ONLINE_S, 2,5 мин)
 _live_mem: dict = {"t": 0.0, "v": None}
 
@@ -230,10 +236,10 @@ def api_live(request: Request, body: dict | None = None):
 
 
 def _live_html(v: dict) -> str:
-    """Кружки «кто на сайте» — обезличенные: до 3 кружков и «+N»."""
-    n = v.get("online") or 0
-    dots = "<i></i>" * min(n, 3) + (f"<i>+{n - 3}</i>" if n > 3 else "")
-    return dots
+    """«Пульс сайта»: столбики высотой по числу посетителей за 5 минут (доля от самого высокого); тот же расчёт — app.js pulseHTML."""
+    p = v.get("pulse") or []
+    top = max(p or [1]) or 1
+    return "".join(f'<i style="--h:{n / top:.2f};--i:{i}"></i>' for i, n in enumerate(p))
 
 
 def _hero_ssr(request: Request, html_text: str) -> str:
@@ -252,8 +258,8 @@ def _hero_ssr(request: Request, html_text: str) -> str:
         fmt = lambda x: f"{x:,}".replace(",", " ")  # noqa: E731
         for k in ("online", "today", "guests", "agents"):
             html_text = html_text.replace(f'data-l="{k}">—<', f'data-l="{k}">{fmt(lv[k])}<')
-        html_text = html_text.replace('<span class="live-who" aria-hidden="true"></span>',
-                                      f'<span class="live-who" aria-hidden="true">{_live_html(lv)}</span>', 1)
+        html_text = html_text.replace('<span class="live-pulse" aria-hidden="true"></span>',
+                                      f'<span class="live-pulse" aria-hidden="true">{_live_html(lv)}</span>', 1)
         html_text = html_text.replace('id="heroLive" aria-expanded="false" hidden>', 'id="heroLive" aria-expanded="false">', 1)
     return html_text
 
@@ -1159,7 +1165,9 @@ def api_ping(request: Request, body: dict | None = None):
                           last_ts = excluded.last_ts,
                           user_id = COALESCE(excluded.user_id, visits_daily.user_id)""",
                      (msk_day, key, user["id"] if user else None, mobile, now, load, SESSION_GAP_S))
+        conn.execute("INSERT OR IGNORE INTO live_buckets (bucket, key) VALUES (?, ?)", (now // PULSE_STEP, key))
         if now % 50 == 0:
+            conn.execute("DELETE FROM live_buckets WHERE bucket < ?", (now // PULSE_STEP - 24,))
             conn.execute("DELETE FROM presence WHERE ts < ?", (now - 86400,))
             conn.execute("DELETE FROM visits_daily WHERE day < ?",
                          (time.strftime("%Y-%m-%d", time.gmtime(now + 3 * 3600 - 90 * 86400)),))

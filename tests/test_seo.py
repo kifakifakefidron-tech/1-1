@@ -75,6 +75,10 @@ def test_live_counters(c):
     conn.commit()
     server._live_mem.update(t=0.0, v=None)
     v = client.get("/api/live").json()
-    assert v == {"online": 2, "today": 4, "guests": 3, "agents": 1}
+    assert {k: v[k] for k in ("online", "today", "guests", "agents")} == {"online": 2, "today": 4, "guests": 3, "agents": 1}
+    assert len(v["pulse"]) == 12 and v["pulse"][-1] >= 1   # «пульс сайта»: 12 столбиков по 5 минут, последний — хотя бы смотрящий
     html = client.get("/").text
     assert 'id="heroLive" aria-expanded="false">' in html and 'data-l="online">2<' in html and 'data-l="agents">1<' in html
+    client.post("/api/ping", json={"path": "/", "load": 1}, headers={"user-agent": "Mozilla/5.0"})
+    server._live_mem.update(t=0.0, v=None)
+    assert conn.execute("SELECT COUNT(*) FROM live_buckets").fetchone()[0] == 1

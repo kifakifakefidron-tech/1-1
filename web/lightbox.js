@@ -22,19 +22,42 @@
     box.querySelector(".lb-x").addEventListener("click", close);
     box.querySelector(".prev").addEventListener("click", (e) => { e.stopPropagation(); go(-1); });
     box.querySelector(".next").addEventListener("click", (e) => { e.stopPropagation(); go(1); });
-    box.querySelector(".lb-stage").addEventListener("click", (e) => { if (e.target.classList.contains("lb-stage")) close(); });
+    // 31.10: нажатие по любому тёмному месту (вокруг фото, полоса сверху, пустое место у миниатюр) — закрыть
+    box.addEventListener("click", (e) => { if (!e.target.closest(".lb-img, .lb-nav, .lb-thumbs button, .lb-x, .lb-count")) close(); });
     box.querySelector(".lb-thumbs").addEventListener("click", (e) => {
       const t = e.target.closest("[data-i]");
       if (t) show(Number(t.dataset.i));
     });
-    const stage = box.querySelector(".lb-stage");
-    stage.addEventListener("touchstart", (e) => { x0 = e.touches[0].clientX; }, { passive: true });
-    stage.addEventListener("touchend", (e) => {
+    // 31.10: палец — вбок листает, вниз (или вверх) закрывает; фото едет за пальцем. Жесты не уходят окну объекта под фото
+    // (иначе оно тоже тянулось вниз и закрывалось) и не листают страницу
+    const stage = box.querySelector(".lb-stage"), img = box.querySelector(".lb-img");
+    let y0 = null, dx = 0, dy = 0, axis = "";
+    stage.addEventListener("touchstart", (e) => {
+      e.stopPropagation();
+      if (e.touches.length > 1) { x0 = y0 = null; return; }
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = dy = 0; axis = "";
+    }, { passive: true });
+    stage.addEventListener("touchmove", (e) => {
+      e.stopPropagation();
       if (x0 == null) return;
-      const dx = e.changedTouches[0].clientX - x0;
-      x0 = null;
-      if (Math.abs(dx) > 45) go(dx < 0 ? 1 : -1);
+      e.preventDefault();
+      dx = e.touches[0].clientX - x0; dy = e.touches[0].clientY - y0;
+      if (!axis && Math.hypot(dx, dy) > 8) axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      box.classList.add("drag");
+      if (axis === "x") img.style.transform = `translateX(${dx}px)`;
+      else if (axis === "y") { img.style.transform = `translateY(${dy}px) scale(${1 - Math.min(Math.abs(dy), 300) / 1500})`;
+        box.style.background = `rgba(1, 22, 22, ${0.9 - Math.min(Math.abs(dy), 300) / 500})`; }
+    }, { passive: false });
+    stage.addEventListener("touchend", (e) => {
+      e.stopPropagation();
+      if (x0 == null) return;
+      x0 = y0 = null;
+      box.classList.remove("drag");
+      img.style.transform = ""; box.style.background = "";
+      if (axis === "y" && Math.abs(dy) > 90) close();
+      else if (axis === "x" && Math.abs(dx) > 45) go(dx < 0 ? 1 : -1);
     });
+    box.addEventListener("touchmove", (e) => { if (!e.target.closest(".lb-thumbs")) e.preventDefault(); }, { passive: false });
     document.addEventListener("keydown", (e) => {
       if (!box.classList.contains("on")) return;
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); }
@@ -61,6 +84,8 @@
     if (!box) build();
     list = urls;
     box.classList.toggle("single", urls.length < 2);
+    box.querySelector(".lb-hint")?.remove();
+    box.insertAdjacentHTML("beforeend", `<span class="lb-hint">${urls.length > 1 ? "Листайте вбок · смахните вниз, чтобы закрыть" : "Смахните вниз, чтобы закрыть"}</span>`);
     box.querySelector(".lb-thumbs").innerHTML = urls.length > 1
       ? urls.map((u, k) => `<button type="button" data-i="${k}" aria-label="Фото ${k + 1}"><img src="${u.replace(/"/g, "&quot;")}" alt="" loading="lazy"></button>`).join("") : "";
     // внутри открытого окна (dialog) — иначе браузер не даёт нажимать стрелки и крестик

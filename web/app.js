@@ -1647,13 +1647,18 @@
   function swipeToClose(d) {
     d.setAttribute("data-own-swipe", "");   // pickers.js не вешает второй свайп
     let y0 = null, dy = 0;
+    let x0 = 0;
     d.addEventListener("touchstart", (e) => {
-      if (window.innerWidth > 640 || d.scrollTop > 0) { y0 = null; return; }
-      y0 = e.touches[0].clientY; dy = 0;
+      // 31.10: просмотр фото, галерея и карта — свои жесты (раньше листание фото тянуло окно вниз и закрывало его)
+      if (window.innerWidth > 640 || d.scrollTop > 0 || e.touches.length > 1
+          || e.target.closest(".lb, .dv-gal, .leaflet-container, [data-no-swipe]")) { y0 = null; return; }
+      y0 = e.touches[0].clientY; x0 = e.touches[0].clientX; dy = 0;
     }, { passive: true });
     d.addEventListener("touchmove", (e) => {
       if (y0 === null) return;
-      dy = Math.max(0, e.touches[0].clientY - y0);
+      const ddy = e.touches[0].clientY - y0;
+      if (dy === 0 && (ddy < 0 || Math.abs(e.touches[0].clientX - x0) > Math.abs(ddy))) { y0 = null; return; }   // вверх или вбок — не закрываем
+      dy = Math.max(0, ddy);
       if (dy > 4) { d.classList.add("dragging"); d.style.transform = `translateY(${dy}px)`; }
     }, { passive: true });
     d.addEventListener("touchend", () => {
@@ -2739,8 +2744,8 @@
     if (!box) return;
     const fill = (v) => {
       for (const k of ["online", "today", "guests", "agents"]) box.querySelectorAll(`[data-l="${k}"]`).forEach((el) => { el.textContent = num(v[k] || 0); });
-      const n = v.online || 0;
-      box.querySelector(".live-who").innerHTML = "<i></i>".repeat(Math.min(n, 3)) + (n > 3 ? `<i>+${n - 3}</i>` : "");
+      const p = v.pulse || [], top = Math.max(1, ...p);   // «пульс сайта» — как server._live_html
+      box.querySelector(".live-pulse").innerHTML = p.map((n, i) => `<i style="--h:${(n / top).toFixed(2)};--i:${i}"></i>`).join("");
       box.hidden = false;
     };
     const load = () => { if (!document.hidden) getJSON("/api/live").then(fill).catch(() => {}); };

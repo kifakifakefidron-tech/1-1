@@ -538,7 +538,7 @@ window.pickSent = (url) => {
       y0 = null;
       if (innerWidth > 820 || e.touches.length > 1) return;
       const t = e.target;
-      if (t.closest("input, textarea, select, [contenteditable], .leaflet-container, .pk-panel, [data-no-swipe]")) return;
+      if (t.closest("input, textarea, select, [contenteditable], .leaflet-container, .pk-panel, .lb, [data-no-swipe]")) return;
       if (scrollTop(t) > 0) return;
       y0 = e.touches[0].clientY; x0 = e.touches[0].clientX; dy = 0; scroller = t;
     }, { passive: true });
