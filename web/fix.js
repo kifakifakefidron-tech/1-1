@@ -127,7 +127,7 @@
     $("fxRepair").hidden = kind !== "repair";
     if (kind === "repair") {
       $("fxText").innerHTML = esc(it.text || "").replace(/(ремонт\S*|отделк\S*|чистов\S*|предчистов\S*|пчо|п\/чо|white\s*box|чернов\S*|состояни\S*|бетон\S*)/gi, "<mark>$1</mark>");
-      $("fxRepairGuess").textContent = `сервис думает: ${{ yes: "с ремонтом", no: "без ремонта" }[it.repair] || "не указано"}`;
+      $("fxRepairGuess").textContent = `сервис думает: ${(it.repair_why && it.repair_why.result) || { yes: "с ремонтом", no: "без ремонта" }[it.repair] || "не указано"}`;
       // 31.10 (Артём): разбор правила — по шагам, что решило, что сработало и что выключено
       const w = it.repair_why || { steps: [] };
       const ST = { decide: "решило", on: "сработало", off: "выключено", none: "нет" };
@@ -139,8 +139,10 @@
           `<span title="${esc(s.note || "")}">${esc(s.name)}</span>`).join(" · ")}</span></li>` : "")
         + w.steps.filter((s) => s.name === "Итог").map(row).join("");
       const dd = $("fxRepairWhy").querySelector(".fx-rwhy-d");
-      dd.hidden = !w.doubt;
-      dd.textContent = w.doubt ? `Почему в очереди: ${w.doubt}. Ваш ответ кнопкой ниже — запомнится для этого текста; слова — для всех объявлений.` : "";
+      dd.hidden = !w.doubt && !w.fixed;
+      dd.textContent = [w.fixed ? `Обновлено: ${w.fixed}.` : "",
+        w.doubt ? `Почему в очереди: ${w.doubt}. Ваш ответ кнопкой ниже — запомнится для этого текста; слова — для всех объявлений.`
+          : w.fixed ? "Теперь объект решён — в очереди его больше не будет." : ""].filter(Boolean).join(" ");
     }
     $("fxOpen").href = `/?open=${it.id}`;
     $("fxYaAll").href = yaHref(it);

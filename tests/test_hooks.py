@@ -276,3 +276,31 @@ def test_explain_repair_steps():
     r = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
     st = {s["name"]: s for s in ingest.explain_repair(conn, r)["steps"]}
     assert st["Выученные слова"]["state"] == "decide" and st["Правило «без ремонта»"]["state"] != "decide"
+
+
+def test_repair_phrases_whole_words_and_generic_off():
+    """31.10 (Артём: «правила, которые я добавил, не действуют»): слова — только целиком; одно общее слово («ремонт») не решает;
+    объект, посчитанный по старым словам, пересчитывается при открытии в разборе."""
+    from app import db, ingest
+    conn = db.connect(":memory:")
+    now = int(time.time())
+
+    def put(text, n):
+        m = ingest.add_message(conn, source="wa", text=text + f" 8918000{n:04d}", chat_id="c", msg_id=f"g{n}", ts=now)
+        return ingest.process_message(conn, m, use_llm=False)["results"][0]["listing_id"]
+    a = put("Студия 25 м², 3/9 эт., ФМР, ул. Тургенева 1. Отделка ремонт мебель. 5,1 млн.", 1)
+    b = put("1-к 40 м², 3/9 эт., ФМР, ул. Тургенева 2. Квартира без ремонта. 4 млн.", 2)
+    assert "error" in ingest.learn_repair_phrase(conn, "ремонт", "yes")   # общее слово — не принимаем
+    conn.execute("""INSERT INTO learned_rules (kind, key, value, label, n, ts) VALUES ('repair_phrase', 'ремонт', '{"repair": "yes"}', '', 1, 1)""")
+    conn.commit()
+    ingest.backfill_repair(conn)
+    rep = lambda i: conn.execute("SELECT repair FROM listings WHERE id = ?", (i,)).fetchone()[0]
+    assert rep(b) == "no"   # старое «ремонт = с ремонтом» больше не делает «без ремонта» ремонтом
+    ingest.learn_repair_phrase(conn, "ремонт мебель", "yes")
+    assert rep(a) == "yes"
+    conn.execute("UPDATE listings SET repair = 'no', repair_doubt = 1 WHERE id = ?", (a,))   # как будто считали по старым словам
+    r = conn.execute("SELECT * FROM listings WHERE id = ?", (a,)).fetchone()
+    w = ingest.explain_repair(conn, r)
+    assert w["fixed"] and w["result"] == "с ремонтом" and rep(a) == "yes"
+    assert any(s["name"] == "Слишком общие слова" for s in w["steps"])
+    assert ingest.repair_by_phrases("свежий евроремонта нет", {"ремонт": "no"})[0] != "no"   # «ремонт» не находится внутри слова

@@ -212,7 +212,12 @@ def knowledge(conn: sqlite3.Connection, kind: str = "", q: str = "", limit: int 
 def forget(conn: sqlite3.Connection, typ: str, ident) -> bool:
     """Забыть выученное. Уже поправленные объекты не откатываются — только новые не будут так решаться."""
     if typ == "rule":
+        r = conn.execute("SELECT kind, key FROM learned_rules WHERE id = ?", (int(ident),)).fetchone()
         learning.forget(conn, int(ident))
+        if r and r["kind"] == "repair_phrase":   # 31.10: забытые слова — объявления с ними пересчитываются сразу
+            from . import ingest
+            ingest.repair_phrases(conn, fresh=True)
+            ingest.recheck_phrase(conn, r["key"])
         return True
     if typ == "point":
         conn.execute("DELETE FROM geo_learned WHERE key = ?", (str(ident),))

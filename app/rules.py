@@ -871,7 +871,11 @@ def repair_hits(text: str | None) -> dict:
         return out[:6]
     building = found(_BUILDING_REPAIR, t)
     t = _BUILDING_REPAIR.sub(" ", t)
-    return {"building": building, "no": found(_NOREPAIR, t), "yes": found(_REPAIR, t), "talk": found(_REPAIR_TALK, t)}
+    return {"building": building, "no": found(_NOREPAIR, t), "yes": found(_REPAIR, t), "talk": found(_TALK_WORD, t)}
+
+
+# слова о состоянии целиком («состояние», а не «состояни») — для подписи «в тексте есть …»
+_TALK_WORD = re.compile(r"\w*(?:ремонт|отделк|чистов|чернов|состояни|бетон)\w*|\bпчо\b|п\s*/\s*ч\s*о|white\s*-?\s*box")
 
 
 def repair_doubt(text: str | None) -> bool:

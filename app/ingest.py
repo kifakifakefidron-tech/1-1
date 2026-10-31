@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import sqlite3
 import shutil
 import time
@@ -86,29 +87,49 @@ def _learned_repair(conn: sqlite3.Connection, listing_id: int) -> str | None:
 # 24.10d (Артём: «чтобы конкретные написания он запоминал»): слова из очереди «Ремонт» — правило для ВСЕХ объявлений.
 # learned_rules kind='repair_phrase', key — слова (как в search_text: строчные, ё→е), value {"repair": "yes"|"no"|""}
 # ("" — эти слова не про ремонт квартиры: вырезаются из текста перед правилами). Кэш в памяти процесса — минута.
-_phrases = {"t": 0.0, "v": {}}
+_phrases = {"t": 0.0, "sig": None, "v": {}, "off": {}}
+# 31.10 (Артём: «правила, которые я добавил, как будто не действуют»): одно общее слово о состоянии решать не может —
+# «ремонт» стоит и в «с ремонтом», и в «без ремонта», «требует ремонта». Такие слова не принимаем, а уже выученные — выключены.
+_GENERIC = re.compile(r"(?:ремонт|отделк|состояни)\w*")
 
 
-def repair_phrases(conn: sqlite3.Connection, fresh: bool = False) -> dict[str, str]:
-    if fresh or time.time() - _phrases["t"] > 60:
-        v = {}
+def generic_phrase(key: str) -> bool:
+    return bool(_GENERIC.fullmatch(key.strip()))
+
+
+def _phrase_rx(k: str) -> re.Pattern:
+    """Слова — только целиком: «рем» не находится в «ремонт», «ремонт» — в «евроремонт» и «ремонта»."""
+    return re.compile(r"(?<!\w)" + re.escape(k) + r"(?!\w)")
+
+
+def repair_phrases(conn: sqlite3.Connection, fresh: bool = False, disabled: bool = False) -> dict[str, str]:
+    """Выученные слова {слова: 'yes'|'no'|''}. Перечитываем, как только в базе что-то поменялось (выучили / забыли в любом
+    процессе сайта или в worker) — раньше кэш жил минуту, и другой процесс мог пересчитать объект по старым словам.
+    disabled=True — выключенные общие слова (для «Как сервис решил»)."""
+    sig = tuple(conn.execute("SELECT COUNT(*), COALESCE(MAX(ts), 0) FROM learned_rules WHERE kind = 'repair_phrase'").fetchone())
+    if fresh or sig != _phrases["sig"] or time.time() - _phrases["t"] > 600:
+        v, off = {}, {}
         for k, val in conn.execute("SELECT key, value FROM learned_rules WHERE kind = 'repair_phrase'"):
             try:
-                v[k] = str(json.loads(val).get("repair") or "")
+                (off if generic_phrase(k) else v)[k] = str(json.loads(val).get("repair") or "")
             except (TypeError, ValueError):
                 continue
-        _phrases.update(t=time.time(), v=v)
-    return _phrases["v"]
+        _phrases.update(t=time.time(), sig=sig, v=v, off=off)
+    return _phrases["off"] if disabled else _phrases["v"]
+
+
+def phrase_hits(text: str, phrases: dict[str, str]) -> list[tuple[str, str]]:
+    return [(k, v) for k, v in phrases.items() if k in text and _phrase_rx(k).search(text)]
 
 
 def repair_by_phrases(text: str, phrases: dict[str, str]) -> tuple[str | None, int]:
     """Состояние по тексту с учётом выученных слов: (repair, doubt). Слова решают; правила по остальному тексту
     спорят с ними — объект остаётся в очереди «Ремонт» на проверку."""
     t = textnorm.norm(text)
-    hits = {v for k, v in phrases.items() if v and k in t}
-    for k, v in phrases.items():   # выученные слова (и «не про ремонт») не мешают правилам
-        if k in t:
-            t = t.replace(k, " ")
+    found = phrase_hits(t, phrases)
+    hits = {v for _, v in found if v}
+    for k, _ in sorted(found, key=lambda kv: -len(kv[0])):   # выученные слова (и «не про ремонт») не мешают правилам
+        t = _phrase_rx(k).sub(" ", t)
     rule, doubt = rules.detect_repair(t), int(rules.repair_doubt(t))
     if hits:
         val = "no" if "no" in hits else "yes"
@@ -149,8 +170,7 @@ def explain_repair(conn: sqlite3.Connection, r: sqlite3.Row) -> dict:
     else:
         add("Ваш ответ по этому тексту", "none", "нет", "этот текст ещё не разбирали")
     text = textnorm.norm(r["search_text"] or "")
-    phrases = repair_phrases(conn)
-    hit = [(k, v) for k, v in phrases.items() if k in text]
+    hit = phrase_hits(text, repair_phrases(conn))
     yes_no = [(k, v) for k, v in hit if v]
     if yes_no:
         val = "no" if any(v == "no" for _, v in yes_no) else "yes"
@@ -162,8 +182,13 @@ def explain_repair(conn: sqlite3.Connection, r: sqlite3.Row) -> dict:
     if off:
         steps.append({"name": "Слова «не про ремонт»", "state": "off", "value": "выключены",
                       "note": ", ".join(f"«{k}»" for k in off) + " — вы отметили, что это не про ремонт квартиры; правила их не видят"})
-    for k, _ in hit:
-        text = text.replace(k, " ")
+    gen = phrase_hits(text, repair_phrases(conn, disabled=True))
+    if gen:
+        steps.append({"name": "Слишком общие слова", "state": "off", "value": "выключены",
+                      "note": ", ".join(f"«{k}» = {_REP[v or None] if v else 'не про ремонт'}" for k, v in gen)
+                      + " — одно такое слово бывает и в «с ремонтом», и в «без ремонта»; выделите фразу целиком"})
+    for k, _ in sorted(hit, key=lambda kv: -len(kv[0])):
+        text = _phrase_rx(k).sub(" ", text)
     h = rules.repair_hits(text)
     if h["building"]:
         steps.append({"name": "Про дом, не про квартиру", "state": "off", "value": "выключено",
@@ -195,7 +220,19 @@ def explain_repair(conn: sqlite3.Connection, r: sqlite3.Row) -> dict:
                else "выученные слова спорят между собой или с правилами" if yes_no
                else "в тексте есть " + ", ".join(f"«{w}»" for w in h["talk"][:3]) + ", но ни одна фраза правила не подошла"
                if h["talk"] else "в тексте говорят о состоянии, но ни одна фраза правила не подошла")
-    return {"steps": steps, "result": _REP.get(r["repair"]), "doubt": why}
+    # 31.10: записанное в базе расходится с тем, что решают правила и слова сейчас (объект считали по старым словам) —
+    # пересчитываем этот объект сразу и говорим об этом
+    fixed = None
+    if "repair" not in af:
+        now = repair_now(conn, r["id"], r["search_text"] or "")
+        if now != (r["repair"], r["repair_doubt"]):
+            fixed = f"было записано «{_REP.get(r['repair'])}» по старым словам — пересчитано: «{_REP.get(now[0])}»"
+            _reindex(conn, r["id"], r["search_text"] or "")
+            conn.commit()
+            if not now[1]:
+                why = None
+    return {"steps": steps, "result": _REP.get(repair_now(conn, r["id"], r["search_text"] or "")[0] if "repair" not in af
+                                                else (af["repair"] or None)), "doubt": why, "fixed": fixed}
 
 
 def learn_repair_phrase(conn: sqlite3.Connection, phrase: str, value: str) -> dict:
@@ -203,6 +240,9 @@ def learn_repair_phrase(conn: sqlite3.Connection, phrase: str, value: str) -> di
     key = textnorm.norm(phrase).strip(" .,;:!?«»\"'()-")
     if not 3 <= len(key) <= 80:
         return {"error": "Выделите слова о состоянии: от 3 до 80 знаков."}
+    if generic_phrase(key):
+        return {"error": f"«{key}» одно слово решать не может — оно бывает и в «с ремонтом», и в «без ремонта». "
+                         "Выделите фразу целиком: «отделка ремонт мебель», «требует ремонта», «свежий ремонт»."}
     val = {"yes": "yes", "no": "no", "none": ""}.get(value)
     if val is None:
         return {"error": "Не понял, что значат эти слова."}
@@ -211,13 +251,26 @@ def learn_repair_phrase(conn: sqlite3.Connection, phrase: str, value: str) -> di
                     ON CONFLICT(kind, key) DO UPDATE SET value = excluded.value, label = excluded.label, n = n + 1, ts = excluded.ts""",
                  (key, json.dumps({"repair": val}, ensure_ascii=False), label, int(time.time())))
     repair_phrases(conn, fresh=True)
+    return {"ok": True, "phrase": key, "label": label, "changed": recheck_phrase(conn, key)}
+
+
+def repair_now(conn: sqlite3.Connection, listing_id: int, text: str) -> tuple[str | None, int]:
+    """Состояние без учёта ручной правки: ваш ответ по этому тексту → выученные слова → правила."""
+    learned = _learned_repair(conn, listing_id)
+    if learned is not None:
+        return learned or None, 0
+    return repair_by_phrases(text, repair_phrases(conn))
+
+
+def recheck_phrase(conn: sqlite3.Connection, key: str) -> int:
+    """Пересчитать объявления, где есть эти слова (после «выучить» / «забыть»)."""
     n = 0
     for r in conn.execute("SELECT id, search_text, repair, repair_doubt FROM listings WHERE instr(search_text, ?) > 0", (key,)).fetchall():
         _reindex(conn, r["id"], r["search_text"] or "")
         new = conn.execute("SELECT repair, repair_doubt FROM listings WHERE id = ?", (r["id"],)).fetchone()
         n += int((new["repair"], new["repair_doubt"]) != (r["repair"], r["repair_doubt"]))
     conn.commit()
-    return {"ok": True, "phrase": key, "label": label, "changed": n}
+    return n
 
 
 def _reindex(conn: sqlite3.Connection, listing_id: int, text: str) -> None:
@@ -225,18 +278,14 @@ def _reindex(conn: sqlite3.Connection, listing_id: int, text: str) -> None:
     conn.execute("INSERT INTO listings_fts(rowid, search_text) VALUES (?, ?)", (listing_id, text))
     # состояние «с ремонтом / без ремонта» — по тому же тексту (фильтр «Ремонт»); тот же текст админ уже разбирал — его ответ;
     # дальше — выученные слова (repair_phrase), потом правила
-    learned = _learned_repair(conn, listing_id)
-    if learned is not None:
-        rep, doubt = learned or None, 0
-    else:
-        rep, doubt = repair_by_phrases(text, repair_phrases(conn))
+    rep, doubt = repair_now(conn, listing_id, text)
     conn.execute("""UPDATE listings SET repair = CASE WHEN json_type(admin_fields, '$.repair') IS NOT NULL
                     THEN NULLIF(json_extract(admin_fields, '$.repair'), '') ELSE ? END,
                     repair_doubt = CASE WHEN json_type(admin_fields, '$.repair') IS NOT NULL THEN 0 ELSE ? END WHERE id = ?""",
                  (rep, doubt, listing_id))   # ремонт, поправленный админом, не пересчитываем
 
 
-REPAIR_V = "5"   # 24.10: правило строже («ремонт» одним словом — не «с ремонтом»), отметка «под вопросом», ответы админа
+REPAIR_V = "6"   # 31.10: выученные слова — целым словом, общие («ремонт») выключены; пересчёт всех по текущим словам
 
 
 def backfill_repair(conn: sqlite3.Connection) -> int:
