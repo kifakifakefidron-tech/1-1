@@ -108,8 +108,52 @@ def market_for(conn: sqlite3.Connection, o: dict, min_n: int | None = None) -> d
                 return None
             who = ROOM_LABEL[g] + (f" {REPAIR_LABEL[rp]}" if with_rep else "")
             return {"base": f"{who} {where}", "median": median, "n": n, "diff": diff, "level": lvl,
-                    "rooms": ROOM_LABEL[g], "repair": REPAIR_LABEL[rp] if with_rep else None}
+                    "rooms": ROOM_LABEL[g], "repair": REPAIR_LABEL[rp] if with_rep else None,
+                    "rules": _rules(m, o, g, rp, lvl, with_rep, n, min_n)}
     return None
+
+
+def _rules(m: dict, o: dict, g, rp, lvl: str, with_rep: bool, n: int, min_n: int | None) -> list[dict]:
+    """31.10 (Артём): разбор сравнения по пунктам — что учтено (on) и что выключено (off) и почему; рисует окно объекта."""
+    def cnt(lv, key, *extra):
+        v = m.get((o["deal"], lv, key, g, *extra))
+        return v[1] if v else 0
+
+    def few(c, need):
+        return f"только {c}" if c else "почти нет", need
+
+    rooms = ROOM_LABEL[g]
+    kind = o.get("room_kind")
+    same = {"s": "студии и мини-1 сравниваем между собой", 4: "4 комнаты и больше — одна группа"}.get(g)
+    if kind in ("euro", "mini") and g != "s":
+        same = f"{'евро' if kind == 'euro' else 'мини'}-{o.get('rooms')} по размеру как {rooms} — сравниваем с ними"
+    out = [{"name": "Комнаты", "on": True, "value": rooms, "note": same or f"сравниваем только с {rooms}"}]
+    place_key = geo.complex_key(o["complex"]) if lvl == "cx" else o["district"]
+    if with_rep:
+        out.append({"name": "Ремонт", "on": True, "value": REPAIR_LABEL[rp],
+                    "note": f"сравниваем только с объектами {REPAIR_LABEL[rp]}"})
+    elif rp:
+        need = min_n or MARKET_SHOW_N[lvl]
+        c, _ = few(cnt(lvl, place_key, rp), need)
+        out.append({"name": "Ремонт", "on": False, "value": REPAIR_LABEL[rp],
+                    "note": f"не учтён: {rooms} {REPAIR_LABEL[rp]} {'в этом ЖК' if lvl == 'cx' else 'в районе'} {c}, "
+                            f"а нужно от {need} — сравнили со всеми {rooms}"})
+    else:
+        out.append({"name": "Ремонт", "on": False, "value": "не указан",
+                    "note": f"в объявлении нет слов про ремонт — сравнили со всеми {rooms}, с ремонтом и без"})
+    if o.get("complex"):
+        if lvl == "cx":
+            out.append({"name": "ЖК", "on": True, "value": o["complex"], "note": f"{n} похожих объектов в этом ЖК"})
+        else:
+            need = min_n or MARKET_SHOW_N["cx"]
+            c, _ = few(cnt("cx", geo.complex_key(o["complex"])), need)
+            out.append({"name": "ЖК", "on": False, "value": o["complex"],
+                        "note": f"не учтён: {rooms} в этом ЖК {c}, а нужно от {need} — сравнили по району"})
+    else:
+        out.append({"name": "ЖК", "on": False, "value": "не указан", "note": "в объявлении нет ЖК — сравнили по району"})
+    if lvl == "d":
+        out.append({"name": "Район", "on": True, "value": o["district"], "note": f"{n} похожих объектов в районе"})
+    return out
 
 
 def update_market_diff(conn: sqlite3.Connection) -> int:

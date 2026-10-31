@@ -241,4 +241,7 @@ def test_market_compares_same_rooms_and_falls_back_to_district():
     mk = hooks.market_for(conn, row, hooks.HOT_MIN_N)
     # раньше двушку сравнивали со студиями ЖК (≈ 200 тыс./м²) — «на 50 % дешевле»; теперь — с 2-к района (≈ 116 тыс./м²)
     assert mk["level"] == "d" and mk["rooms"] == "2-к" and mk["base"].startswith("2-к в районе") and -20 < mk["diff"] < -5
+    rules = {r["name"]: r for r in mk["rules"]}
+    assert rules["Комнаты"]["on"] and not rules["Ремонт"]["on"] and not rules["ЖК"]["on"] and rules["Район"]["on"]
+    assert "нужно от 15" in rules["ЖК"]["note"] and "не указан" == rules["Ремонт"]["value"]
     assert hooks.room_group({"room_kind": "euro", "rooms": 2}) == 1 and hooks.room_group({"room_kind": "studio", "rooms": 0}) == "s"
