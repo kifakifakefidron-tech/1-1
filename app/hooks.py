@@ -39,57 +39,86 @@ def _group(t: str | None) -> str:
     return "flat" if t in FLAT else (t or "")
 
 
+def room_group(o: dict) -> str | int | None:
+    """31.10 (Артём): с чем сравнивать цену за м² — студии со студиями, 1-к с 1-к… Евро-2 и мини-2 по размеру — как 1-к
+    (у евро и мини комнат на одну меньше, кухня-гостиная), мини-1 — как студия; 4 и больше — одна группа."""
+    kind, r = o.get("room_kind"), o.get("rooms")
+    if kind == "studio" or r == 0:
+        return "s"
+    if r is None:
+        return None
+    if kind in ("euro", "mini"):
+        r -= 1
+    return "s" if r <= 0 else min(int(r), 4)
+
+
+ROOM_LABEL = {"s": "студии", 1: "1-к", 2: "2-к", 3: "3-к", 4: "4-к и больше"}
+REPAIR_LABEL = {"yes": "с ремонтом", "no": "без ремонта"}
+MARKET_SHOW_N = {"cx": 3, "d": 5}   # для строки «к рынку» в окне объекта хватает и меньшего числа (для «Горячего» — HOT_MIN_N)
+
+
 def market(conn: sqlite3.Connection) -> dict:
-    """Медиана цены за м² по ЖК и по району (для квартир), пересчёт раз в 10 минут."""
+    """Медиана цены за м² по ЖК и по району (для квартир) — отдельно по комнатам (room_group) и ещё отдельно по ремонту;
+    пересчёт раз в 10 минут."""
     if time.time() - _market["t"] < 600:
         return _market["data"]
     with _market_lock:
         if time.time() - _market["t"] < 600:
             return _market["data"]
         buckets: dict[tuple, list[int]] = {}
-        for r in conn.execute("""SELECT deal, type, complex, district, price_m2 FROM listings
+        for r in conn.execute("""SELECT deal, type, complex, district, price_m2, rooms, room_kind, repair FROM listings
                                  WHERE is_active = 1 AND price_m2 IS NOT NULL AND type IN ('flat', 'new')
                                  AND price_doubt IS NOT 1"""):
-            if r["complex"]:
-                buckets.setdefault((r["deal"], "cx", geo.complex_key(r["complex"])), []).append(r["price_m2"])
-            if r["district"]:
-                buckets.setdefault((r["deal"], "d", r["district"]), []).append(r["price_m2"])
-        data = {k: (int(statistics.median(v)), len(v)) for k, v in buckets.items()
-                if len(v) >= (3 if k[1] == "cx" else 5)}
+            g = room_group(dict(r))
+            if g is None:
+                continue
+            places = ([("cx", geo.complex_key(r["complex"]))] if r["complex"] else []) + ([("d", r["district"])] if r["district"] else [])
+            for lvl, key in places:
+                buckets.setdefault((r["deal"], lvl, key, g), []).append(r["price_m2"])
+                if r["repair"] in REPAIR_LABEL:
+                    buckets.setdefault((r["deal"], lvl, key, g, r["repair"]), []).append(r["price_m2"])
+        data = {k: (int(statistics.median(v)), len(v)) for k, v in buckets.items() if len(v) >= 3}
         _market.update(t=time.time(), data=data)
         return data
 
 
-def market_for(conn: sqlite3.Connection, o: dict) -> dict | None:
-    """{'base': 'ЖК Мозаика', 'median': 152000, 'n': 12, 'diff': -8} — или None, если сравнить не с чем."""
+def market_for(conn: sqlite3.Connection, o: dict, min_n: int | None = None) -> dict | None:
+    """С чем сравнить цену за м² (31.10, Артём): самые похожие, где их достаточно —
+    1) те же комнаты и тот же ремонт в этом ЖК, 2) те же комнаты в ЖК, 3) комнаты + ремонт в районе, 4) комнаты в районе.
+    min_n — сколько похожих нужно (для «Горячего» — HOT_MIN_N; без него — MARKET_SHOW_N: строка «к рынку» в окне объекта).
+    {'base': '2-к с ремонтом в ЖК Мозаика', 'median': 152000, 'n': 23, 'diff': -8, 'level': 'cx', 'rooms': '2-к', 'repair': ...}
+    или None, если сравнить не с чем."""
     if _group(o.get("type")) != "flat" or not o.get("price_m2"):
         return None
+    g = room_group(o)
+    if g is None:   # комнаты не знаем — сравнивать студию с трёшкой нельзя
+        return None
     m = market(conn)
-    hit = None
-    if o.get("complex"):
-        k = (o["deal"], "cx", geo.complex_key(o["complex"]))
-        if k in m:
-            hit = (f"ЖК {o['complex']}", *m[k])
-    if hit is None and o.get("district"):
-        k = (o["deal"], "d", o["district"])
-        if k in m:
-            hit = (f"район {o['district']}", *m[k])
-    if hit is None:
-        return None
-    base, median, n = hit
-    diff = round((o["price_m2"] / median - 1) * 100)
-    if abs(diff) > 60:   # скорее ошибка в площади/цене, чем реальная разница — не пугаем
-        return None
-    return {"base": base, "median": median, "n": n, "diff": diff}
+    rp = o.get("repair") if o.get("repair") in REPAIR_LABEL else None
+    places = ([("cx", geo.complex_key(o["complex"]), f"в ЖК {o['complex']}")] if o.get("complex") else []) \
+        + ([("d", o["district"], f"в районе {o['district']}")] if o.get("district") else [])
+    for lvl, key, where in places:
+        for with_rep in ((True, False) if rp else (False,)):
+            k = (o["deal"], lvl, key, g, rp) if with_rep else (o["deal"], lvl, key, g)
+            if k not in m or m[k][1] < (min_n or MARKET_SHOW_N[lvl]):
+                continue
+            median, n = m[k]
+            diff = round((o["price_m2"] / median - 1) * 100)
+            if abs(diff) > 60:   # скорее ошибка в площади/цене, чем реальная разница — не пугаем
+                return None
+            who = ROOM_LABEL[g] + (f" {REPAIR_LABEL[rp]}" if with_rep else "")
+            return {"base": f"{who} {where}", "median": median, "n": n, "diff": diff, "level": lvl,
+                    "rooms": ROOM_LABEL[g], "repair": REPAIR_LABEL[rp] if with_rep else None}
+    return None
 
 
 def update_market_diff(conn: sqlite3.Connection) -> int:
     """Записать в listings.market_diff разницу с рынком (для фильтра «🔥 Горячее»). Меняем только изменившееся."""
     changed = []
-    for r in conn.execute("""SELECT id, type, deal, complex, district, price_m2, market_diff, price_doubt FROM listings
-                             WHERE is_active = 1"""):
-        mk = market_for(conn, dict(r)) if not r["price_doubt"] else None
-        diff = mk["diff"] if mk and mk["n"] >= HOT_MIN_N else None   # мало сравнимых — «ниже рынка» не считаем
+    for r in conn.execute("""SELECT id, type, deal, complex, district, price_m2, market_diff, price_doubt, rooms, room_kind, repair
+                             FROM listings WHERE is_active = 1"""):
+        mk = market_for(conn, dict(r), HOT_MIN_N) if not r["price_doubt"] else None   # мало похожих — «ниже рынка» не считаем
+        diff = mk["diff"] if mk else None
         if diff != r["market_diff"]:
             changed.append((diff, r["id"]))
     conn.executemany("UPDATE listings SET market_diff = ? WHERE id = ?", changed)
@@ -117,14 +146,15 @@ def is_hot(it: dict, now: int | None = None) -> str | None:
 def annotate(conn: sqlite3.Connection, items: list[dict]) -> list[dict]:
     """Для карточек в списке: «ниже рынка на N %» (только заметная разница), отметка «горячее» и шкала к рынку."""
     for it in items:
-        mk = market_for(conn, it) if not it.get("price_doubt") else None
-        ok = mk and mk["diff"] <= HOT_MIN_DIFF and mk["n"] >= HOT_MIN_N
+        mk = market_for(conn, it, HOT_MIN_N) if not it.get("price_doubt") else None
+        ok = mk and mk["diff"] <= HOT_MIN_DIFF
         it["market_diff"] = mk["diff"] if ok else None
         it["market_n"] = mk["n"] if ok else None   # «ниже рынка на 18 % · по 23 объектам»
-        it["market_diff_raw"] = mk["diff"] if mk and mk["n"] >= HOT_MIN_N else None
+        it["market_diff_raw"] = mk["diff"] if mk else None
         it["hot"] = is_hot(it)
         if ok:   # 29.10: для шкалы «к рынку» на горячей карточке — с чем сравнили и средняя цена такой же площади
             it["market_base"] = mk["base"]
+            it["market_median"] = mk["median"]
             it["market_price"] = round(mk["median"] * it["area"]) if it.get("area") else None
         it.pop("market_diff_raw", None)
     return items

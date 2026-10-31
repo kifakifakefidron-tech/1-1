@@ -248,7 +248,7 @@ def _hero_ssr(request: Request, html_text: str) -> str:
     страница на телефоне «прыгала» (CLS 0,93)."""
     # 26.10 (Артём): первый экран с логотипом и числом объектов — ВСЕГДА (и вошедшим), без крестика; кука hh больше не действует
     s = _stats_fast()
-    for k in ("sale", "rent", "new_24h", "districts"):
+    for k in ("sale", "rent", "new_24h", "removed"):
         v = s.get(k)
         old = f'<div><b data-k="{k}">—</b>'
         html_text = html_text.replace(old, f'<div><b data-k="{k}" data-ssr="1">{v:,}</b>'.replace(",", " ") if v
@@ -660,7 +660,10 @@ def api_listing(request: Request, body: dict | None = None):
         if tp:
             d["text_price"] = {"price": tp, "ts": row["description_ts"] or row["last_seen"]}
     d["can_edit"] = bool(user) and agent.can_edit(conn, user, row)[0]
-    d["market"] = hooks.market_for(conn, d) if not row["price_doubt"] else None
+    # 31.10: «к рынку» и «почему горячее» — по тем же 15+ похожим, что фильтр; если их меньше — строка «к рынку» по 3+ (ЖК) / 5+ (район)
+    hot_mk = hooks.market_for(conn, d, hooks.HOT_MIN_N) if not row["price_doubt"] else None
+    d["market"] = hot_mk or (hooks.market_for(conn, d) if not row["price_doubt"] else None)
+    d["hot"] = hooks.is_hot({**d, "price_doubt": row["price_doubt"], "market_diff_raw": hot_mk["diff"] if hot_mk else None})
     d["same"] = hooks.same_elsewhere(conn, row)
     d["note"] = hooks.get_note(conn, user["id"], lid) if user else None
     d["status"] = hooks.get_status(conn, user["id"], lid) if user else None
@@ -769,7 +772,16 @@ def _stats() -> dict:
         "messages_24h": one("SELECT COUNT(*) FROM messages WHERE ts >= ?", day),
         "duplicates_merged": one("SELECT COUNT(*) FROM listing_events WHERE match != 'new'"),
         "districts": one("SELECT COUNT(DISTINCT district) FROM listings WHERE is_active=1 AND district IS NOT NULL"),
+        # 31.10 (Артём): на первом экране вместо «районов на карте» — сколько неактуальных объектов убрали с сайта:
+        # проданные, под задатком, не присылали 15 дней, удалённые админом + уже стёртые из базы (state deleted_listings).
+        # Склеенные повторы и чужие чаты сюда не входят — это не «неактуальные» объекты.
+        "removed": one(f"""SELECT COUNT(*) FROM listings WHERE is_active = 0 AND merged_into IS NULL
+                           AND COALESCE(hidden_reason, '') NOT IN ({','.join('?' * len(_NOT_REMOVED))})""", *_NOT_REMOVED)
+                   + int(db.get_state(conn, "deleted_listings") or 0),
     })
+
+
+_NOT_REMOVED = ("dup_same", "dup_text", "own_dup", "strely", "strely_photo", "chat", "rent_rule")
 
 
 # ─── промокод для коллег (временный) ───────────────────────────────────────

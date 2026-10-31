@@ -1580,3 +1580,16 @@ dialog, .lb, .ov-box { overscroll-behavior: contain; }
 .lb.single .lb-hint { bottom: calc(24px + env(safe-area-inset-bottom)); }
 @keyframes lbHint { 0% { opacity: 0; } 12%, 75% { opacity: 1; } 100% { opacity: 0; } }
 @media (hover: hover) { .lb-hint { display: none; } }
+
+/* 31.10: лента «Снижение» (цену снизили) — та же лента, вместо огонька стрелка вниз; «почему горячее» в окне объекта */
+.hot-ribbon .ic, .hot-ribbon svg:not(.flame) { width: 12px; height: 12px; margin-right: 5px; vertical-align: -2px; stroke-width: 2.4; }
+.dv-hot { margin: 4px 0 14px; padding: 14px 16px; border-radius: var(--r-md, 16px); border: 1px solid rgba(227, 203, 143, .35);
+  background: linear-gradient(135deg, rgba(227, 203, 143, .12), rgba(227, 203, 143, .03)); }
+.dv-hot p { margin: 0 0 6px; font-size: 14.5px; line-height: 1.5; color: var(--ink-2); }
+.dv-hot p b { color: var(--ink); }
+.dv-hot p s { color: var(--ink-3); }
+.dv-hot .dv-hot-h { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font: 700 12px var(--body); letter-spacing: .12em;
+  text-transform: uppercase; color: var(--gold); }
+.dv-hot .dv-hot-h .flame { width: 14px; height: 17px; }
+.dv-hot .dv-hot-h svg:not(.flame) { width: 15px; height: 15px; }
+.dv-hot small { display: block; font-size: 12px; line-height: 1.45; color: var(--ink-3); }

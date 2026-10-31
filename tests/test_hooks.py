@@ -75,7 +75,7 @@ def test_same_object_other_agents_and_market(env):
     _add(conn, "2-к квартира 50 м², 7/9 эт., ЖК Мозаика. 7 млн руб. 89180000003")   # другой этаж
     d = c.get(f"/api/listings/{a}").json()
     assert [s["price"] for s in d["same"]] == [6_200_000]
-    assert d["market"]["base"] == "ЖК Мозаика" and d["market"]["n"] == 3
+    assert d["market"]["base"] == "2-к в ЖК Мозаика" and d["market"]["n"] == 3
 
 
 def test_notes_private(env):
@@ -215,3 +215,30 @@ def test_hot_flag_and_count_match_filter():
     conn.commit()
     item = search.search(conn, search.Query(), now, False)["items"][0]
     assert hooks.annotate(conn, [item])[0]["hot"] is None and search.facets(conn, search.Query(), now)["hot"] == 0
+
+
+def test_market_compares_same_rooms_and_falls_back_to_district():
+    """31.10 (Артём): «дешевле рынка» — только с похожими по комнатам (и по ремонту, если похожих хватает);
+    в маленьком ЖК — по району."""
+    from app import db, hooks, ingest
+    conn = db.connect(":memory:")
+    now = int(time.time())
+    k = 0
+
+    def put(text):
+        nonlocal k
+        k += 1
+        m = ingest.add_message(conn, source="wa", text=f"{text} 8918{k:07d}", chat_id="c", msg_id=f"m{k}", ts=now)
+        return ingest.process_message(conn, m, use_llm=False)["results"][0]["listing_id"]
+
+    for i in range(16):   # студии в ЖК Мозаика дорогие за метр
+        put(f"Студия {25 + i % 3} м², {2 + i % 9}/16 эт., ЖК Мозаика, ул. Тургенева {i + 1}. {5 + i / 100:.2f} млн.")
+    for i in range(16):   # 2-к в том же районе (Кожзавод), но без ЖК
+        put(f"2-к квартира {60 + i % 3} м², {2 + i % 9}/16 эт., район Кожзавод, ул. Коммунаров {i + 1}. {7 + i / 100:.2f} млн.")
+    two = put("2-к квартира 60 м², 5/16 эт., ЖК Мозаика, ул. Тургенева 50. 6 млн.")   # 100 тыс./м²
+    hooks._market["t"] = 0
+    row = dict(conn.execute("SELECT * FROM listings WHERE id = ?", (two,)).fetchone())
+    mk = hooks.market_for(conn, row, hooks.HOT_MIN_N)
+    # раньше двушку сравнивали со студиями ЖК (≈ 200 тыс./м²) — «на 50 % дешевле»; теперь — с 2-к района (≈ 116 тыс./м²)
+    assert mk["level"] == "d" and mk["rooms"] == "2-к" and mk["base"].startswith("2-к в районе") and -20 < mk["diff"] < -5
+    assert hooks.room_group({"room_kind": "euro", "rooms": 2}) == 1 and hooks.room_group({"room_kind": "studio", "rooms": 0}) == "s"

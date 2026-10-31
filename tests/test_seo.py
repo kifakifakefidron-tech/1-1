@@ -82,3 +82,17 @@ def test_live_counters(c):
     client.post("/api/ping", json={"path": "/", "load": 1}, headers={"user-agent": "Mozilla/5.0"})
     server._live_mem.update(t=0.0, v=None)
     assert conn.execute("SELECT COUNT(*) FROM live_buckets").fetchone()[0] == 1
+
+
+def test_hero_removed_counter(c):
+    """31.10 (Артём): на первом экране вместо «районов на карте» — «убрано неактуальных» (проданные, по сроку, удалённые
+    + уже стёртые из базы); склеенные повторы не считаются."""
+    client, lid = c
+    conn = db.get()
+    conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'sold_text' WHERE id = ?", (lid,))
+    db.set_state(conn, "deleted_listings", "4")
+    conn.commit()
+    server._stats_mem.update(t=0.0, v=None)
+    assert server._stats()["removed"] == 5
+    html = client.get("/").text
+    assert 'data-k="removed" data-ssr="1">5<' in html and "районов на карте" not in html

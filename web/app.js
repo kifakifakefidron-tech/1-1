@@ -521,9 +521,8 @@
     const parts = [];
     if (o.market_diff != null) {
       const pos = Math.max(4, Math.min(96, 50 + o.market_diff));   // −45 % → 5 % шкалы, средняя — посередине
-      const by = /^ЖК/.test(o.market_base || "") ? "по ЖК" : "по району";
-      parts.push(`<div class="hot-mkt" title="${esc(`${o.market_base ? `Средняя цена за м² — ${o.market_base}` : ""}${o.market_n ? `, сравнили с ${o.market_n} похожими объектами` : ""}`)}">
-        <div class="hot-mkt-t"><span><b>на ${Math.abs(o.market_diff)} % дешевле</b> средней ${by}</span>
+      parts.push(`<div class="hot-mkt" title="${esc(`На ${Math.abs(o.market_diff)} % дешевле средней цены за м²${o.market_median ? ` (${num(o.market_median)} ₽)` : ""}${o.market_base ? ` — ${o.market_base}` : ""}${o.market_n ? `, по ${o.market_n} похожим` : ""}`)}">
+        <div class="hot-mkt-t"><span><b>−${Math.abs(o.market_diff)} %</b> к похожим</span>
           ${o.market_price ? `<span>${esc(fmtShortPrice(o.market_price, o.deal))}</span>` : ""}</div>
         <div class="hot-mkt-bar"><s></s><i style="left:${pos}%"></i></div></div>`);
     }
@@ -531,6 +530,26 @@
       parts.push(`<p class="hot-why">Цена ↓ ${esc(fmtShortPrice(o.prev_price - o.price, o.deal))} за неделю</p>`);
     }
     return parts.join("");
+  }
+
+  // 31.10 (Артём): в окне объекта — почему он в «Горячих предложениях», с числами
+  function hotWhyHTML(o) {
+    if (!o.hot) return "";
+    const dt = (ts) => new Date(ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+    if (o.hot === "drop") {
+      const pct = Math.round((1 - o.price / o.prev_price) * 100);
+      return `<div class="dv-hot drop"><p class="dv-hot-h">${ic("arrow-down")}Снижение цены</p>
+        <p>Цену снизили на <b>${pct} %</b>${o.price_changed_at ? ` ${esc(dt(o.price_changed_at))}` : ""}: было <s>${esc(fmtPrice(o.prev_price, o.deal))}</s>,
+          стало <b>${esc(fmtPrice(o.price, o.deal))}</b>.</p>
+        <small>В «Горячие предложения» попадают объекты, у которых цену снизили на 10 % и больше за последнюю неделю.</small></div>`;
+    }
+    const m = o.market;
+    if (!m) return "";
+    return `<div class="dv-hot"><p class="dv-hot-h">${FLAME}Почему горячее</p>
+      <p>Средняя цена за м² — <b>${esc(num(m.median))} ₽</b> по ${m.n} ${plural(m.n, "похожему объекту", "похожим объектам", "похожим объектам")}
+        (${esc(m.base)}). У этого — <b>${esc(num(o.price_m2))} ₽</b>, на <b>${-m.diff} %</b> дешевле.</p>
+      <small>Сравниваем с похожими: те же комнаты${m.repair ? " и тот же ремонт" : ""}, сначала в ЖК, если там мало объектов — в районе.
+        Средняя — по ценам объявлений на 1+1, не по сделкам; дешевле на 45 % и больше не берём — это скорее ошибка в цене.</small></div>`;
   }
 
   function itemHTML(o) {
@@ -546,7 +565,9 @@
       : `<div class="item-photo none" aria-hidden="true">${LOGO}<span>Фото у агента</span></div>`;
     const fav = me() && me().favorites.includes(o.id);
     const addr = address(o);
-    const hotRib = o.hot ? `<span class="hot-ribbon" aria-label="Горячее предложение">${FLAME}Горячее</span>` : "";
+    // 31.10 (Артём): цену снизили — «Снижение» (стрелка вниз), заметно дешевле похожих — «Горячее» (огонёк)
+    const hotRib = o.hot === "drop" ? `<span class="hot-ribbon drop" aria-label="Цена снижена">${ic("arrow-down")}Снижение</span>`
+      : o.hot ? `<span class="hot-ribbon" aria-label="Горячее предложение">${FLAME}Горячее</span>` : "";
     return `<li class="item has-photo${hit ? " hit" : ""}${o.hot ? " hot" : ""}" tabindex="0" data-id="${o.id}">
       ${photo.replace('<div class="item-photo', `<div class="item-photo${o.hot ? " has-rib" : ""}`).replace(/(<div class="item-photo[^>]*>)/, `$1${hotRib}`)}
       <button type="button" class="fav-btn${fav ? " on" : ""}" data-fav="${o.id}" aria-label="${fav ? "Убрать из избранного" : "В избранное"}">${HEART}</button>
@@ -1121,6 +1142,7 @@
             в сортировках по цене и фильтрах этот объект не участвует.</span></p>` : ""}
         </div>
         ${tiles ? `<div class="dv-tiles">${tiles}</div>` : ""}
+        ${hotWhyHTML(o)}
         <section class="dv-sec"><p class="dv-sec-h">Описание</p>
           ${o.description ? `<div class="dv-desc"><p>${esc(o.description)}</p></div>`
             : `<p class="dv-desc-none">Описание — у агента: в объявлении только параметры и цена.</p>`}</section>
