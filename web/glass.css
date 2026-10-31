@@ -1529,19 +1529,24 @@ summary { transition: color .2s var(--m-out); }
 .hero-live .live-sub em { font-style: normal; font-weight: 700; color: var(--ink); }
 /* 31.10 «пульс сайта» (Артём: «не точку, а что-то поинтереснее»): 12 столбиков — посетители по 5 минут за час, шампань;
    последний (сейчас) — мятный, светится и «бьётся»; по столбикам раз в несколько секунд пробегает блик */
-.live-pulse { position: relative; display: inline-flex; align-items: flex-end; gap: 3px; height: 28px; padding-bottom: 2px; overflow: hidden; }
+.live-pulse { position: relative; display: inline-flex; align-items: flex-end; gap: 3px; height: 28px; padding-bottom: 2px;
+  /* 01.11 (Артём: «аккуратнее, по колоночкам»): под каждым столбиком — тонкая пустая дорожка на всю высоту (шаг 4 + 3 px) */
+  background: repeating-linear-gradient(90deg, rgba(227, 203, 143, .08) 0 4px, transparent 4px 7px) content-box; }
 .live-pulse:empty { display: none; }
-.live-pulse i { display: block; width: 4px; height: calc(4px + var(--h, 0) * 22px); border-radius: 2px; transform-origin: bottom;
-  background: linear-gradient(to top, rgba(227, 203, 143, .28), rgba(227, 203, 143, .8));
+.live-pulse i { position: relative; overflow: hidden; display: block; width: 4px; height: calc(4px + var(--h, 0) * 22px);
+  border-radius: 2px 2px 1px 1px; transform-origin: bottom;
+  background: linear-gradient(to top, rgba(227, 203, 143, .3), rgba(227, 203, 143, .85));
   animation: pulseIn .7s var(--ease) both; animation-delay: calc(var(--i, 0) * 45ms); }
-.live-pulse i:last-child { width: 5px; background: linear-gradient(to top, #2f9e6c, #a8f3c9); box-shadow: 0 0 10px rgba(127, 224, 168, .65);
+.live-pulse i:last-child { background: linear-gradient(to top, #2f9e6c, #a8f3c9); box-shadow: 0 0 10px rgba(127, 224, 168, .6);
   animation: pulseIn .7s var(--ease) both, pulseBeat 1.8s ease-in-out .9s infinite; animation-delay: calc(var(--i, 0) * 45ms), .9s; }
-.live-pulse::after { content: ""; position: absolute; inset: 0 auto 0 -40%; width: 40%; pointer-events: none;
-  background: linear-gradient(90deg, transparent, rgba(255, 248, 225, .45), transparent); mix-blend-mode: overlay;
-  animation: pulseGlint 5.5s ease-in-out 1.5s infinite; }
+/* блик — внутри каждого столбика: свет поднимается снизу вверх, волной слева направо, раз в 6 секунд */
+.live-pulse i::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(to top, transparent 0, rgba(255, 253, 242, .95) 42%, #fff 50%, rgba(255, 253, 242, .95) 58%, transparent 100%);
+  mix-blend-mode: screen; opacity: 0; transform: translateY(100%);
+  animation: barGlint 6s cubic-bezier(.45, 0, .25, 1) infinite; animation-delay: calc(1.4s + var(--i, 0) * 85ms); }
 @keyframes pulseIn { from { transform: scaleY(0); opacity: 0; } }
 @keyframes pulseBeat { 0%, 100% { transform: scaleY(1); } 18% { transform: scaleY(.55); } 36% { transform: scaleY(1.08); } 52% { transform: scaleY(.9); } }
-@keyframes pulseGlint { 0% { transform: translateX(0); } 30%, 100% { transform: translateX(360%); } }
+@keyframes barGlint { 0% { opacity: 0; transform: translateY(100%); } 3% { opacity: 1; } 11% { opacity: .9; } 14%, 100% { opacity: 0; transform: translateY(-100%); } }
 .live-pop { position: absolute; left: 22px; bottom: calc(100% + 12px); z-index: 5; width: 270px; display: grid; gap: 2px; padding: 12px 14px;
   border-radius: 16px; background: rgba(3, 52, 51, .97); border: 1px solid var(--glass-line); box-shadow: 0 14px 30px rgba(0, 0, 0, .35);
   font-size: 13px; color: var(--ink-2); opacity: 0; visibility: hidden; transform: translateY(6px);
@@ -1563,7 +1568,7 @@ summary { transition: color .2s var(--m-out); }
     background: rgba(0, 0, 0, .18); }
   .hero-live.open .live-pop { display: grid; }
 }
-@media (prefers-reduced-motion: reduce) { .live-pulse i, .live-pulse i:last-child, .live-pulse::after { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .live-pulse i, .live-pulse i:last-child, .live-pulse i::after { animation: none; } }
 
 /* 31.10 (Артём: «при открытой карточке и фото задний фон не должен листаться»): пока открыто модальное окно, просмотр фото или
    объект поверх страницы — страница стоит (место полосы прокрутки сохраняется — ничего не прыгает), прокрутка не «перетекает» */

@@ -1106,6 +1106,10 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   (_stats requests = активные buyer_requests, золотая, ссылка a.hs-req → /requests, нуль скрыт), кнопка #heroReq «Запросы
   покупателей» рядом с «Мой кабинет», пункт a.seg.seg-req «Запросы» справа от «Продажа / Аренда» в строке поиска (ссылка, не
   переключатель; на телефоне .search .deal скрыт — там «Запросы» в нижней панели). _hero_ssr меняет цифру и в <div>, и в <a>.
+- 01.11 (ветка pulse-shine, Артём: «блик пульса стильнее и аккуратнее по колоночкам»): общий блик-полоса поверх ряда
+  (.live-pulse::after, pulseGlint) убран; блик — внутри каждого столбика (.live-pulse i::after, barGlint 6 с, screen):
+  свет поднимается снизу вверх, волной слева направо (задержка 85 мс на столбик); под столбиками — пустые дорожки на всю
+  высоту (repeating-linear-gradient 4 + 3 px, content-box); все столбики 4 px, верх скруглён.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
