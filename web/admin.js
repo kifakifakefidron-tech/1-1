@@ -725,7 +725,8 @@
     $("phoneDetail").innerHTML = `<h3>${esc(d.phone)}</h3>
       <p class="note">Объектов: ${d.listings.length} · запросов: ${d.requests.length} · сообщений: ${d.messages}</p>
       <div class="ph-acts">${d.banned ? `<button data-ph-unban="${esc(d.phone)}">Вернуть номер</button>`
-        : `<button class="danger" data-ph-ban="${esc(d.phone)}">Удалить всё от номера</button>`}
+        : `<button class="danger" data-ph-wipe="${esc(d.phone)}">Удалить объекты</button>
+           <button class="danger" data-ph-ban="${esc(d.phone)}">Удалить и не принимать новые</button>`}
         <button type="button" class="chip" data-max="${esc(d.phone)}">MAX</button></div>
       <ul class="ph-list">${d.listings.map((o) => `<li class="${o.is_active ? "" : "off"}">
         <div><a href="/?open=${o.id}" target="_blank">${esc(o.title)}</a><span class="note">${esc(phMoney(o.price, o.deal))} ·
@@ -735,14 +736,29 @@
     $("phoneDetail").dataset.phone = d.phone;
   }
   $("phoneSearch").addEventListener("submit", (e) => { e.preventDefault(); phones(); });
+  // 01.11: «Удалить всё от номера» — номер вписать целиком, два действия
+  $("phoneKill").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const phone = $("phoneKillQ").value.trim();
+    const ban = (e.submitter && e.submitter.dataset.kill) === "ban";
+    if (!phone || !confirm(ban ? `Удалить всё от номера ${phone} и не принимать новые объявления от него?`
+      : `Удалить с сайта все объекты от номера ${phone}? Новые объявления будут приниматься.`)) return;
+    try {
+      const r = await call("/api/admin/phones/ban", { phone, action: ban ? "ban" : "delete" });
+      alert(`Готово: ${r.phone} — объектов убрано: ${r.listings}${ban ? `, запросов: ${r.requests}, сообщений удалено: ${r.messages}` : ""}.`);
+      $("phoneKillQ").value = "";
+      phones(); phoneDetail(r.phone);
+    } catch (err) { fail(err); }
+  });
   document.addEventListener("click", async (e) => {
     const row = e.target.closest(".ph-row");
     if (row) { phoneDetail(row.dataset.phone); return; }
-    const b = e.target.closest("[data-ph-ban], [data-ph-unban], [data-ph-del], [data-ph-restore]");
+    const b = e.target.closest("[data-ph-ban], [data-ph-wipe], [data-ph-unban], [data-ph-del], [data-ph-restore]");
     if (!b) return;
     const cur = $("phoneDetail").dataset.phone;
     try {
-      if (b.dataset.phBan) { if (!confirm(`Удалить всё от номера ${b.dataset.phBan}?`)) return; await call("/api/admin/phones/ban", { phone: b.dataset.phBan }); }
+      if (b.dataset.phBan) { if (!confirm(`Удалить всё от номера ${b.dataset.phBan} и не принимать новые объявления от него?`)) return; await call("/api/admin/phones/ban", { phone: b.dataset.phBan }); }
+      else if (b.dataset.phWipe) { if (!confirm(`Удалить с сайта все объекты от номера ${b.dataset.phWipe}? Новые объявления будут приниматься.`)) return; await call("/api/admin/phones/ban", { phone: b.dataset.phWipe, action: "delete" }); }
       else if (b.dataset.phUnban) await call("/api/admin/phones/ban", { phone: b.dataset.phUnban, action: "unban" });
       else if (b.dataset.phDel) { if (!confirm("Удалить объект навсегда?")) return; await call(`/api/admin/listings/${b.dataset.phDel}/action`, { action: "delete" }); }
       else if (b.dataset.phRestore) await call(`/api/admin/listings/${b.dataset.phRestore}/action`, { action: "restore" });

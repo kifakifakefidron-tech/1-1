@@ -262,14 +262,29 @@ def repair_now(conn: sqlite3.Connection, listing_id: int, text: str) -> tuple[st
     return repair_by_phrases(text, repair_phrases(conn))
 
 
-def recheck_phrase(conn: sqlite3.Connection, key: str) -> int:
-    """Пересчитать объявления, где есть эти слова (после «выучить» / «забыть»)."""
+def _rows_repair(conn: sqlite3.Connection, rows) -> int:
+    """Пересчитать ремонт у объектов (id, search_text, repair, repair_doubt, admin_fields); пишем только изменившиеся.
+    Ручная правка админа (admin_fields.repair) — как есть. Число изменённых."""
     n = 0
-    for r in conn.execute("SELECT id, search_text, repair, repair_doubt FROM listings WHERE instr(search_text, ?) > 0", (key,)).fetchall():
-        _reindex(conn, r["id"], r["search_text"] or "")
-        new = conn.execute("SELECT repair, repair_doubt FROM listings WHERE id = ?", (r["id"],)).fetchone()
-        n += int((new["repair"], new["repair_doubt"]) != (r["repair"], r["repair_doubt"]))
-    conn.commit()
+    for r in rows:
+        if r["admin_fields"] and '"repair"' in r["admin_fields"]:
+            continue
+        rep, doubt = repair_now(conn, r["id"], r["search_text"] or "")
+        if (rep, doubt) != (r["repair"], r["repair_doubt"]):
+            conn.execute("UPDATE listings SET repair = ?, repair_doubt = ? WHERE id = ?", (rep, doubt, r["id"]))
+            n += 1
+    return n
+
+
+def recheck_phrase(conn: sqlite3.Connection, key: str) -> int:
+    """Пересчитать объявления, где есть эти слова (после «выучить» / «забыть»). 01.11: порциями по 300 с записью после
+    каждой — раньше всё шло одной записью, и при тысячах объявлений с «ремонт» база была занята надолго."""
+    rows = conn.execute("""SELECT id, search_text, repair, repair_doubt, admin_fields FROM listings
+                           WHERE instr(search_text, ?) > 0""", (key,)).fetchall()
+    n = 0
+    for i in range(0, len(rows), 300):
+        n += _rows_repair(conn, rows[i:i + 300])
+        conn.commit()
     return n
 
 
@@ -288,17 +303,28 @@ def _reindex(conn: sqlite3.Connection, listing_id: int, text: str) -> None:
 REPAIR_V = "6"   # 31.10: выученные слова — целым словом, общие («ремонт») выключены; пересчёт всех по текущим словам
 
 
-def backfill_repair(conn: sqlite3.Connection) -> int:
-    """Один раз после обновления правил (state repair_v): проставить состояние всем объектам (поправленные админом — как есть)."""
+def backfill_repair(conn: sqlite3.Connection, budget_s: float = 3.0) -> int:
+    """Один раз после обновления правил (state repair_v): проставить состояние всем объектам (поправленные админом — как есть).
+    01.11 («database is locked» после обновления): раньше — все объекты одной записью вместе с поиском (FTS), база была занята
+    десятки секунд. Теперь только ремонт, порциями по 300 с записью после каждой, не дольше budget_s за цикл worker;
+    где остановились — state repair_v_pos, следующий цикл продолжает."""
     from . import db
     if db.get_state(conn, "repair_v") == REPAIR_V:
         return 0
-    n = 0
-    for r in conn.execute("SELECT id, search_text FROM listings").fetchall():
-        _reindex(conn, r["id"], r["search_text"] or "")
-        n += 1
-    db.set_state(conn, "repair_v", REPAIR_V)
-    conn.commit()
+    pos = int(db.get_state(conn, "repair_v_pos") or 0)
+    t0, n = time.monotonic(), 0
+    while time.monotonic() - t0 < budget_s:
+        rows = conn.execute("""SELECT id, search_text, repair, repair_doubt, admin_fields FROM listings
+                               WHERE id > ? ORDER BY id LIMIT 300""", (pos,)).fetchall()
+        if not rows:
+            db.set_state(conn, "repair_v", REPAIR_V)
+            db.set_state(conn, "repair_v_pos", "0")
+            conn.commit()
+            break
+        n += _rows_repair(conn, rows)
+        pos = rows[-1]["id"]
+        db.set_state(conn, "repair_v_pos", str(pos))
+        conn.commit()
     return n
 
 
@@ -803,12 +829,23 @@ def ban_phone(conn: sqlite3.Connection, phone: str, block: bool = True) -> dict:
     if phone == rules.normalize_phone(config.FEED_PHONE or ""):
         return {"error": "Это номер партнёра (объекты СТРЕЛ из фида) — его нельзя удалить целиком."}
     now = int(time.time())
+    from . import db
+    db.flush(conn)   # 01.11 («database is locked» при удалении): закончить чужую незаписанную запись этого соединения
     if not block:
         listings = conn.execute("""UPDATE listings SET is_active = 0, hidden_reason = 'admin'
                                    WHERE EXISTS (SELECT 1 FROM json_each(listings.phones) j WHERE j.value = ?)
                                      AND source NOT IN ('own', 'feed')""", (phone,)).rowcount
         conn.commit()
         return {"ok": True, "phone": phone, "listings": listings, "requests": 0, "messages": 0, "blocked": False}
+    # 01.11: сообщения от номера ищем ДО записи — это перебор всех сообщений (десятки тысяч), и раньше он шёл внутри записи:
+    # база была занята, worker и сайт получали «database is locked», а то и само удаление
+    digits = phone[-10:]
+    gone = []
+    for m in conn.execute("SELECT id, text, sender FROM messages"):
+        snd = rules.normalize_phone(str(m["sender"] or "").split("@")[0]) if m["sender"] else None
+        if snd == phone or (digits in "".join(ch for ch in (m["text"] or "") if ch.isdigit())
+                            and phone in rules.extract_phones(m["text"] or "")):
+            gone.append(m["id"])
     conn.execute("INSERT OR IGNORE INTO banned (kind, key, title, ts) VALUES ('phone', ?, ?, ?)", (phone, phone, now))
     listings = conn.execute("""UPDATE listings SET is_active = 0, hidden_reason = 'phone'
                                WHERE EXISTS (SELECT 1 FROM json_each(listings.phones) j WHERE j.value = ?)
@@ -816,13 +853,6 @@ def ban_phone(conn: sqlite3.Connection, phone: str, block: bool = True) -> dict:
     requests = conn.execute("""UPDATE buyer_requests SET is_active = 0
                                WHERE EXISTS (SELECT 1 FROM json_each(buyer_requests.phones) j WHERE j.value = ?)""",
                             (phone,)).rowcount
-    digits = phone[-10:]
-    gone = []
-    for m in conn.execute("SELECT id, text, sender FROM messages WHERE status != 'new' OR status = 'new'"):
-        snd = rules.normalize_phone(str(m["sender"] or "").split("@")[0]) if m["sender"] else None
-        if snd == phone or (digits in "".join(ch for ch in (m["text"] or "") if ch.isdigit())
-                            and phone in rules.extract_phones(m["text"] or "")):
-            gone.append(m["id"])
     for i in range(0, len(gone), 500):
         part = gone[i:i + 500]
         conn.execute(f"DELETE FROM messages WHERE id IN ({','.join('?' * len(part))})", part)

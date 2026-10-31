@@ -304,3 +304,33 @@ def test_repair_phrases_whole_words_and_generic_off():
     assert w["fixed"] and w["result"] == "с ремонтом" and rep(a) == "yes"
     assert any(s["name"] == "Слишком общие слова" for s in w["steps"])
     assert ingest.repair_by_phrases("свежий евроремонта нет", {"ремонт": "no"})[0] != "no"   # «ремонт» не находится внутри слова
+
+
+def test_backfill_repair_in_portions():
+    """01.11 («database is locked»): пересчёт ремонта — порциями и с продолжением, база не занята надолго."""
+    from app import db, ingest
+    conn = db.connect(":memory:")
+    for i in range(5):
+        m = ingest.add_message(conn, source="wa", text=f"1-к 40 м², 3/9 эт., ФМР, ул. Тургенева {i + 1}. Без ремонта. 4 млн. 8918000{i:04d}",
+                               chat_id="c", msg_id=f"b{i}", ts=int(time.time()))
+        ingest.process_message(conn, m, use_llm=False)
+    conn.execute("UPDATE listings SET repair = NULL")
+    db.set_state(conn, "repair_v", "old")
+    conn.commit()
+    assert ingest.backfill_repair(conn, budget_s=0) == 0 and db.get_state(conn, "repair_v") == "old"   # нет времени — ждёт
+    assert ingest.backfill_repair(conn) == 5 and db.get_state(conn, "repair_v") == ingest.REPAIR_V
+    assert conn.execute("SELECT COUNT(*) FROM listings WHERE repair = 'no'").fetchone()[0] == 5
+
+
+def test_ban_phone_both_modes():
+    """01.11: «Удалить объекты» (новые принимаются) и «Удалить и не принимать новые»."""
+    from app import db, ingest
+    conn = db.connect(":memory:")
+    m = ingest.add_message(conn, source="wa", text="1-к 40 м², 3/9 эт., ФМР, ул. Тургенева 3. 4 млн. 89180001234",
+                           chat_id="c", msg_id="ban1", ts=int(time.time()))
+    lid = ingest.process_message(conn, m, use_llm=False)["results"][0]["listing_id"]
+    r = ingest.ban_phone(conn, "8 918 000-12-34", block=False)
+    assert r["listings"] == 1 and not r["blocked"]
+    assert conn.execute("SELECT is_active, hidden_reason FROM listings WHERE id = ?", (lid,)).fetchone()[:] == (0, "admin")
+    r = ingest.ban_phone(conn, "+79180001234", block=True)
+    assert r["blocked"] and r["messages"] == 1 and conn.execute("SELECT COUNT(*) FROM banned WHERE kind = 'phone'").fetchone()[0] == 1
