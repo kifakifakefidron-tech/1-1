@@ -96,3 +96,22 @@ def test_hero_removed_counter(c):
     assert server._stats()["removed"] == 5
     html = client.get("/").text
     assert 'data-k="removed" data-ssr="1">5<' in html and "районов на карте" not in html
+
+
+def test_hero_requests_counter(c):
+    """01.11 (Артём): запросы покупателей на первом экране — цифра-ссылка, кнопка и пункт рядом с «Продажа / Аренда»."""
+    client, _ = c
+    conn = db.get()
+    conn.execute("DELETE FROM buyer_requests")
+    conn.commit()
+    server._stats_mem.update(t=0.0, v=None)
+    html = client.get("/").text
+    assert '<a class="hs-req" href="/requests" title="Что ищут покупатели прямо сейчас" hidden><b data-k="requests">0<' in html
+    assert 'id="heroReq"' in html and 'class="seg seg-req" href="/requests"' in html
+    from app import buyers, ingest
+    m = ingest.add_message(conn, source="wa", text="Ищу 2к в ФМР до 7 млн, ипотека одобрена. 89180002233",
+                           chat_id="c", msg_id="rq1", ts=int(__import__("time").time()))
+    ingest.process_message(conn, m, use_llm=False)
+    server._stats_mem.update(t=0.0, v=None)
+    assert server._stats()["requests"] == 1
+    assert 'data-k="requests" data-ssr="1">1<' in client.get("/").text

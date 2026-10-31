@@ -248,11 +248,15 @@ def _hero_ssr(request: Request, html_text: str) -> str:
     страница на телефоне «прыгала» (CLS 0,93)."""
     # 26.10 (Артём): первый экран с логотипом и числом объектов — ВСЕГДА (и вошедшим), без крестика; кука hh больше не действует
     s = _stats_fast()
-    for k in ("sale", "rent", "new_24h", "removed"):
+    for k in ("sale", "rent", "new_24h", "requests", "removed"):
         v = s.get(k)
-        old = f'<div><b data-k="{k}">—</b>'
-        html_text = html_text.replace(old, f'<div><b data-k="{k}" data-ssr="1">{v:,}</b>'.replace(",", " ") if v
-                                      else f'<div hidden><b data-k="{k}">0</b>', 1)
+        # 01.11: цифра бывает и ссылкой (<a class="hs-req" …>) — меняем только саму цифру, нули прячем вместе с подписью
+        m = re.search(rf'<(div|a)([^>]*)><b data-k="{k}">—</b>', html_text)
+        if not m:
+            continue
+        new = (f'<{m[1]}{m[2]}><b data-k="{k}" data-ssr="1">' + f"{v:,}".replace(",", " ") + "</b>" if v
+               else f'<{m[1]}{m[2]} hidden><b data-k="{k}">0</b>')
+        html_text = html_text[:m.start()] + new + html_text[m.end():]
     lv = _live_fast()   # 30.10: «онлайн сейчас» сразу в HTML — ряд цифр не прыгает
     if lv:
         fmt = lambda x: f"{x:,}".replace(",", " ")  # noqa: E731
@@ -772,6 +776,7 @@ def _stats() -> dict:
         "messages_24h": one("SELECT COUNT(*) FROM messages WHERE ts >= ?", day),
         "duplicates_merged": one("SELECT COUNT(*) FROM listing_events WHERE match != 'new'"),
         "districts": one("SELECT COUNT(DISTINCT district) FROM listings WHERE is_active=1 AND district IS NOT NULL"),
+        "requests": one("SELECT COUNT(*) FROM buyer_requests WHERE is_active = 1 AND removed = 0"),   # 01.11: запросы покупателей
         # 31.10 (Артём): на первом экране вместо «районов на карте» — сколько неактуальных объектов убрали с сайта:
         # проданные, под задатком, не присылали 15 дней, удалённые админом + уже стёртые из базы (state deleted_listings).
         # Склеенные повторы и чужие чаты сюда не входят — это не «неактуальные» объекты.

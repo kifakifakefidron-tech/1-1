@@ -1102,6 +1102,10 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   отложенные сообщения не старше STALE_DAYS — снова status 'new' (worker разберёт, повтор обновит объект), запросы ≤ 10 дней;
   ответ {active, archive, messages, requests}. Объекты, удалённые по одному (строка banned с listing_id), не возвращаются.
   Сообщения, стёртые до 01.11, вернуть нельзя — только объекты. loaders вкладки должны возвращать Promise (show → .catch).
+- 01.11 (ветка hero-requests, Артём: «запросы на первый экран, красиво и ничему не мешало»): цифра «запросов покупателей»
+  (_stats requests = активные buyer_requests, золотая, ссылка a.hs-req → /requests, нуль скрыт), кнопка #heroReq «Запросы
+  покупателей» рядом с «Мой кабинет», пункт a.seg.seg-req «Запросы» справа от «Продажа / Аренда» в строке поиска (ссылка, не
+  переключатель; на телефоне .search .deal скрыт — там «Запросы» в нижней панели). _hero_ssr меняет цифру и в <div>, и в <a>.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

@@ -29,7 +29,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=117">
+<link rel="stylesheet" href="/static/glass.css?v=118">
 </head>
 <body>
 <svg class="flame-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs><linearGradient id="flameFire" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#d9541e"/><stop offset="1" stop-color="#f6b36b"/></linearGradient></defs></svg>
@@ -74,6 +74,8 @@
       <div><b data-k="sale">—</b><span>в продаже</span></div>
       <div><b data-k="rent">—</b><span>в аренде</span></div>
       <div><b data-k="new_24h">—</b><span>новых за сутки</span></div>
+      <!-- 01.11 (Артём): запросы покупателей на первом экране — цифра ведёт в ленту -->
+      <a class="hs-req" href="/requests" title="Что ищут покупатели прямо сейчас"><b data-k="requests">—</b><span>запросов покупателей</span></a>
       <div><b data-k="removed">—</b><span>убрано неактуальных</span></div>
       <!-- 30.10 (Артём: варианты 2 + 3): кто на сайте — настоящие цифры; наведение / нажатие — подробнее -->
       <button type="button" class="hero-live" id="heroLive" aria-expanded="false" hidden>
@@ -92,6 +94,7 @@
       <button type="button" class="pill" id="heroMap" data-tab="map">Открыть карту</button>
       <button type="button" class="pill light" id="heroLogin" hidden>Войти — 14 дней бесплатно</button>
       <a class="pill light" href="/cabinet" id="heroCabinet" hidden>Мой кабинет</a>
+      <a class="pill light" href="/requests" id="heroReq">Запросы покупателей</a>
     </div>
   </section>
   <form class="search" id="searchForm" role="search">
@@ -109,6 +112,7 @@
     <div class="deal" role="group" aria-label="Тип сделки">
       <button type="button" data-deal="sale" class="seg on">Продажа</button>
       <button type="button" data-deal="rent" class="seg">Аренда</button>
+      <a class="seg seg-req" href="/requests" title="Запросы покупателей — что ищут прямо сейчас">Запросы</a>
     </div>
   </form>
 
