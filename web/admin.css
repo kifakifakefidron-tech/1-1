@@ -354,3 +354,5 @@ tr.peek td { background: rgba(0, 0, 0, .12); }
 .ph-kill { margin-top: 10px; flex-wrap: wrap; }
 .ph-kill .pill.danger { color: var(--bad); border-color: rgba(226, 165, 150, .45); background: transparent; }
 .ph-kill-n { margin: 6px 0 14px; max-width: 760px; }
+.ph-del-h { margin: 22px 0 6px; font-size: 18px; font-weight: 600; }
+#phonesDeleted .note { padding: 6px 0; }

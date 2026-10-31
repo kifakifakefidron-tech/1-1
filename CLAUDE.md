@@ -1094,6 +1094,14 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   ingest.ban_phone: db.flush, перебор всех сообщений от номера — ДО записи (раньше шёл внутри записи — база была занята).
   Админка «Номера»: сверху форма «Удалить всё от номера» — «Удалить объекты» (action delete: hidden_reason 'admin', новые принимаются)
   и «Удалить и не принимать новые» (ban: banned + сообщения); те же две кнопки в карточке номера.
+- 01.11 (ветка phone-restore, Артём: «видно, кто удалён, и вернуть его сообщения, если ещё актуальны»): «Удалить и не принимать»
+  (ban_phone block=True) больше НЕ стирает сообщения — откладывает (status 'skipped', kind 'banned'; старые уберёт KEEP_DAYS);
+  «Удалить объекты» (block=False) пишет banned kind 'phone_wipe'. ingest.deleted_phones — список (как удалён, объектов, в сроке,
+  сообщений/свежих), GET /api/admin/phones?deleted=1; админка «Номера» → блок «Удалённые номера» над «Все номера» с «Вернуть».
+  ingest.unban_phone: объекты в сроке STALE_DAYS (MAX(last_seen, added_at)) — на сайт, старше — в архив (hidden_reason NULL),
+  отложенные сообщения не старше STALE_DAYS — снова status 'new' (worker разберёт, повтор обновит объект), запросы ≤ 10 дней;
+  ответ {active, archive, messages, requests}. Объекты, удалённые по одному (строка banned с listing_id), не возвращаются.
+  Сообщения, стёртые до 01.11, вернуть нельзя — только объекты. loaders вкладки должны возвращать Promise (show → .catch).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

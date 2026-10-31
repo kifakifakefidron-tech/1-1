@@ -334,3 +334,30 @@ def test_ban_phone_both_modes():
     assert conn.execute("SELECT is_active, hidden_reason FROM listings WHERE id = ?", (lid,)).fetchone()[:] == (0, "admin")
     r = ingest.ban_phone(conn, "+79180001234", block=True)
     assert r["blocked"] and r["messages"] == 1 and conn.execute("SELECT COUNT(*) FROM banned WHERE kind = 'phone'").fetchone()[0] == 1
+
+
+def test_deleted_phones_and_restore():
+    """01.11: «Удалённые номера» и «Вернуть»: свежее — на сайт, старое — в архив, отложенные свежие сообщения — в разбор."""
+    from app import db, ingest
+    conn = db.connect(":memory:")
+    now = int(time.time())
+    ids = []
+    for i, age in enumerate((1, 30)):
+        m = ingest.add_message(conn, source="wa", text=f"1-к 40 м², {i + 3}/9 эт., ФМР, ул. Тургенева {i + 3}. 4 млн. 89180001234",
+                               chat_id="c", msg_id=f"r{i}", ts=now - age * 86400)
+        ids.append(ingest.process_message(conn, m, use_llm=False)["results"][0]["listing_id"])
+    conn.execute("UPDATE listings SET last_seen = ?, added_at = ? WHERE id = ?", (now - 30 * 86400, now - 30 * 86400, ids[1]))
+    conn.commit()
+    r = ingest.ban_phone(conn, "+79180001234", block=True)
+    assert r["messages"] == 2 and conn.execute("SELECT COUNT(*) FROM messages WHERE kind = 'banned'").fetchone()[0] == 2
+    d = ingest.deleted_phones(conn)
+    assert d[0]["blocked"] and d[0]["listings"] == 2 and d[0]["fresh"] == 1 and d[0]["messages_fresh"] == 1
+    r = ingest.unban_phone(conn, "+79180001234")
+    assert (r["active"], r["archive"], r["messages"]) == (1, 1, 1)
+    assert conn.execute("SELECT is_active, hidden_reason FROM listings WHERE id = ?", (ids[0],)).fetchone()[:] == (1, None)
+    assert conn.execute("SELECT is_active, hidden_reason FROM listings WHERE id = ?", (ids[1],)).fetchone()[:] == (0, None)
+    assert conn.execute("SELECT COUNT(*) FROM messages WHERE status = 'new'").fetchone()[0] == 1 and not ingest.deleted_phones(conn)
+    # «Удалить объекты» тоже в списке и возвращается
+    ingest.ban_phone(conn, "+79180001234", block=False)
+    assert ingest.deleted_phones(conn)[0]["blocked"] is False
+    assert ingest.unban_phone(conn, "+79180001234")["active"] == 1 and not ingest.deleted_phones(conn)

@@ -16,7 +16,7 @@
 <link rel="stylesheet" href="/static/vendor/fonts/fonts.css?v=1">
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
-<link rel="stylesheet" href="/static/admin.css?v=27">
+<link rel="stylesheet" href="/static/admin.css?v=28">
 <link rel="stylesheet" href="/static/theme.css?v=16">
 <link rel="stylesheet" href="/static/glass.css?v=117">
 </head>
@@ -142,8 +142,14 @@
         <button class="pill danger" data-kill="delete">Удалить объекты</button>
         <button class="pill danger" data-kill="ban">Удалить и не принимать новые</button></form>
       <p class="note ph-kill-n">«Удалить объекты» — уберёт с сайта всё, что уже собрано от номера; новые объявления этого номера будут
-        приниматься. «Удалить и не принимать новые» — ещё и сотрёт его сообщения, и новые объявления с ним больше не появятся
-        (вернуть можно в «Удалённые»). Объекты партнёра и своих агентов не трогаются.</p>
+        приниматься. «Удалить и не принимать новые» — ещё и отложит его сообщения, и новые объявления с ним больше не появятся
+        (вернуть — ниже, в «Удалённые номера»). Объекты партнёра и своих агентов не трогаются.</p>
+      <!-- 01.11 (Артём): кто удалён — и вернуть -->
+      <h3 class="adm-h ph-del-h">Удалённые номера</h3>
+      <p class="note" id="phoneDelNote">«Вернуть» — объекты, которые ещё в сроке, снова появятся на сайте, остальные уйдут в архив;
+        сообщения не старше срока сервис разберёт заново. Новые объявления от номера снова принимаются.</p>
+      <div class="adm-table-wrap"><table class="adm-table" id="phonesDeleted"></table></div>
+      <h3 class="adm-h ph-del-h">Все номера</h3>
       <div class="ph-wrap"><div class="adm-table-wrap"><table class="adm-table" id="phonesTable"></table></div>
         <div class="ph-detail" id="phoneDetail"><p class="note">Выберите номер слева.</p></div></div>
     </section>
@@ -166,6 +172,6 @@
 <script src="/static/max.js?v=2"></script>
 <script src="/static/rail.js?v=37"></script>
 <script src="/static/combo.js?v=3"></script>
-<script src="/static/admin.js?v=52"></script>
+<script src="/static/admin.js?v=54"></script>
 </body>
 </html>

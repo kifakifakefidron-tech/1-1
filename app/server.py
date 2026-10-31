@@ -2582,8 +2582,7 @@ def api_admin_phone_ban(request: Request, body: dict | None = None):
     body = body or {}
     conn = db.get()
     if body.get("action") == "unban":
-        ingest.unban_phone(conn, str(body.get("phone") or ""))
-        res = {"ok": True}
+        res = ingest.unban_phone(conn, str(body.get("phone") or ""))
     else:
         res = ingest.ban_phone(conn, str(body.get("phone") or ""), block=body.get("action") != "delete")
         if "error" in res:
@@ -2600,6 +2599,8 @@ def api_admin_phones(request: Request, body: dict | None = None):
     conn = db.get()
     q = request.query_params
     banned = ingest.banned_phones(conn)
+    if q.get("deleted"):   # 01.11: «Удалённые номера» — кто удалён и что можно вернуть
+        return JSONResponse({"items": ingest.deleted_phones(conn), "stale_days": config.STALE_DAYS})
     if q.get("phone"):
         from . import rules as _rules
         phone = _rules.normalize_phone(q["phone"]) or q["phone"]
@@ -2616,7 +2617,8 @@ def api_admin_phones(request: Request, body: dict | None = None):
         reqs = conn.execute("""SELECT b.id, b.text, b.last_seen, b.is_active FROM buyer_requests b, json_each(b.phones) j
                                WHERE j.value = ? ORDER BY b.last_seen DESC LIMIT 50""", (phone,)).fetchall()
         msgs = conn.execute("SELECT COUNT(*) FROM messages WHERE sender LIKE ?", (f"%{phone[-10:]}%",)).fetchone()[0]
-        return JSONResponse({"phone": phone, "banned": phone in banned, "listings": items,
+        wiped = bool(conn.execute("SELECT 1 FROM banned WHERE kind = 'phone_wipe' AND key = ?", (phone,)).fetchone())
+        return JSONResponse({"phone": phone, "banned": phone in banned, "wiped": wiped, "listings": items,
                              "requests": [dict(r) for r in reqs], "messages": msgs})
     digits = re.sub(r"\D", "", q.get("q", ""))[-10:]
     rows = conn.execute(f"""SELECT j.value AS phone, COUNT(*) AS n, SUM(l.is_active) AS active, MAX(l.last_seen) AS last_seen

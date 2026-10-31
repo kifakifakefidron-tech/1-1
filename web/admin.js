@@ -724,7 +724,7 @@
     const d = await call(`/api/admin/phones?phone=${encodeURIComponent(phone)}`);
     $("phoneDetail").innerHTML = `<h3>${esc(d.phone)}</h3>
       <p class="note">Объектов: ${d.listings.length} · запросов: ${d.requests.length} · сообщений: ${d.messages}</p>
-      <div class="ph-acts">${d.banned ? `<button data-ph-unban="${esc(d.phone)}">Вернуть номер</button>`
+      <div class="ph-acts">${d.banned || d.wiped ? `<button data-ph-unban="${esc(d.phone)}">Вернуть номер</button>`
         : `<button class="danger" data-ph-wipe="${esc(d.phone)}">Удалить объекты</button>
            <button class="danger" data-ph-ban="${esc(d.phone)}">Удалить и не принимать новые</button>`}
         <button type="button" class="chip" data-max="${esc(d.phone)}">MAX</button></div>
@@ -736,6 +736,26 @@
     $("phoneDetail").dataset.phone = d.phone;
   }
   $("phoneSearch").addEventListener("submit", (e) => { e.preventDefault(); phones(); });
+  // 01.11: «Удалённые номера» — кто удалён, сколько ещё в сроке, «Вернуть»
+  async function phonesDeleted() {
+    const t = $("phonesDeleted");
+    let d;
+    try { d = await call("/api/admin/phones?deleted=1"); } catch (err) { t.innerHTML = `<tr><td>${esc(err.message)}</td></tr>`; return; }
+    const days = d.stale_days || 15;
+    t.innerHTML = d.items.length ? `<tr><th>Номер</th><th>Как удалён</th><th>Когда</th><th>Объектов</th>
+        <th>Ещё в сроке (${days} дн.)</th><th>Сообщений</th><th></th></tr>` + d.items.map((r) => `<tr>
+        <td><a href="#" data-ph-open="${esc(r.phone)}">${esc(r.phone)}</a></td>
+        <td>${r.blocked ? "удалён и не принимаем" : "удалены объекты"}</td>
+        <td>${new Date(r.ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
+        <td>${r.listings}</td><td>${r.fresh}</td>
+        <td>${r.blocked ? `${r.messages}${r.messages_fresh ? ` (свежих ${r.messages_fresh})` : ""}` : "—"}</td>
+        <td><button class="pill light" data-ph-unban="${esc(r.phone)}">Вернуть</button></td></tr>`).join("")
+      : `<tr><td class="note">Удалённых номеров нет.</td></tr>`;
+  }
+  $("phonesDeleted").addEventListener("click", (e) => {
+    const a = e.target.closest("[data-ph-open]");
+    if (a) { e.preventDefault(); phoneDetail(a.dataset.phOpen); }
+  });
   // 01.11: «Удалить всё от номера» — номер вписать целиком, два действия
   $("phoneKill").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -745,9 +765,9 @@
       : `Удалить с сайта все объекты от номера ${phone}? Новые объявления будут приниматься.`)) return;
     try {
       const r = await call("/api/admin/phones/ban", { phone, action: ban ? "ban" : "delete" });
-      alert(`Готово: ${r.phone} — объектов убрано: ${r.listings}${ban ? `, запросов: ${r.requests}, сообщений удалено: ${r.messages}` : ""}.`);
+      alert(`Готово: ${r.phone} — объектов убрано: ${r.listings}${ban ? `, запросов: ${r.requests}, сообщений отложено: ${r.messages}` : ""}.`);
       $("phoneKillQ").value = "";
-      phones(); phoneDetail(r.phone);
+      phones(); phonesDeleted(); phoneDetail(r.phone);
     } catch (err) { fail(err); }
   });
   document.addEventListener("click", async (e) => {
@@ -759,14 +779,19 @@
     try {
       if (b.dataset.phBan) { if (!confirm(`Удалить всё от номера ${b.dataset.phBan} и не принимать новые объявления от него?`)) return; await call("/api/admin/phones/ban", { phone: b.dataset.phBan }); }
       else if (b.dataset.phWipe) { if (!confirm(`Удалить с сайта все объекты от номера ${b.dataset.phWipe}? Новые объявления будут приниматься.`)) return; await call("/api/admin/phones/ban", { phone: b.dataset.phWipe, action: "delete" }); }
-      else if (b.dataset.phUnban) await call("/api/admin/phones/ban", { phone: b.dataset.phUnban, action: "unban" });
+      else if (b.dataset.phUnban) {
+        if (!confirm(`Вернуть номер ${b.dataset.phUnban}? Объекты в сроке появятся на сайте, свежие сообщения разберутся заново.`)) return;
+        const r = await call("/api/admin/phones/ban", { phone: b.dataset.phUnban, action: "unban" });
+        alert(`Номер ${r.phone} возвращён: на сайте — ${r.active}, в архив — ${r.archive}, сообщений в разбор — ${r.messages}.`);
+        phones(); phonesDeleted(); phoneDetail(r.phone); return;
+      }
       else if (b.dataset.phDel) { if (!confirm("Удалить объект навсегда?")) return; await call(`/api/admin/listings/${b.dataset.phDel}/action`, { action: "delete" }); }
       else if (b.dataset.phRestore) await call(`/api/admin/listings/${b.dataset.phRestore}/action`, { action: "restore" });
-      phoneDetail(cur); phones();
+      phoneDetail(cur); phones(); phonesDeleted();
     } catch (err) { fail(err); }
   });
 
-  const loaders = { overview, users, promos, optouts, complaints, edits, chats, districts, banned, phones };
+  const loaders = { overview, users, promos, optouts, complaints, edits, chats, districts, banned, phones: () => Promise.all([phones(), phonesDeleted()]) };
 
   // 24.10g: разделы — слева списком с иконками (на телефоне — полосой)
   const TAB_IC = { overview: "dashboard", users: "users", promos: "ticket", optouts: "ban", complaints: "alert", edits: "edit", chats: "chat",

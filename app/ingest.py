@@ -835,17 +835,14 @@ def ban_phone(conn: sqlite3.Connection, phone: str, block: bool = True) -> dict:
         listings = conn.execute("""UPDATE listings SET is_active = 0, hidden_reason = 'admin'
                                    WHERE EXISTS (SELECT 1 FROM json_each(listings.phones) j WHERE j.value = ?)
                                      AND source NOT IN ('own', 'feed')""", (phone,)).rowcount
+        # 01.11: запомнить, что номер «чистили», — для списка «Удалённые номера» и «Вернуть» (новые объявления принимаются)
+        conn.execute("INSERT OR REPLACE INTO banned (kind, key, title, ts) VALUES ('phone_wipe', ?, ?, ?)", (phone, phone, now))
         conn.commit()
         return {"ok": True, "phone": phone, "listings": listings, "requests": 0, "messages": 0, "blocked": False}
     # 01.11: сообщения от номера ищем ДО записи — это перебор всех сообщений (десятки тысяч), и раньше он шёл внутри записи:
     # база была занята, worker и сайт получали «database is locked», а то и само удаление
-    digits = phone[-10:]
-    gone = []
-    for m in conn.execute("SELECT id, text, sender FROM messages"):
-        snd = rules.normalize_phone(str(m["sender"] or "").split("@")[0]) if m["sender"] else None
-        if snd == phone or (digits in "".join(ch for ch in (m["text"] or "") if ch.isdigit())
-                            and phone in rules.extract_phones(m["text"] or "")):
-            gone.append(m["id"])
+    gone = _phone_messages(conn, phone)
+    conn.execute("DELETE FROM banned WHERE kind = 'phone_wipe' AND key = ?", (phone,))
     conn.execute("INSERT OR IGNORE INTO banned (kind, key, title, ts) VALUES ('phone', ?, ?, ?)", (phone, phone, now))
     listings = conn.execute("""UPDATE listings SET is_active = 0, hidden_reason = 'phone'
                                WHERE EXISTS (SELECT 1 FROM json_each(listings.phones) j WHERE j.value = ?)
@@ -853,22 +850,78 @@ def ban_phone(conn: sqlite3.Connection, phone: str, block: bool = True) -> dict:
     requests = conn.execute("""UPDATE buyer_requests SET is_active = 0
                                WHERE EXISTS (SELECT 1 FROM json_each(buyer_requests.phones) j WHERE j.value = ?)""",
                             (phone,)).rowcount
+    # 01.11 (Артём: «вернуть его сообщения»): сообщения не стираем, а откладываем (kind 'banned') — их можно вернуть;
+    # старые всё равно удалит обычная уборка через KEEP_DAYS
     for i in range(0, len(gone), 500):
         part = gone[i:i + 500]
-        conn.execute(f"DELETE FROM messages WHERE id IN ({','.join('?' * len(part))})", part)
-    conn.commit()
+        conn.execute(f"UPDATE messages SET status = 'skipped', kind = 'banned' WHERE id IN ({','.join('?' * len(part))})", part)
+        conn.commit()
     return {"ok": True, "phone": phone, "listings": listings, "requests": requests, "messages": len(gone), "blocked": True}
 
 
-def unban_phone(conn: sqlite3.Connection, phone: str) -> None:
+def _phone_messages(conn: sqlite3.Connection, phone: str, where: str = "", args: tuple = ()) -> list[int]:
+    """Сообщения от номера: прислал с него или номер в тексте. Только чтение (перебор — до любой записи)."""
+    digits = phone[-10:]
+    out = []
+    for m in conn.execute(f"SELECT id, text, sender FROM messages {where}", args):
+        snd = rules.normalize_phone(str(m["sender"] or "").split("@")[0]) if m["sender"] else None
+        if snd == phone or (digits in "".join(ch for ch in (m["text"] or "") if ch.isdigit())
+                            and phone in rules.extract_phones(m["text"] or "")):
+            out.append(m["id"])
+    return out
+
+
+def _wiped(t: str = "listings") -> str:
+    """Объекты номера, убранные «Удалить объекты» (hidden_reason 'admin'), — без удалённых по одному (у них строка в banned)."""
+    return f"""{t}.hidden_reason = 'admin' AND {t}.source NOT IN ('own', 'feed')
+              AND NOT EXISTS (SELECT 1 FROM banned b WHERE b.listing_id = {t}.id)"""
+
+
+def deleted_phones(conn: sqlite3.Connection, now: int | None = None) -> list[dict]:
+    """01.11: «Удалённые номера» для админки — кто удалён, как, сколько объектов и сколько ещё актуальных."""
+    now = int(now or time.time())
+    edge = now - config.STALE_DAYS * 86400
+    out = []
+    for b in conn.execute("""SELECT kind, key, ts FROM banned WHERE kind IN ('phone', 'phone_wipe')
+                             ORDER BY ts DESC""").fetchall():
+        reason = "l.hidden_reason = 'phone'" if b["kind"] == "phone" else _wiped("l")
+        r = conn.execute(f"""SELECT COUNT(*), SUM(MAX(l.last_seen, COALESCE(l.added_at, 0)) >= ?) FROM listings l, json_each(l.phones) j
+                             WHERE j.value = ? AND {reason}""", (edge, b["key"])).fetchone()
+        msgs = _phone_messages(conn, b["key"], "WHERE kind = 'banned'") if b["kind"] == "phone" else []
+        fresh = _phone_messages(conn, b["key"], "WHERE kind = 'banned' AND ts >= ?", (edge,)) if msgs else []
+        out.append({"phone": b["key"], "ts": b["ts"], "blocked": b["kind"] == "phone",
+                    "listings": r[0] or 0, "fresh": r[1] or 0, "messages": len(msgs), "messages_fresh": len(fresh)})
+    return out
+
+
+def unban_phone(conn: sqlite3.Connection, phone: str, now: int | None = None) -> dict:
+    """Вернуть номер. 01.11: объекты, которые ещё в сроке (не старше STALE_DAYS), — на сайт, остальные — в архив (дальше
+    обычная жизнь объекта); отложенные сообщения не старше STALE_DAYS — снова в очередь разбора (повтор обновит объект),
+    старше — остаются отложенными. Новые объявления от номера снова принимаются."""
+    from . import db
     phone = rules.normalize_phone(phone or "") or phone
-    conn.execute("DELETE FROM banned WHERE kind = 'phone' AND key = ?", (phone,))
-    conn.execute("""UPDATE listings SET is_active = 1, hidden_reason = NULL
-                    WHERE hidden_reason = 'phone' AND EXISTS (SELECT 1 FROM json_each(listings.phones) j WHERE j.value = ?)""",
-                 (phone,))
-    conn.execute("""UPDATE buyer_requests SET is_active = 1
-                    WHERE EXISTS (SELECT 1 FROM json_each(buyer_requests.phones) j WHERE j.value = ?)""", (phone,))
+    now = int(now or time.time())
+    edge = now - config.STALE_DAYS * 86400
+    db.flush(conn)
+    msgs = _phone_messages(conn, phone, "WHERE kind = 'banned' AND ts >= ?", (edge,))   # чтение — до записи
+    kinds = {r[0] for r in conn.execute("SELECT kind FROM banned WHERE kind IN ('phone', 'phone_wipe') AND key = ?", (phone,))}
+    conn.execute("DELETE FROM banned WHERE kind IN ('phone', 'phone_wipe') AND key = ?", (phone,))
+    who = "(hidden_reason = 'phone' OR (" + _wiped() + "))"
+    active = conn.execute(f"""UPDATE listings SET is_active = 1, hidden_reason = NULL
+                              WHERE {who} AND MAX(last_seen, COALESCE(added_at, 0)) >= ?
+                                AND EXISTS (SELECT 1 FROM json_each(listings.phones) j WHERE j.value = ?)""",
+                          (edge, phone)).rowcount
+    archive = conn.execute(f"""UPDATE listings SET is_active = 0, hidden_reason = NULL
+                               WHERE {who} AND EXISTS (SELECT 1 FROM json_each(listings.phones) j WHERE j.value = ?)""",
+                           (phone,)).rowcount
+    requests = conn.execute("""UPDATE buyer_requests SET is_active = 1
+                               WHERE last_seen >= ? AND EXISTS (SELECT 1 FROM json_each(buyer_requests.phones) j WHERE j.value = ?)""",
+                            (now - 10 * 86400, phone)).rowcount if "phone" in kinds else 0
+    for i in range(0, len(msgs), 500):
+        part = msgs[i:i + 500]
+        conn.execute(f"UPDATE messages SET status = 'new', kind = NULL WHERE id IN ({','.join('?' * len(part))})", part)
     conn.commit()
+    return {"ok": True, "phone": phone, "active": active, "archive": archive, "requests": requests, "messages": len(msgs)}
 
 
 def remove_photo(conn: sqlite3.Connection, listing_id: int, url: str) -> dict:
