@@ -2744,7 +2744,7 @@
     const box = $("heroLive");
     if (!box) return;
     const fill = (v) => {
-      for (const k of ["online", "today", "guests", "agents"]) box.querySelectorAll(`[data-l="${k}"]`).forEach((el) => { el.textContent = num(v[k] || 0); });
+      for (const k of ["online", "today", "week", "guests", "agents"]) box.querySelectorAll(`[data-l="${k}"]`).forEach((el) => { el.textContent = num(v[k] || 0); });
       const p = v.pulse || [], top = Math.max(1, ...p);   // «пульс сайта» — как server._live_html
       box.querySelector(".live-pulse").innerHTML = p.map((n, i) => `<i style="--h:${(n / top).toFixed(2)};--i:${i}"></i>`).join("");
       box.hidden = false;

@@ -207,6 +207,11 @@ def _live() -> dict:
     day = time.strftime("%Y-%m-%d", time.gmtime(now + 3 * 3600))
     today, guests = conn.execute("SELECT COUNT(*), COALESCE(SUM(user_id IS NULL), 0) FROM visits_daily WHERE day = ?",
                                  (day,)).fetchone()
+    # 01.11 (Артём): «за неделю» — разные посетители за 7 дней по Москве (вошедший — по аккаунту; гость без согласия на
+    # cookie меняет метку каждый день, поэтому в разные дни считается заново — это верхняя оценка)
+    day7 = time.strftime("%Y-%m-%d", time.gmtime(now + 3 * 3600 - 6 * 86400))
+    week = conn.execute("""SELECT COUNT(DISTINCT CASE WHEN user_id IS NOT NULL THEN 'u' || user_id ELSE key END)
+                           FROM visits_daily WHERE day >= ?""", (day7,)).fetchone()[0]
     agents = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     online = max(1, online)
     # 31.10 «пульс сайта»: разные посетители в каждые 5 минут последнего часа, старые → новые; последний — хотя бы смотрящий
@@ -214,7 +219,8 @@ def _live() -> dict:
     got = dict(conn.execute("SELECT bucket, COUNT(*) FROM live_buckets WHERE bucket > ? GROUP BY bucket", (b0 - PULSE_N,)).fetchall())
     pulse = [got.get(b, 0) for b in range(b0 - PULSE_N + 1, b0 + 1)]
     pulse[-1] = max(pulse[-1], 1)
-    return {"online": online, "today": max(today, online), "guests": guests, "agents": agents, "pulse": pulse}
+    today = max(today, online)
+    return {"online": online, "today": today, "week": max(week, today), "guests": guests, "agents": agents, "pulse": pulse}
 
 
 PULSE_STEP, PULSE_N = 300, 12   # «пульс сайта»: 12 столбиков по 5 минут = последний час
@@ -260,7 +266,7 @@ def _hero_ssr(request: Request, html_text: str) -> str:
     lv = _live_fast()   # 30.10: «онлайн сейчас» сразу в HTML — ряд цифр не прыгает
     if lv:
         fmt = lambda x: f"{x:,}".replace(",", " ")  # noqa: E731
-        for k in ("online", "today", "guests", "agents"):
+        for k in ("online", "today", "week", "guests", "agents"):
             html_text = html_text.replace(f'data-l="{k}">—<', f'data-l="{k}">{fmt(lv[k])}<')
         html_text = html_text.replace('<span class="live-pulse" aria-hidden="true"></span>',
                                       f'<span class="live-pulse" aria-hidden="true">{_live_html(lv)}</span>', 1)

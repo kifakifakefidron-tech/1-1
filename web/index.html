@@ -79,12 +79,14 @@
       <div><b data-k="removed">—</b><span>убрано неактуальных</span></div>
       <!-- 30.10 (Артём: варианты 2 + 3): кто на сайте — настоящие цифры; наведение / нажатие — подробнее -->
       <button type="button" class="hero-live" id="heroLive" aria-expanded="false" hidden>
-        <b><span data-l="online">—</span><span class="live-pulse" aria-hidden="true"></span></b>
-        <span class="live-lbl">онлайн за час</span>
-        <span class="live-sub">сегодня <em data-l="today">—</em> · агентов с нами <em data-l="agents">—</em></span>
+        <!-- 01.11 (Артём): крупно — онлайн за сегодня, ниже — за неделю и агентов с нами -->
+        <b><span data-l="today">—</span><span class="live-pulse" aria-hidden="true"></span></b>
+        <span class="live-lbl">онлайн сегодня</span>
+        <span class="live-sub">за неделю <em data-l="week">—</em> · агентов с нами <em data-l="agents">—</em></span>
         <span class="live-pop" role="tooltip">
-          <span class="lp-row"><span>Онлайн за последний час</span><b data-l="online">—</b></span>
           <span class="lp-row"><span>Заходили сегодня</span><b data-l="today">—</b></span>
+          <span class="lp-row"><span>За последние 7 дней</span><b data-l="week">—</b></span>
+          <span class="lp-row"><span>Онлайн за последний час</span><b data-l="online">—</b></span>
           <span class="lp-row"><span>Агентов уже с нами</span><b data-l="agents">—</b></span>
           <small>Столбики — сколько людей было на сайте в каждые 5 минут последнего часа. Считаем по-настоящему — без имён и без слежки</small>
         </span>
@@ -488,7 +490,7 @@
 <script src="/static/yasel.js?v=4"></script>
 <script src="/static/bell.js?v=7"></script>
 <script src="/static/lightbox.js?v=4"></script>
-<script src="/static/app.js?v=155"></script>
+<script src="/static/app.js?v=156"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>

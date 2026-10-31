@@ -1110,6 +1110,10 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   (.live-pulse::after, pulseGlint) убран; блик — внутри каждого столбика (.live-pulse i::after, barGlint 6 с, screen):
   свет поднимается снизу вверх, волной слева направо (задержка 85 мс на столбик); под столбиками — пустые дорожки на всю
   высоту (repeating-linear-gradient 4 + 3 px, content-box); все столбики 4 px, верх скруглён.
+- 01.11 (ветка live-today, Артём): на первом экране крупно — «онлайн сегодня» (data-l today, visits_daily за сутки МСК), ниже
+  «за неделю N · агентов с нами M» (server._live week: разные посетители за 7 дней МСК, вошедший — по аккаунту, гость без
+  согласия меняет метку каждый день — верхняя оценка; week ≥ today ≥ online). «Онлайн за час» — строкой во всплывашке; столбики
+  пульса по-прежнему — последний час по 5 минут.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
