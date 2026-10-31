@@ -165,3 +165,25 @@
   color: var(--ink); font: 15px var(--body); }
 .fx-phr-msg { margin: 8px 0 0; color: var(--ok); font-size: 13px; }
 #fxText mark { cursor: pointer; }
+
+/* 31.10: «Как сервис решил» — шаги решения о ремонте: решило (золото) / сработало (мята) / выключено (коралл, пунктир) / нет (бледно) */
+.fx-rwhy { margin: 0 0 12px; }
+.fx-rwhy summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 8px; }
+.fx-rwhy ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.fx-rwhy li { display: grid; grid-template-columns: 96px 1fr; gap: 1px 10px; align-items: baseline; padding: 7px 10px;
+  border-radius: 10px; background: rgba(255, 255, 255, .04); }
+.fx-rwhy .rw-st { grid-row: span 2; align-self: start; justify-self: start; padding: 1px 8px; border-radius: 99px;
+  font: 700 10.5px/1.6 var(--body); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+.fx-rwhy li.decide { background: rgba(227, 203, 143, .12); }
+.fx-rwhy li.decide .rw-st { background: var(--gold); color: #08302f; }
+.fx-rwhy li.on .rw-st { background: rgba(127, 224, 168, .16); color: #9ff0c0; }
+.fx-rwhy li.off .rw-st { border: 1px dashed rgba(255, 140, 120, .55); color: #ffb3a3; }
+.fx-rwhy li.none { background: none; }
+.fx-rwhy li.none .rw-st { color: var(--ink-3); opacity: .8; }
+.fx-rwhy li.none .rw-n, .fx-rwhy li.none .rw-why { opacity: .7; }
+.fx-rwhy .rw-n { font-size: 13.5px; color: var(--ink-2); }
+.fx-rwhy .rw-n b { color: var(--ink); }
+.fx-rwhy li.off .rw-n b { font-weight: 600; color: var(--ink-2); }
+.fx-rwhy .rw-why { font-size: 12.5px; line-height: 1.4; color: var(--ink-3); }
+.fx-rwhy-d { margin: 8px 0 0; font-size: 12.5px; color: var(--ink-2); }
+@media (max-width: 640px) { .fx-rwhy li { grid-template-columns: 1fr; } .fx-rwhy .rw-st { grid-row: auto; } }

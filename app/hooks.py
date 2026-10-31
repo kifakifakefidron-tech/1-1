@@ -108,52 +108,8 @@ def market_for(conn: sqlite3.Connection, o: dict, min_n: int | None = None) -> d
                 return None
             who = ROOM_LABEL[g] + (f" {REPAIR_LABEL[rp]}" if with_rep else "")
             return {"base": f"{who} {where}", "median": median, "n": n, "diff": diff, "level": lvl,
-                    "rooms": ROOM_LABEL[g], "repair": REPAIR_LABEL[rp] if with_rep else None,
-                    "rules": _rules(m, o, g, rp, lvl, with_rep, n, min_n)}
+                    "rooms": ROOM_LABEL[g], "repair": REPAIR_LABEL[rp] if with_rep else None}
     return None
-
-
-def _rules(m: dict, o: dict, g, rp, lvl: str, with_rep: bool, n: int, min_n: int | None) -> list[dict]:
-    """31.10 (Артём): разбор сравнения по пунктам — что учтено (on) и что выключено (off) и почему; рисует окно объекта."""
-    def cnt(lv, key, *extra):
-        v = m.get((o["deal"], lv, key, g, *extra))
-        return v[1] if v else 0
-
-    def few(c, need):
-        return f"только {c}" if c else "почти нет", need
-
-    rooms = ROOM_LABEL[g]
-    kind = o.get("room_kind")
-    same = {"s": "студии и мини-1 сравниваем между собой", 4: "4 комнаты и больше — одна группа"}.get(g)
-    if kind in ("euro", "mini") and g != "s":
-        same = f"{'евро' if kind == 'euro' else 'мини'}-{o.get('rooms')} по размеру как {rooms} — сравниваем с ними"
-    out = [{"name": "Комнаты", "on": True, "value": rooms, "note": same or f"сравниваем только с {rooms}"}]
-    place_key = geo.complex_key(o["complex"]) if lvl == "cx" else o["district"]
-    if with_rep:
-        out.append({"name": "Ремонт", "on": True, "value": REPAIR_LABEL[rp],
-                    "note": f"сравниваем только с объектами {REPAIR_LABEL[rp]}"})
-    elif rp:
-        need = min_n or MARKET_SHOW_N[lvl]
-        c, _ = few(cnt(lvl, place_key, rp), need)
-        out.append({"name": "Ремонт", "on": False, "value": REPAIR_LABEL[rp],
-                    "note": f"не учтён: {rooms} {REPAIR_LABEL[rp]} {'в этом ЖК' if lvl == 'cx' else 'в районе'} {c}, "
-                            f"а нужно от {need} — сравнили со всеми {rooms}"})
-    else:
-        out.append({"name": "Ремонт", "on": False, "value": "не указан",
-                    "note": f"в объявлении нет слов про ремонт — сравнили со всеми {rooms}, с ремонтом и без"})
-    if o.get("complex"):
-        if lvl == "cx":
-            out.append({"name": "ЖК", "on": True, "value": o["complex"], "note": f"{n} похожих объектов в этом ЖК"})
-        else:
-            need = min_n or MARKET_SHOW_N["cx"]
-            c, _ = few(cnt("cx", geo.complex_key(o["complex"])), need)
-            out.append({"name": "ЖК", "on": False, "value": o["complex"],
-                        "note": f"не учтён: {rooms} в этом ЖК {c}, а нужно от {need} — сравнили по району"})
-    else:
-        out.append({"name": "ЖК", "on": False, "value": "не указан", "note": "в объявлении нет ЖК — сравнили по району"})
-    if lvl == "d":
-        out.append({"name": "Район", "on": True, "value": o["district"], "note": f"{n} похожих объектов в районе"})
-    return out
 
 
 def update_market_diff(conn: sqlite3.Connection) -> int:
@@ -189,14 +145,23 @@ def is_hot(it: dict, now: int | None = None) -> str | None:
 
 def annotate(conn: sqlite3.Connection, items: list[dict]) -> list[dict]:
     """Для карточек в списке: «ниже рынка на N %» (только заметная разница), отметка «горячее» и шкала к рынку."""
+    # 31.10 (Артём: «в фильтре «Горячие» есть карточки без рамки»): фильтр берёт listings.market_diff (пересчёт раз в 15 мин),
+    # а рамка считала разницу заново — средние успевали сдвинуться, и объект на границе (−15 %) был в фильтре, но без рамки.
+    # Теперь «горячее» и процент — из той же записанной цифры, что фильтр; средняя и с чем сравнили — для подписи.
+    ids = [it["id"] for it in items if it.get("id")]
+    saved = {r[0]: (r[1], r[2]) for r in conn.execute(
+        f"SELECT id, market_diff, price_doubt FROM listings WHERE id IN ({','.join('?' * len(ids))})", ids)} if ids else {}
     for it in items:
-        mk = market_for(conn, it, HOT_MIN_N) if not it.get("price_doubt") else None
-        ok = mk and mk["diff"] <= HOT_MIN_DIFF
-        it["market_diff"] = mk["diff"] if ok else None
-        it["market_n"] = mk["n"] if ok else None   # «ниже рынка на 18 % · по 23 объектам»
-        it["market_diff_raw"] = mk["diff"] if mk else None
+        diff, doubt = saved.get(it.get("id"), (None, None))
+        it["price_doubt"] = doubt
+        mk = market_for(conn, it, HOT_MIN_N) if diff is not None and not doubt else None
+        ok = diff is not None and diff <= HOT_MIN_DIFF
+        it["market_diff"] = diff if ok else None
+        it["market_n"] = mk["n"] if ok and mk else None   # «ниже рынка на 18 % · по 23 объектам»
+        it["market_diff_raw"] = diff
         it["hot"] = is_hot(it)
-        if ok:   # 29.10: для шкалы «к рынку» на горячей карточке — с чем сравнили и средняя цена такой же площади
+        it.pop("price_doubt", None)
+        if ok and mk:   # 29.10: для шкалы «к рынку» на горячей карточке — с чем сравнили и средняя цена такой же площади
             it["market_base"] = mk["base"]
             it["market_median"] = mk["median"]
             it["market_price"] = round(mk["median"] * it["area"]) if it.get("area") else None

@@ -116,6 +116,88 @@ def repair_by_phrases(text: str, phrases: dict[str, str]) -> tuple[str | None, i
     return rule, doubt
 
 
+_REP = {"yes": "с ремонтом", "no": "без ремонта", "": "не про ремонт", None: "не указано"}
+
+
+def explain_repair(conn: sqlite3.Connection, r: sqlite3.Row) -> dict:
+    """31.10 (Артём: «разбор правила по ремонту, чтобы было понятно, что выключено»): цепочка решения для окна разбора —
+    в том же порядке, что _reindex: ваша правка → ваш ответ по этому тексту → выученные слова → правила.
+    Шаг: {name, state: 'decide' (решило) | 'on' (сработало, но решил шаг выше) | 'off' (нашлось, но выключено) | 'none' (нет), value, note}."""
+    steps = []
+    decided = None
+
+    def add(name, state, value, note):
+        nonlocal decided
+        if state == "decide":
+            if decided:   # решил шаг выше — этот только «сработал»
+                state, note = "on", (note + " — " if note else "") + f"но решает «{decided}» выше"
+            else:
+                decided = name
+        steps.append({"name": name, "state": state, "value": value, "note": note})
+
+    try:
+        af = json.loads(r["admin_fields"] or "{}")
+    except (TypeError, ValueError):
+        af = {}
+    if "repair" in af:
+        add("Ваша правка", "decide", _REP.get(af["repair"] or None), "вы поставили вручную — правила и слова не трогают")
+    else:
+        add("Ваша правка", "none", "нет", "вручную не правили")
+    fr = _learned_repair(conn, r["id"])
+    if fr is not None:
+        add("Ваш ответ по этому тексту", "decide", _REP.get(fr or None), "этот же текст вы уже разбирали")
+    else:
+        add("Ваш ответ по этому тексту", "none", "нет", "этот текст ещё не разбирали")
+    text = textnorm.norm(r["search_text"] or "")
+    phrases = repair_phrases(conn)
+    hit = [(k, v) for k, v in phrases.items() if k in text]
+    yes_no = [(k, v) for k, v in hit if v]
+    if yes_no:
+        val = "no" if any(v == "no" for _, v in yes_no) else "yes"
+        add("Выученные слова", "decide", _REP[val], ", ".join(f"«{k}» = {_REP[v]}" for k, v in yes_no)
+            + (" — «без ремонта» важнее" if len({v for _, v in yes_no}) > 1 else ""))
+    else:
+        add("Выученные слова", "none", "нет", "ваших слов в тексте нет" if not hit else "")
+    off = [k for k, v in hit if not v]
+    if off:
+        steps.append({"name": "Слова «не про ремонт»", "state": "off", "value": "выключены",
+                      "note": ", ".join(f"«{k}»" for k in off) + " — вы отметили, что это не про ремонт квартиры; правила их не видят"})
+    for k, _ in hit:
+        text = text.replace(k, " ")
+    h = rules.repair_hits(text)
+    if h["building"]:
+        steps.append({"name": "Про дом, не про квартиру", "state": "off", "value": "выключено",
+                      "note": ", ".join(f"«{w}»" for w in h["building"]) + " — капремонт, подъезд, крыша: не считаем"})
+    if h["no"]:
+        add("Правило «без ремонта»", "decide", "без ремонта", ", ".join(f"«{w}»" for w in h["no"]))
+    else:
+        add("Правило «без ремонта»", "none", "не нашлось", "ПЧО, черновая, без/под ремонт, требует ремонта, старый ремонт…")
+    if h["yes"]:
+        if h["no"] and not decided.startswith(("Ваш", "Выуч")):
+            steps.append({"name": "Правило «с ремонтом»", "state": "off", "value": "выключено",
+                          "note": ", ".join(f"«{w}»" for w in h["yes"]) + " — но «без ремонта» важнее, и объект под вопросом"})
+        else:
+            add("Правило «с ремонтом»", "decide", "с ремонтом", ", ".join(f"«{w}»" for w in h["yes"]))
+    else:
+        loose = [w for w in h["talk"] if w.startswith("ремонт")]
+        if loose:   # слово есть, но правило его не засчитывает — это «выключено», а не «нет»
+            steps.append({"name": "Правило «с ремонтом»", "state": "off", "value": "«ремонт» одним словом",
+                          "note": "без «с ремонтом», «свежий», «сделан», «евро»… не считаем — непонятно, есть ремонт или нужен"})
+        else:
+            add("Правило «с ремонтом»", "none", "не нашлось", "евроремонт, с ремонтом, свежий ремонт, чистовая, въезжай и живи…")
+    if not decided:
+        steps.append({"name": "Итог", "state": "none", "value": "не указано",
+                      "note": "ни один шаг не решил" + (" — но слова о состоянии есть, поэтому объект в очереди"
+                                                        if r["repair_doubt"] else "")})
+    why = None
+    if r["repair_doubt"]:
+        why = ("найдены и «с ремонтом», и «без ремонта»" if h["no"] and h["yes"]
+               else "выученные слова спорят между собой или с правилами" if yes_no
+               else "в тексте есть " + ", ".join(f"«{w}»" for w in h["talk"][:3]) + ", но ни одна фраза правила не подошла"
+               if h["talk"] else "в тексте говорят о состоянии, но ни одна фраза правила не подошла")
+    return {"steps": steps, "result": _REP.get(r["repair"]), "doubt": why}
+
+
 def learn_repair_phrase(conn: sqlite3.Connection, phrase: str, value: str) -> dict:
     """Запомнить слова и сразу пересчитать все объявления, где они есть (поправленные админом — как есть)."""
     key = textnorm.norm(phrase).strip(" .,;:!?«»\"'()-")

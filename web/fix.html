@@ -17,9 +17,9 @@
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.min.css">
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
-<link rel="stylesheet" href="/static/fix.css?v=18">
+<link rel="stylesheet" href="/static/fix.css?v=19">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=116">
+<link rel="stylesheet" href="/static/glass.css?v=117">
 </head>
 <body>
 <header class="nav"><div class="nav-in">
@@ -56,6 +56,7 @@
       <!-- 24.10: очередь «Ремонт» — ответ одним нажатием, сразу следующий объект; ответ учит сервис -->
       <div class="fx-repair" id="fxRepair" hidden>
         <p class="fx-repair-q">Что с ремонтом? <small id="fxRepairGuess"></small></p>
+        <details class="fx-rwhy" id="fxRepairWhy" open><summary>Как сервис решил</summary><ol></ol><p class="fx-rwhy-d" hidden></p></details>
         <div class="fx-repair-b">
           <button type="button" class="pill" data-repair-pick="yes">С ремонтом</button>
           <button type="button" class="pill" data-repair-pick="no">Без ремонта</button>
@@ -163,6 +164,6 @@
 <script src="/static/combo.js?v=3"></script>
 <script src="/static/yasel.js?v=4"></script>
 <script src="/static/lightbox.js?v=4"></script>
-<script src="/static/fix.js?v=27"></script>
+<script src="/static/fix.js?v=29"></script>
 </body>
 </html>

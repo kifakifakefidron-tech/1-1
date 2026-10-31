@@ -663,7 +663,7 @@ def api_listing(request: Request, body: dict | None = None):
     # 31.10: «к рынку» и «почему горячее» — по тем же 15+ похожим, что фильтр; если их меньше — строка «к рынку» по 3+ (ЖК) / 5+ (район)
     hot_mk = hooks.market_for(conn, d, hooks.HOT_MIN_N) if not row["price_doubt"] else None
     d["market"] = hot_mk or (hooks.market_for(conn, d) if not row["price_doubt"] else None)
-    d["hot"] = hooks.is_hot({**d, "price_doubt": row["price_doubt"], "market_diff_raw": hot_mk["diff"] if hot_mk else None})
+    d["hot"] = hooks.is_hot({**d, "price_doubt": row["price_doubt"], "market_diff_raw": row["market_diff"]})
     d["same"] = hooks.same_elsewhere(conn, row)
     d["note"] = hooks.get_note(conn, user["id"], lid) if user else None
     d["status"] = hooks.get_status(conn, user["id"], lid) if user else None
@@ -2330,6 +2330,7 @@ def _fix_item(conn, lid: int) -> dict | None:
         "conflict": (r["place_conflict"] or "").split(":", 1)[-1] or None,
         "zone": _zone(conn, r["district"]),
         "learn_stats": learning.safety(conn, r),   # распределение улицы и ЖК по районам — какие правила безопасно учить
+        "repair_why": ingest.explain_repair(conn, r),   # 31.10: очередь «Ремонт» — как сервис решил, что сработало и что выключено
     }
 
 

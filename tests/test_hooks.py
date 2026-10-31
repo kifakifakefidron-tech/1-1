@@ -241,7 +241,38 @@ def test_market_compares_same_rooms_and_falls_back_to_district():
     mk = hooks.market_for(conn, row, hooks.HOT_MIN_N)
     # раньше двушку сравнивали со студиями ЖК (≈ 200 тыс./м²) — «на 50 % дешевле»; теперь — с 2-к района (≈ 116 тыс./м²)
     assert mk["level"] == "d" and mk["rooms"] == "2-к" and mk["base"].startswith("2-к в районе") and -20 < mk["diff"] < -5
-    rules = {r["name"]: r for r in mk["rules"]}
-    assert rules["Комнаты"]["on"] and not rules["Ремонт"]["on"] and not rules["ЖК"]["on"] and rules["Район"]["on"]
-    assert "нужно от 15" in rules["ЖК"]["note"] and "не указан" == rules["Ремонт"]["value"]
     assert hooks.room_group({"room_kind": "euro", "rooms": 2}) == 1 and hooks.room_group({"room_kind": "studio", "rooms": 0}) == "s"
+
+
+def test_hot_card_uses_saved_market_diff():
+    """31.10 (Артём: «в фильтре «Горячие» карточки без рамки»): рамка и процент — по той же записанной цифре, что фильтр."""
+    from app import db, hooks, ingest, search
+    conn = db.connect(":memory:")
+    now = int(time.time())
+    m = ingest.add_message(conn, source="wa", text="1-к квартира 40 м², 3/9 эт., ФМР, ул. Тургенева 7. 4 млн. 89180000777",
+                           chat_id="c", msg_id="h1", ts=now)
+    lid = ingest.process_message(conn, m, use_llm=False)["results"][0]["listing_id"]
+    conn.execute("UPDATE listings SET market_diff = -20 WHERE id = ?", (lid,))   # фильтр видит −20 %, пересчёт на лету — нет
+    conn.commit()
+    items = search.search(conn, search.Query(hot=True), now, False)["items"]
+    assert [i["id"] for i in items] == [lid]
+    it = hooks.annotate(conn, items)[0]
+    assert it["hot"] == "market" and it["market_diff"] == -20 and "price_doubt" not in it
+
+
+def test_explain_repair_steps():
+    """31.10 (Артём): окно разбора «Ремонт» показывает, какой шаг решил и что выключено."""
+    from app import db, ingest
+    conn = db.connect(":memory:")
+    m = ingest.add_message(conn, source="wa", text="2-к квартира 50 м², 3/9 эт., ФМР, ул. Тургенева 9. ПЧО, евроремонт в подъезде"
+                           " сделан, капремонт дома. 6 млн. 89180000778", chat_id="c", msg_id="r1", ts=int(time.time()))
+    lid = ingest.process_message(conn, m, use_llm=False)["results"][0]["listing_id"]
+    r = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
+    w = ingest.explain_repair(conn, r)
+    st = {s["name"]: s for s in w["steps"]}
+    assert w["result"] == "без ремонта" and st["Правило «без ремонта»"]["state"] == "decide" and "«пчо»" in st["Правило «без ремонта»"]["note"]
+    assert st["Ваша правка"]["state"] == "none" and st["Про дом, не про квартиру"]["state"] == "off"
+    ingest.learn_repair_phrase(conn, "пчо", "yes")
+    r = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
+    st = {s["name"]: s for s in ingest.explain_repair(conn, r)["steps"]}
+    assert st["Выученные слова"]["state"] == "decide" and st["Правило «без ремонта»"]["state"] != "decide"

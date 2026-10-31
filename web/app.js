@@ -532,29 +532,6 @@
     return parts.join("");
   }
 
-  // 31.10 (Артём): в окне объекта — почему он в «Горячих предложениях», с числами
-  function hotWhyHTML(o) {
-    if (!o.hot) return "";
-    const dt = (ts) => new Date(ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
-    if (o.hot === "drop") {
-      const pct = Math.round((1 - o.price / o.prev_price) * 100);
-      return `<div class="dv-hot drop"><p class="dv-hot-h">${ic("arrow-down")}Снижение цены</p>
-        <p>Цену снизили на <b>${pct} %</b>${o.price_changed_at ? ` ${esc(dt(o.price_changed_at))}` : ""}: было <s>${esc(fmtPrice(o.prev_price, o.deal))}</s>,
-          стало <b>${esc(fmtPrice(o.price, o.deal))}</b>.</p>
-        <small>В «Горячие предложения» попадают объекты, у которых цену снизили на 10 % и больше за последнюю неделю.</small></div>`;
-    }
-    const m = o.market;
-    if (!m) return "";
-    return `<div class="dv-hot"><p class="dv-hot-h">${FLAME}Почему горячее</p>
-      <p>Средняя цена за м² — <b>${esc(num(m.median))} ₽</b> по ${m.n} ${plural(m.n, "похожему объекту", "похожим объектам", "похожим объектам")}
-        (${esc(m.base)}). У этого — <b>${esc(num(o.price_m2))} ₽</b>, на <b>${-m.diff} %</b> дешевле.</p>
-      ${(m.rules || []).length ? `<p class="dv-hot-sub">Как сравнивали</p><ul class="dv-rules">${m.rules.map((r) => `
-        <li class="${r.on ? "on" : "off"}"><span class="dr-st">${r.on ? "учтено" : "выключено"}</span>
-          <span class="dr-n">${esc(r.name)}: <b>${esc(r.value)}</b></span><span class="dr-why">${esc(r.note)}</span></li>`).join("")}</ul>` : ""}
-      <small>Средняя — по ценам объявлений на 1+1, не по сделкам. Не берём: цену «под вопросом», объекты, которые не присылали
-        больше недели, и разницу больше 45 % — это скорее ошибка в цене или площади.</small></div>`;
-  }
-
   function itemHTML(o) {
     const hit = hitSince && o.first_seen > hitSince;   // новое в этом поиске — выделяем один раз
     const tag = (hit ? `<div class="marks"><span class="mark hit">Новое в вашем поиске</span></div>` : "") + badgesHTML(o);
@@ -1145,7 +1122,6 @@
             в сортировках по цене и фильтрах этот объект не участвует.</span></p>` : ""}
         </div>
         ${tiles ? `<div class="dv-tiles">${tiles}</div>` : ""}
-        ${hotWhyHTML(o)}
         <section class="dv-sec"><p class="dv-sec-h">Описание</p>
           ${o.description ? `<div class="dv-desc"><p>${esc(o.description)}</p></div>`
             : `<p class="dv-desc-none">Описание — у агента: в объявлении только параметры и цена.</p>`}</section>

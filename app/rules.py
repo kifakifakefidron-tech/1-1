@@ -858,6 +858,22 @@ def detect_repair(text: str | None) -> str | None:
     return None
 
 
+def repair_hits(text: str | None) -> dict:
+    """31.10 (Артём): для окна разбора «Ремонт» — какие слова нашли правила: building (про дом — вырезаны), no, yes, talk."""
+    t = (text or "").lower().replace("ё", "е")
+
+    def found(rx, s):
+        out = []
+        for mt in rx.finditer(s):
+            w = " ".join(mt.group(0).strip(" \n•✅▪▫◾◽➖✔☑-–—,;:|/+").split())
+            if w and w not in out:
+                out.append(w)
+        return out[:6]
+    building = found(_BUILDING_REPAIR, t)
+    t = _BUILDING_REPAIR.sub(" ", t)
+    return {"building": building, "no": found(_NOREPAIR, t), "yes": found(_REPAIR, t), "talk": found(_REPAIR_TALK, t)}
+
+
 def repair_doubt(text: str | None) -> bool:
     """24.10: ремонт «под вопросом» — в тексте говорят о состоянии, а правило не уверено (ничего не нашло или нашло оба
     варианта). Такие объекты — в очередь разбора «Ремонт» (/fix?kind=repair): ваш ответ учит сервис."""

@@ -128,6 +128,19 @@
     if (kind === "repair") {
       $("fxText").innerHTML = esc(it.text || "").replace(/(ремонт\S*|отделк\S*|чистов\S*|предчистов\S*|пчо|п\/чо|white\s*box|чернов\S*|состояни\S*|бетон\S*)/gi, "<mark>$1</mark>");
       $("fxRepairGuess").textContent = `сервис думает: ${{ yes: "с ремонтом", no: "без ремонта" }[it.repair] || "не указано"}`;
+      // 31.10 (Артём): разбор правила — по шагам, что решило, что сработало и что выключено
+      const w = it.repair_why || { steps: [] };
+      const ST = { decide: "решило", on: "сработало", off: "выключено", none: "нет" };
+      const none = w.steps.filter((s) => s.state === "none" && s.name !== "Итог");   // «нет» — одной строкой, подсказки — при наведении
+      const row = (s) => `<li class="${s.state}"><span class="rw-st">${ST[s.state]}</span><span class="rw-n">${esc(s.name)}: <b>${esc(s.value)}</b></span>
+        ${s.note ? `<span class="rw-why">${esc(s.note)}</span>` : ""}</li>`;
+      $("fxRepairWhy").querySelector("ol").innerHTML = w.steps.filter((s) => s.state !== "none").map(row).join("")
+        + (none.length ? `<li class="none"><span class="rw-st">нет</span><span class="rw-n">${none.map((s) =>
+          `<span title="${esc(s.note || "")}">${esc(s.name)}</span>`).join(" · ")}</span></li>` : "")
+        + w.steps.filter((s) => s.name === "Итог").map(row).join("");
+      const dd = $("fxRepairWhy").querySelector(".fx-rwhy-d");
+      dd.hidden = !w.doubt;
+      dd.textContent = w.doubt ? `Почему в очереди: ${w.doubt}. Ваш ответ кнопкой ниже — запомнится для этого текста; слова — для всех объявлений.` : "";
     }
     $("fxOpen").href = `/?open=${it.id}`;
     $("fxYaAll").href = yaHref(it);
