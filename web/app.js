@@ -1059,17 +1059,30 @@
       + (meta.access && o.fragment ? `<p class="dv-sub-h">Исходное сообщение</p><pre class="d-source">${esc(o.fragment)}</pre>` : "");
     const geoNote = o.geo_status === "manual" ? "точка поставлена вручную" : o.geo_status === "learned" ? "точка из ваших прошлых правок"
       : o.geo_status === "feed" ? "точка из фида СТРЕЛ" : o.lat ? "точка найдена по адресу" : "точки нет";
-    const adminPhotos = admin && photos.length ? `<p class="dv-sub-h">Фото — убрать лишнее (не вернётся из фида и чатов)</p>
+    // 02.11 (Артём: «стилизуй и сделай удобнее раскрывающийся список админу»): разделы с подписями — жалобы, исправить, фото,
+    // история правок (загружается сама при открытии), удалить; у каждого действия — что именно оно сделает
+    const admTile = (attrs, icon, title, sub, cls = "") => `<button type="button" class="adm-t ${cls}" ${attrs}><i>${ic(icon)}</i><span><b>${title}</b><small>${sub}</small></span></button>`;
+    const cms = o.complaints || [];
+    const cmNew = cms.filter((c) => c.status === "new");
+    const adminPhotos = admin && photos.length ? `<section class="adm-s"><p class="adm-sh">Фото <small>убрать лишнее — не вернётся из фида и чатов</small></p>
       <div class="adm-ph">${photos.map((u) => `<span><img src="${esc(u)}" alt="" loading="lazy">
-        <button type="button" data-photo-del="${esc(u)}" data-id="${o.id}" aria-label="Удалить фото" title="Удалить фото">${ic("trash")}</button></span>`).join("")}</div>` : "";
-    const adminBody = admin ? `${adminPhotos}<div class="dv-edhist"><button type="button" class="chip" data-hist-load="${o.id}">${ic("history")}История правок: что, кем, когда</button>
-        <div class="dv-ed-list" id="dvEd${o.id}"></div></div><div class="dv-admin">
-        <button type="button" class="chip" data-place-edit="${o.id}">✎ Все характеристики${o.admin_fixed ? " ✓" : ""}</button>
-        <button type="button" class="chip" data-geo-edit="${o.id}">📍 Точка на карте</button>
-        <button type="button" class="chip" data-admin-act="deal" data-deal="${o.deal === "rent" ? "sale" : "rent"}" data-id="${o.id}">⇄ ${o.deal === "rent" ? "В продажу" : "В аренду"}</button>
-        <button type="button" class="chip danger" data-admin-act="delete" data-id="${o.id}">🗑 Удалить навсегда</button>
-        ${(o.phones || []).map((p) => `<button type="button" class="chip danger" data-ban-phone="${esc(p)}" title="Скрыть все объекты и сообщения от этого номера и не принимать новые">🚫 Всё от ${esc(p)}</button>`).join("")}
-      </div><p class="note">${esc(geoNote)}${chats ? " · " + esc(chats) : ""}</p>` : "";
+        <button type="button" data-photo-del="${esc(u)}" data-id="${o.id}" aria-label="Удалить фото" title="Удалить фото">${ic("trash")}</button></span>`).join("")}</div></section>` : "";
+    const adminCms = cms.length ? `<section class="adm-s adm-cms"><p class="adm-sh">Жалобы на объект <small>${cmNew.length ? `новых: ${cmNew.length} — объект на сайте, пока вы не решите` : "все разобраны"}</small></p>
+      ${cms.map((c) => cmItemHTML(c, o.id)).join("")}</section>` : "";
+    const adminBody = admin ? `<div class="adm-box">${adminCms}
+      <section class="adm-s"><p class="adm-sh">Исправить</p><div class="adm-grid">
+        ${admTile(`data-place-edit="${o.id}"`, "edit", `Все характеристики${o.admin_fixed ? " ✓" : ""}`, "тип, цена, площадь, этаж, адрес, ЖК, район, ремонт")}
+        ${admTile(`data-geo-edit="${o.id}"`, "pin", "Точка на карте", esc(geoNote))}
+        ${admTile(`data-admin-act="deal" data-deal="${o.deal === "rent" ? "sale" : "rent"}" data-id="${o.id}"`, "swap", o.deal === "rent" ? "Перенести в продажу" : "Перенести в аренду", "сервис запомнит для этого текста")}
+      </div></section>
+      ${adminPhotos}
+      <section class="adm-s"><p class="adm-sh">История правок <small>что, кем и когда — неверное можно откатить</small></p>
+        <div class="dv-ed-list" id="dvEd${o.id}" data-hist-auto="${o.id}"><p class="note">Загружаем…</p></div></section>
+      <section class="adm-s"><p class="adm-sh">Удалить</p><div class="adm-grid">
+        ${admTile(`data-admin-act="delete" data-id="${o.id}"`, "trash", "Удалить навсегда", "тот же текст и объект больше не появятся", "danger")}
+        ${(o.phones || []).map((p) => admTile(`data-ban-phone="${esc(p)}"`, "ban", `Всё от ${esc(p)}`, "все объекты номера, новые не принимать", "danger")).join("")}
+      </div></section>
+      ${chats ? `<p class="adm-foot">${esc(chats)}</p>` : ""}</div>` : "";
 
     // снят / продан: честно сверху, фото серые, вместо действий — «Похожие объекты» (17.10)
     const gone = o.is_active === 0 || o.is_active === false;
@@ -1139,7 +1152,8 @@
           ${acc("👥", "Похожие", `у других агентов: ${same.length}`, sameBody)}
           ${acc("🕓", "История", hist ? `${o.history_total || H.length} ${plural(o.history_total || H.length, "сообщение", "сообщения", "сообщений")}` : "", histBody)}
           ${o.can_edit ? `<a class="dv-acc-btn" href="/my/edit?id=${o.id}" target="_top"><span class="dv-acc-ic">✎</span>Изменить моё объявление</a>` : ""}
-          ${acc("⚙", "Админ", "", adminBody, { cls: "admin" })}
+          ${acc("⚙", "Админ", cmNew.length ? `<b class="adm-warn">${cmNew.length} ${plural(cmNew.length, "жалоба", "жалобы", "жалоб")}</b> · правка, точка, история`
+            : "правка, точка, фото, история", adminBody, { cls: "admin" + (cmNew.length ? " has-cm" : "") })}
           ${reportHTML(o)}
         </div>
         <p class="dv-foot">Появилось на 1+1: ${esc(fmtAgo(o.first_seen))} · последний раз присылали: ${esc(fmtAgo(o.last_seen))}</p>
@@ -1611,26 +1625,54 @@
       <p>${text}</p>${btn}</div>`;
   }
 
+  // 02.11: жалоба в блоке «Админ» окна объекта — причина, кто, когда, текст и решения (сама жалоба объект не снимает)
+  const CM_REASON = { sold: "Продан или неактуален", wrong: "Неверные данные", my_phone: "Это мой номер", photo: "Чужие фото", other: "Другое" };
+  const CM_DONE = { kept: "Оставили как есть", done: "Исправлено", hidden: "Сняли с сайта", deleted: "Удалили навсегда", restored: "Вернули на сайт" };
+  const cmWhen = (ts) => new Date(ts * 1000).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  function cmItemHTML(c, lid) {
+    const w = c.who;
+    const who = !w ? "гость" : [w.phones && w.phones[0], w.name, w.email].filter(Boolean).map(esc).join(" · ") || "пользователь";
+    const text = (c.text || "").replace(/^Фото: .*$/gm, "").trim();
+    const nph = ((c.text || "").match(/^Фото: /gm) || []).length;
+    return `<div class="adm-cm${c.status === "new" ? " new" : ""}">
+      <p class="adm-cm-m"><b>${esc(CM_REASON[c.reason] || c.reason || "Жалоба")}</b><span>${esc(cmWhen(c.ts))} · ${who}</span></p>
+      ${text ? `<p class="adm-cm-t">${esc(text)}</p>` : ""}${nph ? `<p class="adm-cm-t sm">Отмечено фото: ${nph} — удалить их можно ниже, в «Фото».</p>` : ""}
+      <div class="adm-cm-a">${c.status === "new" ? `
+        <button type="button" class="chip" data-cm-act="keep" data-c="${c.id}" data-id="${lid}">${ic("check")}Оставить</button>
+        <button type="button" class="chip" data-cm-act="done" data-c="${c.id}" data-id="${lid}">${ic("edit")}Исправлено</button>
+        ${c.listing_state === "active" ? `<button type="button" class="chip warn" data-cm-act="hide" data-c="${c.id}" data-id="${lid}">${ic("eye")}Снять с сайта</button>` : ""}`
+        : `<span class="adm-cm-done">${esc(CM_DONE[c.status] || c.status)}${c.decided_at ? ` · ${esc(cmWhen(c.decided_at))}` : ""}</span>
+        ${["hidden", "deleted"].includes(c.listing_state) ? `<button type="button" class="chip" data-cm-act="restore" data-c="${c.id}" data-id="${lid}">${ic("history")}Вернуть на сайт</button>` : ""}`}</div></div>`;
+  }
+
   function reportHTML(o) {
     // 29.10 (Артём): жалоба — только после входа (в админке видно, кто подал и с какого номера)
-    if (!me()) return `<details class="dv-acc d-report"><summary><span class="dv-acc-ic">⚠</span><span class="dv-acc-t">Ошибка?</span><span class="dv-acc-h">сообщить</span></summary>
-      <div class="report-form"><p class="note">Сообщить об ошибке могут те, кто вошёл, — так мы сможем уточнить детали.</p>
+    // 02.11 (Артём): понятными словами — мы не рекламируем объекты и не отвечаем за то, что люди присылают в чаты;
+    // по своему объекту или эксклюзиву — сначала к агенту; жалоба сама объект не снимает, решает администратор
+    const about = `<div class="rp-about">${ic("shield")}<div>
+        <p><b>1+1 не продаёт и не рекламирует объекты.</b> Сервис сам собирает объявления, которые риелторы присылают в общие чаты,
+          и показывает их в одном месте. За содержание объявлений отвечает тот, кто его разместил, — не 1+1.</p>
+        <p><b>Это ваш объект или ваш эксклюзив?</b> Сначала свяжитесь с агентом из объявления — он может исправить или снять его в своих чатах,
+          тогда объявление уйдёт и отсюда. Если не получилось — напишите нам ниже.</p>
+        <p class="rp-sm">Жалоба не снимает объект сразу: администратор проверит её и решит, что сделать.</p></div></div>`;
+    const R = [["sold", "Продан или неактуален", "объекта уже нет"], ["wrong", "Неверные данные", "цена, этаж, адрес, ЖК"],
+      ["my_phone", "Это мой номер", "уберите его или дайте управлять"], ...((o.photos || []).length ? [["photo", "Чужие фото", "не от этого объекта, с номером, реклама"]] : []),
+      ["other", "Другое", "опишите ниже"]];
+    if (!me()) return `<details class="dv-acc d-report"><summary><span class="dv-acc-ic">⚠</span><span class="dv-acc-t">Ошибка в объявлении?</span><span class="dv-acc-h">сообщить администратору</span></summary>
+      <div class="report-form">${about}<p class="note">Сообщить могут те, кто вошёл, — так мы сможем уточнить детали.</p>
         <button type="button" class="pill" data-login>Войти и сообщить</button></div></details>`;
-    return `<details class="dv-acc d-report"><summary><span class="dv-acc-ic">⚠</span><span class="dv-acc-t">Ошибка?</span><span class="dv-acc-h">сообщить</span></summary>
+    return `<details class="dv-acc d-report"><summary><span class="dv-acc-ic">⚠</span><span class="dv-acc-t">Ошибка в объявлении?</span><span class="dv-acc-h">сообщить администратору</span></summary>
       <form class="report-form" data-report="${o.id}">
-        <select name="reason">
-          <option value="sold">Объект продан или неактуален</option>
-          <option value="wrong">Неверные данные (цена, этаж, адрес)</option>
-          <option value="my_phone">Это мой номер — уберите его</option>
-          ${(o.photos || []).length ? `<option value="photo">Фото не от этого объекта (чужие, с номером, реклама)</option>` : ""}
-          <option value="other">Другое</option>
-        </select>
+        ${about}
+        <p class="rp-h">Что не так?</p>
+        <div class="rp-reasons" role="radiogroup">${R.map(([v, t, s], i) => `<label class="rp-r"><input type="radio" name="reason" value="${v}"${i ? "" : " checked"}>
+          <span><b>${t}</b><small>${s}</small></span></label>`).join("")}</div>
         ${(o.photos || []).length ? `<div class="rp-photos" data-photo-pick hidden><p class="note">Отметьте фото, которые не подходят:</p>
           <div class="rp-ph">${o.photos.map((u) => `<label><input type="checkbox" name="ph" value="${esc(u)}"><img src="${esc(u)}" alt="" loading="lazy"><i>${ic("check")}</i></label>`).join("")}</div></div>` : ""}
-        <textarea name="text" rows="2" placeholder="Что не так? (необязательно)"></textarea>
-        <p class="note" data-optout-hint hidden>Отправьте заявку — мы проверим и уберём номер. Если хотите сами управлять своими
-          объявлениями (цена, фото, «продано»), подтвердите номер в разделе <a href="/my" target="_top">«Мои объекты»</a> — код через MAX.</p>
-        <button type="submit" class="pill light">Отправить</button>
+        <textarea name="text" rows="2" data-grow placeholder="Подробнее — необязательно. Например: продан 30 октября, цена 6,2 млн"></textarea>
+        <p class="note" data-optout-hint hidden>Мы проверим и уберём номер. Хотите сами управлять своими объявлениями (цена, фото, «продано»)?
+          Подтвердите номер в разделе <a href="/my" target="_top">«Мои объекты»</a>.</p>
+        <div class="rp-go"><button type="submit" class="pill">Отправить администратору</button><small>Увидит только администратор 1+1</small></div>
       </form></details>`;
   }
 
@@ -2361,6 +2403,28 @@
           ${e.reverted ? `<em>откачено</em>` : `<button type="button" class="chip" data-edit-revert="${e.id}" data-id="${id}">Откатить</button>`}</div>`).join("")
         : `<p class="note">Правок пока не было.</p>`;
     }
+    // 02.11: открыли блок «Админ» — история правок подгружается сама (без лишней кнопки)
+    document.addEventListener("toggle", (e) => {
+      const d = e.target;
+      if (!d.open || !d.classList || !d.classList.contains("admin")) return;
+      const box = d.querySelector("[data-hist-auto]");
+      if (box && !box.dataset.loaded) { box.dataset.loaded = "1"; loadEdits(Number(box.dataset.histAuto)); }
+    }, true);
+    // 02.11: решение по жалобе прямо из окна объекта
+    document.addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-cm-act]");
+      if (!b) return;
+      const a = b.dataset.cmAct;
+      if (a === "hide" && !confirm("Снять объект с сайта? Повтор этого поста его не вернёт. Вернуть можно в админке → «Жалобы».")) return;
+      b.disabled = true;
+      const r = await call("/api/admin/complaints", { id: Number(b.dataset.c), action: a });
+      if (!r.ok) { b.disabled = false; toast(r.data.detail || "Не получилось"); return; }
+      toast({ keep: "Жалоба отклонена — объект остаётся", done: "Отмечено: исправлено", hide: "Объект снят с сайта", restore: "Объект снова на сайте" }[a] || "Готово", 2600);
+      await openDetail(Number(b.dataset.id));
+      const acc2 = document.querySelector("#detail details.dv-acc.admin");
+      if (acc2) acc2.open = true;
+      if (a === "hide" || a === "restore") refresh();
+    });
     document.addEventListener("click", async (e) => {
       const b = e.target.closest("[data-hist-load], [data-edit-revert]");
       if (!b) return;
@@ -2716,7 +2780,9 @@
         const photos = [...f.querySelectorAll("input[name=ph]:checked")].map((x) => x.value);
         if (f.reason.value === "photo" && !photos.length) { toast("Отметьте фото, которые не подходят"); return; }
         const r = await call("/api/complaints", { listing_id: Number(f.dataset.report), reason: f.reason.value, text: f.text.value, photos });
-        f.innerHTML = `<p class="note">${r.ok ? "Спасибо! Проверим и поправим." : esc(r.data.detail || "Не отправилось.")}</p>`;
+        f.innerHTML = r.ok ? `<div class="rp-ok">${ic("check-circle")}<p><b>Спасибо, отправили администратору.</b>
+          Объект пока остаётся на сайте — после проверки администратор решит, что сделать.</p></div>`
+          : `<p class="note">${esc(r.data.detail || "Не отправилось.")}</p>`;
       }
     });
     document.addEventListener("change", (e) => {

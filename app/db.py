@@ -433,7 +433,8 @@ MIGRATIONS = [
     ("collections", "client_id", "INTEGER"),
     ("collections", "color", "TEXT"),
     ("collections", "views_unique", "INTEGER NOT NULL DEFAULT 0"),
-    ("listing_edits", "src", "TEXT"),   # откуда правка: админ / агент / перепроверка / контур / чистка правил
+    ("listing_edits", "src", "TEXT"),
+    ("complaints", "decided_at", "INTEGER"),   # 02.11: когда админ разобрал жалобу (status: kept/done/hidden/deleted/restored)   # откуда правка: админ / агент / перепроверка / контур / чистка правил
     ("collections", "hide_address", "INTEGER NOT NULL DEFAULT 0"),   # клиенту — без номера дома, точка округлена ~300 м
     ("collections", "cover", "TEXT"),
     ("collections", "hide_map", "INTEGER NOT NULL DEFAULT 0"),

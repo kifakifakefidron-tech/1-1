@@ -97,9 +97,14 @@ def test_hero_removed_counter(c):
     db.set_state(conn, "deleted_listings", "4")
     conn.commit()
     server._stats_mem.update(t=0.0, v=None)
-    assert server._stats()["removed"] == 5
+    # 02.11 (Артём): «убрано за сутки» — только снятые за последние 24 часа (стёртые давно и снятые раньше — не считаем)
+    assert server._stats()["removed"] == 1
     html = client.get("/").text
-    assert 'data-k="removed" data-ssr="1">5<' in html and "районов на карте" not in html
+    assert 'data-k="removed" data-ssr="1">1<' in html and "убрано за сутки" in html and "районов на карте" not in html
+    conn.execute("UPDATE listings SET removed_at = removed_at - 2 * 86400 WHERE id = ?", (lid,))
+    conn.commit()
+    server._stats_mem.update(t=0.0, v=None)
+    assert server._stats()["removed"] == 0
 
 
 def test_hero_requests_counter(c):

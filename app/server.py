@@ -686,6 +686,8 @@ def api_listing(request: Request, body: dict | None = None):
     d["fit_clients"] = clients.fits_listing(conn, user["id"], lid) if user else []
     d["favorite"] = bool(user and conn.execute(
         "SELECT 1 FROM favorites WHERE user_id = ? AND listing_id = ?", (user["id"], lid)).fetchone())
+    if user and user["is_admin"]:   # 02.11: жалобы на объект — прямо в блоке «Админ» окна объекта
+        d["complaints"] = complaints_list(conn, "c.listing_id = ?", (lid,), 20)
     return JSONResponse(d)
 
 
@@ -784,11 +786,10 @@ def _stats() -> dict:
         "districts": one("SELECT COUNT(DISTINCT district) FROM listings WHERE is_active=1 AND district IS NOT NULL"),
         "requests": one("SELECT COUNT(*) FROM buyer_requests WHERE is_active = 1 AND removed = 0"),   # 01.11: запросы покупателей
         # 31.10 (Артём): на первом экране вместо «районов на карте» — сколько неактуальных объектов убрали с сайта:
-        # проданные, под задатком, не присылали 15 дней, удалённые админом + уже стёртые из базы (state deleted_listings).
-        # Склеенные повторы и чужие чаты сюда не входят — это не «неактуальные» объекты.
-        "removed": one(f"""SELECT COUNT(*) FROM listings WHERE is_active = 0 AND merged_into IS NULL
-                           AND COALESCE(hidden_reason, '') NOT IN ({','.join('?' * len(_NOT_REMOVED))})""", *_NOT_REMOVED)
-                   + int(db.get_state(conn, "deleted_listings") or 0),
+        # проданные, под задатком, не присылали 15 дней, удалённые админом. Склеенные повторы и чужие чаты сюда не входят.
+        # 02.11 (Артём): «показывать, сколько убрано за сутки, а не в общем — так же, как новые» (removed_at — триггер trg_removed_v2)
+        "removed": one(f"""SELECT COUNT(*) FROM listings WHERE is_active = 0 AND merged_into IS NULL AND removed_at >= ?
+                           AND COALESCE(hidden_reason, '') NOT IN ({','.join('?' * len(_NOT_REMOVED))})""", day, *_NOT_REMOVED),
     })
 
 
@@ -1097,6 +1098,8 @@ def api_complaint(request: Request, body: dict | None = None):
         picked = [str(u) for u in body["photos"] if str(u) in own][:12]
         if picked:
             text = (text + "\n" if text else "") + "\n".join(f"Фото: {u}" for u in picked)
+    # 02.11 (Артём): жалоба НЕ снимает, не скрывает и не отправляет объект в архив — только запись для админа,
+    # решение принимает админ после разбора (вкладка «Жалобы» или блок «Админ» в окне объекта)
     conn.execute("INSERT INTO complaints (listing_id, user_id, reason, text, ts) VALUES (?,?,?,?,?)",
                  (lid, user["id"] if user is not None else None,
                   str(body.get("reason", ""))[:40], text[:3000], int(time.time())))
@@ -1354,6 +1357,15 @@ def api_admin_users(request: Request, body: dict | None = None):
     size = 100
     where = """lower(COALESCE(u.tg_username,'') || ' ' || COALESCE(u.email,'') || ' ' || COALESCE(u.phone,'') || ' ' ||
                COALESCE(u.name,'') || ' ' || u.id) LIKE ?"""
+    now = int(time.time())
+    # 02.11 (Артём: «пользователи — удобнее»): быстрые фильтры-плитки сверху
+    flt = {"new7": f"u.created > {now - 7 * 86400}", "seen1": f"u.last_seen > {now - 86400}",
+           "seen7": f"u.last_seen > {now - 7 * 86400}", "access": f"MAX(u.trial_until, u.paid_until) > {now}",
+           "paid": f"u.paid_until > {now}", "verified": "EXISTS (SELECT 1 FROM agent_phones a WHERE a.user_id = u.id)",
+           "noaccess": f"MAX(u.trial_until, u.paid_until) <= {now} AND u.is_admin = 0", "admin": "u.is_admin = 1",
+           "blocked": "u.blocked = 1"}.get(qp.get("f", ""))
+    if flt:
+        where += f" AND {flt}"
     total = conn.execute(f"SELECT COUNT(*) FROM users u WHERE {where}", (q,)).fetchone()[0]
     rows = conn.execute(f"""SELECT u.*,
             (SELECT group_concat(phone, ', ') FROM agent_phones a WHERE a.user_id = u.id) AS verified_phones,
@@ -1367,7 +1379,6 @@ def api_admin_users(request: Request, body: dict | None = None):
             (SELECT COUNT(*) FROM listings l WHERE l.owner_user_id = u.id AND l.source = 'own') AS n_own,
             (SELECT r.email FROM users r WHERE r.id = u.referred_by) AS ref_email
         FROM users u WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?""", (q, size, (page - 1) * size)).fetchall()
-    now = int(time.time())
     one = lambda sql, *a: conn.execute(sql, a).fetchone()[0]  # noqa: E731
     summary = {"total": one("SELECT COUNT(*) FROM users"),
                "new_1d": one("SELECT COUNT(*) FROM users WHERE created > ?", now - 86400),
@@ -1376,7 +1387,10 @@ def api_admin_users(request: Request, body: dict | None = None):
                "seen_7d": one("SELECT COUNT(*) FROM users WHERE last_seen > ?", now - 7 * 86400),
                "access": one("SELECT COUNT(*) FROM users WHERE MAX(trial_until, paid_until) > ?", now),
                "paid": one("SELECT COUNT(*) FROM users WHERE paid_until > ?", now),
-               "verified": one("SELECT COUNT(DISTINCT user_id) FROM agent_phones")}
+               "verified": one("SELECT COUNT(DISTINCT user_id) FROM agent_phones"),
+               "noaccess": one("SELECT COUNT(*) FROM users WHERE MAX(trial_until, paid_until) <= ? AND is_admin = 0", now),
+               "admin": one("SELECT COUNT(*) FROM users WHERE is_admin = 1"),
+               "blocked": one("SELECT COUNT(*) FROM users WHERE blocked = 1")}
     items = []
     for r in rows:
         d = accounts.user_public_row(r)
@@ -1468,26 +1482,71 @@ def api_admin_complaints(request: Request, body: dict | None = None):
     conn = db.get()
     if request.method == "POST":
         body = body or {}
-        cid = _num(body.get("id"), int)
-        conn.execute("UPDATE complaints SET status = ? WHERE id = ?", (str(body.get("status", "done"))[:20], cid))
-        if body.get("hide_listing"):
-            conn.execute("UPDATE listings SET is_active = 0 WHERE id = (SELECT listing_id FROM complaints WHERE id = ?)",
-                         (cid,))
-        conn.commit()
-        return JSONResponse({"ok": True})
+        res = complaint_decide(conn, _num(body.get("id"), int) or 0,
+                               str(body.get("action") or ("hide" if body.get("hide_listing") else "done")))
+        if res.get("error"):
+            return _err(res["error"])
+        _bump_cache()
+        return JSONResponse(res)
+    qp = request.query_params
+    show = qp.get("status", "new")
+    lid = _num(qp.get("listing"), int)
+    where, args = ("c.listing_id = ?", [lid]) if lid else \
+        ("c.status = 'new'", []) if show == "new" else ("c.status != 'new'", []) if show == "done" else ("1", [])
+    counts = {r[0]: r[1] for r in conn.execute(
+        "SELECT CASE WHEN status = 'new' THEN 'new' ELSE 'done' END, COUNT(*) FROM complaints GROUP BY 1")}
+    return JSONResponse({"items": complaints_list(conn, where, args), "counts": {"new": counts.get("new", 0), "done": counts.get("done", 0)}})
+
+
+# 02.11 (Артём): жалобу разбирает админ. Решения: оставить как есть / исправлено / снять с сайта / удалить навсегда / вернуть на сайт
+COMPLAINT_ACTIONS = {"keep": "kept", "done": "done", "hide": "hidden", "delete": "deleted", "restore": "restored", "reopen": "new"}
+
+
+def complaint_decide(conn, cid: int, action: str) -> dict:
+    row = conn.execute("SELECT * FROM complaints WHERE id = ?", (cid,)).fetchone()
+    if row is None or action not in COMPLAINT_ACTIONS:
+        return {"error": "Жалоба не найдена." if row is None else "Неизвестное действие."}
+    lid, now = row["listing_id"], int(time.time())
+    db.flush(conn)
+    if action == "hide" and lid:      # снять с сайта (как «удалил админ»; повтор поста не вернёт)
+        conn.execute("""UPDATE listings SET is_active = 0, hidden_reason = 'admin' WHERE id = ? AND is_active = 1""", (lid,))
+    elif action == "delete" and lid:  # навсегда: тот же текст и объект больше не появятся
+        ingest.ban_listing(conn, lid)
+    elif action == "restore" and lid:
+        if conn.execute("SELECT 1 FROM banned WHERE listing_id = ?", (lid,)).fetchone():
+            ingest.unban_listing(conn, lid)
+        conn.execute("""UPDATE listings SET is_active = 1, hidden_reason = NULL
+                        WHERE id = ? AND is_active = 0 AND COALESCE(hidden_reason, '') IN ('', 'admin')""", (lid,))
+    status = COMPLAINT_ACTIONS[action]
+    if action in ("hide", "delete", "restore") and lid:   # объект снят/возвращён — все новые жалобы на него разобраны
+        conn.execute("UPDATE complaints SET status = ?, decided_at = ? WHERE listing_id = ? AND (status = 'new' OR id = ?)",
+                     (status, now, lid, cid))
+    else:
+        conn.execute("UPDATE complaints SET status = ?, decided_at = ? WHERE id = ?", (status, None if status == "new" else now, cid))
+    conn.commit()
+    act = conn.execute("SELECT is_active FROM listings WHERE id = ?", (lid,)).fetchone() if lid else None
+    return {"ok": True, "status": status, "listing_active": bool(act and act[0])}
+
+
+def complaints_list(conn, where: str = "1", args=(), limit: int = 300) -> list[dict]:
     # 29.10 (Артём: «в жалобах должно быть видно, какой номер её подаёт»): кто подал — имя, почта, номер аккаунта и подтверждённые номера
-    rows = conn.execute("""SELECT c.*, l.title, l.photos, u.name AS u_name, u.email AS u_email, u.phone AS u_phone,
+    rows = conn.execute(f"""SELECT c.*, l.title, l.photos, l.price, l.deal, l.is_active AS l_active, l.hidden_reason AS l_reason,
+                                  (SELECT COUNT(*) FROM complaints c2 WHERE c2.listing_id = c.listing_id) AS n_same,
+                                  u.name AS u_name, u.email AS u_email, u.phone AS u_phone,
                                   (SELECT GROUP_CONCAT(a.phone, ',') FROM agent_phones a WHERE a.user_id = c.user_id) AS u_phones
                            FROM complaints c LEFT JOIN listings l ON l.id = c.listing_id LEFT JOIN users u ON u.id = c.user_id
-                           ORDER BY c.status = 'new' DESC, c.ts DESC LIMIT 300""").fetchall()
+                           WHERE {where} ORDER BY c.status = 'new' DESC, c.ts DESC LIMIT ?""", (*args, limit)).fetchall()
     out = []
     for r in rows:
         d = dict(r)
         phones = list(dict.fromkeys([p for p in [d.pop("u_phone")] + (d.pop("u_phones") or "").split(",") if p]))
         d["who"] = {"name": d.pop("u_name"), "email": d.pop("u_email"), "phones": [_pretty_phone(p) for p in phones],
                     "tel": phones} if d.get("user_id") else None
+        d["listing_state"] = None if d["l_active"] is None else "active" if d["l_active"] else \
+            "deleted" if d["l_reason"] == "admin" and conn.execute("SELECT 1 FROM banned WHERE listing_id = ?", (d["listing_id"],)).fetchone() \
+            else "hidden" if d["l_reason"] == "admin" else "gone"
         out.append(d)
-    return JSONResponse({"items": out})
+    return out
 
 
 # ─── заметки и подписки на поиск ───────────────────────────────────────────
@@ -3020,7 +3079,9 @@ def api_admin_edits(request: Request, body: dict | None = None):
                                         "new": json.loads(r["new"] or "null"), "reverted": r["reverted"],
                                         "who": r["src"] or ("сервис" if r["user_id"] == 0 else (r["u_name"] or r["u_email"] or "пользователь"))}
                                        for r in rows]})
-    return JSONResponse({"items": agent.edits_for_admin(conn)})
+    qp = request.query_params
+    return JSONResponse(agent.edits_for_admin(conn, who=qp.get("who", "agent"), q=qp.get("q", ""),
+                                              page=max(1, _num(qp.get("page"), int) or 1)))
 
 
 # ─── отладка (только админ) ────────────────────────────────────────────────

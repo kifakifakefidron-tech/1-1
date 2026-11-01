@@ -16,9 +16,9 @@
 <link rel="stylesheet" href="/static/vendor/fonts/fonts.css?v=1">
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
-<link rel="stylesheet" href="/static/admin.css?v=28">
+<link rel="stylesheet" href="/static/admin.css?v=31">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=120">
+<link rel="stylesheet" href="/static/glass.css?v=122">
 </head>
 <body>
 <main class="wrap">
@@ -45,7 +45,7 @@
       <button class="seg" data-tab="promos">Промокоды</button>
       <button class="seg" data-tab="optouts">Скрытые номера</button>
       <button class="seg" data-tab="complaints">Жалобы</button>
-      <button class="seg" data-tab="edits">Правки агентов</button>
+      <button class="seg" data-tab="edits">Правки</button>
       <button class="seg" data-tab="chats">Чаты</button>
       <a class="seg seg-link" href="/learn">Обучение и разбор ↗</a>
       <button class="seg" data-tab="districts">Справочник</button>
@@ -61,13 +61,13 @@
       <div class="st" id="stats"></div></section>
 
     <section data-pane="users" hidden>
-      <div class="adm-usum" id="userSum"></div>
+      <div class="us-sum" id="userSum" role="group" aria-label="Быстрые фильтры"></div>
       <form class="inline-form adm-search" id="userSearch">
         <input id="userQ" placeholder="Поиск: ник, почта, телефон, имя, №">
         <select id="userSort" aria-label="Порядок"><option value="last">Сначала заходившие недавно</option><option value="new">Сначала новые регистрации</option></select>
         <button class="pill light">Найти</button>
       </form>
-      <div class="adm-table-wrap"><table class="adm-table adm-users" id="users"></table></div>
+      <div class="us-list" id="users"></div>
       <div class="adm-pager" id="userPager"></div>
     </section>
 
@@ -92,7 +92,17 @@
     </section>
 
     <section data-pane="complaints" hidden>
-      <div class="adm-table-wrap"><table class="adm-table" id="complaints"></table></div>
+      <!-- 02.11 (Артём): жалоба сама НИЧЕГО не снимает — объект на сайте, пока админ не решит -->
+      <div class="cm-top">
+        <div class="ad-seg" id="cmTabs" role="tablist">
+          <button type="button" class="on" data-cm="new">Новые <b id="cmN"></b></button>
+          <button type="button" data-cm="done">Разобранные <b id="cmD"></b></button>
+          <button type="button" data-cm="all">Все</button>
+        </div>
+        <p class="ad-hint">Жалоба сама ничего не меняет — объект остаётся на сайте, пока вы не решите. Откройте объект, проверьте и выберите:
+          <b>оставить</b> (жалоба не подтвердилась), <b>исправлено</b> (поправили данные), <b>снять с сайта</b> или <b>удалить навсегда</b>.</p>
+      </div>
+      <div class="cm-list" id="complaints"></div>
     </section>
 
     <section data-pane="chats" hidden>
@@ -161,8 +171,20 @@
     </section>
 
     <section data-pane="edits" hidden>
-      <p class="note">Что агенты меняли в объявлениях. Если правка неверная — «Откатить» вернёт прежнее значение.</p>
-      <div class="adm-table-wrap"><table class="adm-table" id="edits"></table></div>
+      <!-- 02.11 (Артём): у каждой правки — дата и время; кто правил — агенты / вы / сервис -->
+      <div class="ed-top">
+        <div class="ad-seg" id="edWho" role="tablist">
+          <button type="button" class="on" data-ed="agent">Агенты <b data-edn="agent"></b></button>
+          <button type="button" data-ed="admin">Администратор <b data-edn="admin"></b></button>
+          <button type="button" data-ed="service">Сервис <b data-edn="service"></b></button>
+          <button type="button" data-ed="all">Все</button>
+        </div>
+        <form class="inline-form adm-search" id="edSearch"><input id="edQ" type="search" placeholder="№ объекта, название, почта или имя">
+          <button class="pill light">Найти</button></form>
+      </div>
+      <p class="ad-hint" id="edHint"></p>
+      <div class="ed-list" id="edits"></div>
+      <div class="adm-pager" id="edPager"></div>
     </section>
   </div>
 </main>
@@ -172,6 +194,6 @@
 <script src="/static/max.js?v=2"></script>
 <script src="/static/rail.js?v=37"></script>
 <script src="/static/combo.js?v=3"></script>
-<script src="/static/admin.js?v=54"></script>
+<script src="/static/admin.js?v=57"></script>
 </body>
 </html>

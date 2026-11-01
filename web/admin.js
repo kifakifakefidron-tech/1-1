@@ -7,6 +7,28 @@
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const day = (ts) => (ts ? new Date(ts * 1000).toLocaleDateString("ru-RU") : "—");
   const now = () => Date.now() / 1000;
+  // 02.11 (Артём: «у правок должно быть время»): «сегодня, 14:05» / «вчера, 09:12» / «28 окт., 18:40» (другой год — с годом)
+  const hm = (d) => d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  const dayKey = (d) => d.toDateString();
+  function when(ts) {
+    if (!ts) return "—";
+    const d = new Date(ts * 1000), t = new Date(), y = new Date(Date.now() - 864e5);
+    if (dayKey(d) === dayKey(t)) return `сегодня, ${hm(d)}`;
+    if (dayKey(d) === dayKey(y)) return `вчера, ${hm(d)}`;
+    return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short", ...(d.getFullYear() !== t.getFullYear() ? { year: "numeric" } : {}) }) + `, ${hm(d)}`;
+  }
+  function dayTitle(ts) {
+    const d = new Date(ts * 1000), t = new Date(), y = new Date(Date.now() - 864e5);
+    if (dayKey(d) === dayKey(t)) return "Сегодня";
+    if (dayKey(d) === dayKey(y)) return "Вчера";
+    return d.toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
+  }
+  const ago = (ts) => {
+    if (!ts) return "—";
+    const m = Math.round((now() - ts) / 60);
+    return m < 2 ? "сейчас" : m < 60 ? `${m} мин назад` : m < 1440 ? `${Math.round(m / 60)} ч назад` : when(ts);
+  };
+  const icn = (n) => (window.ic ? window.ic(n) : "");
 
   async function call(url, body, method) {
     const opts = { credentials: "same-origin", method: method || (body !== undefined ? "POST" : "GET") };
@@ -239,12 +261,7 @@
   const n0 = (x) => (x == null ? "—" : Number(x).toLocaleString("ru-RU"));
   const money = (p, deal) => (p == null ? "—" : deal === "rent" ? `${n0(Math.round(p / 1000))} тыс. ₽/мес`
     : p >= 1e6 ? `${(p / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} млн ₽` : `${n0(p)} ₽`);
-  const ago = (ts) => {
-    if (!ts) return "—";
-    const m = Math.round((now() - ts) / 60);
-    return m < 1 ? "только что" : m < 60 ? `${m} мин назад` : m < 1440 ? `${Math.round(m / 60)} ч назад` : day(ts);
-  };
-  const box = (title, html, wide) => `<section class="st-box${wide ? " wide" : ""}"><h3>${title}</h3>${html}</section>`;
+  const box =(title, html, wide) => `<section class="st-box${wide ? " wide" : ""}"><h3>${title}</h3>${html}</section>`;
   const tbl = (head, rows) => `<table class="st-t"><thead><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
     <tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   const kv = (pairs) => `<dl class="st-kv">${pairs.map(([k, v, hint]) =>
@@ -329,50 +346,59 @@
 
   // ─── пользователи ───────────────────────────────────────────────────────
   // 24.10: все пользователи — последний заход, регистрация, как входит, номера, доступ, оплаты и что делает на сайте
-  let userPage = 1;
+  let userPage = 1, userF = "";
+  // 02.11 (Артём: «пользователи — удобнее»): плитки сверху — это фильтры; список карточками; редкие действия — в меню «⋯»
+  const U_TILES = [["", "Все", "total"], ["seen1", "Заходили за сутки", "seen_1d"], ["seen7", "Заходили за неделю", "seen_7d"],
+    ["new7", "Новые за неделю", "new_7d"], ["access", "С доступом", "access"], ["paid", "Оплатили", "paid"],
+    ["verified", "Подтвердили номер", "verified"], ["noaccess", "Доступ кончился", "noaccess"], ["admin", "Админы", "admin"],
+    ["blocked", "Заблокированы", "blocked"]];
   async function users() {
-    const d = await call(`/api/admin/users?q=${encodeURIComponent($("userQ").value)}&sort=${$("userSort").value}&page=${userPage}`);
+    const d = await call(`/api/admin/users?q=${encodeURIComponent($("userQ").value)}&sort=${$("userSort").value}&page=${userPage}&f=${userF}`);
     const s = d.summary || {};
-    $("userSum").innerHTML = [["Всего", s.total], ["Новых за сутки", s.new_1d], ["Новых за неделю", s.new_7d], ["Заходили за сутки", s.seen_1d],
-      ["Заходили за неделю", s.seen_7d], ["С доступом сейчас", s.access], ["Оплатили", s.paid], ["Подтвердили номер", s.verified]]
-      .map(([k, v]) => `<span><b>${v ?? 0}</b>${k}</span>`).join("");
-    const ago = (ts) => {
-      if (!ts) return "—";
-      const m = Math.round((now() - ts) / 60);
-      return m < 2 ? "сейчас" : m < 60 ? `${m} мин назад` : m < 1440 ? `${Math.round(m / 60)} ч назад` : `${day(ts)}`;
-    };
-    $("users").innerHTML = `<tr><th>#</th><th>Кто</th><th>Последний заход</th><th>Регистрация</th><th>Доступ</th><th>Работа на сайте</th><th></th></tr>` +
-      d.items.map((u) => {
-        const until = Math.max(u.trial_until, u.paid_until);
-        const status = u.blocked ? `<span class="bad">заблокирован</span>`
-          : u.is_admin ? "админ" : until > now() ? `<span class="ok">до ${day(until)}</span>${u.paid_until > now() ? " · оплачен" : " · пробный"}` : "нет";
-        const work = [[u.n_clients, "клиентов"], [u.n_picks, "подборок"], [u.n_fav, "в избранном"], [u.n_saved, "поисков"],
-          [u.n_events, "в планере"], [u.n_own, "своих объектов"]].filter(([n]) => n).map(([n, t]) => `${n} ${t}`).join(" · ") || "—";
-        return `<tr><td>${u.id}</td>
-          <td><b>${esc(u.name || u.email || u.phone || (u.tg_username ? "@" + u.tg_username : "—"))}</b>
-            <small>${[u.email, u.phone, u.tg_username ? "@" + u.tg_username : ""].filter(Boolean).map(esc).join(" · ")}</small>
-            <small>вход: ${esc(u.login)}${u.verified_phones ? ` · подтверждён ${esc(u.verified_phones)}` : ""}${u.mail_off ? " · письма выкл." : ""}${u.ref_email ? ` · пригласил ${esc(u.ref_email)}` : ""}</small></td>
-          <td>${ago(u.last_seen)}<small>${u.n_sessions || 0} устр.</small></td>
-          <td>${day(u.created)}<small>${u.consent_at ? "согласие есть" : "без согласия"}</small></td>
-          <td>${status}${u.paid_sum ? `<small>оплачено ${u.paid_sum.toLocaleString("ru-RU")} ₽</small>` : ""}</td>
-          <td><small>${work}</small></td>
-          <td class="acts">
-            <button data-u="${u.id}" data-a="extend" data-days="7">+7 дн.</button>
-            <button data-u="${u.id}" data-a="extend" data-days="30">+30 дн.</button>
-            <button data-u="${u.id}" data-a="reset">Сбросить доступ</button>
-            <button data-u="${u.id}" data-a="${u.blocked ? "unblock" : "block"}">${u.blocked ? "Разблокировать" : "Заблокировать"}</button>
-            <button data-u="${u.id}" data-a="${u.is_admin ? "unadmin" : "admin"}">${u.is_admin ? "Снять админа" : "Сделать админом"}</button>
-          </td></tr>`;
-      }).join("");
+    $("userSum").innerHTML = U_TILES.filter(([f, , k]) => !f || s[k] || userF === f).map(([f, t, k]) =>
+      `<button type="button" class="us-tile${userF === f ? " on" : ""}" data-uf="${f}"><b>${(s[k] ?? 0).toLocaleString("ru-RU")}</b><span>${t}</span></button>`).join("");
+    const t = now();
+    $("users").innerHTML = d.items.length ? d.items.map((u) => {
+      const until = Math.max(u.trial_until, u.paid_until);
+      const [stCls, stTxt, stSub] = u.blocked ? ["bad", "Заблокирован", ""]
+        : u.is_admin ? ["adm", "Администратор", ""]
+        : until > t ? ["ok", u.paid_until > t ? "Оплачен" : "Пробный", `до ${day(until)} · ${Math.ceil((until - t) / 86400)} дн.`]
+        : ["off", "Без доступа", until ? `кончился ${day(until)}` : ""];
+      const name = u.name || u.email || u.phone || (u.tg_username ? "@" + u.tg_username : `Пользователь №${u.id}`);
+      const contacts = [u.email, u.phone, u.tg_username ? "@" + u.tg_username : ""].filter(Boolean).filter((x) => x !== name);
+      const work = [[u.n_clients, "клиентов"], [u.n_picks, "подборок"], [u.n_fav, "избранное"], [u.n_saved, "поисков"],
+        [u.n_events, "в планере"], [u.n_own, "своих объектов"]].filter(([n]) => n);
+      const fresh = u.last_seen && t - u.last_seen < 600;
+      return `<article class="us-row${u.blocked ? " blocked" : ""}">
+        <span class="us-ava${fresh ? " live" : ""}" aria-hidden="true">${esc((name.replace(/^[@+\d\s]+/, "") || "№")[0].toUpperCase())}</span>
+        <div class="us-who"><b>${esc(name)}</b><small class="us-id">№${u.id}</small>
+          ${contacts.length ? `<span class="us-c">${contacts.map(esc).join(" · ")}</span>` : ""}
+          <span class="us-tags"><em>вход: ${esc(u.login)}</em>${u.verified_phones ? `<em class="ok">${icn("check")}номер ${esc(u.verified_phones)}</em>` : ""}
+            ${u.consent_at ? "" : `<em class="warn">без согласия</em>`}${u.mail_off ? `<em>письма выкл.</em>` : ""}${u.ref_email ? `<em>от ${esc(u.ref_email)}</em>` : ""}</span></div>
+        <div class="us-col"><small>Последний заход</small><b>${ago(u.last_seen)}</b><span>${u.n_sessions || 0} устр.</span></div>
+        <div class="us-col"><small>Регистрация</small><b>${when(u.created)}</b></div>
+        <div class="us-col"><small>Доступ</small><b class="us-st ${stCls}">${stTxt}</b><span>${stSub}${u.paid_sum ? ` · ${u.paid_sum.toLocaleString("ru-RU")} ₽` : ""}</span></div>
+        <div class="us-col us-work"><small>На сайте</small>${work.length ? work.map(([n, w]) => `<span><b>${n}</b> ${w}</span>`).join("") : "<span>—</span>"}</div>
+        <div class="us-acts">
+          <button type="button" class="us-b" data-u="${u.id}" data-a="extend" data-days="7">+7 дн.</button>
+          <details class="us-menu"><summary aria-label="Ещё действия">⋯</summary><div class="us-pop">
+            <button type="button" data-u="${u.id}" data-a="extend" data-days="30">${icn("plus")}Продлить на 30 дней</button>
+            <button type="button" data-u="${u.id}" data-a="reset">${icn("x-circle")}Сбросить доступ</button>
+            <button type="button" data-u="${u.id}" data-a="${u.is_admin ? "unadmin" : "admin"}">${icn("user")}${u.is_admin ? "Снять права админа" : "Сделать админом"}</button>
+            <button type="button" class="danger" data-u="${u.id}" data-a="${u.blocked ? "unblock" : "block"}">${icn("ban")}${u.blocked ? "Разблокировать" : "Заблокировать"}</button>
+          </div></details></div></article>`;
+    }).join("") : `<p class="ad-empty">Никого не нашлось — попробуйте другой фильтр или поиск.</p>`;
     $("userPager").innerHTML = d.pages > 1 ? `<button class="chip" data-upage="-1"${userPage <= 1 ? " disabled" : ""}>← Назад</button>
       <span>стр. ${userPage} из ${d.pages} · найдено ${d.total}</span>
       <button class="chip" data-upage="1"${userPage >= d.pages ? " disabled" : ""}>Дальше →</button>` : `<span>найдено ${d.total}</span>`;
   }
   document.addEventListener("click", (e) => {
+    const f = e.target.closest("[data-uf]");
+    if (f) { userF = f.dataset.uf; userPage = 1; users().catch(fail); return; }
     const b = e.target.closest("[data-upage]");
-    if (!b) return;
-    userPage = Math.max(1, userPage + Number(b.dataset.upage));
-    users();
+    if (b) { userPage = Math.max(1, userPage + Number(b.dataset.upage)); users().catch(fail); return; }
+    // меню «⋯»: открыто одно, клик мимо — закрыть
+    document.querySelectorAll("details.us-menu[open]").forEach((m) => { if (!m.contains(e.target)) m.open = false; });
   });
   document.addEventListener("change", (e) => { if (e.target.id === "userSort") { userPage = 1; users(); } });
 
@@ -395,42 +421,123 @@
   }
 
   // ─── жалобы ─────────────────────────────────────────────────────────────
+  // 02.11 (Артём): жалоба сама ничего не снимает — объект на сайте, пока админ не решит; решения — кнопками в карточке жалобы
+  const CM_REASON = { sold: "Продан или неактуален", wrong: "Неверные данные", my_phone: "Это мой номер", photo: "Чужие фото", other: "Другое" };
+  const CM_STATUS = { new: "Новая", kept: "Оставили как есть", done: "Исправлено", hidden: "Сняли с сайта", deleted: "Удалили навсегда",
+    restored: "Вернули на сайт" };
+  const CM_OBJ = { active: ["ok", "на сайте"], hidden: ["warn", "снят вами"], deleted: ["bad", "удалён навсегда"], gone: ["off", "снят (продан / срок)"] };
+  let cmShow = "new";
+  function complaintCard(c, compact) {
+    // 29.10: кто подал жалобу — номер (звонок в одно нажатие), имя, почта
+    const w = c.who;
+    const who = !w ? `<span class="cm-who">гость</span>` : `<span class="cm-who">${w.phones.length
+      ? w.phones.map((p, i) => `<a class="cmp-tel" href="tel:${esc(w.tel[i])}">${esc(p)}</a>`).join(", ") : "номера нет"}${
+      [w.name, w.email].filter(Boolean).map((x) => ` · ${esc(x)}`).join("")}</span>`;
+    const own = (() => { try { return JSON.parse(c.photos || "[]"); } catch { return []; } })();
+    const ph = [...(c.text || "").matchAll(/^Фото: (\S+)$/gm)].map((m) => m[1]);
+    const text = (c.text || "").replace(/^Фото: .*$/gm, "").trim();
+    const [oc, ot] = CM_OBJ[c.listing_state] || ["off", "объекта нет"];
+    const photo = own[0];
+    const acts = c.status === "new" ? `
+        <button type="button" class="cm-b" data-cm-act="keep" data-c="${c.id}" title="Жалоба не подтвердилась — объект остаётся">${icn("check")}Оставить</button>
+        <button type="button" class="cm-b" data-cm-act="done" data-c="${c.id}" title="Данные поправили — объект остаётся">${icn("edit")}Исправлено</button>
+        ${c.listing_state === "active" ? `<button type="button" class="cm-b warn" data-cm-act="hide" data-c="${c.id}" title="Убрать с сайта; повтор поста не вернёт">${icn("eye")}Снять с сайта</button>
+        <button type="button" class="cm-b bad" data-cm-act="delete" data-c="${c.id}" title="Навсегда: тот же текст и объект больше не появятся">${icn("trash")}Удалить навсегда</button>` : ""}`
+      : `<span class="cm-done">${esc(CM_STATUS[c.status] || c.status)}${c.decided_at ? ` · ${when(c.decided_at)}` : ""}</span>
+        ${["hidden", "deleted"].includes(c.listing_state) ? `<button type="button" class="cm-b" data-cm-act="restore" data-c="${c.id}">${icn("history")}Вернуть на сайт</button>` : ""}
+        <button type="button" class="cm-b ghost" data-cm-act="reopen" data-c="${c.id}">Снова в новые</button>`;
+    return `<article class="cm-card${c.status === "new" ? " new" : ""}">
+      ${compact ? "" : `<a class="cm-obj" href="/?open=${c.listing_id}" target="_blank" rel="noopener">${photo ? `<img src="${esc(photo)}" alt="" loading="lazy">` : `<span class="cm-noph">${icn("home")}</span>`}
+        <span><b>${esc(c.title || "Объект №" + c.listing_id)}</b><em class="cm-st ${oc}">${ot}</em>${c.n_same > 1 ? `<em class="cm-st warn">жалоб на объект: ${c.n_same}</em>` : ""}</span></a>`}
+      <div class="cm-body">
+        <p class="cm-meta"><span class="cm-reason">${esc(CM_REASON[c.reason] || c.reason || "Без причины")}</span><time>${when(c.ts)}</time>${who}</p>
+        ${text ? `<p class="cm-text">${esc(text)}</p>` : `<p class="cm-text none">Без комментария.</p>`}
+        ${ph.length ? `<div class="cmp-ph">${ph.map((u) => own.includes(u)
+          ? `<span><img src="${esc(u)}" alt=""><button type="button" data-cph="${esc(u)}" data-lid="${c.listing_id}">Удалить фото</button></span>`
+          : `<span class="gone"><img src="${esc(u)}" alt=""><small>уже удалено</small></span>`).join("")}</div>` : ""}
+        <div class="cm-acts">${acts}</div></div></article>`;
+  }
   async function complaints() {
-    const { items } = await call("/api/admin/complaints");
-    const reason = { sold: "продан/неактуален", wrong: "неверные данные", my_phone: "это мой номер", photo: "чужие фото", other: "другое" };
-    // 29.10: кто подал жалобу — номер (звонок в одно нажатие), имя, почта; без входа — «гость»
-    const who = (w) => !w ? `<span class="note">гость (не вошёл)</span>`
-      : `${w.phones.length ? w.phones.map((p, i) => `<a class="cmp-tel" href="tel:${esc(w.tel[i])}">${esc(p)}</a>`).join("<br>") : `<span class="note">номера нет</span>`}
-         ${w.name ? `<br><small>${esc(w.name)}</small>` : ""}${w.email ? `<br><small>${esc(w.email)}</small>` : ""}`;
-    $("complaints").innerHTML = `<tr><th>Когда</th><th>Кто подал</th><th>Объект</th><th>Причина</th><th>Текст</th><th>Статус</th><th></th></tr>` +
-      items.map((c) => `<tr><td>${day(c.ts)}</td><td class="cmp-who">${who(c.who)}</td>
-        <td>${c.listing_id ? `<a href="/?open=${c.listing_id}" target="_blank">${esc(c.title || "#" + c.listing_id)}</a>` : "—"}</td>
-        <td>${esc(reason[c.reason] || c.reason)}</td><td>${esc((c.text || "").replace(/^Фото: .*$/gm, "").trim())}
-          ${(() => { const own = (() => { try { return JSON.parse(c.photos || "[]"); } catch { return []; } })();
-            const ph = [...(c.text || "").matchAll(/^Фото: (\S+)$/gm)].map((m) => m[1]);
-            return ph.length ? `<div class="cmp-ph">${ph.map((u) => own.includes(u)
-              ? `<span><img src="${esc(u)}" alt=""><button data-cph="${esc(u)}" data-lid="${c.listing_id}">Удалить фото</button></span>`
-              : `<span class="gone"><img src="${esc(u)}" alt=""><small>уже удалено</small></span>`).join("")}</div>` : ""; })()}</td>
-        <td>${c.status === "new" ? "<b>новая</b>" : esc(c.status)}</td>
-        <td class="acts">${c.status === "new" ? `<button data-c="${c.id}">Готово</button>
-          <button data-c="${c.id}" data-hide="1">Скрыть объект</button>` : ""}</td></tr>`).join("");
+    const { items, counts } = await call(`/api/admin/complaints?status=${cmShow}`);
+    $("cmN").textContent = counts.new || "";
+    $("cmD").textContent = counts.done || "";
+    document.querySelectorAll("#cmTabs [data-cm]").forEach((b) => b.classList.toggle("on", b.dataset.cm === cmShow));
+    $("complaints").innerHTML = items.length ? items.map((c) => complaintCard(c)).join("")
+      : `<p class="ad-empty">${cmShow === "new" ? "Новых жалоб нет — всё разобрано." : "Пока пусто."}</p>`;
+  }
+  async function complaintAct(b) {
+    const a = b.dataset.cmAct;
+    const ask = { hide: "Снять объект с сайта? Повтор этого поста его не вернёт. Вернуть можно здесь же — «Вернуть на сайт».",
+      delete: "Удалить объект навсегда? Тот же текст и объект больше не появятся. Вернуть можно в «Удалённые»." }[a];
+    if (ask && !confirm(ask)) return null;
+    return call("/api/admin/complaints", { id: Number(b.dataset.c), action: a });
   }
 
-  async function edits() {
-    const { items } = await call("/api/admin/edits");
-    const names = { price: "цена", description: "описание", status: "статус", create: "добавил объект", confirm: "ответ на письмо",
-      "photo+": "добавил фото", "photo-": "удалил фото", type: "тип", deal: "сделка", rooms: "комнат", area: "площадь",
-      land: "участок", floor: "этаж", floors: "этажность", district: "район", complex: "ЖК", street: "улица", house: "дом" };
-    const val = (v) => { try { const x = JSON.parse(v); return x == null ? "—" : String(x); } catch { return v || "—"; } };
-    const revertable = new Set(["price", "description", "type", "deal", "rooms", "area", "land", "floor", "floors",
-      "district", "complex", "street", "house"]);
-    $("edits").innerHTML = `<tr><th>Когда</th><th>Кто</th><th>Объект</th><th>Что</th><th>Было</th><th>Стало</th><th></th></tr>` +
-      items.map((e) => `<tr><td>${day(e.ts)}</td><td>${e.user_id === 0 ? "Сервис (перепроверка)" : esc(e.email || e.name || "#" + e.user_id)}</td>
-        <td><a href="/?open=${e.listing_id}" target="_blank">${esc(e.title || "#" + e.listing_id)}</a></td>
-        <td>${esc(names[e.field] || e.field)}</td>
-        <td>${esc(val(e.old).slice(0, 120))}</td><td>${esc(val(e.new).slice(0, 120))}</td>
-        <td class="acts">${e.reverted ? "откачено" : revertable.has(e.field) ? `<button data-revert="${e.id}">Откатить</button>` : ""}</td></tr>`).join("");
+  // 02.11 (Артём: «у правок агентов — время, когда совершена; меню удобнее»): кто правил, поиск, по дням, дата и время
+  let edWho = "agent", edPage = 1;
+  const ED_NAMES = { price: "Цена", description: "Описание", status: "Статус", create: "Добавил объект", confirm: "Ответ на письмо",
+    "photo+": "Добавил фото", "photo-": "Удалил фото", type: "Тип", deal: "Сделка", rooms: "Комнаты", area: "Площадь",
+    land: "Участок", floor: "Этаж", floors: "Этажность", district: "Район", extra_districts: "Второй район", complex: "ЖК",
+    street: "Улица", house: "Дом", point: "Точка на карте", geo: "Точка на карте", repair: "Ремонт", settlement: "Посёлок", layout: "Планировка" };
+  const ED_REVERT = new Set(["price", "description", "type", "deal", "rooms", "area", "land", "floor", "floors",
+    "district", "complex", "street", "house", "point", "extra_districts"]);
+  const ED_HINT = { agent: "Что агенты меняли в своих объявлениях. Неверная правка — «Откатить» вернёт прежнее значение.",
+    admin: "Ваши правки и правки других админов — из окна объекта и экрана разбора.",
+    service: "Что сервис поменял сам: перепроверка районов и точек, чистка правил, проверка цены и разбора.", all: "Все правки подряд." };
+  function edVal(v, field, deal) {
+    let x = v;
+    try { x = JSON.parse(v); } catch { /* строка */ }
+    if (x == null || x === "") return "—";
+    if (Array.isArray(x) && x.length >= 2 && typeof x[0] !== "string" && typeof x[1] !== "string")   // точка: [lat, lon, …]
+      return x[0] == null ? "без точки" : `${(+x[0]).toFixed(5)}, ${(+x[1]).toFixed(5)}`;
+    if (Array.isArray(x)) return x.join(", ") || "—";
+    if (field === "price" && typeof x === "number") return money(x, deal);
+    if (field === "area" && typeof x === "number") return `${x.toLocaleString("ru-RU")} м²`;
+    return String(x);
   }
+  async function edits() {
+    const d = await call(`/api/admin/edits?who=${edWho}&q=${encodeURIComponent($("edQ").value.trim())}&page=${edPage}`);
+    const c = d.counts || {};
+    document.querySelectorAll("#edWho [data-ed]").forEach((b) => b.classList.toggle("on", b.dataset.ed === edWho));
+    document.querySelectorAll("#edWho [data-edn]").forEach((b) => { b.textContent = c[b.dataset.edn] ? c[b.dataset.edn].toLocaleString("ru-RU") : ""; });
+    $("edHint").innerHTML = `${ED_HINT[edWho]}${edWho === "agent" && c.agent_1d ? ` <b>За сутки: ${c.agent_1d}.</b>` : ""}`;
+    let last = "";
+    $("edits").innerHTML = d.items.length ? d.items.map((e) => {
+      const dt = new Date(e.ts * 1000).toDateString();
+      const head = dt !== last ? `<h4 class="ed-day">${esc(dayTitle(e.ts))}</h4>` : "";
+      last = dt;
+      const who = e.who_kind === "service" ? `<span class="ed-who svc">${icn("sparkle")}Сервис${e.src ? ` · ${esc(e.src)}` : ""}</span>`
+        : `<span class="ed-who ${e.who_kind}">${icn(e.who_kind === "admin" ? "gear" : "user")}${esc(e.name || e.email || e.u_phone || "№" + e.user_id)}${e.who_kind === "admin" ? " · админ" : ""}</span>`;
+      const long = e.field === "description";
+      const o = edVal(e.old, e.field, e.deal), n = edVal(e.new, e.field, e.deal);
+      return `${head}<article class="ed-row${e.reverted ? " off" : ""}">
+        <time class="ed-time" title="${esc(new Date(e.ts * 1000).toLocaleString("ru-RU"))}">${hm(new Date(e.ts * 1000))}</time>
+        <a class="ed-obj" href="/?open=${e.listing_id}" target="_blank" rel="noopener">${e.photo ? `<img src="${esc(e.photo)}" alt="" loading="lazy">` : `<span class="cm-noph">${icn("home")}</span>`}</a>
+        <div class="ed-main">
+          <p class="ed-l1"><b class="ed-f">${esc(ED_NAMES[e.field] || e.field)}</b><a href="/?open=${e.listing_id}" target="_blank" rel="noopener">${esc(e.title || "Объект №" + e.listing_id)}</a>${e.l_active === 0 ? `<em class="cm-st off">снят</em>` : ""}</p>
+          ${["create", "confirm", "photo+", "photo-"].includes(e.field) ? "" : long
+            ? `<details class="ed-long"><summary>Показать, что изменилось</summary><p><small>Было</small>${esc(o)}</p><p><small>Стало</small>${esc(n)}</p></details>`
+            : `<p class="ed-diff"><s>${esc(o.slice(0, 140))}</s><i>→</i><b>${esc(n.slice(0, 140))}</b></p>`}
+          ${who}</div>
+        <div class="ed-act">${e.reverted ? `<em class="cm-st off">откачено</em>` : ED_REVERT.has(e.field) ? `<button type="button" class="cm-b" data-revert="${e.id}">${icn("history")}Откатить</button>` : ""}</div>
+      </article>`;
+    }).join("") : `<p class="ad-empty">Правок нет${$("edQ").value.trim() ? " по такому поиску" : ""}.</p>`;
+    $("edPager").innerHTML = d.pages > 1 ? `<button class="chip" data-edpage="-1"${edPage <= 1 ? " disabled" : ""}>← Новее</button>
+      <span>стр. ${edPage} из ${d.pages} · всего ${d.total.toLocaleString("ru-RU")}</span>
+      <button class="chip" data-edpage="1"${edPage >= d.pages ? " disabled" : ""}>Старее →</button>` : d.total ? `<span>всего ${d.total}</span>` : "";
+  }
+  document.addEventListener("click", async (e) => {
+    const w = e.target.closest("[data-ed]");
+    if (w) { edWho = w.dataset.ed; edPage = 1; edits().catch(fail); return; }
+    const p = e.target.closest("[data-edpage]");
+    if (p) { edPage = Math.max(1, edPage + Number(p.dataset.edpage)); edits().catch(fail); $("edits").scrollIntoView({ block: "start" }); return; }
+    const t = e.target.closest("#cmTabs [data-cm]");
+    if (t) { cmShow = t.dataset.cm; complaints().catch(fail); return; }
+    const a = e.target.closest("[data-cm-act]");
+    if (a) {
+      try { const r = await complaintAct(a); if (r) complaints().catch(fail); } catch (err) { fail(err); }
+    }
+  });
 
   let chatList = [];
   let chatShow = "";
@@ -812,6 +919,8 @@
       if (b.dataset.tab) show(b.dataset.tab);
       else if (b.dataset.u) {
         if (b.dataset.a === "block" && !confirm("Заблокировать пользователя? Он сразу выйдет со всех устройств.")) return;
+        if (b.dataset.a === "reset" && !confirm("Сбросить доступ? Номера агентов и инструменты закроются до оплаты.")) return;
+        if (b.dataset.a === "admin" && !confirm("Сделать администратором? Он увидит админку и сможет всё править.")) return;
         await call(`/api/admin/users/${b.dataset.u}`, { action: b.dataset.a, days: Number(b.dataset.days || 0) });
         users();
       } else if (b.dataset.delPromo) {
@@ -861,14 +970,12 @@
         if (!confirm("Удалить это фото у объекта?")) return;
         await call(`/api/admin/listings/${b.dataset.lid}/action`, { action: "photo", url: b.dataset.cph });
         complaints();
-      } else if (b.dataset.c) {
-        await call("/api/admin/complaints", { id: Number(b.dataset.c), status: "done", hide_listing: !!b.dataset.hide });
-        complaints();
       }
     } catch (err) { fail(err); }
   });
 
   $("userSearch").addEventListener("submit", (e) => { e.preventDefault(); userPage = 1; users().catch(fail); });
+  $("edSearch").addEventListener("submit", (e) => { e.preventDefault(); edPage = 1; edits().catch(fail); });
   $("chatSearch").addEventListener("submit", (e) => e.preventDefault());
   $("chatQ").addEventListener("input", renderChats);
   $("spQ").addEventListener("input", spRenderList);

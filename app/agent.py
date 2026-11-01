@@ -561,11 +561,42 @@ def remove_photo(conn: sqlite3.Connection, user: sqlite3.Row, listing_id: int, u
     return photos, "Фото удалено."
 
 
-def edits_for_admin(conn: sqlite3.Connection, limit: int = 200) -> list[dict]:
-    rows = conn.execute("""SELECT e.*, l.title, u.email, u.name FROM listing_edits e
-                           LEFT JOIN listings l ON l.id = e.listing_id LEFT JOIN users u ON u.id = e.user_id
-                           ORDER BY e.id DESC LIMIT ?""", (limit,)).fetchall()
-    return [dict(r) for r in rows]
+# 02.11 (Артём: «правки агентов — время, когда совершена; меню удобнее»): кто правил — агенты / админ / сервис
+EDIT_WHO = {
+    "agent": "e.user_id > 0 AND COALESCE(e.src, '') != 'админ' AND COALESCE(u.is_admin, 0) = 0",
+    "admin": "e.user_id > 0 AND (e.src = 'админ' OR u.is_admin = 1)",
+    "service": "e.user_id = 0",
+    "all": "1",
+}
+
+
+def edits_for_admin(conn: sqlite3.Connection, who: str = "agent", q: str = "", page: int = 1, size: int = 100) -> dict:
+    where = [EDIT_WHO.get(who, EDIT_WHO["agent"])]
+    args: list = []
+    q = (q or "").strip()
+    if q:   # № объекта, его заголовок, почта/имя того, кто правил
+        where.append("(CAST(e.listing_id AS TEXT) = ? OR l.title LIKE ? OR u.email LIKE ? OR u.name LIKE ? OR u.phone LIKE ?)")
+        args += [q.lstrip("#"), f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"]
+    base = """FROM listing_edits e LEFT JOIN listings l ON l.id = e.listing_id LEFT JOIN users u ON u.id = e.user_id"""
+    w = " AND ".join(where)
+    total = conn.execute(f"SELECT COUNT(*) {base} WHERE {w}", args).fetchone()[0]
+    rows = conn.execute(f"""SELECT e.*, l.title, l.photos, l.deal, l.is_active AS l_active, u.email, u.name, u.phone AS u_phone,
+                                   u.is_admin AS u_admin {base} WHERE {w} ORDER BY e.ts DESC, e.id DESC LIMIT ? OFFSET ?""",
+                        (*args, size, (page - 1) * size)).fetchall()
+    day = int(time.time()) - 86400
+    counts = {k: conn.execute(f"SELECT COUNT(*) {base} WHERE {c}").fetchone()[0] for k, c in EDIT_WHO.items() if k != "all"}
+    counts["agent_1d"] = conn.execute(f"SELECT COUNT(*) {base} WHERE {EDIT_WHO['agent']} AND e.ts >= ?", (day,)).fetchone()[0]
+    items = []
+    for r in rows:
+        d = dict(r)
+        d["who_kind"] = "service" if r["user_id"] == 0 else "admin" if (r["src"] == "админ" or r["u_admin"]) else "agent"
+        try:
+            d["photo"] = (json.loads(r["photos"] or "[]") or [None])[0]
+        except (TypeError, ValueError):
+            d["photo"] = None
+        d.pop("photos", None)
+        items.append(d)
+    return {"items": items, "total": total, "page": page, "pages": max(1, (total + size - 1) // size), "counts": counts}
 
 
 # ─── «Написать красиво»: продающее описание объявления нейросетью ───────────

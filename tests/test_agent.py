@@ -166,7 +166,7 @@ def test_admin_reverts_edit(env, monkeypatch):
     c.post(f"/api/agent/listings/{lid}", json={"price": 6})
     conn.execute("UPDATE users SET is_admin = 1")
     conn.commit()
-    edits = c.get("/api/admin/edits").json()["items"]
+    edits = c.get("/api/admin/edits?who=all").json()["items"]
     eid = next(e["id"] for e in edits if e["field"] == "price")
     assert c.post("/api/admin/edits", json={"id": eid}).json()["ok"]
     assert conn.execute("SELECT price FROM listings WHERE id = ?", (lid,)).fetchone()[0] == 7_500_000
@@ -394,3 +394,47 @@ def test_admin_sees_complainant_phone(env):
     mine = next(i for i in items if i["text"] == "продан")
     assert mine["who"]["phones"] == ["+7 918 555-77-88"]
     assert not any(i["text"] == "гость" for i in items)
+
+
+def test_complaint_never_hides_listing_admin_decides(env):
+    """02.11 (Артём): жалоба не снимает, не скрывает и не отправляет объект в архив — решает админ (оставить / снять / вернуть)."""
+    c, conn, lid = env
+    u = accounts.upsert_phone_user(conn, "+79185550011")
+    c.cookies.set(server.SESSION, accounts.create_session(conn, u["id"]))
+    for reason in ("sold", "wrong", "my_phone", "other"):
+        assert c.post("/api/complaints", json={"listing_id": lid, "reason": reason, "text": "x"}).status_code == 200
+    row = conn.execute("SELECT is_active, hidden_reason FROM listings WHERE id = ?", (lid,)).fetchone()
+    assert row["is_active"] == 1 and row["hidden_reason"] is None
+    c.cookies.clear()
+    admin = _login(c, conn, email="boss3@example.ru")
+    conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (admin["id"],))
+    conn.commit()
+    d = c.get("/api/admin/complaints").json()
+    assert d["counts"]["new"] == 4 and all(i["listing_state"] == "active" for i in d["items"])
+    first = d["items"][0]["id"]
+    assert c.post("/api/admin/complaints", json={"id": first, "action": "keep"}).json()["status"] == "kept"
+    assert conn.execute("SELECT is_active FROM listings WHERE id = ?", (lid,)).fetchone()[0] == 1
+    # снять с сайта — все новые жалобы на объект разобраны; вернуть — объект снова на сайте
+    second = c.get("/api/admin/complaints").json()["items"][0]["id"]
+    assert c.post("/api/admin/complaints", json={"id": second, "action": "hide"}).json()["listing_active"] is False
+    assert c.get("/api/admin/complaints").json()["counts"]["new"] == 0
+    assert c.post("/api/admin/complaints", json={"id": second, "action": "restore"}).json()["listing_active"] is True
+    # в окне объекта админ видит жалобы на него
+    assert len(c.get(f"/api/listings/{lid}").json()["complaints"]) == 4
+
+
+def test_admin_edits_filters_and_users_filter(env):
+    """02.11: «Правки» — кто правил (агенты / админ / сервис), поиск; «Пользователи» — быстрые фильтры."""
+    c, conn, lid = env
+    now = int(time.time())
+    conn.execute("INSERT INTO listing_edits (listing_id, user_id, ts, field, old, new, src) VALUES (?, 0, ?, 'district', '\"А\"', '\"Б\"', 'перепроверка')", (lid, now))
+    conn.commit()
+    admin = _login(c, conn, email="boss4@example.ru")
+    conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (admin["id"],))
+    conn.commit()
+    d = c.get("/api/admin/edits?who=service").json()
+    assert d["counts"]["service"] == 1 and d["items"][0]["who_kind"] == "service" and d["items"][0]["ts"] == now
+    assert c.get("/api/admin/edits?who=agent").json()["total"] == 0
+    assert c.get(f"/api/admin/edits?who=all&q={lid}").json()["total"] == 1
+    u = c.get("/api/admin/users?f=admin").json()
+    assert u["total"] == 1 and u["summary"]["admin"] == 1
