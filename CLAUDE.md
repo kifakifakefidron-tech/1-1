@@ -1129,6 +1129,12 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   админ = src 'админ' или is_admin (агент, ставший админом, — тоже тут). «Пользователи»: плитки-фильтры (?f= seen1/seen7/new7/
   access/paid/verified/noaccess/admin/blocked), карточки, «+7 дн.» и меню «⋯» (30 дней, сброс, админ, блок — с подтверждением).
   Стрелка раскрытой плитки окна объекта — у заголовка (summary position relative).
+- 02.11 (ветка fix-video-0211, видео пользователя с телефона Xiaomi — «всё съехало и не реагирует»): старые браузеры без
+  Popover API (Chrome < 114, браузер Xiaomi и т. п.) — шторка «Все разделы» висела всегда и не закрывалась, строка поиска лезла
+  поверх неё, выпадающие списки фильтров открывались под шторкой. icons.js (первый скрипт на всех страницах, и на /c/)
+  popoverFill(): showPopover/hidePopover/togglePopover через класс pp-open (z-index растёт — открытый позже выше), закрытые
+  [popover] скрыты, matches/closest/querySelector понимают :popover-open, правила стилей с :popover-open достаются из файлов
+  CSS (fetch, @media/@supports сохраняются) и вставляются сразу после файла. Проверить на новом браузере — /?nopopover=1.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

@@ -4,6 +4,7 @@
    window.ic("calendar") — иконка для шаблонов. */
 (() => {
   "use strict";
+  popoverFill();
   const SPRITE = "/static/icons.svg?v=7";
   // согласие на cookie — на всех страницах (icons.js подключён везде первым), см. cookies.js
   if (!document.querySelector('script[src*="cookies.js"]')) {
@@ -89,6 +90,74 @@
     }
     if (!raf) raf = requestAnimationFrame(flush);
   }).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+
+  // 02.11: старые браузеры без «верхнего слоя» (Popover API: Chrome < 114, браузер Xiaomi и т. п.). Без этого шторка
+  // «Все разделы» висела всегда и не закрывалась, строка поиска лезла поверх неё, а выпадающие списки фильтров
+  // открывались под шторкой — ничего не нажималось. Здесь — те же методы, класс pp-open вместо :popover-open и
+  // правила стилей с :popover-open, переписанные под этот класс.
+  function popoverFill() {
+    const test = /[?&]nopopover=1\b/.test(location.search);   // проверить на новом браузере, как увидит старый
+    if (typeof HTMLElement === "undefined" || (typeof HTMLElement.prototype.showPopover === "function" && !test)) return;
+    const OPEN = "pp-open";
+    let z = 2147480000;
+    const base = document.createElement("style");
+    base.textContent = "[popover]:not(.pp-open):not(dialog[open]){display:none!important}"
+      + ":where([popover]){position:fixed;inset:0;width:fit-content;height:fit-content;margin:auto;border:solid;padding:.25em;"
+      + "overflow:auto;color:CanvasText;background-color:Canvas}:where([popover].pp-open){display:block}";
+    (document.head || document.documentElement).appendChild(base);
+    const P = HTMLElement.prototype;
+    P.showPopover = function () {
+      if (!this.hasAttribute("popover")) throw new DOMException("Not a popover", "NotSupportedError");
+      if (this.classList.contains(OPEN)) return;
+      this.classList.add(OPEN);
+      this.style.setProperty("z-index", String(++z), "important");   // открытый позже — выше
+    };
+    P.hidePopover = function () { this.classList.remove(OPEN); this.style.removeProperty("z-index"); };
+    P.togglePopover = function (force) {
+      const on = force === undefined ? !this.classList.contains(OPEN) : !!force;
+      if (on) this.showPopover(); else this.hidePopover();
+      return on;
+    };
+    // el.matches(":popover-open") и т. п. — понимать как класс
+    const fix = (s) => (typeof s === "string" && s.includes(":popover-open") ? s.replace(/:popover-open/g, "." + OPEN) : s);
+    [[Element.prototype, ["matches", "closest", "querySelector", "querySelectorAll"]],
+      [Document.prototype, ["querySelector", "querySelectorAll"]],
+      [DocumentFragment.prototype, ["querySelector", "querySelectorAll"]]].forEach(([proto, names]) => names.forEach((n) => {
+      const f = proto[n];
+      if (f) proto[n] = function (sel) { return f.call(this, fix(sel)); };
+    }));
+    // правила с :popover-open браузер выбросил при разборе — берём их из файла стилей и добавляем сразу после него
+    const pick = (css) => {
+      let out = "", i = 0;
+      while (i < css.length) {
+        const ob = css.indexOf("{", i);
+        if (ob < 0) break;
+        const semi = css.indexOf(";", i);
+        if (semi >= 0 && semi < ob) { i = semi + 1; continue; }   // @import, @layer a; …
+        let d = 1, j = ob + 1;
+        while (j < css.length && d) { const c = css[j]; if (c === "{") d++; else if (c === "}") d--; j++; }
+        const pre = css.slice(i, ob).trim(), body = css.slice(ob + 1, j - 1);
+        if (pre[0] === "@") {
+          if (/^@(media|supports|layer)\b/i.test(pre)) { const inner = pick(body); if (inner) out += `${pre}{${inner}}`; }
+        } else if (pre.includes(":popover-open")) out += `${fix(pre)}{${body}}`;
+        i = j;
+      }
+      return out;
+    };
+    const load = () => document.querySelectorAll('link[rel="stylesheet"]').forEach((link) => {
+      if (link.__pp || !link.href || new URL(link.href, location.href).origin !== location.origin) return;
+      link.__pp = true;
+      fetch(link.href, { credentials: "same-origin" }).then((r) => (r.ok ? r.text() : "")).then((css) => {
+        const rules = pick(css.replace(/\/\*[\s\S]*?\*\//g, ""));
+        if (!rules) return;
+        const st = document.createElement("style");
+        st.textContent = rules;
+        link.after(st);
+      }).catch(() => { /* без этих правил — просто проще вид */ });
+    });
+    load();
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", load);
+  }
 
   const start = () => { scan(document.body); RE.lastIndex = 0; if (RE.test(document.title)) document.title = strip(document.title); };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
