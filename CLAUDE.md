@@ -1167,6 +1167,10 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   «Не подтверждён» текстом, одна строка «Номер из объявления · это мой номер · прислал в чат …», «Позвонить» + «Написать в MAX».
   max.js copy: запасное копирование кладёт textarea В ОТКРЫТОЕ окно (иначе страница под dialog «инертна» и копирование не шло).
   Иконка i-copy (icons.svg v=8 → icons.js v=13).
+  УБРАТЬ С КАРТЫ (Артём 10.11): админ — плитка «Убрать с карты» / «Вернуть на карту» в блоке «Админ» окна объекта и кнопка
+  «убрать с карты» в окошке метки (app.js geoOffOn → POST /api/admin/listings/{id}/geo {hide}|{auto}; hide = lat NULL, geo_status
+  'manual' — сервис сам не вернёт). «Не Краснодар» — без метки сами (mark_foreign: geo_status 'manual', geo_src 'foreign';
+  разово region.clear_foreign_points, state foreign_nomap_v1).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

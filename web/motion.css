@@ -643,3 +643,5 @@ html { scroll-behavior: smooth; }
   html { scroll-behavior: auto; }
   .chip.on, .seg.on, .mark, .dv-acc-b, .pl-ev, .pks-card, .rq-item, .cab-tile2 { animation: none !important; }
 }
+
+.mc-geo.off { color: #b0412e; }

@@ -809,7 +809,7 @@
         ${p.level && p.level !== "house" ? `<div class="mc-approx">Место примерное — в объявлении нет точного адреса</div>` : ""}
         <div class="mc-extra">${extra ?? `<div class="skel"><i></i><i></i></div>`}</div>
         <span class="mc-more" data-open="${p.id}">Подробнее →</span>
-        ${me() && me().is_admin ? `<button type="button" class="mc-geo" data-geo-edit="${p.id}">📍 поправить</button>` : ""}
+        ${me() && me().is_admin ? `<button type="button" class="mc-geo" data-geo-edit="${p.id}">📍 поправить</button><button type="button" class="mc-geo off" data-geo-off="${p.id}">убрать с карты</button>` : ""}
         <span class="mc-logo" aria-hidden="true">${LOGO}</span>
       </div></div>`;
   }
@@ -1077,6 +1077,8 @@
       <section class="adm-s"><p class="adm-sh">Исправить</p><div class="adm-grid">
         ${admTile(`data-place-edit="${o.id}"`, "edit", `Все характеристики${o.admin_fixed ? " ✓" : ""}`, "тип, цена, площадь, этаж, адрес, ЖК, район, ремонт")}
         ${admTile(`data-geo-edit="${o.id}"`, "pin", "Точка на карте", esc(geoNote))}
+        ${o.lat != null ? admTile(`data-geo-off="${o.id}"`, "x-circle", "Убрать с карты", "метки не будет, сервис сам её не вернёт")
+          : o.geo_status === "manual" ? admTile(`data-geo-on="${o.id}"`, "map", "Вернуть на карту", "сервис снова найдёт точку по адресу") : ""}
         ${admTile(`data-admin-act="deal" data-deal="${o.deal === "rent" ? "sale" : "rent"}" data-id="${o.id}"`, "swap", o.deal === "rent" ? "Перенести в продажу" : "Перенести в аренду", "сервис запомнит для этого текста")}
       </div></section>
       ${adminPhotos}
@@ -1399,6 +1401,17 @@
         + (r.data.applied ? `. Поправлено ещё объектов: ${r.data.applied}` : ""), 5000);
     if (geoQueue) { nextInQueue(); return; }
     if ($("detail").open && openedId === geoId) openDetail(geoId);
+    if (state.view === "map") loadMap();
+  }
+  // 10.11 (Артём): убрать метку объекта с карты одной кнопкой (Сочи, Адлер и т. п. вставали в центр Краснодара)
+  async function geoOffOn(id, off) {
+    const r = await call(`/api/admin/listings/${id}/geo`, off ? { hide: true } : { auto: true });
+    if (!r.ok) { toast(r.data.detail || "Не получилось"); return; }
+    const o = known.get(id);
+    if (o) Object.assign(o, { lat: r.data.lat, lon: r.data.lon, geo_status: r.data.geo_status });
+    toast(off ? "Метка убрана с карты — сервис сам её не вернёт" : "Вернули: точку найдём по адресу заново", 4000);
+    if (map) map.closePopup();
+    if ($("detail").open && openedId === id) openDetail(id);
     if (state.view === "map") loadMap();
   }
   // Следующий объект из очереди админки
@@ -2335,6 +2348,7 @@
       }
       if (t.dataset.openId) { openDetail(Number(t.dataset.openId), { push: true }); return; }
       if (t.dataset.geoEdit) { openGeoEdit(Number(t.dataset.geoEdit)); return; }
+      if (t.dataset.geoOff || t.dataset.geoOn) { geoOffOn(Number(t.dataset.geoOff || t.dataset.geoOn), !!t.dataset.geoOff); return; }
       if (t.dataset.placeEdit) { openPlaceEdit(Number(t.dataset.placeEdit)); return; }
       if (t.dataset.saved) {
         const id = Number(t.dataset.saved);

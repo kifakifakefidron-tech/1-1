@@ -119,6 +119,9 @@ def run(conn: sqlite3.Connection, apply: bool = True) -> dict:
 
 
 def maybe_run(conn: sqlite3.Connection) -> dict | None:
+    if db.get_state(conn, "foreign_nomap_v1") != "1":   # «Не Краснодар» — убрать с карты (раз)
+        region.clear_foreign_points(conn)
+        db.set_state(conn, "foreign_nomap_v1", "1")
     if db.get_state(conn, STATE) == "1":
         if db.get_state(conn, STATE_FOREIGN) == "1":
             return None
@@ -169,7 +172,7 @@ def foreign_again(conn: sqlite3.Connection) -> dict:
                         settlement = COALESCE(settlement, ?), hidden_reason = NULL,
                         lat = CASE WHEN geo_status IN ('manual', 'feed') OR district = ? THEN lat ELSE NULL END,
                         lon = CASE WHEN geo_status IN ('manual', 'feed') OR district = ? THEN lon ELSE NULL END,
-                        geo_status = CASE WHEN geo_status IN ('manual', 'feed') OR district = ? THEN geo_status ELSE 'pending' END,
+                        geo_status = CASE WHEN geo_status IN ('manual', 'feed') OR district = ? THEN geo_status ELSE 'manual' END,
                         is_active = CASE WHEN is_active = 1 OR ? THEN 1 ELSE 0 END WHERE id = ?""",
                      (fp[0], fp[1], fp[0], fp[0], fp[0], int(fresh), r["id"]))
         if r["district"] != fp[0]:

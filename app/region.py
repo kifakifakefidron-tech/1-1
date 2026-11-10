@@ -334,9 +334,18 @@ def mark_foreign(conn: sqlite3.Connection, lid: int, text: str | None) -> bool:
                           settlement = COALESCE(settlement, ?),
                           lat = CASE WHEN geo_status IN ('manual', 'feed') THEN lat ELSE NULL END,
                           lon = CASE WHEN geo_status IN ('manual', 'feed') THEN lon ELSE NULL END,
-                          geo_status = CASE WHEN geo_status IN ('manual', 'feed') THEN geo_status ELSE 'pending' END,
+                          geo_src = CASE WHEN geo_status IN ('manual', 'feed') THEN geo_src ELSE 'foreign' END,
+                          geo_status = CASE WHEN geo_status IN ('manual', 'feed') THEN geo_status ELSE 'manual' END,
                           hidden_reason = CASE WHEN hidden_reason = 'foreign' THEN NULL ELSE hidden_reason END,
                           is_active = CASE WHEN hidden_reason = 'foreign' THEN 1 ELSE is_active END
                           WHERE id = ? AND source = 'chat' AND COALESCE(admin_fixed, 0) = 0 AND COALESCE(owner_user_id, 0) = 0
                           AND COALESCE(district, '') != ?""", (fp[0], fp[1], lid, fp[0]))
     return cur.rowcount > 0
+
+
+def clear_foreign_points(conn: sqlite3.Connection) -> int:
+    """10.11 (Артём): «Не Краснодар» — без метки на карте (геокодер ставил их в центр Краснодара). Ручные точки админа и фид не трогаем."""
+    cur = conn.execute("""UPDATE listings SET lat = NULL, lon = NULL, geo_status = 'manual', geo_src = 'foreign'
+                          WHERE district = ? AND geo_status NOT IN ('manual', 'feed') AND source != 'feed'""", (NOT_KRD,))
+    conn.commit()
+    return cur.rowcount
