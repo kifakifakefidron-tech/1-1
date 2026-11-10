@@ -17,18 +17,25 @@
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=16">
 <link rel="stylesheet" href="/static/glass.css?v=125">
-<link rel="stylesheet" href="/static/notify.css?v=8">
+<link rel="stylesheet" href="/static/notify.css?v=9">
 </head>
 <body>
 <main class="nt2">
   <header class="nt2-head">
     <div><p class="nt2-eyebrow">Центр уведомлений</p><h1>Уведомления</h1>
       <p class="nt2-sub" id="ntSub">Новые объекты по поискам, цены в избранном, ваши объекты, планер и клиенты — в одной ленте.</p></div>
-    <div class="nt2-acts"><a class="pill light" href="#ntPrefsCard" id="ntPrefsBtn">Настроить</a>
+    <div class="nt2-acts"><button type="button" class="pill light nt2-prefs-btn" id="ntPrefsBtn" aria-expanded="false" aria-controls="ntPrefsCard" hidden><svg class="ic"><use href="/static/icons.svg?v=8#i-gear"/></svg><span>Что присылать</span></button>
       <button type="button" class="pill light" id="ntReadAll" hidden>Прочитать всё</button></div>
   </header>
 
   <div id="ntGuest" hidden class="note-box">Уведомления доступны после входа. <a href="/?login=1">Войти</a></div>
+
+  <!-- 10.11: настройки уведомлений — скрыты, открываются кнопкой «Что присылать» -->
+  <section class="nt2-card nt2-prefs" id="ntPrefsCard" hidden>
+    <div class="nt2-prefs-h"><h2>Что присылать</h2>
+      <button type="button" class="pill light" id="ntPrefsDone">Готово</button></div>
+    <div id="ntPrefs"></div>
+  </section>
 
   <div class="nt2-wrap" id="ntApp" hidden>
     <section class="nt2-main">
@@ -40,10 +47,6 @@
       <div id="ntList" class="nt2-feed"></div>
     </section>
     <aside class="nt2-side">
-      <section class="nt2-card" id="ntPrefsCard">
-        <h2>Что присылать</h2>
-        <div id="ntPrefs"></div>
-      </section>
       <section class="nt2-card">
         <h2>Что отслеживаю</h2>
         <div class="nt2-track" id="ntTrack"></div>
@@ -64,7 +67,7 @@
 <script src="/static/max.js?v=3"></script>
 <script src="/static/rail.js?v=38"></script>
 <script src="/static/nprefs.js?v=1"></script>
-<script src="/static/notify.js?v=11"></script>
+<script src="/static/notify.js?v=12"></script>
 <script src="/static/objview.js?v=3"></script>
 <script src="/static/bell.js?v=7"></script>
 </body>

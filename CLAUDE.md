@@ -1139,7 +1139,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   отдельной строкой, кнопки сеткой, ничего не вылезает). ТОЧКА НА КАРТЕ в /my/edit (и у объявлений из чатов): Leaflet без флажка
   (attributionControl false + «© OpenStreetMap» без prefix), нажать/перетащить метку → fd.lat/lon → agent._set_point (POINT_BOX
   края, geo_status 'manual', geo_src 'agent', журнал field 'point'), «Убрать мою точку» — только своей. УВЕДОМЛЕНИЯ ВЫКЛЮЧАЮТСЯ:
-  web/nprefs.js (NPrefs.mount) — один блок на /settings (#stNotify) и /notifications (#ntPrefsCard «Что присылать»), users.settings
+  web/nprefs.js (NPrefs.mount) — один блок на /settings (#stNotify) и /notifications (#ntPrefsCard «Что присылать» — свёрнут, над лентой; открывает кнопка #ntPrefsBtn в шапке, «Готово» прячет, #prefs в адресе — открыт), users.settings
   notify_off (виды notices.USER_KINDS; "all" — все), notices.is_off проверяют notices.add и письма (hooks поиск/цена, planner, picks,
   agent свои объекты); служебные (доступ, оплаты) не выключаются; «Дублировать на почту» = mail_off. /dups: номер не в куске текста —
   из колонки phones («в общей части сообщения», text_from), отправитель без номера — имя (sender_name, «номер в чате скрыт»), у фида —

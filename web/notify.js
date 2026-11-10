@@ -159,6 +159,17 @@
       <span>поиски, избранное, ваши объекты, планер и клиенты — в одной ленте</span>`;
   }
 
+  // 10.11: «Что присылать» — свёрнуто, пока не нажали кнопку
+  function prefs(open) {
+    const card = $("ntPrefsCard"), btn = $("ntPrefsBtn");
+    card.hidden = !open;
+    btn.setAttribute("aria-expanded", String(open));
+    btn.classList.toggle("on", open);
+    if (open) setTimeout(() => card.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
+  }
+  $("ntPrefsBtn").addEventListener("click", () => prefs($("ntPrefsCard").hidden));
+  $("ntPrefsDone").addEventListener("click", () => { prefs(false); window.scrollTo({ top: 0, behavior: "smooth" }); });
+
   async function load() {
     const r = await call("/api/notices");
     if (r.status === 401) { $("ntGuest").hidden = false; return; }
@@ -170,7 +181,8 @@
     render();
     // 10.11: какие уведомления присылать — тот же блок, что в «Настройках»
     if (window.NPrefs) NPrefs.mount($("ntPrefs"), { kinds: data.notify_kinds, off: data.notify_off, mailOff: data.mail_off, email: data.email });
-    if (location.hash === "#ntPrefsCard") setTimeout(() => $("ntPrefsCard").scrollIntoView({ block: "start" }), 50);
+    $("ntPrefsBtn").hidden = false;
+    if (location.hash === "#ntPrefsCard" || location.hash === "#prefs") prefs(true);
     // посмотрели — значит прочитали (подсветка новых остаётся, пока страница открыта)
     if (data.unread) setTimeout(async () => { await call("/api/notices", {}); data.unread = 0; $("ntReadAll").hidden = true; }, 1500);
   }

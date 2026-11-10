@@ -147,6 +147,15 @@ a.nt2-num:hover b { color: var(--gold); }
 .nt2-tabs-w.can-l.can-r .nt2-tabs { -webkit-mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
   mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent); }
 @media (hover: none) { .nt2-tarr { display: none; } }
-/* 10.11: «Настроить» — к блоку «Что присылать» */
+/* 10.11: «Что присылать» — кнопка в шапке открывает свёрнутый блок настроек над лентой */
 .nt2-acts { display: flex; flex-wrap: wrap; gap: 8px; }
-#ntPrefsCard { scroll-margin-top: 90px; }
+.nt2-prefs-btn { display: inline-flex; align-items: center; gap: 7px; }
+.nt2-prefs-btn .ic { width: 16px; height: 16px; margin: 0; transition: transform .4s var(--m-out, ease); }
+.nt2-prefs-btn.on { border-color: var(--gold-300); color: var(--gold-200); }
+.nt2-prefs-btn.on .ic { transform: rotate(60deg); }
+.nt2-prefs { max-width: 720px; margin: 0 0 18px; scroll-margin-top: 90px; animation: ntPrefsIn .35s var(--m-out, ease) both; }
+.nt2-prefs[hidden] { display: none; }
+.nt2-prefs-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.nt2-prefs-h h2 { margin: 0; }
+@keyframes ntPrefsIn { from { opacity: 0; transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .nt2-prefs { animation: none; } }
