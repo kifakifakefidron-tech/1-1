@@ -1598,13 +1598,22 @@
       const pretty = (p) => { const d = p.replace(/\D/g, ""); return d.length === 11 ? `+7 ${d.slice(1, 4)} ${d.slice(4, 7)}-${d.slice(7, 9)}-${d.slice(9)}` : p; };
       // 19.10: выбор агента на /agent — без кнопки MAX; номер не подтверждён агентом — честная пометка и «Это мой номер»
       const pm = o.phones_meta || {};
-      return `<div class="dv-contacts"><span class="dv-contacts-h">${o.phones.length > 1 ? "Контакты агентов" : "Контакт агента"}</span>${o.phones.map((p, i) => {
+      // 10.11: вариант 5 «Пропуск» — карточка номера: отметка «Проверенный / Не подтверждён», копирование,
+      // «Прислал в чат» и «Это мой номер», кнопки «Позвонить» и «Написать в MAX»
+      return `<div class="dv-contacts dv-pass-wrap"><span class="dv-contacts-h">${o.phones.length > 1 ? "Контакты агентов" : "Контакт агента"}</span>${o.phones.map((p, i) => {
         const m = pm[p] || {};
-        const sub = [o.phones_meta && !m.confirmed ? `не подтверждён · <a href="/agent" target="_top">это мой</a>` : (m.confirmed ? "проверенный агент" : ""),
-          i === 0 && o.sender_phone ? `прислал <a href="tel:${esc(o.sender_phone)}">${esc(pretty(o.sender_phone))}</a>` : ""].filter(Boolean).join(" · ");
-        return `<div class="dv-phone"><div class="dv-phone-l"><a class="dv-phone-num" href="tel:${esc(p)}">${esc(pretty(p))}</a>
-          ${sub ? `<small class="dv-phone-s">${sub}</small>` : ""}</div>
-          ${m.no_max ? "" : `<button type="button" class="dv-ic-btn dv-max" data-max="${esc(p)}" aria-label="Написать в MAX" title="Написать в MAX">MAX</button>`}</div>`;
+        const known = !!o.phones_meta;
+        const rib = m.confirmed ? `<span class="dv-pass-rib ok">${ic("check")}Проверенный</span>`
+          : known ? `<span class="dv-pass-rib no">Не подтверждён</span>` : "";
+        const snd = i === 0 && o.sender_phone ? `<span>Прислал в чат: <a href="tel:${esc(o.sender_phone)}">${esc(pretty(o.sender_phone))}</a></span>` : "";
+        const mine = known && !m.confirmed ? `<a href="/agent" target="_top">Это мой номер</a>` : "";
+        return `<div class="dv-phone dv-pass${m.confirmed ? " ok" : ""}">${rib}
+          <span class="dv-pass-lab">${m.confirmed ? "Номер агента" : "Номер из объявления"}</span>
+          <div class="dv-pass-num"><a class="dv-phone-num" href="tel:${esc(p)}">${esc(pretty(p))}</a>
+            <button type="button" class="dv-pass-copy" data-copy-phone="${esc(pretty(p))}" aria-label="Скопировать номер" title="Скопировать номер">${ic("copy")}</button></div>
+          ${snd || mine ? `<div class="dv-pass-snd">${snd || "<span></span>"}${mine}</div>` : ""}
+          <div class="dv-pass-acts${m.no_max ? " one" : ""}"><a class="gold" href="tel:${esc(p)}">${ic("phone")}Позвонить</a>
+            ${m.no_max ? "" : `<button type="button" class="line" data-max="${esc(p)}">${ic("chat")}Написать в MAX</button>`}</div></div>`;
       }).join("")}${o.url ? `<a class="dv-site${o.source === "feed" ? " strely" : ""}" href="${esc(o.url)}" target="_blank" rel="noopener">${o.source === "feed"
         ? `${STRELY}<span>Объект партнёра «СТРЕЛЫ» — смотреть на arrowsrealty.ru</span>${ic("external")}` : `${ic("link")}Объявление на сайте агентства`}</a>` : ""}</div>`;
     }
@@ -1720,6 +1729,18 @@
   // Всплывающая подсказка внизу
   let toastTimer = 0;
   // Уведомление всегда поверх всего, в том числе поверх открытого окна объекта
+  document.addEventListener("click", async (e) => {   // 10.11: «Скопировать номер» в карточке контакта
+    const b = e.target.closest("[data-copy-phone]");
+    if (!b) return;
+    e.preventDefault();
+    const t = b.dataset.copyPhone;
+    let ok = false;
+    try { ok = window.copyText ? await window.copyText(t) : (await navigator.clipboard.writeText(t), true); } catch { ok = false; }
+    b.classList.toggle("done", ok);
+    setTimeout(() => b.classList.remove("done"), 1400);
+    toast(ok ? `Номер скопирован: ${t}` : "Не получилось скопировать — нажмите на номер");
+  });
+
   function toast(text, ms = 2400) {
     const t = $("toast");
     t.textContent = text;

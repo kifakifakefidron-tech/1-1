@@ -5,7 +5,7 @@
 (() => {
   "use strict";
   popoverFill();
-  const SPRITE = "/static/icons.svg?v=7";
+  const SPRITE = "/static/icons.svg?v=8";
   // согласие на cookie — на всех страницах (icons.js подключён везде первым), см. cookies.js
   if (!document.querySelector('script[src*="cookies.js"]')) {
     const ck = document.createElement("script");

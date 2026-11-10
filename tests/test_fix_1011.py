@@ -48,8 +48,8 @@ def test_ingest_rent_deposit_and_foreign(conn, add):
     r2 = add("Продам 1к в Адлере, ул. Ленина 5, 42 м2, вид на море, 30 млн. Тел 89181234568")
     for x in r2["results"]:
         if x.get("listing_id"):
-            st = conn.execute("SELECT is_active, hidden_reason FROM listings WHERE id = ?", (x["listing_id"],)).fetchone()
-            assert st["is_active"] == 0 and st["hidden_reason"] == "foreign"
+            st = conn.execute("SELECT is_active, district, settlement FROM listings WHERE id = ?", (x["listing_id"],)).fetchone()
+            assert st["is_active"] == 1 and st["district"] == "Не Краснодар" and st["settlement"] == "Адлер"
 
 
 def test_datafix_fixes_old_rows(conn, add):
@@ -78,3 +78,14 @@ def test_thumbs(tmp_path, monkeypatch):
     assert thumbs.url("/photos/7/0123456789abcdef.jpg") == "/photos/7/0123456789abcdef-s.jpg"
     with Image.open(tmp_path / "7" / "0123456789abcdef-s.jpg") as im:
         assert max(im.size) == thumbs.SIZE
+
+
+def test_foreign_again_returns_hidden(conn, add):
+    from app import datafix, db
+    lid = add("Продам студию в Сочи, 25 м2, вид на море, 9 млн. Тел 89181234575")["results"][0]["listing_id"]
+    conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'foreign', district = NULL WHERE id = ?", (lid,))
+    db.set_state(conn, "datafix_1110", "1")
+    rep = datafix.maybe_run(conn)
+    st = conn.execute("SELECT is_active, hidden_reason, district FROM listings WHERE id = ?", (lid,)).fetchone()
+    assert rep["foreign"] == 1 and st["is_active"] == 1 and st["hidden_reason"] is None and st["district"] == "Не Краснодар"
+    assert datafix.maybe_run(conn) is None

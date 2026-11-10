@@ -23,7 +23,7 @@
     try { await navigator.clipboard.writeText(text); return true; } catch { /* старый браузер */ }
     const ta = document.createElement("textarea");
     ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
-    document.body.appendChild(ta); ta.select();
+    (document.querySelector("dialog[open]") || document.body).appendChild(ta); ta.focus(); ta.select();   // в открытом окне остальная страница «инертна»
     let ok = false;
     try { ok = document.execCommand("copy"); } catch { /* */ }
     ta.remove();

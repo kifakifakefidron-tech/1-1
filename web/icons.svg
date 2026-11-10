@@ -22,6 +22,7 @@
 <symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M7 3.5h10M7 20.5h10M8 3.5c0 4.3 8 4.6 8 8.5s-8 4.2-8 8.5M16 3.5c0 4.3-8 4.6-8 8.5s8 4.2 8 8.5"/></symbol>
 <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20h16M7.5 16.5v-5M12 16.5V7M16.5 16.5V9.5"/></symbol>
 <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4.5 19.5h4l10-10-4-4-10 10z"/><path d="M13 7l4 4"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></symbol>
 <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
 <symbol id="i-trend" viewBox="0 0 24 24"><path d="M3.5 17l5.5-5.5 4 4L20.5 8"/><path d="M15 8h5.5v5.5"/></symbol>
 <symbol id="i-trend-down" viewBox="0 0 24 24"><path d="M3.5 7l5.5 5.5 4-4L20.5 16"/><path d="M15 16h5.5v-5.5"/></symbol>

@@ -89,14 +89,14 @@ def run(conn: sqlite3.Connection, apply: bool = True) -> dict:
                 changes["floors"] = (r["floors"], nt)
                 rep["floor"] += 1
                 ex("floor", r, f"этаж {r['floor']}/{r['floors']} → {nf or '—'}/{nt or '—'}")
-        # другой город
-        if r["is_active"]:
-            why = region.foreign_text(frag)
-            if why:
-                changes["hidden_reason"] = (r["hidden_reason"], "foreign")
-                changes["is_active"] = (1, 0)
-                rep["foreign"] += 1
-                ex("foreign", r, why)
+        # другой город — не снимаем, а район «Не Краснодар» (region.mark_foreign; снятые прошлой версией 'foreign' — обратно)
+        fp = region.foreign_place(frag) if (r["is_active"] or r["hidden_reason"] == "foreign") else None
+        if fp and r["district"] != fp[0]:
+            rep["foreign"] += 1
+            ex("foreign", r, f"район «{fp[0]}»" + (f", {fp[1]}" if fp[1] else ""))
+            if apply:
+                _log(conn, r["id"], "district", r["district"], fp[0], now)
+                region.mark_foreign(conn, r["id"], frag)
         if not changes or not apply:
             continue
         for k, (_, v) in changes.items():
@@ -112,8 +112,6 @@ def run(conn: sqlite3.Connection, apply: bool = True) -> dict:
         for k in ("deal", "price", "floor", "floors"):
             if k in changes:
                 _log(conn, r["id"], k, changes[k][0], changes[k][1], now)
-        if "is_active" in changes:
-            _log(conn, r["id"], "hidden_reason", r["hidden_reason"], "foreign", now)
     if apply:
         conn.commit()
         db.set_state(conn, "datafix_1110_report", json.dumps(rep, ensure_ascii=False))
@@ -122,9 +120,66 @@ def run(conn: sqlite3.Connection, apply: bool = True) -> dict:
 
 def maybe_run(conn: sqlite3.Connection) -> dict | None:
     if db.get_state(conn, STATE) == "1":
-        return None
+        if db.get_state(conn, STATE_FOREIGN) == "1":
+            return None
+        rep = foreign_again(conn)   # 10.11 вечер: первая версия снимала объекты других городов — вернуть с районом «Не Краснодар»
+        db.set_state(conn, STATE_FOREIGN, "1")
+        return rep
     rep = run(conn)
     db.set_state(conn, STATE, "1")
+    db.set_state(conn, STATE_FOREIGN, "1")
+    return rep
+
+
+STATE_FOREIGN = "datafix_1110_foreign"
+
+
+def foreign_again(conn: sqlite3.Connection) -> dict:
+    """Снятые как 'foreign' и снятые по населённому пункту (hidden_reason 'chat', но есть сообщение из обычного чата) —
+    обратно на сайт с районом «Не Краснодар»; активные про другой город — тоже этот район."""
+    now = int(time.time())
+    rep = {"rent": 0, "price_doubt": 0, "floor": 0, "foreign": 0, "examples": [], "ts": now}
+    old = json.loads(db.get_state(conn, "datafix_1110_report") or "null") or {}
+    for k in ("rent", "price_doubt", "floor"):
+        rep[k] = old.get(k, 0)
+    rep["examples"] = [e for e in old.get("examples", []) if e.get("kind") != "foreign"][:30]
+    stale = now - __import__("app.config", fromlist=["STALE_DAYS"]).STALE_DAYS * 86400
+    rows = conn.execute("""SELECT id, title, fragment, description, district, settlement, hidden_reason, is_active, last_seen, added_at
+                           FROM listings WHERE source = 'chat' AND COALESCE(admin_fixed, 0) = 0 AND COALESCE(owner_user_id, 0) = 0
+                           AND (is_active = 1 OR hidden_reason = 'foreign' OR (hidden_reason = 'chat' AND settlement IS NOT NULL))""").fetchall()
+    blocked = region.blocked_set(conn, fresh=True)
+    for r in rows:
+        frag = r["fragment"] or r["description"] or ""
+        by_place = r["hidden_reason"] == "chat" and region.is_foreign(r["settlement"])
+        if r["hidden_reason"] == "chat" and not by_place:
+            continue
+        if by_place:   # снят только из-за посёлка? Если все сообщения — из выключенных/чужих чатов, оставляем снятым
+            ok = conn.execute("""SELECT m.source, m.chat_id, m.chat_name FROM listing_events e JOIN messages m ON m.id = e.message_id
+                                 WHERE e.listing_id = ?""", (r["id"],)).fetchall()
+            if not any(not region.is_foreign(m["chat_name"]) and (m["source"], m["chat_id"] or "") not in blocked for m in ok):
+                continue
+        fp = region.foreign_place(frag) or ((region.NOT_KRD, None) if by_place else None)
+        if not fp:
+            if r["hidden_reason"] == "foreign":   # по новым правилам не другой город — просто вернуть
+                conn.execute("UPDATE listings SET hidden_reason = NULL, is_active = CASE WHEN MAX(last_seen, COALESCE(added_at, 0)) >= ? "
+                             "THEN 1 ELSE 0 END WHERE id = ?", (stale, r["id"]))
+            continue
+        fresh = max(r["last_seen"] or 0, r["added_at"] or 0) >= stale
+        conn.execute("""UPDATE listings SET district = ?, district_src = 'foreign', extra_districts = '[]',
+                        settlement = COALESCE(settlement, ?), hidden_reason = NULL,
+                        lat = CASE WHEN geo_status IN ('manual', 'feed') OR district = ? THEN lat ELSE NULL END,
+                        lon = CASE WHEN geo_status IN ('manual', 'feed') OR district = ? THEN lon ELSE NULL END,
+                        geo_status = CASE WHEN geo_status IN ('manual', 'feed') OR district = ? THEN geo_status ELSE 'pending' END,
+                        is_active = CASE WHEN is_active = 1 OR ? THEN 1 ELSE 0 END WHERE id = ?""",
+                     (fp[0], fp[1], fp[0], fp[0], fp[0], int(fresh), r["id"]))
+        if r["district"] != fp[0]:
+            _log(conn, r["id"], "district", r["district"], fp[0], now)
+        rep["foreign"] += 1
+        if len(rep["examples"]) < 40:
+            rep["examples"].append({"kind": "foreign", "id": r["id"], "title": r["title"],
+                                    "what": f"район «{fp[0]}»" + (f", {fp[1]}" if fp[1] else "")})
+    conn.commit()
+    db.set_state(conn, "datafix_1110_report", json.dumps(rep, ensure_ascii=False))
     return rep
 
 

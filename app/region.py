@@ -100,14 +100,13 @@ def hide_foreign(conn: sqlite3.Connection) -> dict:
         AND EXISTS (SELECT 1 FROM listing_events e WHERE e.listing_id = listings.id AND e.message_id IN ({bad_msgs}))
         AND NOT EXISTS (SELECT 1 FROM listing_events e JOIN messages m ON m.id = e.message_id
                         WHERE e.listing_id = listings.id AND excluded_chat(m.source, m.chat_id, m.chat_name) = 0)""").rowcount
-    by_place = 0
     for r in conn.execute("SELECT id, settlement FROM listings WHERE is_active = 1 AND source = 'chat' "
                           "AND settlement IS NOT NULL").fetchall():
-        if is_foreign(r["settlement"]):
-            conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'chat' WHERE id = ?", (r["id"],))
-            by_place += 1
+        if is_foreign(r["settlement"]):   # 10.11: не снимаем — район «Не Краснодар» (фильтр районов)
+            conn.execute("""UPDATE listings SET district = ?, district_src = 'foreign', extra_districts = '[]' WHERE id = ?
+                            AND COALESCE(admin_fixed, 0) = 0 AND COALESCE(district, '') != ?""", (NOT_KRD, r["id"], NOT_KRD))
     conn.commit()
-    return {"skipped": skipped, "hidden": hidden + by_place}
+    return {"skipped": skipped, "hidden": hidden}
 
 
 def _retry(fn, tries: int = 4):
@@ -291,42 +290,53 @@ def foreign_text(text: str | None) -> str | None:
         return None
     t = words(text)
     raw = (text or "").lower().replace("ё", "е")
-    m = _SEA.search(raw)
-    if m:
-        return "у моря"
-    if _MOSCOW.search(raw):
-        return "Москва"
-    rx = _rx()
-    if rx is None:
-        return None
-    for m in rx.finditer(t):
+    rx = _rx()   # сначала город (он пойдёт в «населённый пункт»), потом «у моря» и Москва по МКАД/метро
+    for m in (rx.finditer(t) if rx is not None else ()):
         word = m.group(0).strip()
         if m.group(1) and re.search(r"ск(?:ая|ой|ое|ого|ую|ий|им|их|ие|ом)$", word):
             continue   # прилагательное — улица/шоссе Краснодара
         if _ABOUT_PERSON.search(t[max(0, m.start() - 25): m.start() + 1]):
             continue
-        return word.capitalize()
+        stem = word[: len(word) - len(m.group(1) or "")]
+        return _NICE.get(stem, word.capitalize())
+    if _SEA.search(raw):
+        return "у моря"
+    if _MOSCOW.search(raw):
+        return "Москва"
     return None
 
 
-def hide_foreign_text(conn: sqlite3.Connection, apply: bool = True) -> dict:
-    """Один раз (state foreign_text_v1) и для отчёта: объекты из чатов, чей текст про другой город, — с сайта
-    (hidden_reason 'foreign'). Правленное админом, фид и свои объекты агентов не трогаем."""
-    import json as _json
-    rep = {"hidden": 0, "by": {}, "examples": [], "ts": int(time.time())}
-    for r in conn.execute("""SELECT id, title, fragment, description FROM listings WHERE is_active = 1 AND source = 'chat'
-                             AND COALESCE(admin_fixed, 0) = 0 AND COALESCE(owner_user_id, 0) = 0""").fetchall():
-        why = foreign_text(r["fragment"] or r["description"])
-        if not why:
-            continue
-        rep["hidden"] += 1
-        rep["by"][why] = rep["by"].get(why, 0) + 1
-        if len(rep["examples"]) < 30:
-            rep["examples"].append({"id": r["id"], "title": r["title"], "why": why})
-        if apply:
-            conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'foreign' WHERE id = ?", (r["id"],))
-    if apply:
-        conn.execute("INSERT INTO state (key, value) VALUES ('foreign_text_report', ?) "
-                     "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (_json.dumps(rep, ensure_ascii=False),))
-        conn.commit()
-    return rep
+# основа из BLOCKED_PLACES → как писать населённый пункт
+_NICE = {"сочи": "Сочи", "адлер": "Адлер", "сириус": "Сириус", "туапсе": "Туапсе", "анап": "Анапа", "геленджик": "Геленджик",
+         "новороссийск": "Новороссийск", "лазаревск": "Лазаревское", "хоста": "Хоста", "дагомыс": "Дагомыс",
+         "красная поляна": "Красная Поляна", "абхаз": "Абхазия", "крым": "Крым", "ялт": "Ялта", "севастопол": "Севастополь",
+         "джубг": "Джубга", "архипо": "Архипо-Осиповка", "кабардинк": "Кабардинка", "витязев": "Витязево", "ейск": "Ейск",
+         "темрюк": "Темрюк", "тамань": "Тамань", "ростов": "Ростов-на-Дону", "москв": "Москва", "питер": "Санкт-Петербург",
+         "санкт-петербург": "Санкт-Петербург", "ставропол": "Ставрополь"}
+NOT_KRD = "Не Краснодар"
+
+
+def foreign_place(text: str | None) -> tuple[str, str | None] | None:
+    """10.11 (Артём: «не снимать, а фильтровать как не Краснодар в районах»): (район «Не Краснодар», населённый пункт или None)."""
+    why = foreign_text(text)
+    if not why:
+        return None
+    return NOT_KRD, (None if why == "у моря" else why)
+
+
+def mark_foreign(conn: sqlite3.Connection, lid: int, text: str | None) -> bool:
+    """Объявление про другой город: район «Не Краснодар», город — в населённый пункт, точку ищем заново по городу.
+    Объект остаётся на сайте. Правленное админом, фид и свои объекты агентов не трогаем."""
+    fp = foreign_place(text)
+    if not fp:
+        return False
+    cur = conn.execute("""UPDATE listings SET district = ?, district_src = 'foreign', extra_districts = '[]',
+                          settlement = COALESCE(settlement, ?),
+                          lat = CASE WHEN geo_status IN ('manual', 'feed') THEN lat ELSE NULL END,
+                          lon = CASE WHEN geo_status IN ('manual', 'feed') THEN lon ELSE NULL END,
+                          geo_status = CASE WHEN geo_status IN ('manual', 'feed') THEN geo_status ELSE 'pending' END,
+                          hidden_reason = CASE WHEN hidden_reason = 'foreign' THEN NULL ELSE hidden_reason END,
+                          is_active = CASE WHEN hidden_reason = 'foreign' THEN 1 ELSE is_active END
+                          WHERE id = ? AND source = 'chat' AND COALESCE(admin_fixed, 0) = 0 AND COALESCE(owner_user_id, 0) = 0
+                          AND COALESCE(district, '') != ?""", (fp[0], fp[1], lid, fp[0]))
+    return cur.rowcount > 0

@@ -479,11 +479,11 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
     _reindex(conn, lid, d["search_text"])
     # «Под задатком», «забронирована» — с продажи снят сразу; новый пост без задатка возвращает объект
     from .rules import under_deposit, is_sold
-    from .region import foreign_text
-    if foreign_text(o.fragment):   # 10.11: Адлер, Сочи, Москва, «вид на море» — не Краснодар (чат при этом краснодарский)
-        conn.execute("""UPDATE listings SET is_active = 0, hidden_reason = 'foreign'
-                        WHERE id = ? AND source = 'chat' AND COALESCE(admin_fixed, 0) = 0 AND COALESCE(owner_user_id, 0) = 0""", (lid,))
-    elif is_sold(o.fragment):   # 18.10: «Квартира продана» — с сайта сразу (новый пост без «продана» вернёт объект)
+    from .region import mark_foreign
+    # 10.11: Адлер, Сочи, Москва, «вид на море» — объект остаётся на сайте, но с районом «Не Краснодар» (Артём: «не снимать,
+    # а фильтровать как не Краснодар в районах»)
+    mark_foreign(conn, lid, o.fragment)
+    if is_sold(o.fragment):   # 18.10: «Квартира продана» — с сайта сразу (новый пост без «продана» вернёт объект)
         conn.execute("""UPDATE listings SET is_active = 0, hidden_reason = 'sold_text', sold_at = COALESCE(sold_at, ?)
                         WHERE id = ? AND source NOT IN ('own', 'feed')""", (int(time.time()), lid))
     elif under_deposit(o.fragment):
