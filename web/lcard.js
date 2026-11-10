@@ -48,7 +48,7 @@
     const href = opts.href || `/?open=${o.id}`;
     const m2 = o.price_m2 && o.deal !== "rent" && !o.price_doubt ? `<div class="price-m2">${num(o.price_m2)} ₽/м²</div>` : "";
     const photo = n
-      ? `<div class="item-photo" data-lc-ph="0" data-lc-photos="${esc(JSON.stringify(photos.slice(0, 20)))}"><img src="${esc(photos[0])}" alt="${esc(o.title || "")}" loading="lazy" decoding="async">${n > 1 ? `
+      ? `<div class="item-photo" data-lc-ph="0" data-lc-photos="${esc(JSON.stringify(photos.slice(0, 20)))}"${o.thumbs ? ` data-lc-th="${esc(JSON.stringify(o.thumbs.slice(0, 20)))}"` : ""}><img src="${esc((o.thumbs && o.thumbs[0]) || photos[0])}" data-full="${esc(photos[0])}" alt="${esc(o.title || "")}" loading="lazy" decoding="async">${n > 1 ? `
           <button type="button" class="ph-nav prev" data-lc-step="-1" aria-label="Предыдущее фото">${ic("chevron-left")}</button>
           <button type="button" class="ph-nav next" data-lc-step="1" aria-label="Следующее фото">${ic("chevron")}</button>
           <span class="ph-count">1 / ${n}</span>` : ""}${opts.top ? `<div class="lc-top">${opts.top}</div>` : ""}${gone ? `<em class="lc-gone">${esc(opts.goneText || "Снят с сайта")}</em>` : ""}</div>`
@@ -67,6 +67,11 @@
   }
   const grid = (inner, cls = "") => `<ol class="results lc-grid${cls ? " " + cls : ""}">${inner}</ol>`;
 
+  // маленькая копия не загрузилась — показать оригинал (10.11)
+  document.addEventListener("error", (e) => {
+    const img = e.target;
+    if (img.tagName === "IMG" && img.dataset.full && img.closest(".lc") && img.src !== new URL(img.dataset.full, location.href).href) img.src = img.dataset.full;
+  }, true);
   // фото — стрелками (как на главной), без перехода в окно
   document.addEventListener("click", (e) => {
     const st = e.target.closest("[data-lc-step]");
@@ -75,7 +80,9 @@
       const box = st.closest("[data-lc-ph]"), list = JSON.parse(box.dataset.lcPhotos || "[]");
       const i = (Number(box.dataset.lcPh) + Number(st.dataset.lcStep) + list.length) % list.length;
       box.dataset.lcPh = i;
-      box.querySelector("img").src = list[i];
+      const th = JSON.parse(box.dataset.lcTh || "[]"), img = box.querySelector("img");
+      img.dataset.full = list[i];
+      img.src = th[i] || list[i];
       const c = box.querySelector(".ph-count");
       if (c) c.textContent = `${i + 1} / ${list.length}`;
       return;

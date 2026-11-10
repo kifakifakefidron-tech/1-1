@@ -431,8 +431,9 @@ def _mail_agent(conn: sqlite3.Connection, user_id: int, subject: str, body: str)
     """Дубль важного агенту на почту — в фоне (страница клиента не ждёт почтовый сервер)."""
     import threading
     from . import mailer
+    from . import notices
     row = conn.execute("SELECT email FROM users WHERE id = ?", (user_id,)).fetchone()
-    if not row or not row["email"] or not mailer.available():
+    if not row or not row["email"] or not mailer.available() or notices.is_off(conn, user_id, "client"):
         return
     msg = f"{subject}\n{body}\n\nОткройте подборку: {config.SITE_URL}/picks"
     threading.Thread(target=mailer.send_text, args=(row["email"], f"1+1 · {subject}"[:150], msg), daemon=True).start()

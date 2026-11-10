@@ -128,6 +128,8 @@ def _drop_file(conn: sqlite3.Connection, lid: int, url: str) -> None:
         (Path(config.PHOTOS_DIR) / str(lid) / url.rsplit("/", 1)[-1]).unlink(missing_ok=True)
     except OSError:
         pass
+    from . import thumbs
+    thumbs.drop(str(lid), url.rsplit("/", 1)[-1])
 
 
 def _download(r) -> bytes | None:

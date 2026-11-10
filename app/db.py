@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS ix_messages_status ON messages(status);
 CREATE INDEX IF NOT EXISTS ix_messages_hash ON messages(text_hash);
 CREATE INDEX IF NOT EXISTS ix_messages_chat ON messages(source, chat_id);
+CREATE INDEX IF NOT EXISTS ix_messages_ts ON messages(ts);   -- 10.11: «сообщений за сутки» без чтения всей таблицы
 -- 18.10: поиск сообщения по его номеру (фото с подписью, свои объекты) — без индекса каждый поиск перебирал всю таблицу
 CREATE INDEX IF NOT EXISTS ix_messages_msgid ON messages(source, msg_id);
 
@@ -93,6 +94,7 @@ CREATE TABLE IF NOT EXISTS listing_events (
 CREATE INDEX IF NOT EXISTS ix_events_listing ON listing_events(listing_id);
 CREATE INDEX IF NOT EXISTS ix_events_hash ON listing_events(fragment_hash);
 CREATE INDEX IF NOT EXISTS ix_events_message ON listing_events(message_id);
+CREATE INDEX IF NOT EXISTS ix_events_match ON listing_events(match);   -- 10.11: «повторов склеено» (/how)
 
 CREATE VIRTUAL TABLE IF NOT EXISTS listings_fts USING fts5(
     search_text, tokenize = 'unicode61 remove_diacritics 2'

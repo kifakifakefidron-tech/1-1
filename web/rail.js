@@ -78,6 +78,7 @@
     addEventListener("resize", () => { clearTimeout(t); t = setTimeout(fit, 120); });
   }
   function build(me) {
+    document.querySelectorAll("nav.rail-g, .rail-sheet").forEach((n) => n.remove());   // 10.11: пересборка после /api/me
     const rail = document.createElement("nav");
     rail.className = "rail rail-g";
     // 18.10: меню «въезжает» только при первом заходе за сессию — при переходах между разделами оно стоит на месте
@@ -161,13 +162,25 @@
     });
   }
 
+  // 10.11 (Артём: «долго грузит при переходе по вкладкам»): меню рисуем СРАЗУ по прошлому ответу (только то, что нужно меню:
+  // админ ли, счётчики, имя, фото), а когда придёт /api/me — перерисуем, если что-то изменилось. Раньше меню (и отступ под него)
+  // появлялось только после ответа сервера — страница «прыгала».
+  const MEMO = "railMe";
+  const slim = (me) => (me ? { is_admin: !!me.is_admin, counts: me.counts || {}, name: me.name || String(me.email || "").split("@")[0], photo: me.photo || "", email: "" } : null);
   async function init() {
-    let me = null;
+    let memo;   // undefined — не знаем; null — в прошлый раз был гость; {…} — вошедший
+    try { const v = localStorage.getItem(MEMO); memo = v === null ? undefined : JSON.parse(v); } catch { memo = undefined; }
+    if (memo !== undefined) build(memo);
+    let me = null, ok = false;
     try {
       const r = await fetch("/api/me", { credentials: "same-origin" });
-      if (r.ok) me = (await r.json()).me;
+      if (r.ok) { me = (await r.json()).me; ok = true; }
     } catch { /* без входа — гостевое меню */ }
-    build(me);
+    if (!ok && memo !== undefined) return;   // нет связи — оставляем меню, как было
+    const fresh = slim(me);
+    const same = memo !== undefined && JSON.stringify(memo) === JSON.stringify(fresh);
+    try { localStorage.setItem(MEMO, JSON.stringify(fresh)); } catch { /* */ }
+    if (!same || !document.querySelector("nav.rail-g")) build(fresh);
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
   // число непрочитанных — от bell.js

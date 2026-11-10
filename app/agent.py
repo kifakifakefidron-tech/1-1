@@ -352,6 +352,7 @@ def edit_listing(conn: sqlite3.Connection, user: sqlite3.Row, listing_id: int, d
             conn.execute("UPDATE listings SET geo_status = 'pending' WHERE id = ? AND geo_status NOT IN ('manual', 'feed')", (listing_id,))
         for k, v in changes.items():
             _log(conn, listing_id, user["id"], k, row[k], v)
+    _set_point(conn, user, row, data)
     if status in ("sold", "active"):
         if status == "sold" and row["is_active"]:
             conn.execute("UPDATE listings SET is_active = 0, sold_at = ?, owner_user_id = ? WHERE id = ?",
@@ -364,6 +365,33 @@ def edit_listing(conn: sqlite3.Connection, user: sqlite3.Row, listing_id: int, d
             _log(conn, listing_id, user["id"], "status", "sold", "active")
     conn.commit()
     return True, "Сохранено."
+
+
+# 10.11 (Артём): агент сам ставит точку на карте у своего объявления (и при создании). Точка агента — «ручная»
+# (geo_status 'manual', geo_src 'agent'): геокодер, фид и повторы её не перезаписывают; в журнал — как точка админа (откат в админке).
+POINT_BOX = (44.0, 37.0, 46.5, 41.5)   # Краснодарский край с запасом: юг, запад, север, восток
+
+
+def _set_point(conn, user, row, data: dict) -> None:
+    if "lat" not in data and "lon" not in data:
+        return
+    old = [row["lat"], row["lon"], row["geo_status"], row["geo_src"]]
+    lat, lon = data.get("lat"), data.get("lon")
+    if lat in (None, "") and lon in (None, ""):   # «убрать мою точку» — найдём по адресу
+        if row["geo_src"] == "agent":
+            conn.execute("UPDATE listings SET lat = NULL, lon = NULL, geo_status = 'pending', geo_src = NULL WHERE id = ?", (row["id"],))
+            _log(conn, row["id"], user["id"], "point", old, None)
+        return
+    try:
+        lat, lon = round(float(lat), 6), round(float(lon), 6)
+    except (TypeError, ValueError):
+        return
+    if not (POINT_BOX[0] <= lat <= POINT_BOX[2] and POINT_BOX[1] <= lon <= POINT_BOX[3]):
+        return
+    if row["lat"] is not None and abs(row["lat"] - lat) < 1e-6 and abs(row["lon"] - lon) < 1e-6:
+        return
+    conn.execute("UPDATE listings SET lat = ?, lon = ?, geo_status = 'manual', geo_src = 'agent' WHERE id = ?", (lat, lon, row["id"]))
+    _log(conn, row["id"], user["id"], "point", old, [lat, lon, "manual", "agent"])
 
 
 def create_own(conn: sqlite3.Connection, user: sqlite3.Row, data: dict) -> tuple[int | None, str]:
@@ -394,7 +422,7 @@ def create_own(conn: sqlite3.Connection, user: sqlite3.Row, data: dict) -> tuple
                         now + config.OWN_LISTING_DAYS * DAY))
     lid = cur.lastrowid
     conn.commit()
-    ok, why = edit_listing(conn, user, lid, {k: v for k, v in data.items() if k in OWN_FIELDS})
+    ok, why = edit_listing(conn, user, lid, {k: v for k, v in data.items() if k in OWN_FIELDS + ("lat", "lon")})
     if not ok:
         conn.execute("DELETE FROM listings WHERE id = ?", (lid,))
         conn.commit()
@@ -461,7 +489,7 @@ def expire_own(conn: sqlite3.Connection, send_mail=None) -> dict:
                     url=f"/my/edit?id={r['id']}", dedup_s=0,
                     actions=[{"label": f"Да, продлить на {config.OWN_LISTING_DAYS} дней", "url": yes},
                              {"label": "Нет, снять", "url": no}])
-        if r["email"] and send_mail:
+        if r["email"] and send_mail and not notices.is_off(conn, r["owner_user_id"], "own"):
             send_mail(r["email"], f"1+1: объект ещё актуален? {r['title']}",
                       f"Ваш объект «{r['title']}» будет снят с сайта {when}.\n\n"
                       f"Ещё продаётся — продлить на {config.OWN_LISTING_DAYS} дней:\n{yes}\n\n"

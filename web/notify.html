@@ -16,15 +16,16 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=35">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=122">
-<link rel="stylesheet" href="/static/notify.css?v=7">
+<link rel="stylesheet" href="/static/glass.css?v=123">
+<link rel="stylesheet" href="/static/notify.css?v=8">
 </head>
 <body>
 <main class="nt2">
   <header class="nt2-head">
     <div><p class="nt2-eyebrow">Центр уведомлений</p><h1>Уведомления</h1>
       <p class="nt2-sub" id="ntSub">Новые объекты по поискам, цены в избранном, ваши объекты, планер и клиенты — в одной ленте.</p></div>
-    <button type="button" class="pill light" id="ntReadAll" hidden>Прочитать всё</button>
+    <div class="nt2-acts"><a class="pill light" href="#ntPrefsCard" id="ntPrefsBtn">Настроить</a>
+      <button type="button" class="pill light" id="ntReadAll" hidden>Прочитать всё</button></div>
   </header>
 
   <div id="ntGuest" hidden class="note-box">Уведомления доступны после входа. <a href="/?login=1">Войти</a></div>
@@ -39,6 +40,10 @@
       <div id="ntList" class="nt2-feed"></div>
     </section>
     <aside class="nt2-side">
+      <section class="nt2-card" id="ntPrefsCard">
+        <h2>Что присылать</h2>
+        <div id="ntPrefs"></div>
+      </section>
       <section class="nt2-card">
         <h2>Что отслеживаю</h2>
         <div class="nt2-track" id="ntTrack"></div>
@@ -57,8 +62,9 @@
 <script src="/static/icons.js?v=12"></script>
 <script src="/static/pickers.js?v=19"></script>
 <script src="/static/max.js?v=2"></script>
-<script src="/static/rail.js?v=37"></script>
-<script src="/static/notify.js?v=10"></script>
+<script src="/static/rail.js?v=38"></script>
+<script src="/static/nprefs.js?v=1"></script>
+<script src="/static/notify.js?v=11"></script>
 <script src="/static/objview.js?v=3"></script>
 <script src="/static/bell.js?v=7"></script>
 </body>

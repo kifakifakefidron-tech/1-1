@@ -566,6 +566,10 @@ def row_to_item(r: sqlite3.Row, with_contacts: bool) -> dict:
     d["geo_level"] = geo_level(r["lat"], r["geo_status"], r["geo_src"]) if "geo_src" in keys and "lat" in keys else None
     d["verified"] = bool(r["verified"]) if "verified" in r.keys() else None
     d["photos"] = json.loads(r["photos"] or "[]")
+    from . import thumbs
+    th = [thumbs.url(u) for u in d["photos"][:20]]   # 10.11: маленькие копии для карточек (оригинал — в окне объекта)
+    if th != d["photos"][:20]:
+        d["thumbs"] = th
     d["extra_districts"] = json.loads(r["extra_districts"] or "[]")
     phones = json.loads(r["phones"] or "[]")
     if with_contacts:

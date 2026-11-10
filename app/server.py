@@ -188,11 +188,13 @@ _stats_mem: dict = {"t": 0.0, "v": None}
 
 def _stats_fast() -> dict:
     """Цифры первого экрана для страницы с сервера (раз в 2 минуты на процесс, как /api/stats)."""
-    if _stats_mem["v"] is None or time.time() - _stats_mem["t"] > 120:
+    if _stats_mem["v"] is not None and time.time() - _stats_mem["t"] > 120:   # 10.11: старые цифры — сразу, новые — в фоне
+        _in_bg("stats_fast", lambda: _stats_mem.update(v=_stats(), t=time.time()))
+    elif _stats_mem["v"] is None:
         try:
             _stats_mem["v"], _stats_mem["t"] = _stats(), time.time()
         except Exception:  # noqa: BLE001 — база занята: страница уйдёт с прочерками, скрипт докрутит
-            return _stats_mem["v"] or {}
+            return {}
     return _stats_mem["v"]
 
 
@@ -229,11 +231,13 @@ _live_mem: dict = {"t": 0.0, "v": None}
 
 
 def _live_fast() -> dict:
-    if _live_mem["v"] is None or time.time() - _live_mem["t"] > 30:
+    if _live_mem["v"] is not None and time.time() - _live_mem["t"] > 30:
+        _in_bg("live_fast", lambda: _live_mem.update(v=_live(), t=time.time()))
+    elif _live_mem["v"] is None:
         try:
             _live_mem["v"], _live_mem["t"] = _live(), time.time()
         except Exception:  # noqa: BLE001 — база занята: блок придёт пустым, скрипт заполнит
-            return _live_mem["v"] or {}
+            return {}
     return _live_mem["v"]
 
 
@@ -326,7 +330,7 @@ def index(request: Request, body: dict | None = None):
             meta += ('<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace("</", "<\\/")
                      + "</script>")
         html_text = re.sub(r"<!--og-->.*?<!--/og-->", lambda _m: meta, html_text, count=1, flags=re.S)
-        html_text = html_text.replace("<title>1+1 · поиск объектов</title>", f"<title>{esc(title)} · 1+1</title>", 1)
+        html_text = html_text.replace("<title>Объекты из риелторских чатов Краснодара — 1+1</title>", f"<title>{esc(title)} · 1+1</title>", 1)
         html_text = re.sub(r'<meta name="description" content="[^"]*">',
                            lambda _m: f'<meta name="description" content="{esc(desc)}">', html_text, count=1)
     return Response(html_text, media_type="text/html; charset=utf-8", headers=headers)
@@ -442,6 +446,34 @@ CACHE_S = 15
 
 
 _computing: dict[str, threading.Lock] = {}
+# 10.11 (Артём: «долго грузит при переходе по вкладкам»): ответ устарел — отдаём прежний СРАЗУ, а свежий считаем в фоне
+# (раньше тот, кто первым приходил после устаревания, ждал расчёта: цифры первого экрана — до 4–5 с, а главная ждала их же).
+# Старше STALE_X × ttl (и после правок админа/агентов — другой cache_ver) — считаем при человеке, как раньше.
+STALE_X, STALE_MAX = 20, 1800
+_bg = None
+_refreshing: set = set()
+
+
+def _in_bg(key: str, fn) -> None:
+    """Выполнить fn в фоне один раз на ключ (пока считается — второй раз не ставим)."""
+    global _bg
+    with _cache_lock:
+        if key in _refreshing:
+            return
+        _refreshing.add(key)
+        if _bg is None:
+            from concurrent.futures import ThreadPoolExecutor
+            _bg = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cache-bg")
+
+    def run():
+        try:
+            fn()
+        except Exception:  # noqa: BLE001 — база занята и т. п.: в следующий раз посчитаем при человеке
+            log.debug("фоновый пересчёт %s не удался", key, exc_info=True)
+        finally:
+            with _cache_lock:
+                _refreshing.discard(key)
+    _bg.submit(run)
 
 
 def _json_or_none(v: str | None) -> dict | None:
@@ -458,6 +490,13 @@ def _cached(request: Request, compute, ttl: int = CACHE_S) -> Response:
     key = f"{db.get_state(db.get(), 'cache_ver', '0')}:{request.url.path}?{request.url.query}"
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < ttl:
+        return Response(hit[1], media_type="application/json")
+    if hit and time.time() - hit[0] < min(ttl * STALE_X, STALE_MAX):
+        def refresh(key=key):
+            body = json.dumps(compute(), ensure_ascii=False).encode()
+            with _cache_lock:
+                _cache[key] = (time.time(), body)
+        _in_bg(key, refresh)
         return Response(hit[1], media_type="application/json")
     # Один и тот же ответ считаем один раз: пришли сто человек разом — остальные ждут готового (не 100 расчётов)
     with _cache_lock:
@@ -582,6 +621,7 @@ _GONE = {
     "sold_text": ("Агент написал, что продано", "В последнем сообщении об этом объекте — «продана / снята с продажи»."),
     "deposit": ("Объект под задатком", "Агент написал «задаток / бронь». Если сделка сорвётся и объект пришлют снова — вернётся на сайт."),
     "chat": ("Объявление из чата, который мы не собираем", "Чат выключен или он не про Краснодар."),
+    "foreign": ("Объект не в Краснодаре", "В тексте объявления — другой город или побережье (Адлер, Сочи, Москва, «вид на море»)."),
     "strely": ("Это копия объекта агентства", "Основная карточка — на сайте агентства."),
     "strely_photo": ("Это копия объекта агентства", "Пост агентства с фото: основная карточка — на сайте агентства."),
     "own_dup": ("Это повтор", "Этот объект уже есть в другой карточке."),
@@ -793,7 +833,7 @@ def _stats() -> dict:
     })
 
 
-_NOT_REMOVED = ("dup_same", "dup_text", "own_dup", "strely", "strely_photo", "chat", "rent_rule")
+_NOT_REMOVED = ("dup_same", "dup_text", "own_dup", "strely", "strely_photo", "chat", "rent_rule", "foreign")
 
 
 # ─── промокод для коллег (временный) ───────────────────────────────────────
@@ -1306,6 +1346,7 @@ def api_admin_overview(request: Request, body: dict | None = None):
         "agent_consent": __import__("app.consent", fromlist=["overview"]).overview(conn),   # 19.10: доля подтвердивших агентов
         "billing": __import__("app.billing", fromlist=["status"]).status(conn, now),
         "rules_fix": json.loads(db.get_state(conn, "rules_fix_report") or "null"),
+        "datafix": _json_or_none(db.get_state(conn, "datafix_1110_report")),   # 10.11: аренда ×1000, «50/50», другие города
         "rent_leak": json.loads(db.get_state(conn, "rent_leak_report") or "null"),
         "media_strict": _json_or_none(db.get_state(conn, "media_strict_report")),
         "llm_on": __import__("app.llm", fromlist=["available"]).available(),
@@ -1601,6 +1642,10 @@ def api_saved(request: Request, body: dict | None = None):
     return JSONResponse({"items": hooks.list_saved(conn, user["id"])})
 
 
+def _notify_kinds() -> list[dict]:
+    return [{"kind": k, "title": t, "hint": h} for k, t, h in notices.USER_KINDS]
+
+
 def api_notices(request: Request, body: dict | None = None):
     user, err = _need_user(request)
     if err:
@@ -1616,10 +1661,12 @@ def api_notices(request: Request, body: dict | None = None):
     favs = conn.execute("""SELECT COUNT(*), SUM(l.is_active) FROM favorites f JOIN listings l ON l.id = f.listing_id
                            WHERE f.user_id = ?""", (user["id"],)).fetchone()
     own = conn.execute("SELECT COUNT(*) FROM listings WHERE owner_user_id = ? AND is_active = 1", (user["id"],)).fetchone()[0]
+    st = settings.get(conn, user["id"])
     return JSONResponse({"items": notices.items(conn, user["id"]), "unread": notices.unread(conn, user["id"]),
                          "saved": hooks.list_saved(conn, user["id"]), "favorites": favs[0], "favorites_active": favs[1] or 0,
                          "own": own, "email": user["email"], "access_until": accounts.access_until(user),
-                         "is_admin": bool(user["is_admin"])})
+                         "is_admin": bool(user["is_admin"]), "notify_kinds": _notify_kinds(),
+                         "notify_off": st["notify_off"], "mail_off": bool(st["mail_off"])})
 
 
 def api_notices_peek(request: Request, body: dict | None = None):
@@ -1869,7 +1916,7 @@ def api_settings(request: Request, body: dict | None = None):
         settings.save(conn, user["id"], body)
     st = settings.get(conn, user["id"])
     sessions = conn.execute("SELECT COUNT(*) FROM sessions WHERE user_id = ?", (user["id"],)).fetchone()[0]
-    return JSONResponse({"settings": st, "name": accounts.get_user(conn, user["id"])["name"] or "",
+    return JSONResponse({"settings": st, "name": accounts.get_user(conn, user["id"])["name"] or "", "notify_kinds": _notify_kinds(),
                          "email": user["email"], "colors": settings.COLORS, "pick_url": config.PICK_URL,
                          "pick_domain": bool(config.PICK_DOMAIN), "session_days": accounts.SESSION_DAYS, "sessions": sessions})
 
@@ -1970,7 +2017,7 @@ def api_market(request: Request, body: dict | None = None):
     """Аналитика рынка: медианы по районам и ЖК, динамика. 18.10 (приёмка п. 11, решение Артёма — вариант Б): гостю и без
     доступа — только районы и цена по городу; ЖК и динамика за неделю/месяц — с подпиской (так и обещано на /pay)."""
     resp = _cached(request, lambda: market.report(db.get(), request.query_params.get("deal", "sale"),
-                                                  rooms=_num(request.query_params.get("rooms"), int)))
+                                                  rooms=_num(request.query_params.get("rooms"), int)), ttl=600)   # рынок меняется за сутки
     if has_access(request):
         return resp
     d = json.loads(resp.body)
@@ -2001,6 +2048,7 @@ def _agent_items(conn, user) -> list[dict]:
         it = search.row_to_item(r, True)
         it["can_edit"] = agent.can_edit(conn, user, r)[0]
         it["stats"] = stats.get(r["id"])
+        it["geo_mine"] = r["geo_src"] == "agent"   # точку поставил сам агент — её можно убрать
         out.append(it)
     return out
 
@@ -2161,7 +2209,7 @@ def photo_file(request: Request, body: dict | None = None):
     """Фото, загруженные агентами (data/photos/<объект>/<имя>; свои фото агента в подборках — data/photos/pk/<имя>).
     Имя — хеш содержимого, кэшируем надолго."""
     name, folder = request.path_params["name"], request.path_params["folder"]
-    if not re.fullmatch(r"[0-9a-f]{16}\.(?:jpg|png|webp)", name) or not re.fullmatch(r"[0-9]{1,10}|pk", folder):
+    if not re.fullmatch(r"[0-9a-f]{16}(?:-s)?\.(?:jpg|png|webp)", name) or not re.fullmatch(r"[0-9]{1,10}|pk", folder):
         return _err("не найдено", 404)
     f = Path(config.PHOTOS_DIR) / folder / name
     if not f.is_file():
@@ -3123,7 +3171,8 @@ def sitemap_xml(request: Request, body: dict | None = None):
     from xml.sax.saxutils import escape
     base = config.SITE_URL
     urls = [(f"{base}/", None), (f"{base}/how", None), (f"{base}/market", None), (f"{base}/privacy", None), (f"{base}/terms", None),
-            (f"{base}/offer", None), (f"{base}/consent", None), (f"{base}/contacts", None)]
+            (f"{base}/offer", None), (f"{base}/consent", None), (f"{base}/contacts", None),
+            (f"{base}/requests", None), (f"{base}/agent", None)]   # 10.11: и запросы покупателей, и страница для агентов
     # карточки объектов в карту сайта не входят: в них данные агентов из чатов — в поиск только открытые страницы
     body_xml = "".join(f"<url><loc>{escape(u)}</loc>"
                        + (f"<lastmod>{time.strftime('%Y-%m-%d', time.gmtime(ts))}</lastmod>" if ts else "") + "</url>"

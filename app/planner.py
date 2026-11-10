@@ -275,7 +275,7 @@ def remind(conn: sqlite3.Connection, send=None, now: int | None = None) -> int:
                     listing_id=r["listing_id"], dedup_s=60)
         conn.execute("UPDATE planner_events SET reminded = 1 WHERE id = ?", (r["id"],))
         conn.commit()
-        if send and r["u_email"]:
+        if send and r["u_email"] and not notices.is_off(conn, r["user_id"], "plan"):
             try:
                 send(r["u_email"], f"Напоминание: {title}",
                      f"{title}\n{body}\n{(r['note'] or '').strip()}\n\nПланер: {config.SITE_URL}/planner?event={r['id']}\n")

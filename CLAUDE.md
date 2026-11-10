@@ -1135,6 +1135,30 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   popoverFill(): showPopover/hidePopover/togglePopover через класс pp-open (z-index растёт — открытый позже выше), закрытые
   [popover] скрыты, matches/closest/querySelector понимают :popover-open, правила стилей с :popover-open достаются из файлов
   CSS (fetch, @media/@supports сохраняются) и вставляются сразу после файла. Проверить на новом браузере — /?nopopover=1.
+- 10.11 (ветка ux-1011, правки Артёма + отчёт проверки): «МОИ ОБЪЕКТЫ» — карточки .lc.my4 (адрес 2 строки, счётчики 2×2 с подписью
+  отдельной строкой, кнопки сеткой, ничего не вылезает). ТОЧКА НА КАРТЕ в /my/edit (и у объявлений из чатов): Leaflet без флажка
+  (attributionControl false + «© OpenStreetMap» без prefix), нажать/перетащить метку → fd.lat/lon → agent._set_point (POINT_BOX
+  края, geo_status 'manual', geo_src 'agent', журнал field 'point'), «Убрать мою точку» — только своей. УВЕДОМЛЕНИЯ ВЫКЛЮЧАЮТСЯ:
+  web/nprefs.js (NPrefs.mount) — один блок на /settings (#stNotify) и /notifications (#ntPrefsCard «Что присылать»), users.settings
+  notify_off (виды notices.USER_KINDS; "all" — все), notices.is_off проверяют notices.add и письма (hooks поиск/цена, planner, picks,
+  agent свои объекты); служебные (доступ, оплаты) не выключаются; «Дублировать на почту» = mail_off. /dups: номер не в куске текста —
+  из колонки phones («в общей части сообщения», text_from), отправитель без номера — имя (sender_name, «номер в чате скрыт»), у фида —
+  FEED_PHONE. СКОРОСТЬ (замер живого сайта: /api/stats 4,6 с при устаревшем кэше, главная ждала его же; фото ленты 200–450 КБ):
+  server._cached — stale-while-revalidate (устаревший ответ сразу, свежий — в фоне _in_bg, до STALE_X×ttl / STALE_MAX; после правок —
+  другой cache_ver, считается при человеке), _stats_fast/_live_fast так же, /api/market ttl 600, индексы ix_messages_ts и ix_events_match;
+  app/thumbs.py — копии фото 640 px «<хеш>-s.jpg» (Pillow в requirements; worker thumbs.run ≤3 с за цикл, полный обход раз в 10 мин;
+  search.row_to_item → thumbs, app.js pic(o,i), lcard data-lc-th; при ошибке — оригинал data-full; Caddy/photo_file пускают -s);
+  rail.js рисует меню сразу по localStorage railMe (админ, счётчики, имя, фото) и перерисовывает после /api/me, если изменилось.
+  ПОРТИТ ДАННЫЕ (Д1/Д2): rules.rent_hint — «+ залог», залог в тысячах/за месяц, «арендатор 50/50», «комиссия … арендатор» = аренда
+  (detect_deal до _NOT_RENT; при «продам/ипотека» — нет); rules.explicit_rub — «20000₽ / 35 тыс» в тексте: ×1000 нельзя (parser,
+  ingest после pricefix → «Цена уточняется»); «35 тыс + залог/+КУ» — подписанная цена; rules._split_fraction — «50/50», «40/60»,
+  «70/30», «100/0» и дробь сразу после «комиссия/арендатор/%» — не этаж. ДРУГИЕ ГОРОДА по тексту: region.foreign_text (у моря /
+  «вид на море» / «до моря», МКАД, метро, Таганский район, города BLOCKED_PLACES; прилагательные-улицы «Севастопольская», «Анапская»,
+  «Московская» и «переезжаю в Москву», «ЖК/ТЦ …» — нет) → ingest hidden_reason 'foreign' (_GONE «Объект не в Краснодаре»,
+  _NOT_REMOVED). Разово app/datafix.py (state datafix_1110, отчёт datafix_1110_report в «Обзоре», журнал «проверка 10.11»;
+  `python -m app.datafix` — только посмотреть). SEO: title главной «Объекты из риелторских чатов Краснодара — 1+1», JSON-LD
+  Organization+WebSite (SearchAction ?q=), og:image и canonical у /requests и /agent, оба в sitemap; «из тысяч чатов» везде;
+  в окне объекта убран текст «Подтвердите номер в Telegram». Макеты блока «Контакт агента» — docs/mockups/kontakt-agenta-5-variantov.html (ждём выбор).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
@@ -1143,7 +1167,7 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   аренда — тыс. ₽/мес. Карта — Leaflet + OSM + markercluster, ценники на точках.
   Оформление «1+1»: светло-жёлтый #F3E8BC на бирюзовом #035352 (токены в :root style.css).
   При изменении style.css/app.js — увеличить `?v=` в index.html (иначе браузеры держат старое).
-- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 272 теста
+- `tests/` — pytest (`pip install -r requirements-dev.txt && pytest`), 380 тестов
 - `app/reprocess.py` — пересобрать все объекты заново после улучшения разбора
 - `app/feed.py` — фид СТРЕЛ (YML Тильды): source='feed', фото, ссылка, цена в тысячах, заглушки
   «Фото в пути» отбрасываются; не устаревают сами; last_seen меняется только при смене цены

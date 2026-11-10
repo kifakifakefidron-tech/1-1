@@ -53,6 +53,12 @@
   }
   function fill() {
     const s = st.settings;
+    // 10.11: что присылать (сайт + почта) — общий блок nprefs.js; настройки почты теперь там же
+    if (window.NPrefs && $("stNotifyBody") && !$("stNotifyBody").dataset.on) {
+      $("stNotifyBody").dataset.on = "1";
+      NPrefs.mount($("stNotifyBody"), { kinds: st.notify_kinds, off: s.notify_off, mailOff: s.mail_off, email: st.email,
+        onChange: (v) => { s.notify_off = v.off; s.mail_off = v.mailOff; } });
+    }
     if ($("stMailOn")) $("stMailOn").checked = !s.mail_off;
     $("stBrand").value = s.pick_brand;
     $("stPickName").value = s.pick_name;

@@ -168,6 +168,9 @@
     data.items.forEach((n) => { if (!n.read) unreadAtOpen.add(n.id); });
     $("ntApp").hidden = false;
     render();
+    // 10.11: какие уведомления присылать — тот же блок, что в «Настройках»
+    if (window.NPrefs) NPrefs.mount($("ntPrefs"), { kinds: data.notify_kinds, off: data.notify_off, mailOff: data.mail_off, email: data.email });
+    if (location.hash === "#ntPrefsCard") setTimeout(() => $("ntPrefsCard").scrollIntoView({ block: "start" }), 50);
     // посмотрели — значит прочитали (подсветка новых остаётся, пока страница открыта)
     if (data.unread) setTimeout(async () => { await call("/api/notices", {}); data.unread = 0; $("ntReadAll").hidden = true; }, 1500);
   }

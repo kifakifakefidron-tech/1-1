@@ -20,10 +20,46 @@ KEEP_DAYS = 60
 ICONS = {"search": "🔔", "price": "₽", "gone": "✕", "sub": "★", "own": "🏠", "plan": "📅", "client": "👥"}
 
 
+# 10.11 (Артём: «в настройках и во вкладке уведомлений можно выключить уведомления»): виды, которые человек выключает сам
+# (users.settings.notify_off — список видов; "all" — все сразу). Выключенный вид не приходит ни на сайт, ни письмом.
+# Служебные (доступ заканчивается, оплаты сервисов, отчёты админу) не выключаются — без них можно потерять доступ.
+USER_KINDS = (
+    ("search", "Новые объекты по моим поискам", "Когда по сохранённому поиску появились объекты"),
+    ("price", "Цена в избранном изменилась", "Снизилась или выросла цена объекта из избранного"),
+    ("gone", "Объект из избранного снят", "Продан или больше не присылают"),
+    ("client", "Клиенты", "Клиент открыл подборку, ответил, новые объекты под клиента"),
+    ("buyer", "Покупатель под мой объект", "Появился запрос покупателя под ваш объект"),
+    ("plan", "Напоминания планера", "Показы, звонки и встречи — заранее"),
+    ("own", "Мои объекты: ещё актуален?", "Без ответа объект снимется по сроку"),
+)
+OFF_KINDS = {k for k, _, _ in USER_KINDS}
+
+
+def clean_off(raw) -> list[str]:
+    vals = raw if isinstance(raw, list) else []
+    return sorted({str(x) for x in vals if str(x) in OFF_KINDS or str(x) == "all"})
+
+
+def is_off(conn: sqlite3.Connection, user_id: int | None, kind: str) -> bool:
+    """Человек выключил этот вид уведомлений (на сайте и на почте)."""
+    if not user_id or kind not in OFF_KINDS:
+        return False
+    row = conn.execute("SELECT json_extract(settings, '$.notify_off') FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not row or not row[0]:
+        return False
+    try:
+        off = json.loads(row[0])
+    except (TypeError, ValueError):
+        return False
+    return isinstance(off, list) and (kind in off or "all" in off)
+
+
 def add(conn: sqlite3.Connection, user_id: int, kind: str, title: str, body: str = "", *,
         url: str | None = None, listing_id: int | None = None, actions: list[dict] | None = None,
         dedup_s: int = DAY) -> bool:
     """Добавить уведомление. Такое же (тот же вид и объект/ссылка) за последние сутки не дублируем."""
+    if is_off(conn, user_id, kind):
+        return False
     now = int(time.time())
     dup = conn.execute("""SELECT 1 FROM notices WHERE user_id = ? AND kind = ? AND COALESCE(listing_id, 0) = ?
                           AND COALESCE(url, '') = ? AND title = ? AND ts > ?""",

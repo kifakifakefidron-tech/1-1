@@ -240,7 +240,15 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
     strict_price = rules.extract_price(fragment, deal, strict=True)
     price = strict_price or _int(obj.get("price_rub"))
     if price is not None and deal == "sale" and price < 300_000:
-        price = price * 1000 if 300 <= price < 100_000 and not rent_words else None
+        # 10.11 (Д1): «20000₽ + залог» — это аренда за 20 тыс., а не продажа за 20 млн; цена, прямо написанная в рублях
+        # («20000₽», «35 тыс»), — не «тысячи»: ×1000 только для голого «Цена 3200»
+        if rules.rent_hint(fragment):
+            deal = "rent"
+            price = rules.extract_price(fragment, "rent", strict=True) or price
+        elif rules.explicit_rub(fragment, price):
+            price = None
+        else:
+            price = price * 1000 if 300 <= price < 100_000 and not rent_words else None
     if (price is None or price < 1000) and not rent_words:
         price = r.price
 

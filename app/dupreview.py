@@ -479,7 +479,31 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
         if ph and ph not in sender:
             sender.append(ph)
     sender += [ph for ph, role in roles.items() if role == "sender" and ph not in sender]
-    return {"id": r["id"], "title": r["title"], "text_phones": [_pretty(x) for x in text_ph], "raw_phones": text_ph + sender,
+    # 10.11 (Артём: «иногда номера вообще никакие не показываются»): номер мог быть не в куске текста объекта, а в общей
+    # шапке/подвале «портянки» (разбор всё равно привязал его к объекту — колонка phones), а сообщение — уже удалено
+    # по сроку KEEP_DAYS или пришло из Telegram/MAX без номера отправителя. Тогда берём номера карточки.
+    try:
+        card_ph = [p for p in json.loads(r["phones"] or "[]") if p]
+    except (TypeError, ValueError):
+        card_ph = []
+    text_from = "text"
+    if not text_ph:
+        text_ph = [p for p in card_ph if roles.get(p) != "sender" and p not in sender]
+        text_from = "card" if text_ph else None
+    if not text_ph and not sender and card_ph:
+        sender, text_from = list(card_ph), None
+    who = None
+    if not sender:   # номера отправителя нет — хотя бы имя, как в чате
+        w = conn.execute("""SELECT m.sender_name, m.sender FROM listing_events e JOIN messages m ON m.id = e.message_id
+                            WHERE e.listing_id = ? AND (COALESCE(m.sender_name, '') != '' OR COALESCE(m.sender, '') != '')
+                            ORDER BY e.ts DESC LIMIT 1""", (lid,)).fetchone()
+        if w:
+            who = (w[0] or "").strip() or None
+    if not text_ph and not sender and r["source"] == "feed":
+        from . import config
+        if config.FEED_PHONE:
+            text_ph, text_from = [config.FEED_PHONE], "feed"
+    return {"text_from": text_from, "sender_name": who,"id": r["id"], "title": r["title"], "text_phones": [_pretty(x) for x in text_ph], "raw_phones": text_ph + sender,
             "sender_phones": [_pretty(x) for x in sender], "type": r["type"], "deal": r["deal"], "price": r["price"],
             "price_m2": r["price_m2"], "rooms": r["rooms"], "room_kind": r["room_kind"], "area": r["area"],
             "land": r["land"], "floor": r["floor"], "floors": r["floors"], "complex": r["complex"],

@@ -125,6 +125,9 @@ def extract_price(text: str, deal: str = "sale", strict: bool = False) -> int | 
         neg = max((x.end() for x in _NOT_PRICE_WORD.finditer(prefix)), default=-1)
         end = max(m.end("num"), m.end("unit"), m.end("cur"))  # без пробелов/переноса после числа
         after_bag = bool(re.match(r"[ \t]*(?:т\.?[ \t]?р\.?[ \t]*)?💰", text[end: end + 8]))  # та же строка
+        # 10.11: «35 тыс + залог», «20000₽ + КУ» — это цена аренды, даже если раньше в строке было «комиссия 50/50»
+        after_bag = after_bag or bool(re.match(r"[ \t]*(?:₽|руб\w*\.?)?[ \t]*\+[ \t]*(?:залог|депозит|ку\b|к/у|ком\w*|счетчик|счётчик)",
+                                               text[end: end + 20], re.I))
         if neg > pos and not after_bag:
             continue
         after = text[end: end + 30]
@@ -370,6 +373,18 @@ def is_sold(text: str | None) -> bool:
     return False
 
 
+_SPLIT_CTX = re.compile(r"комисс|арендатор|покупател|продавц|пополам|делим|раздел|%|агент|риелтор|партн[её]р|сотруднич", re.I)
+
+
+def _split_fraction(text: str, m: re.Match, f: int, t: int) -> bool:
+    """Дробь — раздел комиссии: в сумме 100 («50/50», «40/60», «30/70») или рядом слова «комиссия / арендатор / %…»
+    прямо перед дробью (дробей с суммой 100 у этажей Краснодара не бывает: этажей ≤ 30 с лишним)."""
+    if f + t == 100:
+        return True
+    before = re.split(r"[,;.\n]", text[max(0, m.start() - 22): m.start()])[-1]   # «комиссия 60/40», «арендатор 40/60», «40/60 %»
+    return bool(_SPLIT_CTX.search(before) or re.match(r"[ 	]*%", text[m.end(): m.end() + 3]))         and not re.search(r"эт", text[m.start(): m.end() + 6], re.I)
+
+
 def extract_floor(text: str) -> tuple[int | None, int | None]:
     # Сначала явное «этаж 5/9», «5 этаж из 9», потом просто «5/9» (но не номер дома)
     for rx in (_FLOOR3_RE, _FLOOR2_RE, _FLOOR_OF_RE):
@@ -389,6 +404,8 @@ def extract_floor(text: str) -> tuple[int | None, int | None]:
             t = int(m.group("t")) if m.group("t") else None
             if t is not None and (f > t or t > 60):
                 continue
+            if t is not None and _split_fraction(text, m, f, t):
+                continue   # 10.11 (Д2): «50/50», «70/30», «100/0» — раздел комиссии, а не этаж
             if 0 < f <= 60:
                 if t is None and rx is not _FLOOR_RE:
                     # «Этаж 17» без этажности — этажность поищем отдельно («17/25 эт.», «этажей 25»)
@@ -570,6 +587,43 @@ _NOT_RENT = re.compile(r"\bарендн\w* (?:бизнес|поток|доход
 _RENT_I_DO = re.compile(r"\b(?:сдам|сдаю|сдаем|сдаём)\b")
 
 
+# 10.11 (отчёт проверки, Д1): «20000₽ + залог», «35 тыс + залог», «комиссия 50/50 с арендатором» — это аренда, даже без
+# «сдам»: залог (депозит) к цене и комиссия с арендатора у продаж не бывают. Без этого объявление считалось продажей,
+# а цена «20 000» — тысячами (20 млн ₽). «Залог банка / в залоге у Сбера» (обременение) — не сюда: нужен «+ залог» или
+# залог в тысячах / за месяц.
+_RENT_HINT = re.compile(
+    r"\+\s*(?:залог|депозит|страхов\w* депозит)|"
+    r"\bзалог\w*\s*[:\-–—]?\s*(?:\d[\d\s]{0,6}\s*(?:тыс|т\.?\s?р|к\b|₽|руб)|в\s+размере|за\s+(?:1|один|первый|последн\w*)?\s*мес|"
+    r"(?:1|один|одн\w*|пол)\s*мес)|"
+    r"\bарендатор\w*\s*[:\-–—]?\s*\d{1,3}\s*/\s*\d{1,3}|\bкомисс\w*[^.\n]{0,40}\bарендатор|\bарендатор\w*\s+(?:комисс|оплачивает комисс)")
+_SALE_HARD = re.compile(r"(?:#|\b)(?:продам|продаю|продаем|продаём|прода[её]тся|продается|продажа|в\s+дкп|по\s+дкп|ипотек\w*)")
+
+
+def rent_hint(text: str | None) -> bool:
+    """Признаки аренды без слова «сдам»: «+ залог», залог в тысячах, комиссия с арендатора (и нет слов продажи)."""
+    t = norm(text or "").replace("ё", "е")
+    return bool(_RENT_HINT.search(t)) and not _SALE_HARD.search(t)
+
+
+_RUB_UNIT = re.compile(r"(?<![\d.,])(\d{1,3}(?:[  ]\d{3})+|\d+(?:[.,]\d+)?)\s*(тыс\w*\.?|т\.?\s?р\.?|к\b|₽|руб\w*|р\.)", re.I)
+
+
+def explicit_rub(text: str | None, price: int | None) -> bool:
+    """Цена прямо написана в рублях («20000₽», «35 тыс», «18 т.р.») — значит это не «тысячи», ×1000 нельзя."""
+    if not price or not text:
+        return False
+    for m in _RUB_UNIT.finditer(text):
+        try:
+            n = float(m.group(1).replace(" ", "").replace(" ", "").replace(",", "."))
+        except ValueError:
+            continue
+        unit = m.group(2).lower()
+        v = n * 1000 if unit.startswith(("т", "к")) else n
+        if abs(v - price) < 1:
+            return True
+    return False
+
+
 def has_rent_words(text: str) -> bool:
     t = norm(text)
     return bool((_RENT_STRONG.search(t) or _RENT_WEAK.search(t)) and (_RENT_I_DO.search(t) or not _NOT_RENT.search(t)))
@@ -579,6 +633,8 @@ def detect_deal(text: str, need_communal: bool = True) -> str:   # need_communal
     """Аренда: «сдам / сдаю / аренда / в аренду…» — всегда (кроме «арендный бизнес», «с арендатором», «сдано в аренду»,
     если нет «сдам/сдаю»); «сдаётся» — только с коммуналкой или ценой «в месяц»."""
     t = norm(text)
+    if rent_hint(text):   # 10.11: «+ залог», «комиссия 50/50 с арендатором» (раньше «арендатор» делал это продажей)
+        return "rent"
     if _NOT_RENT.search(t) and not _RENT_I_DO.search(t):
         return "sale"
     if _RENT_STRONG.search(t):

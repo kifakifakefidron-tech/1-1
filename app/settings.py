@@ -18,7 +18,7 @@ from . import config
 COLORS = ("gold", "teal", "sky", "violet", "coral", "rose", "lime", "slate")
 THEMES = ("light",) + COLORS   # 24.10d: тема подборки для клиента; «light» — классика (как было)
 DEFAULTS = {"pick_color": "light", "pick_cover": "", "pick_photo": "", "pick_brand": "", "pick_name": "", "pick_phone": "", "cabinet_order": [],
-            "blocks": [], "mail_off": False}
+            "blocks": [], "mail_off": False, "notify_off": []}
 # Свои блоки кабинета — только безопасные виды и только данные (никакой разметки и скриптов от пользователя)
 BLOCK_TYPES = ("note", "todo", "links", "search", "goal", "countdown", "stock")
 MAX_BLOCKS = 12
@@ -103,6 +103,9 @@ def save(conn: sqlite3.Connection, user_id: int, patch: dict) -> dict:
         cur["mail_off"] = bool(patch["mail_off"])
         from . import mailer
         mailer._off["t"] = 0   # список выключивших — перечитать сразу
+    if "notify_off" in patch:   # 10.11: выключенные виды уведомлений (сайт и почта)
+        from . import notices
+        cur["notify_off"] = notices.clean_off(patch["notify_off"])
     if "blocks" in patch:
         cur["blocks"] = _blocks(patch["blocks"])
     if "cabinet_order" in patch and isinstance(patch["cabinet_order"], list):

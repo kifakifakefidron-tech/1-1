@@ -55,9 +55,9 @@
   function statsHTML(o) {
     const s = o.stats;
     if (!s || o.is_active === 0) return "";
-    return `<div class="lc-stats" title="За последние 30 дней">
-      <span><b>${s.views}</b>просмотров</span><span><b>${s.phone}</b>номер</span>
-      <span><b>${s.fav}</b>избранное</span><span><b>${s.picks}</b>подборки</span></div>`;
+    // 10.11 (Артём: «данные вылазят за рамки»): значок · число · слово, на телефоне — значок и число (слово — в подсказке)
+    const it = (icon, n, t) => `<span title="${t} за 30 дней">${ic(icon)}<b>${n}</b><i>${t}</i></span>`;
+    return `<div class="my4-stats">${it("eye", s.views, "просмотры")}${it("phone", s.phone, "номер")}${it("heart", s.fav, "избранное")}${it("stack", s.picks, "подборки")}</div>`;
   }
   // 24.10c: карточка — та же, что в ленте главной (lcard.js), плюс источник, статистика и кнопки
   function itemCard(o) {
@@ -65,14 +65,15 @@
     return LCard.html(o, {
       href: o.can_edit ? `/my/edit?id=${o.id}` : `/?open=${o.id}`,
       noPhoto: o.can_edit ? "Добавить фото" : "Фото у агента",
+      cls: "my4",
       top: `<span class="lc-tag${site ? " gold" : ""}">${own ? "Добавлен вами" : site ? "С сайта" : "Из чатов"}</span>`,
       extra: statsHTML(o) + `<p class="lc-line">${ic("clock")}${sold ? "снят" : own && o.expires_at ? `на сайте до ${fmtDay(o.expires_at)}` : "на сайте"}</p>`,
       meta: "",
       foot: `<div class="lc-acts">${o.can_edit ? `<a class="lc-btn main" href="/my/edit?id=${o.id}">${ic("edit")}Изменить</a>
-          <button type="button" class="lc-btn" data-status="${sold ? "active" : "sold"}" data-id="${o.id}">${sold ? "Вернуть на сайт" : "Продано · снять"}</button>`
+          <button type="button" class="lc-btn" data-status="${sold ? "active" : "sold"}" data-id="${o.id}" title="${sold ? "Снова показывать на сайте" : "Продано — снять с сайта"}">${sold ? "Вернуть" : "Продано"}</button>`
         : site ? `<span class="my-note">Цена, фото и описание меняются на сайте агентства</span>`
         : `<span class="my-note">Этой карточкой управляет другой агент</span>`}
-        <a class="lc-btn" href="/?open=${o.id}" title="Как видят коллеги">${ic("eye")}</a></div>`,
+        <a class="lc-btn eye" href="/?open=${o.id}" title="Как видят коллеги" aria-label="Как видят коллеги">${ic("eye")}</a></div>`,
     });
   }
   function renderList() {
@@ -105,6 +106,7 @@
 
   // ════════════ /my/edit — новый объект или правка ════════════
   let o = null, own = false, isNew = false;
+  let pt = null, ptDirty = false, geoMap = null, geoMarker = null, leafletP = null;   // 10.11: точка на карте от агента
   function priceValue(x) {
     if (!x.price) return "";
     return x.deal !== "rent" ? String(+(x.price / 1e6).toFixed(3)).replace(".", ",") : String(x.price);
@@ -145,6 +147,7 @@
               ${fieldHTML("house", "Дом", o.house, 'placeholder="например 176/2"')}
             </div>
             <a class="my-ya" data-ya href="https://yandex.ru/maps/35/krasnodar/" target="_blank" rel="noopener">${ic("search")}Проверить адрес в Яндекс Картах ↗</a>
+            ${geoHTML()}
           </section>` : ""}
           <section class="my-sec"><h3><b>${own ? 4 : 1}</b>Цена</h3>
             <div class="my-price"><input name="price" value="${esc(priceValue(o))}" inputmode="decimal" required placeholder="${deal === "rent" ? "35000" : "6,5"}" aria-label="Цена">
@@ -158,6 +161,7 @@
             <div class="my-ai-box" id="myAiBox" hidden></div>
           </section>
           <section class="my-sec"><h3><b>${own ? 6 : 3}</b>Фото</h3>${isNew ? `<p class="my-hint">Фото можно будет добавить сразу после публикации — мы откроем этот же объект.</p>` : photosHTML()}</section>
+          ${own ? "" : `<section class="my-sec"><h3><b>4</b>Точка на карте</h3>${geoHTML()}</section>`}
           <p class="err" id="myErr" hidden></p>
         </form>
         <aside class="my-side">
@@ -168,7 +172,81 @@
         </aside>
       </div>`;
     bindEdit();
+    initGeo();
   }
+  // ── точка на карте: нажать на карту — поставить, метку можно перетащить; карта чистая (без флажка и надписей Leaflet) ──
+  function geoHTML() {
+    return `<div class="my-geo"><p class="my-geo-l">${ic("pin")}<span id="myGeoHint"></span></p>
+      <div class="my-map" id="myMap" role="application" aria-label="Карта: нажмите, чтобы поставить точку"></div>
+      <div class="my-geo-acts" id="myGeoActs"></div></div>`;
+  }
+  function loadLeaflet() {
+    if (window.L) return Promise.resolve();
+    if (!leafletP) leafletP = new Promise((res, rej) => {
+      const css = document.createElement("link");
+      css.rel = "stylesheet"; css.href = "/static/vendor/leaflet/leaflet.min.css";
+      document.head.appendChild(css);
+      const js = document.createElement("script");
+      js.src = "/static/vendor/leaflet/leaflet.min.js"; js.onload = res; js.onerror = rej;
+      document.head.appendChild(js);
+    });
+    return leafletP;
+  }
+  function geoState() {
+    const hint = $("myGeoHint"), acts = $("myGeoActs");
+    if (!hint) return;
+    const approx = !ptDirty && ["street", "district", "complex"].includes(o.geo_level);
+    hint.textContent = !pt ? "Нажмите на карту там, где дом, — так объект встанет на карте поиска точно."
+      : ptDirty ? "Точка поставлена — сохраните объект. Если неточно — перетащите метку."
+      : approx ? "Сейчас точка примерная (по улице, ЖК или району). Нажмите на нужный дом, чтобы уточнить."
+      : "Точка на месте. Если неточно — перетащите метку или нажмите на нужный дом.";
+    acts.innerHTML = (ptDirty ? `<button type="button" class="chip" data-geo="undo">${ic("x")}Отменить</button>` : "")
+      + (!ptDirty && o.geo_mine ? `<button type="button" class="chip" data-geo="clear">${ic("trash")}Убрать мою точку</button>` : "");
+  }
+  function placeMarker(lat, lon) {
+    if (!geoMarker) {
+      geoMarker = L.marker([lat, lon], { draggable: true, keyboard: false,
+        icon: L.divIcon({ className: "my-pin-wrap", html: '<span class="my-pin"></span>', iconSize: [30, 30], iconAnchor: [15, 30] }) }).addTo(geoMap);
+      geoMarker.on("dragend", () => { const p = geoMarker.getLatLng(); setPt(p.lat, p.lng); });
+    } else geoMarker.setLatLng([lat, lon]);
+  }
+  function setPt(lat, lon) {
+    pt = { lat: +lat.toFixed(6), lon: +lon.toFixed(6) };
+    ptDirty = true;
+    geoState();
+    updatePreview();
+  }
+  async function initGeo() {
+    geoMap = null; geoMarker = null; ptDirty = false;
+    pt = o.lat && o.lon ? { lat: o.lat, lon: o.lon } : null;
+    geoState();
+    const box = $("myMap");
+    if (!box) return;
+    try { await loadLeaflet(); } catch { box.innerHTML = `<p class="my-hint">Карта не загрузилась — проверьте интернет и обновите страницу.</p>`; return; }
+    if (!box.isConnected) return;
+    geoMap = L.map(box, { zoomControl: true, scrollWheelZoom: false, attributionControl: false })
+      .setView(pt ? [pt.lat, pt.lon] : [45.035, 38.975], pt ? 17 : 12);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(geoMap);
+    L.control.attribution({ prefix: false }).addAttribution("© OpenStreetMap").addTo(geoMap);   // подпись OSM обязательна по их правилам
+    if (pt) placeMarker(pt.lat, pt.lon);
+    geoMap.on("click", (e) => { placeMarker(e.latlng.lat, e.latlng.lng); setPt(e.latlng.lat, e.latlng.lng); });
+    setTimeout(() => geoMap && geoMap.invalidateSize(), 60);
+  }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-geo]");
+    if (!b || !geoMap) return;
+    if (b.dataset.geo === "undo") {
+      ptDirty = false;
+      pt = o.lat && o.lon ? { lat: o.lat, lon: o.lon } : null;
+      if (pt) { placeMarker(pt.lat, pt.lon); geoMap.setView([pt.lat, pt.lon], Math.max(geoMap.getZoom(), 16)); }
+      else if (geoMarker) { geoMarker.remove(); geoMarker = null; }
+    } else if (b.dataset.geo === "clear") {
+      pt = null; ptDirty = true;
+      if (geoMarker) { geoMarker.remove(); geoMarker = null; }
+    }
+    geoState();
+    updatePreview();
+  });
   function photosHTML() {
     const list = (o.photos || []).map((u, i) => `<div class="my-ph"><img src="${esc(u)}" alt="">${i === 0 ? `<em>Обложка</em>` : ""}
       <button type="button" data-photo-del="${esc(u)}" aria-label="Удалить фото">${ic("x")}</button></div>`).join("");
@@ -200,7 +278,7 @@
     const has = (k) => String(v[k] || "").trim();
     const checks = own ? [
       [!!price, "Цена"], [has("district") || has("complex") || has("street"), "Район, ЖК или улица"],
-      [has("area"), "Площадь"], [desc.trim().length > 40, "Описание (хотя бы пара предложений)"], [(o.photos || []).length > 0, "Фото"],
+      [has("area"), "Площадь"], [!!pt, "Точка на карте"], [desc.trim().length > 40, "Описание (хотя бы пара предложений)"], [(o.photos || []).length > 0, "Фото"],
     ] : [[!!price, "Цена"], [desc.trim().length > 40, "Описание"], [(o.photos || []).length > 0, "Фото"]];
     $("myCheck").innerHTML = checks.map(([ok, t]) => `<li class="${ok ? "ok" : ""}">${ic(ok ? "check-circle" : "x-circle")}${t}</li>`).join("");
   }
@@ -250,6 +328,7 @@
     err.hidden = true;
     const fd = formVals();
     if (!own) for (const k of Object.keys(fd)) if (!["price", "description"].includes(k)) delete fd[k];
+    if (ptDirty) { fd.lat = pt ? pt.lat : ""; fd.lon = pt ? pt.lon : ""; }
     const btn = document.querySelector(".my-save");
     btn.disabled = true; btn.textContent = "Сохраняем…";
     const r = await call(isNew ? "/api/agent/listings" : `/api/agent/listings/${o.id}`, fd);
@@ -263,6 +342,9 @@
     } else {
       toast("Сохранено");
       o = data.items.find((x) => x.id === o.id) || o;
+      ptDirty = false;
+      pt = o.lat && o.lon ? { lat: o.lat, lon: o.lon } : null;
+      geoState();
       updatePreview();
     }
   }

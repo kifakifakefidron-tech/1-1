@@ -61,6 +61,10 @@ def tick(conn) -> dict:
         got = media.attach(conn)   # фото из чатов — по одному в карточку объекта
         if got["photos"]:
             stats["photos"] = got["photos"]
+    from . import thumbs
+    made = thumbs.run()   # 10.11: маленькие копии фото для карточек (лента грузится быстрее)
+    if made:
+        stats["thumbs"] = made
     lap("фото")
     stats["queue"] = conn.execute("SELECT COUNT(*) FROM messages WHERE status='new'").fetchone()[0]
     from . import autolearn, osmaddr
@@ -189,6 +193,10 @@ def tick(conn) -> dict:
     if not db.get_state(conn, "price_doubt_fix_v1"):   # 24.10: цену поправил админ — «Цена уточняется» снять
         n = conn.execute("UPDATE listings SET price_doubt = NULL WHERE price_fixed = 1 AND price_doubt = 1").rowcount
         db.set_state(conn, "price_doubt_fix_v1", str(n))
+    from . import datafix   # 10.11, один раз: аренда ×1000, «50/50» как этаж, объекты других городов (отчёт в «Обзоре»)
+    df = datafix.maybe_run(conn)
+    if df:
+        stats["datafix_1110"] = {k: df[k] for k in ("rent", "price_doubt", "floor", "foreign")}
     if not db.get_state(conn, "rent_v2"):   # один раз (приёмка 18.10): «сдам / сдаю / аренда» — аренда без условий
         stats["rent_v2"] = ingest.fix_rent_v2(conn)["moved"]
         db.set_state(conn, "rent_v2", "1")

@@ -272,3 +272,61 @@ def unhide_streets(conn: sqlite3.Connection) -> dict:
             back += 1
     conn.commit()
     return {"chats": chats, "messages": msgs, "listings": back}
+
+
+# 10.11 (отчёт проверки): объекты других городов, присланные в краснодарские чаты, — по ТЕКСТУ объявления (раньше смотрели
+# только название чата и посёлок): «Адлер», «Сочи», «Москва», «вид на море», «до моря 300 м», «МКАД», «метро».
+# Улицы-прилагательные Краснодара («Севастопольская», «Анапская», «Московская», «Сочинская») не считаются — как в is_foreign.
+# «Переезжаю в Москву», «собственник из Сочи» — тоже не считаются (это про человека, а не про объект).
+_SEA = re.compile(r"вид\w*\s+на\s+(?:море|морск)|видом\s+на\s+море|(?:до|у|к|от|возле|рядом с)\s+мор(?:я|ю|ем)\b|"
+                  r"\bморе\s+(?:в\s+)?\d+\s*(?:м\b|мин|метр)|\bнабережн\w*\s+мор|первая\s+береговая|\bморск\w*\s+вид")
+_MOSCOW = re.compile(r"\bмкад\b|\bметро\b|таганск\w*\s+район|\bм\.\s*таганск|новая\s+москва|подмосков")
+_ABOUT_PERSON = re.compile(r"(?:(?:переезд\w*|переезжа\w*|уезжа\w*|переед\w*|из|родом|прописк\w*)\s+(?:в\s+|на\s+)?|"
+                           r"(?:жк|ул|улица|пер|переулок|проезд|кп|мкр|кафе|ресторан|тц|трц)\s+)$")   # «ЖК Питер», «ТЦ Москва» — названия в Краснодаре
+
+
+def foreign_text(text: str | None) -> str | None:
+    """Почему объявление не про Краснодар (короткая причина) — или None."""
+    if not text:
+        return None
+    t = words(text)
+    raw = (text or "").lower().replace("ё", "е")
+    m = _SEA.search(raw)
+    if m:
+        return "у моря"
+    if _MOSCOW.search(raw):
+        return "Москва"
+    rx = _rx()
+    if rx is None:
+        return None
+    for m in rx.finditer(t):
+        word = m.group(0).strip()
+        if m.group(1) and re.search(r"ск(?:ая|ой|ое|ого|ую|ий|им|их|ие|ом)$", word):
+            continue   # прилагательное — улица/шоссе Краснодара
+        if _ABOUT_PERSON.search(t[max(0, m.start() - 25): m.start() + 1]):
+            continue
+        return word.capitalize()
+    return None
+
+
+def hide_foreign_text(conn: sqlite3.Connection, apply: bool = True) -> dict:
+    """Один раз (state foreign_text_v1) и для отчёта: объекты из чатов, чей текст про другой город, — с сайта
+    (hidden_reason 'foreign'). Правленное админом, фид и свои объекты агентов не трогаем."""
+    import json as _json
+    rep = {"hidden": 0, "by": {}, "examples": [], "ts": int(time.time())}
+    for r in conn.execute("""SELECT id, title, fragment, description FROM listings WHERE is_active = 1 AND source = 'chat'
+                             AND COALESCE(admin_fixed, 0) = 0 AND COALESCE(owner_user_id, 0) = 0""").fetchall():
+        why = foreign_text(r["fragment"] or r["description"])
+        if not why:
+            continue
+        rep["hidden"] += 1
+        rep["by"][why] = rep["by"].get(why, 0) + 1
+        if len(rep["examples"]) < 30:
+            rep["examples"].append({"id": r["id"], "title": r["title"], "why": why})
+        if apply:
+            conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'foreign' WHERE id = ?", (r["id"],))
+    if apply:
+        conn.execute("INSERT INTO state (key, value) VALUES ('foreign_text_report', ?) "
+                     "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (_json.dumps(rep, ensure_ascii=False),))
+        conn.commit()
+    return rep

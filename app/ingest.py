@@ -348,7 +348,10 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
     from .rules import multi_units
     d["multi_units"] = multi_units(o.fragment) or None
     from .pricefix import check as price_check   # «Цена 5400» = 5,4 млн; 1,6 млрд за двушку — цена «под вопросом»
-    d["price"], d["price_doubt"] = price_check(d["price"], d["deal"], d["type"], d["area"])   # склейку повторов это не меняет (P3): этаж остаётся как разобран
+    was_price = d["price"]
+    d["price"], d["price_doubt"] = price_check(d["price"], d["deal"], d["type"], d["area"])   # склейку повторов это не меняет (P3)
+    if was_price and d["price"] and d["price"] > was_price and rules.explicit_rub(o.fragment, was_price):
+        d["price"], d["price_doubt"] = was_price, True   # 10.11 (Д1): «20000₽» в тексте — не «20 млн»; лучше «Цена уточняется»
     ban = conn.execute("SELECT listing_id FROM banned WHERE kind = 'frag' AND key = ?", (fh,)).fetchone()
     if ban is not None:   # этот текст админ удалил навсегда
         return ban[0] or 0, "banned"
@@ -476,7 +479,11 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
     _reindex(conn, lid, d["search_text"])
     # «Под задатком», «забронирована» — с продажи снят сразу; новый пост без задатка возвращает объект
     from .rules import under_deposit, is_sold
-    if is_sold(o.fragment):   # 18.10: «Квартира продана» — с сайта сразу (новый пост без «продана» вернёт объект)
+    from .region import foreign_text
+    if foreign_text(o.fragment):   # 10.11: Адлер, Сочи, Москва, «вид на море» — не Краснодар (чат при этом краснодарский)
+        conn.execute("""UPDATE listings SET is_active = 0, hidden_reason = 'foreign'
+                        WHERE id = ? AND source = 'chat' AND COALESCE(admin_fixed, 0) = 0 AND COALESCE(owner_user_id, 0) = 0""", (lid,))
+    elif is_sold(o.fragment):   # 18.10: «Квартира продана» — с сайта сразу (новый пост без «продана» вернёт объект)
         conn.execute("""UPDATE listings SET is_active = 0, hidden_reason = 'sold_text', sold_at = COALESCE(sold_at, ?)
                         WHERE id = ? AND source NOT IN ('own', 'feed')""", (int(time.time()), lid))
     elif under_deposit(o.fragment):

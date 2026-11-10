@@ -538,7 +538,7 @@
     const m2 = o.price_m2 && o.deal !== "rent" ? `<div class="price-m2">${num(o.price_m2)} ₽/м²</div>` : "";
     const n = (o.photos || []).length;
     const photo = n
-      ? `<div class="item-photo" data-ph="0"><img src="${esc(thumb(o.photos[0]))}" data-full="${esc(o.photos[0])}" alt="${esc(o.title)}" loading="lazy" decoding="async">${n > 1 ? `
+      ? `<div class="item-photo" data-ph="0"><img src="${esc(pic(o, 0))}" data-full="${esc(o.photos[0])}" alt="${esc(o.title)}" loading="lazy" decoding="async">${n > 1 ? `
           <button type="button" class="ph-nav prev" data-ph-step="-1" aria-label="Предыдущее фото">${ic("chevron-left")}</button>
           <button type="button" class="ph-nav next" data-ph-step="1" aria-label="Следующее фото">${ic("chevron")}</button>
           <span class="ph-count">1 / ${n}</span>` : ""}</div>`
@@ -573,13 +573,17 @@
 
   // Миниатюра для ленты (акт 14.10): у фото с сайта СТРЕЛ (Тильда) есть готовые уменьшенные копии — 480 px вместо 250–320 КБ.
   // Не загрузилась миниатюра — подставляем исходное фото (слушатель ошибок ниже).
+  // 10.11: у фото из чатов сервер делает свою маленькую копию (thumbs.py) — o.thumbs; нет копии — как раньше
+  function pic(o, i) {
+    return (o.thumbs && o.thumbs[i]) || thumb(o.photos[i]);
+  }
   function thumb(u) {
     const m = /^https:\/\/static\.tildacdn\.com\/([^/]+)\/([^/?#]+)$/.exec(u || "");
     return m ? `https://optim.tildacdn.com/${m[1]}/-/resize/480x/${m[2]}` : u;
   }
   document.addEventListener("error", (e) => {
     const img = e.target;
-    if (img.tagName === "IMG" && img.dataset.full && img.src !== img.dataset.full) img.src = img.dataset.full;
+    if (img.tagName === "IMG" && img.dataset.full && img.src !== new URL(img.dataset.full, location.href).href) img.src = img.dataset.full;
   }, true);
   // галочка согласия на обработку ПДн в окне входа (152-ФЗ): без неё сервер вход не пропустит — подсказываем заранее
   // 18.10 (приёмка п. 9): две отдельные галочки — согласие на обработку ПДн отдельно от соглашения и оферты (закон с 01.09.2025)
@@ -1611,11 +1615,8 @@
     const u = me();
     let text, btn;
     if (!u) {
-      text = `Телефон агента открывается после входа. <b>Новым — ${meta.trial_days || 7} дней бесплатно.</b>`;
+      text = `Телефон агента открывается после входа. <b>Новым — ${meta.trial_days || 14} дней бесплатно.</b>`;
       btn = `<button type="button" class="pill" data-login>Войти и открыть номер</button>`;
-    } else if (!u.phone_confirmed && !u.trial_used && meta.tg_login) {
-      text = `Подтвердите номер в Telegram — и <b>${meta.trial_days || 7} дней бесплатно</b>.`;
-      btn = `<button type="button" class="pill" data-tglink>Подтвердить номер</button>`;
     } else {
       text = `Доступ к номерам закончился. Подписка: <b>${meta.prices || `${meta.price} ₽ за ${meta.period_days} дней`}</b>.`;
       btn = `<button type="button" class="pill" data-pay>Оформить подписку</button>`;
@@ -2654,7 +2655,7 @@
         const img = box.querySelector("img");
         img.classList.remove("loaded");
         img.dataset.full = list[i];
-        img.src = thumb(list[i]);
+        img.src = pic(o, i);
         box.querySelector(".ph-count").textContent = `${i + 1} / ${list.length}`;
         return;
       }

@@ -125,3 +125,5 @@
 
 /* 26.10: «Один объект — разные агенты» */
 .dp-acts .dp-mkt { border-color: color-mix(in srgb, var(--gold) 45%, transparent); }
+/* 10.11: откуда номер, если его нет в куске текста объекта */
+.dp-phone small { font-size: 11px; color: var(--ink-3); }

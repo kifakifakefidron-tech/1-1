@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Контакт агента — 5 вариантов</title>
+<link rel="stylesheet" href="../../web/vendor/fonts/fonts.css">
+<style>
+:root {
+  --teal-950: #012827; --teal-900: #023837; --teal-800: #034746; --teal-700: #045957; --teal-600: #08665f;
+  --gold-100: #f8f1d8; --gold-200: #f3e8bc; --gold-300: #e3cb8f; --gold-400: #c9a85c;
+  --ink: #f3e8bc; --ink-2: rgba(243,232,188,.86); --ink-3: rgba(243,232,188,.74); --line: rgba(243,232,188,.14);
+  --ok: #7fd6b8; --bad: #f2a08b; --max: #8c7cf0;
+  --head: "Oswald", "Golos Text", system-ui, sans-serif; --body: "Golos Text", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: radial-gradient(1200px 600px at 20% -10%, #0b6a63 0%, transparent 60%), var(--teal-950);
+  color: var(--ink); font: 15px/1.45 var(--body); padding: 32px 16px 60px; }
+h1 { font: 600 30px/1.1 var(--head); margin: 0 auto 6px; max-width: 1240px; letter-spacing: .01em; }
+.lead { max-width: 1240px; margin: 0 auto 28px; color: var(--ink-3); }
+.grid { max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 22px; }
+.v { background: rgba(2,56,55,.72); border: 1px solid var(--line); border-radius: 22px; padding: 20px 20px 22px; }
+.v-h { display: flex; align-items: baseline; gap: 10px; margin: 0 0 4px; }
+.v-n { font: 600 34px/1 var(--head); color: var(--gold-300); }
+.v-t { font: 600 18px var(--head); letter-spacing: .02em; }
+.v-d { color: var(--ink-3); font-size: 13px; margin: 0 0 16px; min-height: 38px; }
+.state { color: var(--ink-3); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; margin: 16px 0 8px; }
+/* контекст — кусок окна объекта над блоком */
+.ctx { padding: 0 0 14px; border-bottom: 1px dashed rgba(243,232,188,.12); }
+.ctx b { font: 600 26px var(--head); } .ctx span { color: var(--ink-3); font-size: 13px; display: block; }
+svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+a { color: inherit; }
+.u { color: var(--gold-300); text-decoration: underline; text-underline-offset: 2px; }
+
+/* ─── 1. Визитка ─── */
+.c1 { display: grid; grid-template-columns: 52px 1fr; gap: 4px 14px; padding: 16px; border-radius: 18px;
+  background: linear-gradient(160deg, rgba(243,232,188,.08), rgba(243,232,188,.02)); border: 1px solid var(--line); }
+.c1-ava { grid-row: span 2; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--teal-700); color: var(--gold-200); font: 600 22px var(--head); box-shadow: inset 0 0 0 1px rgba(243,232,188,.2); }
+.c1-num { font: 600 22px/1.15 var(--body); letter-spacing: .01em; text-decoration: none; align-self: end; }
+.c1-chip { justify-self: start; display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 99px; font-size: 12px; }
+.c1-chip.ok { color: var(--ok); background: rgba(127,214,184,.12); }
+.c1-chip.no { color: var(--ink-3); background: rgba(243,232,188,.07); }
+.c1-acts { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.c1-btn { display: flex; align-items: center; justify-content: center; gap: 8px; height: 44px; border-radius: 13px;
+  font-weight: 600; text-decoration: none; border: 1px solid rgba(243,232,188,.22); }
+.c1-btn.gold { background: linear-gradient(180deg, var(--gold-200), var(--gold-300)); color: var(--teal-900); border: 0; }
+.c1-snd { grid-column: 1 / -1; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 12.5px; }
+
+/* ─── 2. Золотая капсула ─── */
+.c2 { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 20px; border-radius: 99px;
+  border: 1px solid rgba(227,203,143,.55); background: rgba(227,203,143,.06); }
+.c2-num { flex: 1; min-width: 0; font: 600 20px var(--body); text-decoration: none; white-space: nowrap; }
+.c2-call { height: 44px; padding: 0 18px; border-radius: 99px; display: flex; align-items: center; gap: 7px;
+  background: var(--gold-200); color: var(--teal-900); font-weight: 600; text-decoration: none; }
+.c2-max { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font: 700 11px var(--body);
+  border: 1px solid rgba(243,232,188,.3); }
+.c2-sub { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 4px 0 20px; color: var(--ink-3); font-size: 12.5px; }
+.c2-sub .ok { color: var(--ok); }
+
+/* ─── 3. Крупный номер ─── */
+.c3-eye { color: var(--gold-300); font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase; }
+.c3-num { display: block; margin: 6px 0 4px; font: 500 34px/1.05 var(--head); letter-spacing: .02em; text-decoration: none;
+  background: linear-gradient(90deg, var(--gold-100), var(--gold-300)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.c3-rule { height: 1px; background: linear-gradient(90deg, var(--gold-300), transparent); margin: 10px 0 12px; }
+.c3-meta { color: var(--ink-3); font-size: 13px; }
+.c3-meta .ok { color: var(--ok); }
+.c3-links { display: flex; gap: 20px; margin-top: 14px; }
+.c3-links a { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; font-weight: 600; font-size: 14px; }
+.c3-links a:first-child { color: var(--gold-200); }
+.c3-links a:not(:first-child) { color: var(--ink-2); }
+
+/* ─── 4. Бенто-плитки ─── */
+.c4 { display: grid; grid-template-columns: 1fr 64px 64px; gap: 8px; }
+.c4-tile { border-radius: 16px; background: rgba(243,232,188,.06); border: 1px solid var(--line); padding: 12px 14px; min-width: 0; }
+.c4-tile small { display: block; color: var(--ink-3); font-size: 11.5px; }
+.c4-tile b { display: block; font: 600 18px/1.2 var(--body); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.c4-sq { border-radius: 16px; display: grid; place-items: center; align-content: center; gap: 3px; font-size: 11px; font-weight: 600;
+  text-decoration: none; border: 1px solid var(--line); background: rgba(243,232,188,.06); }
+.c4-sq.gold { background: var(--gold-200); color: var(--teal-900); border: 0; }
+.c4-sq svg.i { width: 20px; height: 20px; }
+.c4-row { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 10px; padding: 9px 14px; border-radius: 14px;
+  background: rgba(243,232,188,.035); color: var(--ink-3); font-size: 12.5px; }
+.c4-row .ok { color: var(--ok); }
+
+/* ─── 5. Пропуск ─── */
+.c5 { position: relative; overflow: hidden; border-radius: 18px; padding: 16px 16px 14px 22px;
+  background: linear-gradient(135deg, rgba(4,89,87,.9), rgba(1,40,39,.9)); border: 1px solid rgba(243,232,188,.16);
+  box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+.c5::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: linear-gradient(180deg, var(--gold-200), var(--gold-400)); }
+.c5-rib { position: absolute; top: 14px; right: 14px; padding: 3px 10px; border-radius: 99px; font-size: 11.5px; font-weight: 600; }
+.c5-rib.ok { background: rgba(127,214,184,.16); color: var(--ok); }
+.c5-rib.no { background: rgba(242,160,139,.14); color: var(--bad); }
+.c5-lab { color: var(--ink-3); font-size: 12px; }
+.c5-num { display: flex; align-items: center; gap: 10px; margin: 4px 0 12px; font: 600 23px var(--body); }
+.c5-num a { text-decoration: none; }
+.c5-copy { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; border: 1px solid var(--line); color: var(--ink-3); }
+.c5-snd { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-top: 1px dashed rgba(243,232,188,.16);
+  color: var(--ink-3); font-size: 12.5px; }
+.c5-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.c5-acts a { height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; gap: 7px; font-weight: 600; text-decoration: none; }
+.c5-acts a.gold { background: var(--gold-200); color: var(--teal-900); }
+.c5-acts a.line { border: 1px solid rgba(243,232,188,.25); }
+@media (max-width: 440px) {
+  .grid { grid-template-columns: 1fr; }
+  .v { padding: 16px; }
+  .c2 { padding-left: 16px; } .c2-num { font-size: 17px; } .c2-call { width: 44px; padding: 0; justify-content: center; } .c2-call span { display: none; }
+  .c3-num { font-size: 29px; } .c3-links { flex-wrap: wrap; gap: 10px 18px; }
+  .c4 { grid-template-columns: 1fr 56px 56px; } .c4-tile b { font-size: 16px; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="ph" viewBox="0 0 24 24"><path d="M5 4h3l2 5-2.5 1.5a11 11 0 0 0 6 6L15 14l5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></symbol>
+  <symbol id="chk" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="cp" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+  <symbol id="msg" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+  <symbol id="arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+</svg>
+<h1>Контакт агента в окне объекта — 5 вариантов</h1>
+<p class="lead">Сверху у каждого — как выглядит у проверенного агента, ниже — номер не подтверждён и в чат прислал другой номер.
+Напишите номер варианта (можно «1, но кнопки как в 5»).</p>
+
+<div class="grid">
+
+<!-- 1 -->
+<section class="v">
+  <div class="v-h"><span class="v-n">1</span><span class="v-t">Визитка</span></div>
+  <p class="v-d">Кружок с буквой, крупный номер, отметка статуса, две большие кнопки. Самый «человеческий».</p>
+  <div class="ctx"><b>7,8 млн ₽</b><span>2-к квартира · ЖК Самолёт</span></div>
+  <p class="state">Проверенный агент</p>
+  <div class="c1">
+    <div class="c1-ava">И</div>
+    <a class="c1-num" href="#">+7 918 123-45-67</a>
+    <span class="c1-chip ok"><svg class="i"><use href="#chk"/></svg>Проверенный агент</span>
+    <div class="c1-acts"><a class="c1-btn gold" href="#"><svg class="i"><use href="#ph"/></svg>Позвонить</a><a class="c1-btn" href="#"><svg class="i"><use href="#msg"/></svg>MAX</a></div>
+  </div>
+  <p class="state">Не подтверждён · прислал другой</p>
+  <div class="c1">
+    <div class="c1-ava">+7</div>
+    <a class="c1-num" href="#">+7 918 123-45-67</a>
+    <span class="c1-chip no">Не подтверждён · <a class="u" href="#">это мой</a></span>
+    <div class="c1-acts"><a class="c1-btn gold" href="#"><svg class="i"><use href="#ph"/></svg>Позвонить</a><a class="c1-btn" href="#"><svg class="i"><use href="#msg"/></svg>MAX</a></div>
+    <div class="c1-snd">Прислал в чат: <a class="u" href="#">+7 960 498-83-03</a></div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="v">
+  <div class="v-h"><span class="v-n">2</span><span class="v-t">Золотая капсула</span></div>
+  <p class="v-d">Номер и кнопки в одной вытянутой капсуле, подписи — тонкой строкой ниже. Компактно, мало места по высоте.</p>
+  <div class="ctx"><b>7,8 млн ₽</b><span>2-к квартира · ЖК Самолёт</span></div>
+  <p class="state">Проверенный агент</p>
+  <div class="c2"><a class="c2-num" href="#">+7 918 123-45-67</a><a class="c2-call" href="#"><svg class="i"><use href="#ph"/></svg><span>Позвонить</span></a><a class="c2-max" href="#">MAX</a></div>
+  <div class="c2-sub"><span class="ok">✓ Проверенный агент</span></div>
+  <p class="state">Не подтверждён · прислал другой</p>
+  <div class="c2"><a class="c2-num" href="#">+7 918 123-45-67</a><a class="c2-call" href="#"><svg class="i"><use href="#ph"/></svg><span>Позвонить</span></a><a class="c2-max" href="#">MAX</a></div>
+  <div class="c2-sub"><span>Не подтверждён · <a class="u" href="#">это мой номер</a></span><span>Прислал: <a class="u" href="#">+7 960 498-83-03</a></span></div>
+</section>
+
+<!-- 3 -->
+<section class="v">
+  <div class="v-h"><span class="v-n">3</span><span class="v-t">Крупный номер</span></div>
+  <p class="v-d">Как в журнале: надпись, большой номер шрифтом заголовков с золотым переливом, тонкая линия, действия — ссылками.</p>
+  <div class="ctx"><b>7,8 млн ₽</b><span>2-к квартира · ЖК Самолёт</span></div>
+  <p class="state">Проверенный агент</p>
+  <span class="c3-eye">Контакт агента</span>
+  <a class="c3-num" href="#">+7 918 123-45-67</a>
+  <div class="c3-meta"><span class="ok">✓ Проверенный агент</span></div>
+  <div class="c3-rule"></div>
+  <div class="c3-links"><a href="#"><svg class="i"><use href="#ph"/></svg>Позвонить</a><a href="#"><svg class="i"><use href="#msg"/></svg>Написать в MAX</a><a href="#"><svg class="i"><use href="#cp"/></svg>Копировать</a></div>
+  <p class="state">Не подтверждён · прислал другой</p>
+  <span class="c3-eye">Контакт агента</span>
+  <a class="c3-num" href="#">+7 918 123-45-67</a>
+  <div class="c3-meta">Номер не подтверждён · <a class="u" href="#">это мой</a> · прислал <a class="u" href="#">+7 960 498-83-03</a></div>
+  <div class="c3-rule"></div>
+  <div class="c3-links"><a href="#"><svg class="i"><use href="#ph"/></svg>Позвонить</a><a href="#"><svg class="i"><use href="#msg"/></svg>Написать в MAX</a><a href="#"><svg class="i"><use href="#cp"/></svg>Копировать</a></div>
+</section>
+
+<!-- 4 -->
+<section class="v">
+  <div class="v-h"><span class="v-n">4</span><span class="v-t">Плитки</span></div>
+  <p class="v-d">В стиле плиток характеристик окна объекта: номер — плитка, «Позвонить» и MAX — квадратные плитки рядом.</p>
+  <div class="ctx"><b>7,8 млн ₽</b><span>2-к квартира · ЖК Самолёт</span></div>
+  <p class="state">Проверенный агент</p>
+  <div class="c4">
+    <div class="c4-tile"><small>Агент</small><b>+7 918 123-45-67</b></div>
+    <a class="c4-sq gold" href="#"><svg class="i"><use href="#ph"/></svg>Звонок</a>
+    <a class="c4-sq" href="#"><svg class="i"><use href="#msg"/></svg>MAX</a>
+    <div class="c4-row"><span class="ok">✓ Проверенный агент</span><span>открыт сегодня</span></div>
+  </div>
+  <p class="state">Не подтверждён · прислал другой</p>
+  <div class="c4">
+    <div class="c4-tile"><small>Агент · не подтверждён</small><b>+7 918 123-45-67</b></div>
+    <a class="c4-sq gold" href="#"><svg class="i"><use href="#ph"/></svg>Звонок</a>
+    <a class="c4-sq" href="#"><svg class="i"><use href="#msg"/></svg>MAX</a>
+    <div class="c4-row"><span>Прислал: <a class="u" href="#">+7 960 498-83-03</a></span><a class="u" href="#">Это мой номер</a></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="v">
+  <div class="v-h"><span class="v-n">5</span><span class="v-t">Пропуск</span></div>
+  <p class="v-d">Отдельная карточка с золотой полосой слева и отметкой статуса в углу, кнопка «скопировать» у номера, внизу две кнопки.</p>
+  <div class="ctx"><b>7,8 млн ₽</b><span>2-к квартира · ЖК Самолёт</span></div>
+  <p class="state">Проверенный агент</p>
+  <div class="c5">
+    <span class="c5-rib ok">✓ Проверенный</span>
+    <div class="c5-lab">Номер агента</div>
+    <div class="c5-num"><a href="#">+7 918 123-45-67</a><span class="c5-copy"><svg class="i"><use href="#cp"/></svg></span></div>
+    <div class="c5-acts"><a class="gold" href="#"><svg class="i"><use href="#ph"/></svg>Позвонить</a><a class="line" href="#"><svg class="i"><use href="#msg"/></svg>Написать в MAX</a></div>
+  </div>
+  <p class="state">Не подтверждён · прислал другой</p>
+  <div class="c5">
+    <span class="c5-rib no">Не подтверждён</span>
+    <div class="c5-lab">Номер из объявления</div>
+    <div class="c5-num"><a href="#">+7 918 123-45-67</a><span class="c5-copy"><svg class="i"><use href="#cp"/></svg></span></div>
+    <div class="c5-snd"><span>Прислал в чат: <a class="u" href="#">+7 960 498-83-03</a></span><a class="u" href="#">Это мой номер</a></div>
+    <div class="c5-acts"><a class="gold" href="#"><svg class="i"><use href="#ph"/></svg>Позвонить</a><a class="line" href="#"><svg class="i"><use href="#msg"/></svg>Написать в MAX</a></div>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

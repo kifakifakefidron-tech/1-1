@@ -449,7 +449,7 @@ def check_saved(conn: sqlite3.Connection, send, user_id: int | None = None) -> i
             made += 1
         conn.execute("UPDATE saved_searches SET notice_checked_at = ? WHERE id = ?", (now, s["id"]))
         # 2) письмо (если есть почта и прошло 3 часа с прошлого)
-        if send and s["email"] and (s["sent_at"] or 0) < now - SEND_EVERY_S:
+        if send and s["email"] and (s["sent_at"] or 0) < now - SEND_EVERY_S and not notices.is_off(conn, s["user_id"], "search"):
             res = _new_since(conn, s, s["checked_at"], now)
             conn.execute("UPDATE saved_searches SET checked_at = ? WHERE id = ?", (now, s["id"]))
             if res["total"]:
@@ -508,7 +508,7 @@ def check_favorites(conn: sqlite3.Connection, send, user_id: int | None = None) 
         # письмом: только снижение
         mail_base = r["notified_price"] or r["price_at"]
         if mail_base and r["price"] != mail_base:
-            if r["price"] < mail_base and r["email"] and send:
+            if r["price"] < mail_base and r["email"] and send and not notices.is_off(conn, uid, "price"):
                 drops.setdefault(uid, []).append((r, mail_base))
             conn.execute("UPDATE favorites SET notified_price = ? WHERE user_id = ? AND listing_id = ?", (r["price"], uid, lid))
     for uid, items in drops.items():
