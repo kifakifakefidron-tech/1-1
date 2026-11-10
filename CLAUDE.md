@@ -1162,8 +1162,9 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   `python -m app.datafix` — только посмотреть). SEO: title главной «Объекты из риелторских чатов Краснодара — 1+1», JSON-LD
   Organization+WebSite (SearchAction ?q=), og:image и canonical у /requests и /agent, оба в sitemap; «из тысяч чатов» везде;
   в окне объекта убран текст «Подтвердите номер в Telegram». КОНТАКТ В ОКНЕ ОБЪЕКТА — вариант 5 «Пропуск» (выбор Артёма из docs/mockups/kontakt-agenta-5-variantov.html):
-  app.js contactHTML → .dv-pass (золотая полоса слева, отметка «Проверенный / Не подтверждён», «Номер агента / из объявления»,
-  копирование [data-copy-phone], «Прислал в чат» + «Это мой номер» → /agent, «Позвонить» + «Написать в MAX» [data-max]).
+  app.js contactHTML → .dv-pass; после правки Артёма («вылазят линии, дёшево») — без полосы, пунктира и рамки обёртки
+  (theme.css .dv-contacts border сброшен): номер + тихая кнопка копирования [data-copy-phone], справа «✓ Проверенный агент» /
+  «Не подтверждён» текстом, одна строка «Номер из объявления · это мой номер · прислал в чат …», «Позвонить» + «Написать в MAX».
   max.js copy: запасное копирование кладёт textarea В ОТКРЫТОЕ окно (иначе страница под dialog «инертна» и копирование не шло).
   Иконка i-copy (icons.svg v=8 → icons.js v=13).
 - `app/geocode.py` — Nominatim

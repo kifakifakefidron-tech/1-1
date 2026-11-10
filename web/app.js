@@ -1603,15 +1603,14 @@
       return `<div class="dv-contacts dv-pass-wrap"><span class="dv-contacts-h">${o.phones.length > 1 ? "Контакты агентов" : "Контакт агента"}</span>${o.phones.map((p, i) => {
         const m = pm[p] || {};
         const known = !!o.phones_meta;
-        const rib = m.confirmed ? `<span class="dv-pass-rib ok">${ic("check")}Проверенный</span>`
-          : known ? `<span class="dv-pass-rib no">Не подтверждён</span>` : "";
-        const snd = i === 0 && o.sender_phone ? `<span>Прислал в чат: <a href="tel:${esc(o.sender_phone)}">${esc(pretty(o.sender_phone))}</a></span>` : "";
-        const mine = known && !m.confirmed ? `<a href="/agent" target="_top">Это мой номер</a>` : "";
-        return `<div class="dv-phone dv-pass${m.confirmed ? " ok" : ""}">${rib}
-          <span class="dv-pass-lab">${m.confirmed ? "Номер агента" : "Номер из объявления"}</span>
-          <div class="dv-pass-num"><a class="dv-phone-num" href="tel:${esc(p)}">${esc(pretty(p))}</a>
-            <button type="button" class="dv-pass-copy" data-copy-phone="${esc(pretty(p))}" aria-label="Скопировать номер" title="Скопировать номер">${ic("copy")}</button></div>
-          ${snd || mine ? `<div class="dv-pass-snd">${snd || "<span></span>"}${mine}</div>` : ""}
+        const st = m.confirmed ? `<span class="dv-pass-st ok">${ic("check")}Проверенный агент</span>`
+          : known ? `<span class="dv-pass-st">Не подтверждён</span>` : "";
+        const sub = [known && !m.confirmed ? `Номер из объявления · <a href="/agent" target="_top">это мой номер</a>` : "",
+          i === 0 && o.sender_phone ? `прислал в чат <a href="tel:${esc(o.sender_phone)}">${esc(pretty(o.sender_phone))}</a>` : ""].filter(Boolean).join(" · ");
+        return `<div class="dv-phone dv-pass">
+          <div class="dv-pass-top"><div class="dv-pass-num"><a class="dv-phone-num" href="tel:${esc(p)}">${esc(pretty(p))}</a>
+            <button type="button" class="dv-pass-copy" data-copy-phone="${esc(pretty(p))}" aria-label="Скопировать номер" title="Скопировать номер">${ic("copy")}</button></div>${st}</div>
+          ${sub ? `<p class="dv-pass-sub">${sub}</p>` : ""}
           <div class="dv-pass-acts${m.no_max ? " one" : ""}"><a class="gold" href="tel:${esc(p)}">${ic("phone")}Позвонить</a>
             ${m.no_max ? "" : `<button type="button" class="line" data-max="${esc(p)}">${ic("chat")}Написать в MAX</button>`}</div></div>`;
       }).join("")}${o.url ? `<a class="dv-site${o.source === "feed" ? " strely" : ""}" href="${esc(o.url)}" target="_blank" rel="noopener">${o.source === "feed"
