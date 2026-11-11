@@ -1171,6 +1171,16 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   «убрать с карты» в окошке метки (app.js geoOffOn → POST /api/admin/listings/{id}/geo {hide}|{auto}; hide = lat NULL, geo_status
   'manual' — сервис сам не вернёт). «Не Краснодар» — без метки сами (mark_foreign: geo_status 'manual', geo_src 'foreign';
   разово region.clear_foreign_points, state foreign_nomap_v1).
+- 11.11 ТАБЛИЦА РАССЫЛКИ (Артём): tools/google-sheet-outreach/Code.gs (Google Apps Script, вставляется в Google Таблицу
+  вручную) + ИНСТРУКЦИЯ.md — по запросу человека из чата готовит личное рекламное сообщение 1+1 (синонимы {а|б}, лимит 900 —
+  блоки сокращаются по ступеням LEVELS), ключевые слова и строку поиска; статусы Готово/Отправлено/Ответил/Отказ/Повтор номера
+  (скрипт трогает только пустой и «Готово»), панель «Отправка по очереди», без имени — «Здравствуйте» (K «без имени»,
+  вписали имя — пересобирается). Сама НЕ отправляет. Новые запросы забирает с сайта: GET /api/export/requests?after=<id>
+  (app/reqexport.py, заголовок X-Export-Key = EXPORT_KEY из .env, пусто/короче 20 — 404; лимит 120/час с адреса):
+  только запросы из чатов с номером, без номеров пользователей 1+1 (agent_phones, users.phone), optout, banned, своих
+  (FEED_PHONE, SUPPORT_PHONE, ALWAYS_VERIFIED); номер из текста вырезан (parser.strip_phones); имя — messages.sender_name
+  (номер вместо имени — пусто). В таблице ключ — в свойствах скрипта (меню «Ключ сайта…»), курсор REQ_CURSOR, триггер
+  каждые 15 мин (enableAutoImport), первый забор — за «Первый забор: запросы за дней» (3).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

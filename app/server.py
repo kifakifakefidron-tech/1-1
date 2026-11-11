@@ -23,7 +23,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import (accounts, agent, autolearn, callcheck, bankrates, brain, buyers, clients, dashboard, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
-               dupreview, market, notify, payments, picks, planner, region, search, settings, stats, tg, wappi, widgets, worklog)
+               dupreview, market, notify, payments, picks, planner, region, reqexport, search, settings, stats, tg, wappi, widgets, worklog)
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -1948,6 +1948,20 @@ def api_requests(request: Request, body: dict | None = None):
     return JSONResponse(d)
 
 
+def api_export_requests(request: Request, body: dict | None = None):
+    """11.11: новые запросы покупателей для Google Таблицы рассылки (Apps Script забирает сам по расписанию).
+    Только с ключом EXPORT_KEY из .env (заголовок X-Export-Key); ключа нет или короче 20 знаков — выгрузки нет."""
+    key = config.EXPORT_KEY
+    if len(key) < 20:
+        return _err("Не найдено.", 404)
+    if _too_often(request, "export", 120, 3600, who=_ip_key(request)):
+        return _err("Слишком часто.", 429)
+    if not hmac.compare_digest(request.headers.get("x-export-key", ""), key):
+        return _err("Неверный ключ.", 403)
+    q = request.query_params
+    return JSONResponse(reqexport.export(db.get(), _num(q.get("after"), int) or 0, _num(q.get("limit"), int) or 200))
+
+
 def planner_page(request: Request, body: dict | None = None):
     return _page("planner.html")
 
@@ -3276,6 +3290,7 @@ routes = [
     Route("/planner", threaded(planner_page)),
     Route("/requests", threaded(requests_page)),
     Route("/api/requests", threaded(api_requests), methods=["GET", "POST"]),
+    Route("/api/export/requests", threaded(api_export_requests)),
     Route("/picks", threaded(picks_page)),
     Route("/work", threaded(work_page)),
     Route("/compare", threaded(compare_page)),
