@@ -6,7 +6,7 @@
  *    ключевые слова и строку поиска «как в чате»;
  *  - держит сообщение в лимите символов (по умолчанию 900), убирая менее важные блоки;
  *  - НИКОГДА не трогает строки со статусом «Отправлено», «Ответил», «Отказ», «Повтор номера»
- *    и любым другим статусом, кроме пустого и «Готово»;
+ *    и любым другим статусом, кроме пустого и «Создан»;
  *  - сам ничего не отправляет: панель «Отправка по очереди» помогает скопировать текст
  *    и отметить «Отправлено».
  *
@@ -24,12 +24,14 @@ var SHEET_SETTINGS = 'Настройки';
 var SHEET_LOG = 'Лог';
 
 // Номера колонок листа «Запросы» (A = 1)
-var COL = { NAME: 1, PHONE: 2, SOURCE: 3, QUERY: 4, KEYS: 5, SEARCH: 6, MSG: 7, LEN: 8, STATUS: 9, DATE: 10, NOTE: 11 };
-var NCOL = 11;
-var HEADERS = ['Имя', 'Телефон', 'Источник', 'Запрос', 'Ключевые слова', 'Строка для поиска',
-  'Готовое сообщение', 'Длина сообщения', 'Статус', 'Дата', 'Комментарий'];
+var COL = { REQDATE: 1, NAME: 2, PHONE: 3, SOURCE: 4, QUERY: 5, KEYS: 6, SEARCH: 7, MSG: 8, LEN: 9, STATUS: 10, DATE: 11, NOTE: 12 };
+var NCOL = 12;
+var HEADERS = ['Дата запроса', 'Имя', 'Телефон', 'Источник', 'Запрос', 'Ключевые слова', 'Строка для поиска',
+  'Готовое сообщение', 'Длина сообщения', 'Статус', 'Дата статуса', 'Комментарий'];
+var DATE_FMT = 'dd.MM.yyyy HH:mm';
 
-var ST = { READY: 'Готово', SENT: 'Отправлено', ANSWERED: 'Ответил', REFUSED: 'Отказ', REPEAT: 'Повтор номера' };
+// «Создан» — сообщение подготовлено, ещё не отправлено (раньше называлось «Готово» — понимаем оба)
+var ST = { READY: 'Создан', SENT: 'Отправлено', ANSWERED: 'Ответил', REFUSED: 'Отказ', REPEAT: 'Повтор номера' };
 var STATUS_LIST = [ST.READY, ST.SENT, ST.ANSWERED, ST.REFUSED, ST.REPEAT];
 
 // Параметры листа «Настройки»: [название, значение по умолчанию, пояснение]
@@ -139,7 +141,8 @@ function onOpen() {
     .addItem('Автозабор с сайта: выключить', 'disableAutoImport')
     .addItem('Ключ сайта…', 'setExportKey')
     .addSeparator()
-    .addItem('Очистить готовые', 'clearReady')
+    .addItem('Новые запросы сверху (сортировать по дате запроса)', 'sortNewestFirst')
+    .addItem('Очистить созданные', 'clearReady')
     .addItem('Подготовить таблицу (шапка, статусы, цвета)', 'setupSheet')
     .addItem('Настройки', 'openSettings')
     .addToUi();
@@ -148,7 +151,7 @@ function onOpen() {
 /**
  * Автогенерация. Простой триггер: Google запускает его только при правке ЧЕЛОВЕКОМ —
  * изменения, которые пишет сам скрипт, onEdit не вызывают (рекурсии нет). Дополнительно:
- * работаем только на листе «Запросы», только если правили колонку A или D, только для
+ * работаем только на листе «Запросы», только если правили колонку Имя или Запрос, только для
  * строк с пустым статусом, и под общей блокировкой с кнопками.
  */
 function onEdit(e) {
@@ -157,6 +160,7 @@ function onEdit(e) {
     var range = e.range;
     var sh = range.getSheet();
     if (sh.getName() !== SHEET_MAIN) return;
+    if (migrate_(sh)) return;                              // таблица старого вида — перестроили, эту правку пропускаем
     var r1 = Math.max(range.getRow(), 2), r2 = range.getLastRow();
     if (r2 < 2) return;                                   // правка шапки
     var c1 = range.getColumn(), c2 = range.getLastColumn();
@@ -185,7 +189,7 @@ function onEdit(e) {
 
 // ═══════════════════════════ КНОПКИ МЕНЮ ═══════════════════════════
 
-/** Все новые строки: Имя и Запрос заполнены, статус пустой (или «Готово» без текста). */
+/** Все новые строки: Запрос заполнен, статус пустой (или «Создан» без текста). */
 function generateAll() {
   withLock_(function () {
     var sh = mainSheet_();
@@ -194,7 +198,7 @@ function generateAll() {
   });
 }
 
-/** Только выделенные строки (готовые «Готово» не перезаписываются). */
+/** Только выделенные строки («Создан» не перезаписываются). */
 function generateRow() {
   var rows = selectedRows_();
   if (!rows) return;
@@ -204,7 +208,7 @@ function generateRow() {
   });
 }
 
-/** Принудительно: перезаписывает и «Готово». «Отправлено», «Ответил», «Отказ» — никогда. */
+/** Принудительно: перезаписывает и «Создан». «Отправлено», «Ответил», «Отказ» — никогда. */
 function regenerateRow() {
   var rows = selectedRows_();
   if (!rows) return;
@@ -214,7 +218,7 @@ function regenerateRow() {
   });
 }
 
-/** Очищает E–H у строк «Готово» и возвращает их в «новые» (статус и дата — тоже очищаются). */
+/** Очищает ключевые слова, строку поиска, сообщение и длину у строк «Создан» (статус и дата статуса — тоже). */
 function clearReady() {
   var ui = SpreadsheetApp.getUi();
   var sh = mainSheet_();
@@ -223,10 +227,10 @@ function clearReady() {
   var vals = sh.getRange(2, 1, last - 1, NCOL).getValues();
   var n = 0;
   vals.forEach(function (v) { if (statusOf_(v[COL.STATUS - 1]) === ST.READY) n++; });
-  if (!n) { toast_('Строк со статусом «Готово» нет'); return; }
-  var ans = ui.alert('Очистить готовые',
-    'Очистить ключевые слова, строку поиска, сообщение и длину у ' + n + ' строк со статусом «Готово»?\n' +
-    'Статус и дата тоже очистятся — строки станут «новыми», и их можно сгенерировать заново.\n' +
+  if (!n) { toast_('Строк со статусом «Создан» нет'); return; }
+  var ans = ui.alert('Очистить созданные',
+    'Очистить ключевые слова, строку поиска, сообщение и длину у ' + n + ' строк со статусом «Создан»?\n' +
+    'Статус и дата статуса тоже очистятся — строки станут «новыми», и их можно сгенерировать заново.\n' +
     '«Отправлено», «Ответил», «Отказ» не трогаются.', ui.ButtonSet.YES_NO);
   if (ans !== ui.Button.YES) return;
   withLock_(function () {
@@ -241,7 +245,7 @@ function clearReady() {
   });
 }
 
-/** Отмечает выделенные строки со статусом «Готово» как «Отправлено». */
+/** Отмечает выделенные строки со статусом «Создан» как «Отправлено». */
 function markSelectedSent() {
   var rows = selectedRows_();
   if (!rows) return;
@@ -254,7 +258,7 @@ function markSelectedSent() {
       sh.getRange(r, COL.STATUS, 1, 2).setValues([[ST.SENT, new Date()]]);
       n++;
     });
-    toast_(n ? 'Отмечено «Отправлено»: ' + n : 'Среди выделенных нет строк со статусом «Готово»');
+    toast_(n ? 'Отмечено «Отправлено»: ' + n : 'Среди выделенных нет строк со статусом «Создан»');
   });
 }
 
@@ -269,9 +273,9 @@ function openSettings() {
 /**
  * Обрабатывает строки листа.
  * rows: массив номеров строк или null (все строки).
- * mode: 'new' — пустой статус (и «Готово» без сообщения);
+ * mode: 'new' — пустой статус (и «Создан» без сообщения);
  *       'auto' — только пустой статус (автогенерация);
- *       'force' — пустой статус и «Готово» (перегенерация).
+ *       'force' — пустой статус и «Создан» (перегенерация).
  * Строки с любым другим статусом не трогаются никогда.
  */
 function processRows_(sh, rows, mode, cfg) {
@@ -300,11 +304,11 @@ function processRows_(sh, rows, mode, cfg) {
     var hasMsg = String(v[COL.MSG - 1] || '').trim() !== '';
 
     if (!query) {                              // без запроса писать не о чем; без имени — «Здравствуйте» без имени
-      if (rows && name) res.reasons.push('строка ' + r + ': нет запроса (колонка D)');
+      if (rows && name) res.reasons.push('строка ' + r + ': нет запроса (колонка «Запрос»)');
       res.skipped++;
       return;
     }
-    // «Готово» без имени, а имя потом вписали — пересобираем с именем (только автоматом, пока не отправлено)
+    // «Создан» без имени, а имя потом вписали — пересобираем с именем (только автоматом, пока не отправлено)
     var nameAdded = status === ST.READY && name && /(^|;\s*)без имени/.test(String(v[COL.NOTE - 1] || ''));
     var allowed =
       status === '' ||
@@ -321,7 +325,7 @@ function processRows_(sh, rows, mode, cfg) {
       var phone = canonPhone_(v[COL.PHONE - 1]);
       var note = cleanAutoNote_(v[COL.NOTE - 1]);
       if (cfg.checkRepeat && phone && phoneRow[phone] && phoneRow[phone] !== r) {
-        updates[r] = ['', '', '', '', ST.REPEAT, new Date(), joinNote_(note, 'этому номеру уже писали: строка ' + phoneRow[phone])];
+        updates[r] = ['', '', '', '', ST.REPEAT, new Date(), joinNote_(note, 'этому номеру уже писали: ' + who_(vals[phoneRow[phone] - 2]))];
         res.repeat++;
         return;
       }
@@ -342,7 +346,15 @@ function processRows_(sh, rows, mode, cfg) {
   return res;
 }
 
-/** Пишет колонки E–K пачками подряд идущих строк (быстро и без лишних вызовов). */
+/** «Ольга, 10.11.2026» — кому уже писали (номер строки не годится: новые запросы встают сверху). */
+function who_(v) {
+  var name = String(v[COL.NAME - 1] || '').trim() || String(v[COL.PHONE - 1] || '').trim();
+  var d = v[COL.DATE - 1] instanceof Date ? v[COL.DATE - 1] : v[COL.REQDATE - 1];
+  return name + (d instanceof Date ? ', ' + dmy_(d) : '');
+}
+function dmy_(d) { return ('0' + d.getDate()).slice(-2) + '.' + ('0' + (d.getMonth() + 1)).slice(-2) + '.' + d.getFullYear(); }
+
+/** Пишет колонки «Ключевые слова» … «Комментарий» пачками подряд идущих строк (быстро и без лишних вызовов). */
 function writeUpdates_(sh, updates) {
   var rows = Object.keys(updates).map(Number).sort(function (a, b) { return a - b; });
   var i = 0;
@@ -352,7 +364,7 @@ function writeUpdates_(sh, updates) {
     var block = [];
     for (var k = i; k <= j; k++) block.push(updates[rows[k]]);
     sh.getRange(rows[i], COL.KEYS, block.length, NCOL - COL.KEYS + 1).setValues(block);
-    sh.getRange(rows[i], COL.DATE, block.length, 1).setNumberFormat('dd.MM.yyyy HH:mm');
+    sh.getRange(rows[i], COL.DATE, block.length, 1).setNumberFormat(DATE_FMT);
     i = j + 1;
   }
 }
@@ -788,6 +800,7 @@ function fmtRange_(a, b) {
 
 var PROP_KEY = 'EXPORT_KEY';
 var PROP_CURSOR = 'REQ_CURSOR';
+var PROP_DATES = 'REQ_DATES_V1';    // даты у старых строк уже проставлены
 var IMPORT_PAGES = 10;      // за один запуск — не больше 10 × 200 запросов
 
 /** Меню «Ключ сайта…»: ввести/заменить ключ выгрузки. */
@@ -804,7 +817,7 @@ function setExportKey() {
   ui.alert('Ключ сохранён. Теперь «1+1 → Забрать новые запросы с сайта» или включите автозабор.');
 }
 
-/** Забрать новые запросы, добавить строками внизу листа и сразу подготовить сообщения. */
+/** Забрать новые запросы, вставить строками СВЕРХУ (самый свежий — первым) и сразу подготовить сообщения. */
 function importRequests() {
   var lock = getLock_();
   if (lock && !lock.tryLock(30000)) { logError_('', 'забор с сайта', 'Таблица занята — попробую в следующий раз'); return; }
@@ -830,6 +843,10 @@ function importRequests_() {
   var minTs = firstRun && cfg.firstDays ? Math.floor(Date.now() / 1000) - cfg.firstDays * 86400 : 0;
 
   var sh = mainSheet_();
+  if (!props.getProperty(PROP_DATES)) {             // один раз: даты для строк, забранных до колонки «Дата запроса»
+    backfillDates_(sh, key, cfg);
+    props.setProperty(PROP_DATES, '1');
+  }
   var last = sh.getLastRow();
   var known = {};   // номера, которые уже есть в таблице — второй раз не добавляем
   if (last >= 2) sh.getRange(2, COL.PHONE, last - 1, 1).getValues().forEach(function (r) {
@@ -838,20 +855,21 @@ function importRequests_() {
 
   var add = [], skippedKnown = 0, skippedOld = 0;
   for (var page = 0; page < IMPORT_PAGES; page++) {
-    var resp = UrlFetchApp.fetch(cfg.exportUrl + '?after=' + cursor + '&limit=200', {
-      headers: { 'X-Export-Key': key }, muteHttpExceptions: true, followRedirects: true
-    });
-    var code = resp.getResponseCode();
-    if (code === 403) throw new Error('Сайт не принял ключ (403): проверьте «1+1 → Ключ сайта…» и EXPORT_KEY в .env');
-    if (code === 404) throw new Error('Выгрузка на сайте выключена (404): на сервере в .env не задан EXPORT_KEY (20+ знаков) или сайт не обновлён');
-    if (code !== 200) throw new Error('Сайт ответил ' + code + ': ' + resp.getContentText().slice(0, 200));
-    var d = JSON.parse(resp.getContentText());
+    var d = fetchPage_(cfg, key, cursor);
     (d.items || []).forEach(function (it) {
       var p = canonPhone_(it.phone);
       if (!p || known[p]) { skippedKnown++; return; }
       if (minTs && it.ts && it.ts < minTs) { skippedOld++; return; }
       known[p] = true;
-      add.push([it.name || '', it.phone, it.source || '', it.text || '', '', '', '', '', '', '', 'с сайта, запрос №' + it.id]);
+      var row = [];
+      for (var c = 0; c < NCOL; c++) row.push('');
+      row[COL.REQDATE - 1] = it.ts ? new Date(it.ts * 1000) : '';
+      row[COL.NAME - 1] = it.name || '';
+      row[COL.PHONE - 1] = it.phone;
+      row[COL.SOURCE - 1] = it.source || '';
+      row[COL.QUERY - 1] = it.text || '';
+      row[COL.NOTE - 1] = 'с сайта, запрос №' + it.id;
+      add.push({ ts: Number(it.ts) || 0, id: Number(it.id) || 0, row: row });
     });
     cursor = Math.max(cursor, Number(d.last_id) || cursor);
     if (!d.more) break;
@@ -859,21 +877,86 @@ function importRequests_() {
 
   var newRows = [];
   if (add.length) {
-    var start = sh.getLastRow() + 1;
-    sh.getRange(start, COL.PHONE, add.length, 1).setNumberFormat('@');   // «+7…» — текстом, а не числом
-    sh.getRange(start, 1, add.length, NCOL).setValues(add);
-    for (var i = 0; i < add.length; i++) newRows.push(start + i);
+    add.sort(function (a, b) { return (b.ts - a.ts) || (b.id - a.id); });   // самый свежий — первым
+    var n = add.length;
+    sh.insertRowsAfter(1, n);                                                 // сразу под шапкой
+    sh.getRange(2, 1, n, NCOL).setFontWeight('normal').setBackground(null).setFontColor(null);
+    sh.getRange(2, COL.PHONE, n, 1).setNumberFormat('@');                    // «+7…» — текстом, а не числом
+    sh.getRange(2, COL.REQDATE, n, 1).setNumberFormat(DATE_FMT);
+    sh.getRange(2, COL.DATE, n, 1).setNumberFormat(DATE_FMT);
+    sh.getRange(2, COL.MSG, n, 1).setWrap(true).setVerticalAlignment('top');
+    sh.getRange(2, COL.QUERY, n, 1).setWrap(true).setVerticalAlignment('top');
+    sh.getRange(2, 1, n, NCOL).setValues(add.map(function (a) { return a.row; }));
+    statusFormat_(sh);                    // выпадающий список и цвета статусов — и на новых строках
+    for (var i = 0; i < n; i++) newRows.push(2 + i);
   }
   props.setProperty(PROP_CURSOR, String(cursor));   // курсор — только после записи строк
   var gen = newRows.length ? processRows_(sh, newRows, 'new', cfg) : { done: 0, repeat: 0, errors: 0 };
 
   var text = add.length
-    ? 'С сайта: новых запросов ' + add.length + ' · сообщений готово ' + gen.done +
+    ? 'С сайта: новых запросов ' + add.length + ' · сообщений создано ' + gen.done +
       (gen.repeat ? ' · повтор номера ' + gen.repeat : '') + (gen.errors ? ' · ошибок ' + gen.errors : '')
     : 'Новых запросов с сайта нет';
   if (skippedKnown) text += ' · уже были в таблице: ' + skippedKnown;
   if (skippedOld) text += ' · старше ' + cfg.firstDays + ' дн. (первый забор): ' + skippedOld;
   return { added: add.length, done: gen.done, text: text };
+}
+
+/** Одна страница выгрузки: запросы новее after. */
+function fetchPage_(cfg, key, after) {
+  var resp = UrlFetchApp.fetch(cfg.exportUrl + '?after=' + after + '&limit=200', {
+    headers: { 'X-Export-Key': key }, muteHttpExceptions: true, followRedirects: true
+  });
+  var code = resp.getResponseCode();
+  if (code === 403) throw new Error('Сайт не принял ключ (403): проверьте «1+1 → Ключ сайта…» и EXPORT_KEY в .env');
+  if (code === 404) throw new Error('Выгрузка на сайте выключена (404): на сервере в .env не задан EXPORT_KEY (20+ знаков) или сайт не обновлён');
+  if (code !== 200) throw new Error('Сайт ответил ' + code + ': ' + resp.getContentText().slice(0, 200));
+  return JSON.parse(resp.getContentText());
+}
+
+/** Строки «с сайта, запрос №N» без даты запроса (забраны до 11.11): дата — с сайта, потом новые сверху. */
+function backfillDates_(sh, key, cfg) {
+  var last = sh.getLastRow();
+  if (last < 2) return 0;
+  var vals = sh.getRange(2, 1, last - 1, NCOL).getValues();
+  var need = {}, minId = 0, left = 0;
+  vals.forEach(function (v, i) {
+    if (v[COL.REQDATE - 1] instanceof Date) return;
+    var m = /запрос №(\d+)/.exec(String(v[COL.NOTE - 1] || ''));
+    if (!m) return;
+    var id = Number(m[1]);
+    need[id] = i + 2; left++;
+    if (!minId || id < minId) minId = id;
+  });
+  if (!minId) return 0;
+  var filled = 0, after = minId - 1;
+  for (var page = 0; page < IMPORT_PAGES && left; page++) {
+    var d = fetchPage_(cfg, key, after);
+    (d.items || []).forEach(function (it) {
+      var r = need[it.id];
+      if (!r || !it.ts) return;
+      sh.getRange(r, COL.REQDATE).setValue(new Date(it.ts * 1000)).setNumberFormat(DATE_FMT);
+      delete need[it.id]; left--; filled++;
+    });
+    after = Math.max(after, Number(d.last_id) || after);
+    if (!d.more) break;
+  }
+  if (filled) sortByDate_(sh);
+  return filled;
+}
+
+/** Меню: строки по дате запроса — новые сверху (строки без даты — внизу). */
+function sortNewestFirst() {
+  withLock_(function () {
+    var n = sortByDate_(mainSheet_());
+    toast_(n > 0 ? 'Готово: новые запросы сверху' : 'Строк нет');
+  });
+}
+
+function sortByDate_(sh) {
+  var last = sh.getLastRow();
+  if (last >= 3) sh.getRange(2, 1, last - 1, NCOL).sort({ column: COL.REQDATE, ascending: false });
+  return last - 1;
 }
 
 /** Автозабор: каждые 15 минут (триггер по времени). */
@@ -909,7 +992,7 @@ function showSender() {
   SpreadsheetApp.getUi().showSidebar(html);
 }
 
-/** Следующая строка «Готово» начиная с fromRow (по кругу). */
+/** Следующая строка «Создан» начиная с fromRow (по кругу). */
 function senderData(fromRow) {
   var sh = mainSheet_();
   var last = sh.getLastRow();
@@ -935,26 +1018,46 @@ function senderData(fromRow) {
   };
 }
 
-/** Отметить строку (только если она всё ещё «Готово») и перейти к следующей. */
-function senderMark(row, status) {
+/** Отметить строку (только если она всё ещё «Создан») и перейти к следующей. */
+function senderMark(row, status, phone) {
   if (STATUS_LIST.indexOf(status) < 0) throw new Error('Неизвестный статус');
   return withLock_(function () {
     var sh = mainSheet_();
-    if (statusOf_(sh.getRange(row, COL.STATUS).getValue()) === ST.READY) {
-      sh.getRange(row, COL.STATUS, 1, 2).setValues([[status, new Date()]]);
-      sh.getRange(row, COL.DATE).setNumberFormat('dd.MM.yyyy HH:mm');
+    var r = locate_(sh, row, phone);
+    if (r > 0 && statusOf_(sh.getRange(r, COL.STATUS).getValue()) === ST.READY) {
+      sh.getRange(r, COL.STATUS, 1, 2).setValues([[status, new Date()]]);
+      sh.getRange(r, COL.DATE).setNumberFormat(DATE_FMT);
     }
-    return senderData(row + 1);
+    return senderData((r > 0 ? r : Number(row)) + 1);
   });
 }
 
-function senderSkip(row) { return senderData(Number(row) + 1); }
+function senderSkip(row, phone) {
+  var r = locate_(mainSheet_(), row, phone);
+  return senderData((r > 0 ? r : Number(row)) + 1);
+}
 
-function senderRegen(row) {
+function senderRegen(row, phone) {
   return withLock_(function () {
-    processRows_(mainSheet_(), [Number(row)], 'force', readSettings_());
-    return senderData(row);
+    var sh = mainSheet_();
+    var r = locate_(sh, row, phone);
+    if (r > 0) processRows_(sh, [r], 'force', readSettings_());
+    return senderData(r > 0 ? r : row);
   });
+}
+
+/** Где сейчас строка с этим номером: пока панель открыта, сверху могли встать новые запросы. -1 — нет. */
+function locate_(sh, row, phone) {
+  row = Number(row);
+  var p = canonPhone_(phone);
+  var last = sh.getLastRow();
+  if (!p || last < 2) return row;
+  var vals = sh.getRange(2, COL.PHONE, last - 1, 1).getValues();
+  var same = function (i) { return canonPhone_(vals[i][0]) === p; };
+  if (row >= 2 && row <= last && same(row - 2)) return row;
+  for (var i = Math.max(row - 2, 0); i < vals.length; i++) if (same(i)) return i + 2;   // строки съезжают только вниз
+  for (i = 0; i < vals.length; i++) if (same(i)) return i + 2;
+  return -1;
 }
 
 var SENDER_HTML_ = [
@@ -972,9 +1075,9 @@ var SENDER_HTML_ = [
   'var cur=null;',
   'function esc(s){return String(s||"").replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;"}[c];});}',
   'function show(d){cur=d;var b=document.getElementById("box");',
-  ' if(d.done){b.innerHTML="<h3>Очередь пуста</h3><p class=muted>Нет строк со статусом «Готово». Сгенерируйте сообщения через меню «1+1».</p><button class=btn onclick=load(2)>Обновить</button>";return;}',
+  ' if(d.done){b.innerHTML="<h3>Очередь пуста</h3><p class=muted>Нет строк со статусом «Создан». Сгенерируйте сообщения через меню «1+1».</p><button class=btn onclick=load(2)>Обновить</button>";return;}',
   ' b.innerHTML="<h3>"+esc(d.name)+"</h3>"+',
-  '  "<div class=muted>Строка "+d.row+" · "+d.pos+" из "+d.total+" готовых<br>"+esc(d.phone)+" · "+esc(d.source)+"</div>"+',
+  '  "<div class=muted>Строка "+d.row+" · "+d.pos+" из "+d.total+" созданных<br>"+esc(d.phone)+" · "+esc(d.source)+"</div>"+',
   '  "<p class=muted>Запрос: "+esc(d.query)+"</p>"+',
   '  "<textarea id=t readonly>"+esc(d.text)+"</textarea><div class=muted>"+d.len+" символов</div>"+',
   '  "<div id=msg class=ok></div>"+',
@@ -992,9 +1095,9 @@ var SENDER_HTML_ = [
   ' document.getElementById("msg").textContent=ok?"Скопировано":"Выделено — нажмите Ctrl+C";}',
   'function fail(e){document.getElementById("box").innerHTML="<p class=err>"+esc(e&&e.message||e)+"</p><button class=btn onclick=load(2)>Ещё раз</button>";}',
   'function load(r){google.script.run.withSuccessHandler(show).withFailureHandler(fail).senderData(r);}',
-  'function mark(s){if(!cur)return;google.script.run.withSuccessHandler(show).withFailureHandler(fail).senderMark(cur.row,s);}',
-  'function skip(){if(!cur)return;google.script.run.withSuccessHandler(show).withFailureHandler(fail).senderSkip(cur.row);}',
-  'function regen(){if(!cur)return;document.getElementById("msg").textContent="Готовлю…";google.script.run.withSuccessHandler(show).withFailureHandler(fail).senderRegen(cur.row);}',
+  'function mark(s){if(!cur)return;google.script.run.withSuccessHandler(show).withFailureHandler(fail).senderMark(cur.row,s,cur.phone);}',
+  'function skip(){if(!cur)return;google.script.run.withSuccessHandler(show).withFailureHandler(fail).senderSkip(cur.row,cur.phone);}',
+  'function regen(){if(!cur)return;document.getElementById("msg").textContent="Готовлю…";google.script.run.withSuccessHandler(show).withFailureHandler(fail).senderRegen(cur.row,cur.phone);}',
   'load(2);',
   '</script></body></html>'
 ].join('\n');
@@ -1011,8 +1114,26 @@ function ensureSheets_() {
     else sh = ss.insertSheet(SHEET_MAIN, 0);
   }
   if (String(sh.getRange(1, 1).getValue()).trim() === '') setupSheet();
+  else migrate_(sh);
   if (!ss.getSheetByName(SHEET_SETTINGS)) setupSettings();
   if (!ss.getSheetByName(SHEET_LOG)) setupLog();
+}
+
+/**
+ * Таблица старого вида → новый: слева колонка «Дата запроса» (данные сдвигаются вправо целиком),
+ * статус «Готово» → «Создан». true — если колонку добавили (номера колонок изменились).
+ */
+function migrate_(sh) {
+  var moved = String(sh.getRange(1, 1).getValue()).trim() === 'Имя';
+  if (moved) sh.insertColumnBefore(1);
+  var renamed = false, last = sh.getLastRow();
+  if (last >= 2) {
+    var rg = sh.getRange(2, COL.STATUS, last - 1, 1), v = rg.getValues();
+    v.forEach(function (r) { if (String(r[0]).trim().toLowerCase() === 'готово') { r[0] = ST.READY; renamed = true; } });
+    if (renamed) rg.setValues(v);
+  }
+  if (moved || renamed) setupSheet();
+  return moved;
 }
 
 /** Шапка, ширина колонок, выпадающий список статусов, цвета статусов. */
@@ -1021,14 +1142,20 @@ function setupSheet() {
   var sh = ss.getSheetByName(SHEET_MAIN) || ss.insertSheet(SHEET_MAIN, 0);
   sh.getRange(1, 1, 1, NCOL).setValues([HEADERS]).setFontWeight('bold').setBackground('#035352').setFontColor('#F3E8BC');
   sh.setFrozenRows(1);
-  var widths = [120, 130, 170, 260, 200, 180, 420, 80, 120, 120, 200];
+  var widths = [120, 120, 130, 170, 260, 200, 180, 420, 80, 120, 120, 200];
   widths.forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
   var maxR = Math.max(sh.getMaxRows(), 1000);
   if (sh.getMaxRows() < maxR) sh.insertRowsAfter(sh.getMaxRows(), maxR - sh.getMaxRows());
   sh.getRange(2, COL.MSG, maxR - 1, 1).setWrap(true).setVerticalAlignment('top');
   sh.getRange(2, COL.QUERY, maxR - 1, 1).setWrap(true).setVerticalAlignment('top');
-  sh.getRange(2, COL.DATE, maxR - 1, 1).setNumberFormat('dd.MM.yyyy HH:mm');
+  sh.getRange(2, COL.DATE, maxR - 1, 1).setNumberFormat(DATE_FMT);
+  sh.getRange(2, COL.REQDATE, maxR - 1, 1).setNumberFormat(DATE_FMT);
+  statusFormat_(sh);
+}
 
+/** Выпадающий список и цвета статусов на всю колонку (после вставки строк сверху — заново). */
+function statusFormat_(sh) {
+  var maxR = sh.getMaxRows();
   var statusRange = sh.getRange(2, COL.STATUS, maxR - 1, 1);
   statusRange.setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(STATUS_LIST, true).setAllowInvalid(true).build());
@@ -1133,11 +1260,12 @@ function mainSheet_() {
   return SpreadsheetApp.getActive().getSheetByName(SHEET_MAIN);
 }
 
-/** Статус: «Готово»/«Отправлено»/… в каноническом написании, любой другой — как есть, пусто — ''. */
+/** Статус: «Создан»/«Отправлено»/… в каноническом написании («Готово» — старое имя «Создан»), любой другой — как есть, пусто — ''. */
 function statusOf_(v) {
   var s = String(v == null ? '' : v).trim();
   if (!s) return '';
   var low = s.toLowerCase();
+  if (low === 'готово') return ST.READY;
   for (var i = 0; i < STATUS_LIST.length; i++) if (STATUS_LIST[i].toLowerCase() === low) return STATUS_LIST[i];
   return s;
 }
@@ -1193,7 +1321,7 @@ function withLock_(fn) {
 
 function summary_(res, emptyText) {
   if (!res.done && !res.repeat && !res.errors) return emptyText;
-  var parts = ['Готово: ' + res.done];
+  var parts = ['Создано: ' + res.done];
   if (res.repeat) parts.push('повтор номера: ' + res.repeat);
   if (res.errors) parts.push('ошибок: ' + res.errors + ' (см. лист «Лог»)');
   return parts.join(' · ');
