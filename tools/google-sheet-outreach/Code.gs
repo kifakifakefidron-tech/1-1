@@ -46,7 +46,13 @@ var SETTINGS_DEFAULTS = [
   ['Ссылка на поиск по запросу', 'выкл', 'вкл — ссылка ведёт сразу на поиск по запросу человека: 1plus1assistant.ru/?q=2к+фмр+до+7+млн'],
   ['Проверять повтор номера', 'вкл', 'вкл — если этому номеру уже готовили/отправляли сообщение, строка получает статус «Повтор номера»'],
   ['Адрес выгрузки запросов', 'https://1plus1assistant.ru/api/export/requests', 'Откуда таблица забирает новые запросы покупателей. Ключ вводится через меню «1+1 → Ключ сайта…» (на листе его не видно)'],
-  ['Первый забор: запросы за дней', 3, 'При самом первом заборе брать только запросы не старше этого числа дней (дальше — все новые)']
+  ['Первый забор: запросы за дней', 3, 'При самом первом заборе брать только запросы не старше этого числа дней (дальше — все новые)'],
+  ['Wappi: профиль WhatsApp', '', 'ID профиля Wappi ОТДЕЛЬНОГО номера для рассылки (не тех, что читают чаты для 1+1). Пусто — в WhatsApp не отправляем. Токен — меню «1+1 → Wappi: токен…»'],
+  ['Wappi: профиль Telegram', '', 'То же для Telegram. Пусто — в Telegram не отправляем'],
+  ['Wappi: профиль MAX', '', 'То же для MAX. Пусто — в MAX не отправляем'],
+  ['Автоотправка: в день на мессенджер', 20, 'Не больше стольких сообщений в сутки в каждый мессенджер (считаются и отправленные кнопкой через Wappi)'],
+  ['Автоотправка: пауза, мин', '3-6', 'Случайная пауза между сообщениями (от-до, минуты). Ровный интервал мессенджеры считают признаком спама'],
+  ['Автоотправка: часы (МСК)', '10-19', 'Отправлять только в это время по Москве (с 10:00 до 19:00)']
 ];
 
 var LOG_MAX_ROWS = 2000;   // лист «Лог» не разрастается бесконечно
@@ -140,6 +146,11 @@ function onOpen() {
     .addItem('Автозабор с сайта: включить (каждые 15 мин)', 'enableAutoImport')
     .addItem('Автозабор с сайта: выключить', 'disableAutoImport')
     .addItem('Ключ сайта…', 'setExportKey')
+    .addSeparator()
+    .addItem('Wappi: токен…', 'setWappiToken')
+    .addItem('Wappi: проверить — сообщение себе…', 'wappiTest')
+    .addItem('Автоотправка через Wappi: включить', 'enableAutoSend')
+    .addItem('Автоотправка через Wappi: выключить', 'disableAutoSend')
     .addSeparator()
     .addItem('Новые запросы сверху (сортировать по дате запроса)', 'sortNewestFirst')
     .addItem('Очистить созданные', 'clearReady')
@@ -977,12 +988,182 @@ function disableAutoImport() {
   SpreadsheetApp.getUi().alert(n ? 'Автозабор выключен.' : 'Автозабор и так был выключен.');
 }
 
-function removeImportTriggers_() {
+function removeImportTriggers_() { return removeTriggers_('importRequests'); }
+
+// ═══════════════════════════ ОТПРАВКА ЧЕРЕЗ WAPPI ═══════════════════════════
+// Сообщение уходит в тот мессенджер, где найден запрос (колонка «Источник»: MAX / TG / WA …),
+// с ОТДЕЛЬНОГО номера рассылки (профили — на листе «Настройки», токен — в свойствах скрипта).
+// Отправляется только строка со статусом «Создан»; после отправки — «Отправлено» (повторно не уйдёт).
+
+var PROP_WAPPI = 'WAPPI_TOKEN';
+var PROP_NEXT = 'AUTOSEND_NEXT';     // раньше этого времени автоотправка ждёт (пауза)
+var WAPPI_PATH = { WA: '/api/sync/message/send', TG: '/tapi/sync/message/send', MAX: '/maxapi/sync/message/send' };
+var MSGR_NAME = { WA: 'WhatsApp', TG: 'Telegram', MAX: 'MAX' };
+var TZ = 'Europe/Moscow';
+
+/** Мессенджер по колонке «Источник»: «MAX Риелторы ФМР» → MAX, «TG …» → TG, «WA …» → WA; не понятно — ''. */
+function msgrOf_(source) {
+  var m = /^\s*(max|макс|tg|тг|telegram|телеграмм?|wa|ва|whatsapp|ватсапп?|вотсапп?|вацапп?)(?![0-9a-zа-яё])/i.exec(String(source || ''));
+  if (!m) return '';
+  var w = m[1].toLowerCase();
+  if (w === 'max' || w === 'макс') return 'MAX';
+  if (/^(tg|тг|telegram|телеграм)/.test(w)) return 'TG';
+  return 'WA';
+}
+
+function wappiReady_(msgr, cfg) {
+  return !!(msgr && cfg.wappi[msgr] && PropertiesService.getScriptProperties().getProperty(PROP_WAPPI));
+}
+
+/** Один запрос к Wappi. Ошибка — исключение с понятным текстом. */
+function wappiSend_(msgr, phone, text, cfg) {
+  var token = PropertiesService.getScriptProperties().getProperty(PROP_WAPPI);
+  if (!token) throw new Error('нет токена Wappi (меню «1+1 → Wappi: токен…»)');
+  var profile = cfg.wappi[msgr];
+  if (!profile) throw new Error('не задан профиль Wappi для ' + MSGR_NAME[msgr] + ' (лист «Настройки»)');
+  var digits = canonPhone_(phone);
+  if (!digits) throw new Error('нет номера телефона');
+  var body = { recipient: digits, body: text };
+  if (msgr === 'MAX') body.parse_mode = 'PLAIN';     // текст как есть, без разметки
+  var resp = UrlFetchApp.fetch('https://wappi.pro' + WAPPI_PATH[msgr] + '?profile_id=' + encodeURIComponent(profile), {
+    method: 'post', contentType: 'application/json', headers: { Authorization: token },
+    payload: JSON.stringify(body), muteHttpExceptions: true
+  });
+  var code = resp.getResponseCode(), raw = resp.getContentText(), d = {};
+  try { d = JSON.parse(raw) || {}; } catch (e) { d = {}; }
+  if (code === 401 || code === 403) throw new Error('Wappi не принял токен (' + code + ')');
+  if (code !== 200 || /error|fail/i.test(String(d.status || ''))) {
+    throw new Error('Wappi ' + code + ': ' + String(d.detail || d.message || d.error || raw).slice(0, 180));
+  }
+  return d;
+}
+
+/** Отправить строку r (только «Создан»). {ok, name} или {ok:false, error}. Статус и пометку пишет сам. */
+function sendRow_(sh, r, cfg) {
+  var v = sh.getRange(r, 1, 1, NCOL).getValues()[0];
+  if (statusOf_(v[COL.STATUS - 1]) !== ST.READY) return { ok: false, error: 'статус «' + v[COL.STATUS - 1] + '» — отправляем только «' + ST.READY + '»' };
+  var text = String(v[COL.MSG - 1] || '').trim();
+  if (!text) return { ok: false, error: 'нет текста сообщения' };
+  var msgr = msgrOf_(v[COL.SOURCE - 1]);
+  if (!msgr) return { ok: false, error: 'в «Источнике» не указан мессенджер (MAX / TG / WA)' };
+  var note = String(v[COL.NOTE - 1] || '').split(/\s*;\s*/).filter(function (x) { return x && !/^Wappi не отправил/.test(x); }).join('; ');
+  try {
+    wappiSend_(msgr, v[COL.PHONE - 1], text, cfg);
+  } catch (err) {
+    var why = String(err && err.message || err);
+    sh.getRange(r, COL.NOTE).setValue(joinNote_(note, 'Wappi не отправил: ' + why));
+    logError_(r, 'Wappi ' + MSGR_NAME[msgr], err);
+    return { ok: false, error: why, name: MSGR_NAME[msgr] };
+  }
+  sh.getRange(r, COL.STATUS, 1, 2).setValues([[ST.SENT, new Date()]]);
+  sh.getRange(r, COL.DATE).setNumberFormat(DATE_FMT);
+  sh.getRange(r, COL.NOTE).setValue(joinNote_(note, 'через Wappi: ' + MSGR_NAME[msgr]));
+  countSent_(msgr, 1);
+  return { ok: true, name: MSGR_NAME[msgr] };
+}
+
+/** Сколько ушло сегодня (МСК) в этот мессенджер; add — прибавить. */
+function countSent_(msgr, add) {
+  var props = PropertiesService.getScriptProperties();
+  var key = 'WSENT_' + Utilities.formatDate(new Date(), TZ, 'yyyyMMdd') + '_' + msgr;
+  var n = Number(props.getProperty(key) || 0) + (add || 0);
+  if (add) props.setProperty(key, String(n));
+  return n;
+}
+
+/** Меню «Wappi: токен…». */
+function setWappiToken() {
+  var ui = SpreadsheetApp.getUi();
+  var props = PropertiesService.getScriptProperties();
+  var r = ui.prompt('Токен Wappi',
+    'Вставьте API-токен из личного кабинета Wappi (аккаунт ОТДЕЛЬНОГО номера для рассылки).\n' +
+    'ID профилей впишите на листе «Настройки» (Wappi: профиль WhatsApp / Telegram / MAX).' +
+    (props.getProperty(PROP_WAPPI) ? '\nТокен уже сохранён — новый заменит его.' : ''), ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  var t = r.getResponseText().trim();
+  if (t.length < 10) { ui.alert('Слишком короткий токен.'); return; }
+  props.setProperty(PROP_WAPPI, t);
+  ui.alert('Токен сохранён. Проверьте: «1+1 → Wappi: проверить — сообщение себе…»');
+}
+
+/** Меню: пробное сообщение на свой номер. */
+function wappiTest() {
+  var ui = SpreadsheetApp.getUi();
+  var r = ui.prompt('Проверка Wappi', 'Мессенджер и ваш номер, например:  MAX 79180000000  (или TG …, WA …)', ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  var t = r.getResponseText().trim(), msgr = msgrOf_(t);
+  if (!msgr) { ui.alert('Начните с MAX, TG или WA.'); return; }
+  try {
+    wappiSend_(msgr, t.replace(/^\S+/, ''), 'Проверка: таблица 1+1 подключена к Wappi (' + MSGR_NAME[msgr] + ').', readSettings_());
+    ui.alert('Ушло в ' + MSGR_NAME[msgr] + '. Проверьте телефон.');
+  } catch (err) {
+    logError_('', 'Wappi проверка', err);
+    ui.alert('Не отправилось: ' + (err && err.message || err));
+  }
+}
+
+/** Автоотправка: триггер раз в 5 минут, за запуск — не больше одного сообщения. */
+function enableAutoSend() {
+  var ui = SpreadsheetApp.getUi(), cfg = readSettings_();
+  if (!PropertiesService.getScriptProperties().getProperty(PROP_WAPPI)) { ui.alert('Сначала токен: «1+1 → Wappi: токен…»'); return; }
+  var on = Object.keys(MSGR_NAME).filter(function (k) { return cfg.wappi[k]; }).map(function (k) { return MSGR_NAME[k]; });
+  if (!on.length) { ui.alert('На листе «Настройки» не задан ни один профиль Wappi.'); return; }
+  removeTriggers_('autoSend');
+  ScriptApp.newTrigger('autoSend').timeBased().everyMinutes(5).create();
+  ui.alert('Автоотправка включена: ' + on.join(', ') + '.\n\n' +
+    'Строки «' + ST.READY + '» уходят сверху вниз (свежие запросы первыми), по одному сообщению, пауза ' +
+    cfg.pause[0] + '–' + cfg.pause[1] + ' мин, с ' + cfg.hours[0] + ':00 до ' + cfg.hours[1] + ':00 по Москве, не больше ' +
+    cfg.dayLimit + ' в день в каждый мессенджер. Строки без настроенного мессенджера ждут вас в панели.');
+}
+
+function disableAutoSend() {
+  var n = removeTriggers_('autoSend');
+  SpreadsheetApp.getUi().alert(n ? 'Автоотправка выключена.' : 'Автоотправка и так была выключена.');
+}
+
+function removeTriggers_(fn) {
   var n = 0;
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'importRequests') { ScriptApp.deleteTrigger(t); n++; }
+    if (t.getHandlerFunction() === fn) { ScriptApp.deleteTrigger(t); n++; }
   });
   return n;
+}
+
+/** Запуск по расписанию: одна строка «Создан» сверху, если время, пауза и дневной лимит позволяют. */
+function autoSend() {
+  var props = PropertiesService.getScriptProperties();
+  var cfg = readSettings_(), now = Date.now();
+  var hour = Number(Utilities.formatDate(new Date(now), TZ, 'H'));
+  if (hour < cfg.hours[0] || hour >= cfg.hours[1]) return 'не время';
+  if (Number(props.getProperty(PROP_NEXT) || 0) > now) return 'пауза';
+  if (!props.getProperty(PROP_WAPPI)) return 'нет токена';
+  var lock = getLock_();
+  if (lock && !lock.tryLock(10000)) return 'занято';
+  try {
+    var sh = mainSheet_(), last = sh.getLastRow();
+    if (last < 2) return 'пусто';
+    var vals = sh.getRange(2, 1, last - 1, NCOL).getValues(), row = -1, used = {};
+    for (var i = 0; i < vals.length && row < 0; i++) {
+      var v = vals[i];
+      if (statusOf_(v[COL.STATUS - 1]) !== ST.READY || !String(v[COL.MSG - 1] || '').trim()) continue;
+      if (/(^|;\s*)Wappi не отправил/.test(String(v[COL.NOTE - 1] || ''))) continue;   // ошибка — разберётесь в панели
+      var m = msgrOf_(v[COL.SOURCE - 1]);
+      if (!m || !cfg.wappi[m]) continue;
+      if (!(m in used)) used[m] = countSent_(m, 0);
+      if (used[m] >= cfg.dayLimit) continue;
+      row = i + 2;
+    }
+    if (row < 0) return 'нечего отправлять';
+    var res = sendRow_(sh, row, cfg);
+    var p = cfg.pause[0] + Math.random() * (cfg.pause[1] - cfg.pause[0]);
+    props.setProperty(PROP_NEXT, String(now + Math.round(p * 60000)));
+    return res.ok ? 'отправлено: строка ' + row : 'ошибка: ' + res.error;
+  } catch (err) {
+    logError_('', 'автоотправка', err);
+    return 'ошибка';
+  } finally {
+    if (lock) lock.releaseLock();
+  }
 }
 
 // ═══════════════════════════ ПАНЕЛЬ «ОТПРАВКА ПО ОЧЕРЕДИ» ═══════════════════════════
@@ -1014,7 +1195,9 @@ function senderData(fromRow) {
     name: String(v[COL.NAME - 1]), phone: String(v[COL.PHONE - 1]), source: String(v[COL.SOURCE - 1]),
     query: String(v[COL.QUERY - 1]), text: text, len: len_(text),
     wa: digits ? 'https://wa.me/' + digits + '?text=' + encodeURIComponent(text) : '',
-    tg: digits ? 'https://t.me/+' + digits : ''
+    tg: digits ? 'https://t.me/+' + digits : '',
+    msgr: MSGR_NAME[msgrOf_(v[COL.SOURCE - 1])] || '',
+    wappi: wappiReady_(msgrOf_(v[COL.SOURCE - 1]), readSettings_())
   };
 }
 
@@ -1029,6 +1212,20 @@ function senderMark(row, status, phone) {
       sh.getRange(r, COL.DATE).setNumberFormat(DATE_FMT);
     }
     return senderData((r > 0 ? r : Number(row)) + 1);
+  });
+}
+
+/** Кнопка панели: отправить эту строку через Wappi и перейти к следующей. */
+function senderWappi(row, phone) {
+  return withLock_(function () {
+    var sh = mainSheet_();
+    var r = locate_(sh, row, phone), res = null;
+    if (r < 0) res = { ok: false, error: 'Строка не найдена — нажмите «Обновить»' };
+    else res = sendRow_(sh, r, readSettings_());
+    var d = senderData(res.ok ? r + 1 : (r > 0 ? r : row));
+    d.flash = res.ok ? 'Отправлено в ' + res.name : 'Не отправлено: ' + res.error;
+    d.flashErr = !res.ok;
+    return d;
   });
 }
 
@@ -1072,7 +1269,7 @@ var SENDER_HTML_ = [
   '</style></head><body>',
   '<div id="box">Загрузка…</div>',
   '<script>',
-  'var cur=null;',
+  'var cur=null,armed=0;',
   'function esc(s){return String(s||"").replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;"}[c];});}',
   'function show(d){cur=d;var b=document.getElementById("box");',
   ' if(d.done){b.innerHTML="<h3>Очередь пуста</h3><p class=muted>Нет строк со статусом «Создан». Сгенерируйте сообщения через меню «1+1».</p><button class=btn onclick=load(2)>Обновить</button>";return;}',
@@ -1080,7 +1277,9 @@ var SENDER_HTML_ = [
   '  "<div class=muted>Строка "+d.row+" · "+d.pos+" из "+d.total+" созданных<br>"+esc(d.phone)+" · "+esc(d.source)+"</div>"+',
   '  "<p class=muted>Запрос: "+esc(d.query)+"</p>"+',
   '  "<textarea id=t readonly>"+esc(d.text)+"</textarea><div class=muted>"+d.len+" символов</div>"+',
-  '  "<div id=msg class=ok></div>"+',
+  '  "<div id=msg class=\\""+(d.flashErr?"err":"ok")+"\\">"+esc(d.flash||"")+"</div>"+',
+  '  (d.wappi?"<button class=\\"btn main\\" id=wb onclick=wsend()>Отправить через Wappi в "+esc(d.msgr)+"</button>":',
+  '    (d.msgr?"<div class=muted>Wappi для "+esc(d.msgr)+" не настроен (лист «Настройки» и меню «Wappi: токен…»).</div>":"<div class=muted>Мессенджер не указан в колонке «Источник» (MAX / TG / WA) — отправка через Wappi недоступна.</div>"))+',
   '  "<button class=\\"btn main\\" onclick=copy()>Скопировать текст</button>"+',
   '  (d.wa?"<a class=btn href=\\""+d.wa+"\\" onclick=copy()>Открыть WhatsApp с текстом</a>":"")+',
   '  (d.tg?"<a class=btn href=\\""+d.tg+"\\" onclick=copy()>Скопировать и открыть Telegram</a>":"")+',
@@ -1094,6 +1293,10 @@ var SENDER_HTML_ = [
   ' if(navigator.clipboard){navigator.clipboard.writeText(t.value).catch(function(){});ok=true;}',
   ' document.getElementById("msg").textContent=ok?"Скопировано":"Выделено — нажмите Ctrl+C";}',
   'function fail(e){document.getElementById("box").innerHTML="<p class=err>"+esc(e&&e.message||e)+"</p><button class=btn onclick=load(2)>Ещё раз</button>";}',
+  'function wsend(){if(!cur)return;var b=document.getElementById("wb");',
+  ' if(!armed){armed=1;b.textContent="Нажмите ещё раз — отправить "+cur.name;setTimeout(function(){armed=0;if(b)b.textContent="Отправить через Wappi в "+cur.msgr;},4000);return;}',
+  ' armed=0;b.disabled=true;b.textContent="Отправляю…";',
+  ' google.script.run.withSuccessHandler(show).withFailureHandler(fail).senderWappi(cur.row,cur.phone);}',
   'function load(r){google.script.run.withSuccessHandler(show).withFailureHandler(fail).senderData(r);}',
   'function mark(s){if(!cur)return;google.script.run.withSuccessHandler(show).withFailureHandler(fail).senderMark(cur.row,s,cur.phone);}',
   'function skip(){if(!cur)return;google.script.run.withSuccessHandler(show).withFailureHandler(fail).senderSkip(cur.row,cur.phone);}',
@@ -1247,8 +1450,24 @@ function readSettings_() {
     searchLink: isOn_(map['ссылка на поиск по запросу']),
     checkRepeat: isOn_(map['проверять повтор номера']),
     exportUrl: String(map['адрес выгрузки запросов']).trim(),
-    firstDays: Math.max(0, parseInt(String(map['первый забор: запросы за дней']).replace(/\D/g, ''), 10) || 0)
+    firstDays: Math.max(0, parseInt(String(map['первый забор: запросы за дней']).replace(/\D/g, ''), 10) || 0),
+    wappi: {
+      WA: String(map['wappi: профиль whatsapp'] || '').trim(),
+      TG: String(map['wappi: профиль telegram'] || '').trim(),
+      MAX: String(map['wappi: профиль max'] || '').trim()
+    },
+    dayLimit: Math.max(0, parseInt(String(map['автоотправка: в день на мессенджер']).replace(/\D/g, ''), 10) || 0),
+    pause: range_(map['автоотправка: пауза, мин'], 3, 6),
+    hours: range_(map['автоотправка: часы (мск)'], 10, 19)
   };
+}
+
+/** «3-6» → [3, 6]; одно число «5» → [5, 5]; непонятное — по умолчанию. */
+function range_(v, a, b) {
+  var m = String(v == null ? '' : v).match(/\d+(?:[.,]\d+)?/g);
+  if (!m) return [a, b];
+  var x = Number(m[0].replace(',', '.')), y = Number((m[1] || m[0]).replace(',', '.'));
+  return x <= y ? [x, y] : [y, x];
 }
 
 function isOn_(v) { return /^(вкл|да|on|true|1|включ)/i.test(String(v).trim()); }
@@ -1281,7 +1500,7 @@ function canonPhone_(v) {
 /** Убирает из комментария пометки, которые ставит скрипт (ручной текст остаётся). */
 function cleanAutoNote_(note) {
   return String(note || '').split(/\s*;\s*/).filter(function (x) {
-    return x && !/^обрезано до \d+/.test(x) && !/^этому номеру уже писали/.test(x) && x !== 'без имени';
+    return x && !/^обрезано до \d+/.test(x) && !/^этому номеру уже писали/.test(x) && x !== 'без имени' && !/^Wappi не отправил/.test(x);
   }).join('; ');
 }
 function joinNote_(note, add) { return note ? note + '; ' + add : add; }
