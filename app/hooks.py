@@ -544,6 +544,6 @@ def run(conn: sqlite3.Connection, send, every_s: int = 300) -> dict | None:
     fmt_day = lambda ts: time.strftime("%d.%m", time.localtime(ts))  # noqa: E731
     update_market_diff(conn)
     out = {"saved": check_saved(conn, send), "favorites": check_favorites(conn, send),
-           "subscriptions": notices.check_subscriptions(conn, fmt_day)}
+           "subscriptions": notices.check_subscriptions(conn, fmt_day, send)}
     notices.cleanup(conn)
     return out

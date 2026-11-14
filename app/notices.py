@@ -104,26 +104,55 @@ def cleanup(conn: sqlite3.Connection) -> int:
     return n
 
 
-def check_subscriptions(conn: sqlite3.Connection, fmt_day) -> int:
-    """Доступ к номерам заканчивается через ≤2 дня или закончился — одно уведомление на каждое событие."""
+def _price_hint(conn: sqlite3.Connection, user_id: int) -> str:
+    """«Неделя — 49 ₽» по тарифам этого человека (первая неделя со скидкой, если ещё не платил)."""
+    try:
+        from . import payments
+        p = payments.plans(conn, user_id)[0]
+        return f" Неделя — {p['price']} ₽." if p["days"] == 7 else f" {p['days']} дн. — {p['price']} ₽."
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def check_subscriptions(conn: sqlite3.Connection, fmt_day, send=None) -> int:
+    """Доступ к номерам заканчивается через ≤2 дня или закончился — одно уведомление на каждое событие.
+    14.11 (Артём: «приходят ли уведомления об окончании пробных 14 дней и оплаченной подписки?»): тексты для пробного
+    периода и для оплаченной подписки разные, ссылка — на оплату (/pay), и дубль письмом (если почта есть и письма
+    не выключены). Вид 'sub' — служебный, человек его не выключает."""
+    from . import db
     now = int(time.time())
     made = 0
-    for u in conn.execute("""SELECT id, MAX(trial_until, paid_until) AS until, sub_notified FROM users
-                             WHERE is_admin = 0 AND blocked = 0 AND MAX(trial_until, paid_until) > ?""",
+    for u in conn.execute("""SELECT id, email, trial_until, paid_until, MAX(trial_until, paid_until) AS until, sub_notified
+                             FROM users WHERE is_admin = 0 AND blocked = 0 AND MAX(trial_until, paid_until) > ?""",
                           (now - 3 * DAY,)).fetchall():
         until = u["until"]
+        trial = (u["paid_until"] or 0) < (u["trial_until"] or 0)      # доступ держится на пробном периоде
+        what = "Бесплатный пробный период" if trial else "Подписка"
+        price = _price_hint(conn, u["id"])
         if now < until <= now + 2 * DAY:
-            tag, title = f"soon:{until}", f"Доступ к номерам закончится {fmt_day(until)}"
-            body = "Продлите подписку, чтобы и дальше видеть телефоны агентов."
+            tag = f"soon:{until}"
+            title = f"{what} закончится {fmt_day(until)}"
+            body = ("Чтобы и дальше видеть телефоны агентов и пользоваться клиентами и подборками, оплатите доступ."
+                    if trial else "Продлите подписку, чтобы и дальше видеть телефоны агентов.") + price
         elif until <= now:
-            tag, title = f"end:{until}", "Доступ к номерам закончился"
-            body = "Телефоны агентов снова скрыты. Продлите подписку в личном кабинете."
+            tag = f"end:{until}"
+            title = f"{what} закончился" if trial else "Подписка закончилась"
+            body = "Телефоны агентов снова скрыты. Оплатите доступ — всё вернётся сразу." + price
         else:
             continue
         if u["sub_notified"] == tag:
             continue
-        add(conn, u["id"], "sub", title, body, url="/?cabinet=1")
+        add(conn, u["id"], "sub", title, body, url="/pay", dedup_s=0)
         conn.execute("UPDATE users SET sub_notified = ? WHERE id = ?", (tag, u["id"]))
         made += 1
+        if send and u["email"]:
+            from . import config
+            site = (config.SITE_URL or "").rstrip("/")
+            db.flush(conn)
+            try:
+                send(u["email"], f"1+1: {title}"[:150],
+                     f"{body}\n\nОплатить: {site}/pay\n\nЕсли уже оплатили — просто не обращайте внимания на это письмо.")
+            except Exception:  # noqa: BLE001
+                pass
     conn.commit()
     return made

@@ -136,6 +136,19 @@ def test_notices_page_feed(env):
     conn.commit()
     assert notices.check_subscriptions(conn, lambda ts: "завтра") == 1
     assert notices.check_subscriptions(conn, lambda ts: "завтра") == 0
+    # 14.11: пробный период — свой текст, ссылка на оплату, письмо; потом «закончился» — ещё одно
+    mails = []
+    conn.execute("UPDATE users SET trial_until = ?, paid_until = 0, email = 'a@b.ru' WHERE id = ?", (NOW + 86000, u["id"]))
+    conn.commit()
+    assert notices.check_subscriptions(conn, lambda ts: "завтра", lambda *a: mails.append(a)) == 1
+    n = c.get("/api/notices").json()["items"][0]
+    assert n["title"] == "Бесплатный пробный период закончится завтра" and n["url"] == "/pay"
+    assert mails and mails[0][0] == "a@b.ru" and "/pay" in mails[0][2]
+    conn.execute("UPDATE users SET trial_until = ? WHERE id = ?", (NOW - 60, u["id"]))
+    conn.commit()
+    assert notices.check_subscriptions(conn, lambda ts: "завтра", lambda *a: mails.append(a)) == 1
+    assert c.get("/api/notices").json()["items"][0]["title"] == "Бесплатный пробный период закончился"
+    assert len(mails) == 2
     assert "notifications" in c.get("/notifications").text or c.get("/notifications").status_code == 200
 
 
