@@ -10,6 +10,16 @@
         "$env:DB_PATH=\"$env:TEMP\\strely-demo.db\"; $env:SECRET_KEY='devsecret'; $env:VERIFY_NUMBER='+79990000000'; $env:ACCESS_CODE='demo'; $env:SMSRU_API_ID='devtest'; $env:TELEGRAM_BOT_TOKEN='x'; $env:TELEGRAM_BOT_USERNAME='oneplusone_bot'; $env:PUBLIC_CONTACT='https://wa.me/79618571772'; py -m uvicorn app.server:app --port 8091"
       ],
       "port": 8091
+    },
+    {
+      "name": "mailing-demo",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": [
+        "-NoProfile",
+        "-Command",
+        "$env:Path=[Environment]::GetEnvironmentVariable('Path','Machine')+';'+[Environment]::GetEnvironmentVariable('Path','User'); Start-Process -WindowStyle Hidden py -ArgumentList '-I','C:/Users/kifak/AppData/Local/Temp/claude/1fdc162c20d812b4/55217b57-0c0f-4ec5-af5e-05e196f15bd1/scratchpad/newui/mock/mock_api.py'; cd C:/Users/kifak/old-findhouse/find_house_frontend; $env:VITE_API_BASE_URL='http://localhost:5179'; $env:VITE_TELEGRAM_INIT_DATA='demo_init_data_for_local_preview'; $env:VITE_SENTRY_ENVIRONMENT='local'; npx.cmd vite --config C:/Users/kifak/AppData/Local/Temp/claude/1fdc162c20d812b4/55217b57-0c0f-4ec5-af5e-05e196f15bd1/scratchpad/newui/mock/vite.demo.config.mjs --host 127.0.0.1 --port 5179 --strictPort"
+      ],
+      "port": 5179
     }
   ]
 }

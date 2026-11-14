@@ -218,3 +218,25 @@
 .my4-stats span { flex-wrap: wrap; row-gap: 1px; column-gap: 6px; padding: 7px 9px; }
 .my4-stats i { flex: 1 0 100%; overflow: visible; white-space: normal; font-size: 11.5px; line-height: 1.2; }
 .lc.my4 .lc-acts .lc-btn { padding: 0 6px; font-size: 13px; }
+
+/* 14.11 поиск по своим объектам — рядом с вкладками; на телефоне — строкой под ними */
+.my5-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 16px; }
+.my5-bar .my3-tabs { margin: 0; }
+.my5-q { position: relative; display: flex; align-items: center; flex: 1 1 260px; max-width: 420px; margin-left: auto; }
+.my5-q > svg { position: absolute; left: 14px; width: 18px; height: 18px; color: var(--ink-3); pointer-events: none; }
+.my5-q input { width: 100%; height: 44px; padding: 0 40px 0 42px; border-radius: 999px; border: 1px solid var(--glass-line);
+  background: rgba(255, 255, 255, .05); color: var(--ink); font: 15px var(--body); outline: none; -webkit-appearance: none; appearance: none;
+  transition: border-color .2s var(--ease), background .2s var(--ease); }
+.my5-q input::-webkit-search-cancel-button { display: none; }
+.my5-q input::placeholder { color: var(--ink-3); }
+.my5-q input:focus { border-color: var(--gold-300); background: rgba(255, 255, 255, .08); }
+.my5-q button { position: absolute; right: 6px; display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 50%;
+  background: none; color: var(--ink-3); cursor: pointer; }
+.my5-q button:hover { color: var(--ink); background: rgba(255, 255, 255, .08); }
+.my5-q button svg { width: 16px; height: 16px; }
+.my5-q button[hidden] { display: none; }
+@media (max-width: 640px) {
+  .my5-bar { gap: 10px; }
+  .my5-q { flex-basis: 100%; max-width: none; margin-left: 0; }
+  .my5-q input { font-size: 16px; }
+}

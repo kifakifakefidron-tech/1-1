@@ -10,7 +10,7 @@
   const main = $("myMain");
   const TYPES = { flat: "Квартира", room: "Комната", house: "Дом", land: "Участок", commercial: "Коммерция" };
   const ROOMS = [[0, "Студия"], [1, "1"], [2, "2"], [3, "3"], [4, "4+"]];
-  let data = null, meta = {}, complexes = [], tab = "all", waitTimer = 0;
+  let data = null, meta = {}, complexes = [], tab = "all", waitTimer = 0, q = "";
   const plural = (n, a, b, c) => { const m = Math.abs(n) % 100, d = m % 10; return m > 10 && m < 20 ? c : d === 1 ? a : d > 1 && d < 5 ? b : c; };
 
   async function call(url, body, method) {
@@ -76,13 +76,44 @@
         <a class="lc-btn eye" href="/?open=${o.id}" title="Как видят коллеги" aria-label="Как видят коллеги">${ic("eye")}</a></div>`,
     });
   }
+  // 14.11 (Артём: «поиск во вкладке свои объекты»): по ЖК, району, улице, дому, посёлку, тексту, цене («5,5» или «5500000»)
+  // и номеру карточки; несколько слов — все должны найтись; без перезагрузки, вкладки считают найденное
+  const norm = (s) => String(s || "").toLowerCase().replace(/ё/g, "е");
+  function hay(o) {
+    if (o.__hay) return o.__hay;
+    const p = Number(o.price) || 0;
+    const mln = p >= 100000 ? String(Math.round(p / 1e4) / 100).replace(".", ",") : "";
+    return (o.__hay = norm([o.title, o.complex, o.district, o.street, o.street && o.house ? `${o.street} ${o.house}` : "", o.house,
+      o.settlement, o.description, p || "", mln, mln && mln.replace(",", "."), `#${o.id}`, o.id].join(" ")));
+  }
+  function matches(o) {
+    const words = norm(q).split(/\s+/).filter(Boolean);
+    return !words.length || words.every((w) => hay(o).includes(w.replace(/^ул\.?$/, "")));
+  }
+  const TABS = [["all", "Все"], ["on", "Активные"], ["site", "С сайта"], ["chat", "Из чатов"], ["own", "Добавлены вами"], ["off", "Снятые"]];
+  const F = { all: () => true, on: (o) => o.is_active, off: (o) => !o.is_active, site: (o) => o.source === "feed",
+    chat: (o) => o.source === "chat", own: (o) => o.source === "own" };
+  function renderGrid() {
+    const all = data.items || [];
+    const items = all.filter(matches);
+    const n = Object.fromEntries(Object.keys(F).map((k) => [k, items.filter(F[k]).length]));
+    const shown = items.filter(F[tab] || F.all);
+    const tabs = $("myTabs"), grid = $("myGrid");
+    if (!tabs || !grid) return;
+    tabs.innerHTML = TABS.filter(([k]) => k === "all" || k === tab || n[k]).map(([k, t]) =>
+      `<button type="button" class="${k === tab ? "on" : ""}" data-tab="${k}">${t}<b>${n[k]}</b></button>`).join("");
+    grid.innerHTML = shown.length ? LCard.grid(shown.map((x) => itemCard(x)).join(""))
+      : q ? `<div class="wk-empty">${ic("search")}<b>Ничего не нашлось</b>По «${esc(q)}» среди ваших объектов ничего нет.
+          <button type="button" class="pill light" data-q-clear>Сбросить поиск</button></div>`
+      : `<div class="wk-empty">${ic("home")}<b>${all.length ? "Здесь пусто" : "Пока нет объявлений"}</b>
+          ${all.length ? "" : "Как только вы разместите объект в чатах с подтверждённым номером — он появится здесь. Или добавьте объект сами."}</div>`;
+    const c = $("myQClear");
+    if (c) c.hidden = !q;
+  }
   function renderList() {
     clearInterval(waitTimer);
     const items = data.items || [];
-    const F = { all: () => true, on: (o) => o.is_active, off: (o) => !o.is_active, site: (o) => o.source === "feed",
-      chat: (o) => o.source === "chat", own: (o) => o.source === "own" };
     const n = Object.fromEntries(Object.keys(F).map((k) => [k, items.filter(F[k]).length]));
-    const shown = items.filter(F[tab] || F.all);
     const nums = [[n.on, plural(n.on, "активный", "активных", "активных")], [n.site, "с сайта"], [n.chat, "из чатов"], [n.own, "добавлены вами"]]
       .filter(([k], j) => k || !j);
     main.innerHTML = `
@@ -93,13 +124,18 @@
           : `<a class="pill light" href="/pay">Добавлять — с подпиской</a>`) : ""}</header>
       ${verifyBlock()}
       ${data.phones.length || items.length ? `
-        <nav class="nt2-tabs my3-tabs">${[["all", "Все"], ["on", "Активные"], ["site", "С сайта"], ["chat", "Из чатов"], ["own", "Добавлены вами"], ["off", "Снятые"]]
-          .filter(([k]) => k === "all" || n[k]).map(([k, t]) =>
-          `<button type="button" class="${k === tab ? "on" : ""}" data-tab="${k}">${t}<b>${n[k]}</b></button>`).join("")}</nav>
-        ${shown.length ? LCard.grid(shown.map((x) => itemCard(x)).join("")) : `<div class="wk-empty">${ic("home")}<b>${items.length ? "Здесь пусто" : "Пока нет объявлений"}</b>
-          ${items.length ? "" : "Как только вы разместите объект в чатах с подтверждённым номером — он появится здесь. Или добавьте объект сами."}</div>`}` : ""}
+        <div class="my5-bar">
+          <nav class="nt2-tabs my3-tabs" id="myTabs"></nav>
+          ${items.length > 1 ? `<label class="my5-q">${ic("search")}<input id="myQ" type="search" autocomplete="off" enterkeyhint="search"
+            placeholder="Поиск: ЖК, улица, район, цена…" data-ph-short="Поиск по объектам" value="${esc(q)}" aria-label="Поиск по моим объектам">
+            <button type="button" id="myQClear" data-q-clear aria-label="Очистить" ${q ? "" : "hidden"}>${ic("x")}</button></label>` : ""}
+        </div>
+        <div id="myGrid"></div>` : ""}
       <p class="my-rules">${ic("help")}Менять можно только объявления с вашим подтверждённым номером. Свой объект висит ${data.own_days} дней — за 10, 5, 2 и 1 день
         до конца спросим «ещё актуален?» (уведомление на сайте и письмо): «да» — продлим, «нет» — снимем сразу, без ответа — снимем по сроку. Все правки сохраняются в журнале.</p>`;
+    renderGrid();
+    const qi = $("myQ");
+    if (qi) qi.addEventListener("input", () => { q = qi.value.trim(); renderGrid(); });
     if (window.PhoneVerify && $("verifyMount")) PhoneVerify.mount($("verifyMount"), { methods: data.verify_methods, again: data.phones.length > 0,
       onDone: () => { toast("Номер подтверждён"); load(); } });
   }
@@ -420,7 +456,8 @@
     }
     if (t.hasAttribute("data-ai-close")) { $("myAiBox").hidden = true; return; }
     if (t.id === "myAddPhone") { const m = $("myMorePh"); m.hidden = !m.hidden; t.classList.toggle("on", !m.hidden); return; }
-    if (t.dataset.tab) { tab = t.dataset.tab; renderList(); return; }
+    if (t.dataset.tab) { tab = t.dataset.tab; renderGrid(); return; }
+    if (t.hasAttribute("data-q-clear")) { q = ""; const qi = $("myQ"); if (qi) { qi.value = ""; qi.focus(); } renderGrid(); return; }
     if (t.dataset.status) { setStatus(Number(t.dataset.id), t.dataset.status); return; }
     if (t.dataset.copy) {
       try { await navigator.clipboard.writeText(t.dataset.copy); toast("Скопировано"); } catch { toast(t.dataset.copy, 5000); }
