@@ -18,16 +18,18 @@ import sqlite3
 from . import autolearn, districtmap, learning
 
 # точный дом (справочник, фид, ваши правки) — надёжно, не проверяем; сомнительно — соседний дом, улица, центр ЖК/района
-_AUTO_GEO = "('feed-cx', 'map-cx', 'geocoder-cx', 'map-district', 'osm-near', 'osm-street')"
+_AUTO_GEO = "('feed-cx', 'map-cx', 'geocoder-cx', 'map-district', 'osm-near', 'osm-street', 'osm-corner', 'osm-landmark')"
+# 16.11: слабые источники района — по соседям, по чату, по ориентиру / углу улиц, выбор нейросети
+_WEAK_D = "('vote-house', 'vote-cx', 'chat', 'landmark', 'corner', 'ai')"
 _CX_GEO = "('feed-cx', 'map-cx', 'geocoder-cx')"
 _SURE_GEO = "('osm-house', 'feed-house', 'learned')"
 SAMPLE_PER_SOURCE = 40   # ТЗ P4.0.1: в день по каждому источнику — 30–50 случайных решений, а не все подряд
 # Откуда решение сервиса (для выборки и оценки точности): район «по соседям», район по примерной точке, источник точки
-AUTO_SRC = (f"(CASE WHEN l.district_src IN ('vote-house', 'vote-cx') THEN 'district:' || l.district_src "
+AUTO_SRC = (f"(CASE WHEN l.district_src IN {_WEAK_D} THEN 'district:' || l.district_src "
             f"WHEN l.district_src = 'map' AND COALESCE(l.geo_src, '') NOT IN {_SURE_GEO} "
             f"AND l.geo_status NOT IN ('manual', 'learned', 'feed') THEN 'district:map-approx' "
             f"ELSE 'point:' || l.geo_src END)")
-_AUTO_ALL = (f"((l.admin_fixed = 0 AND (l.district_src IN ('vote-house', 'vote-cx') OR (l.district_src = 'map' "
+_AUTO_ALL = (f"((l.admin_fixed = 0 AND (l.district_src IN {_WEAK_D} OR (l.district_src = 'map' "
              f"AND COALESCE(l.geo_src, '') NOT IN {_SURE_GEO} AND l.geo_status NOT IN ('manual', 'learned', 'feed')))) "
              f"OR (l.geo_src IN {_AUTO_GEO} AND l.geo_status NOT IN ('manual', 'feed') "
              # центр ЖК при известном доме — не в проверку: такой дом сервис ищет сам (geocode.run: дом раньше ЖК)
@@ -36,7 +38,10 @@ SRC_LABEL = {"district:vote-house": "Район «как у соседей по 
              "district:map-approx": "Район по примерной точке", "point:feed-cx": "Точка — центр ЖК по фиду",
              "point:map-cx": "Точка — центр контура ЖК", "point:geocoder-cx": "Точка — ЖК по поиску",
              "point:map-district": "Точка — центр района", "point:osm-near": "Точка — соседний дом",
-             "point:osm-street": "Точка — середина улицы"}
+             "point:osm-street": "Точка — середина улицы", "district:chat": "Район по чату",
+             "district:landmark": "Район по ориентиру", "district:corner": "Район по углу улиц",
+             "district:ai": "Район выбрала нейросеть", "point:osm-corner": "Точка — угол улиц",
+             "point:osm-landmark": "Точка — рядом с ориентиром"}
 VISIBLE = ("l.is_active = 1 AND (l.district IS NOT NULL OR l.complex IS NOT NULL OR l.street IS NOT NULL "
            "OR l.settlement IS NOT NULL)")
 
@@ -45,6 +50,9 @@ QUEUES: list[dict] = [
     {"key": "conflict", "mode": "place", "label": "Спорные",
      "hint": "Источники не сходятся (ваше правило и ваша карта, карта и соседние объявления) — решите вы",
      "where": "l.place_conflict IS NOT NULL AND l.admin_fixed = 0"},
+    {"key": "dispute", "mode": "place", "label": "Правила и нейросеть спорят",
+     "hint": "Правила и нейросеть прочитали текст по-разному (комнаты, площадь, этаж, цена, адрес) — выберите, кто прав",
+     "where": "l.parse_dispute IS NOT NULL AND l.admin_fixed = 0"},
     {"key": "nodistrict", "mode": "place", "label": "Без района",
      "hint": "Не находятся фильтром по району",
      "where": "l.district IS NULL AND l.settlement IS NULL AND l.admin_fixed = 0"},
@@ -135,6 +143,7 @@ def overview(conn: sqlite3.Connection) -> dict:
     dist = dict(conn.execute(f"""SELECT CASE WHEN l.admin_fixed = 1 THEN 'yours'
                                         WHEN l.district_src = 'map' THEN 'map'
                                         WHEN l.district_src IN ('vote-house', 'vote-cx') THEN 'votes'
+                                        WHEN l.district_src IN ('chat', 'landmark', 'corner', 'ai', 'phrase') THEN 'hints'
                                         WHEN l.district IS NOT NULL OR l.settlement IS NOT NULL THEN 'text' ELSE 'none' END,
                                         COUNT(*) FROM listings l WHERE {VISIBLE} GROUP BY 1""").fetchall())
     rules = dict(conn.execute("SELECT kind, COUNT(*) FROM learned_rules GROUP BY kind").fetchall())
@@ -158,6 +167,8 @@ def overview(conn: sqlite3.Connection) -> dict:
                  "n": rules.get("cx_district", 0) + rules.get("cx_alias", 0), "unit": "правил"},
                 {"key": "votes", "label": "Соседние объявления того же дома / ЖК", "n": dist.get("votes", 0)},
                 {"key": "text", "label": "Текст объявления и справочник", "n": dist.get("text", 0)},
+                {"key": "hints", "label": "Подсказки: ориентир, угол улиц, чат, нейросеть, ваше объяснение (примерно)",
+                 "n": dist.get("hints", 0)},
                 {"key": "strules", "label": "Ваши правила «улица → район» (нет ни района в тексте, ни точки дома)",
                  "n": rules.get("street", 0), "unit": "правил"},
                 {"key": "none", "label": "Не определён — в очереди", "n": dist.get("none", 0), "bad": True},
@@ -187,7 +198,7 @@ def overview(conn: sqlite3.Connection) -> dict:
 # ─── всё выученное — одним списком ─────────────────────────────────────────
 KNOW_KINDS = {"addr": "Дом", "cx_alias": "Название ЖК", "cx_district": "ЖК → район", "street": "Улица → район",
               "frag_price": "Цена", "frag_deal": "Продажа / аренда", "point": "Точка на карте",
-              "frag_repair": "Ремонт (этот текст)", "repair_phrase": "Ремонт: слова"}
+              "frag_repair": "Ремонт (этот текст)", "repair_phrase": "Ремонт: слова", "place_phrase": "Адрес: ваше объяснение"}
 
 
 def knowledge(conn: sqlite3.Connection, kind: str = "", q: str = "", limit: int = 500) -> list[dict]:

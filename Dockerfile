@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 COPY web ./web
+COPY tools ./tools
 
 RUN useradd --create-home --uid 1000 strely && mkdir -p /app/data && chown strely /app/data
 USER strely

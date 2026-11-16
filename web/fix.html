@@ -17,9 +17,9 @@
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.min.css">
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=36">
-<link rel="stylesheet" href="/static/fix.css?v=19">
+<link rel="stylesheet" href="/static/fix.css?v=20">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=128">
+<link rel="stylesheet" href="/static/glass.css?v=129">
 </head>
 <body>
 <header class="nav"><div class="nav-in">
@@ -39,6 +39,7 @@
   <p class="fx-done" id="fxDone" hidden></p>
 
   <div class="fx-conflict" id="fxConflict" hidden></div>
+  <div class="fx-conflict fx-dispute" id="fxDispute" hidden></div>
   <div class="fx-group" id="fxGroup" hidden></div>
   <section class="fx-card" id="fxCard" hidden>
     <div class="fx-left">
@@ -53,6 +54,9 @@
       <div class="fx-gal" id="fxGal" data-lb="fix"></div>
       <div class="fx-facts" id="fxFacts"></div>
       <pre class="fx-text" id="fxText"></pre>
+      <!-- 16.11: слова о месте, которые сервис не понял, — объяснить один раз для всех объявлений (web/explain.js) -->
+      <div class="fx-explain" id="fxExplain"><button type="button" class="chip" id="fxExplainBtn">Объяснить адрес</button>
+        <small>Выделите в тексте слова о месте («за Красной площадью», «у Галереи») — сервис запомнит их для всех объявлений</small></div>
       <!-- 24.10: очередь «Ремонт» — ответ одним нажатием, сразу следующий объект; ответ учит сервис -->
       <div class="fx-repair" id="fxRepair" hidden>
         <p class="fx-repair-q">Что с ремонтом? <small id="fxRepairGuess"></small></p>
@@ -164,6 +168,7 @@
 <script src="/static/combo.js?v=3"></script>
 <script src="/static/yasel.js?v=4"></script>
 <script src="/static/lightbox.js?v=4"></script>
-<script src="/static/fix.js?v=30"></script>
+<script src="/static/explain.js?v=1"></script>
+<script src="/static/fix.js?v=31"></script>
 </body>
 </html>

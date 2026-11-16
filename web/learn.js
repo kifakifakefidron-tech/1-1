@@ -52,6 +52,7 @@
         <b>${Math.round(a.share * 100)}%</b><small>верно ${n0(a.ok)} из ${n0(a.checked)}</small></li>`).join("")}</ol>
       <p class="note">Меньше 80 % — источнику не стоит верить: напишите об этом, сервис перестанет им пользоваться.</p>`;
     renderRecheck(d.recheck);
+    loadUnparsed();
     const unc = d.uncontoured || [];
     $("lnUnc").hidden = !unc.length;
     $("lnUnc").innerHTML = `<h3>Районы из объявлений, которых нет на вашей карте — ${unc.length}</h3>
@@ -89,6 +90,44 @@
 
   // ─── всё выученное ───────────────────────────────────────────────────
   let kKind = "", kQuery = "", kTimer = 0, kinds = {};
+  // ─── 16.11: «Сервис не понял» — строки, похожие на адрес; объяснение — окно web/explain.js ────────
+  let unp = [], unpAll = false;
+  async function loadUnparsed(fresh) {
+    const r = await call(`/api/admin/unparsed${fresh ? "?fresh=1" : ""}`);
+    unp = (r.data && r.data.items) || [];
+    renderUnparsed();
+  }
+  function renderUnparsed() {
+    const box = $("lnUnp");
+    if (!unp.length) { box.innerHTML = `<p class="note">${ic("check")} Всё, что похоже на адрес, сервис понимает.</p>`; return; }
+    const rows = unpAll ? unp : unp.slice(0, 15);
+    box.innerHTML = `<ol class="ln-unp-l">${rows.map((u, i) => `<li>
+        <span class="ln-unp-t">«${esc(u.line)}»</span>
+        <span class="ln-unp-n">${n0(u.n)} ${u.n % 10 === 1 && u.n % 100 !== 11 ? "объявление" : "объявл."}${u.hidden ? ` · <b title="Не видны на сайте: нет ни района, ни ЖК, ни улицы">${n0(u.hidden)} не видно на сайте</b>` : ""}</span>
+        <span class="ln-unp-a"><a class="chip" href="/fix?id=${u.ids[0]}" title="Открыть пример на экране разбора">пример</a>
+          <button type="button" class="chip gold" data-unp="${i}">Объяснить</button></span></li>`).join("")}</ol>
+      ${unp.length > 15 ? `<button type="button" class="pill light" id="lnUnpMore">${unpAll ? "Свернуть" : `Показать все ${unp.length}`}</button>` : ""}`;
+  }
+  document.addEventListener("click", (e) => {
+    if (e.target.id === "lnUnpMore") { unpAll = !unpAll; renderUnparsed(); return; }
+    const b = e.target.closest("[data-unp]");
+    if (!b || !window.ExplainAddr) return;
+    const u = unp[+b.dataset.unp];
+    window.ExplainAddr.open({ phrase: u.line, onDone: (res) => {
+      toastLn(`Запомнили ${res.label}. Поправлено объявлений: ${res.changed}`);
+      loadUnparsed(true);
+      loadKnow();
+    } });
+  });
+  function toastLn(t) {
+    let el = document.getElementById("lnToast");
+    if (!el) { el = document.createElement("div"); el.id = "lnToast"; el.className = "toast"; el.setAttribute("popover", "manual"); document.body.appendChild(el); }
+    el.textContent = t;
+    try { el.showPopover(); } catch { /* */ }
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { try { el.hidePopover(); } catch { /* */ } }, 4000);
+  }
+
   async function loadKnow() {
     const r = await call(`/api/admin/learn/knowledge?${new URLSearchParams({ kind: kKind, q: kQuery })}`);
     if (!r.ok) return;

@@ -70,8 +70,18 @@ def tick(conn) -> dict:
     from . import autolearn, osmaddr
     if osmaddr.maybe_refresh(conn):   # справочник адресов OSM — раз в месяц (≈20 с)
         stats["osm_addr"] = osmaddr.loaded(conn)
+    from . import aiplace, placehints
+    if placehints.maybe_refresh(conn):   # 16.11: ориентиры OSM (ТЦ, рынки, парки, школы…) — раз в месяц
+        stats["osm_places"] = True
     learned = autolearn.run(conn)   # точки и районы из уже известного (фид, ЖК, контуры районов, соседние объявления)
     lap("самообучение")
+    ai = aiplace.run(conn)   # 16.11: нейросеть выбирает место из списков (только объявления без района; один раз каждое)
+    if ai:
+        stats["aiplace"] = ai
+    lap("нейросеть: место")
+    nb = placehints.maybe_border(conn)   # 16.11: дом на стыке районов — ищется по обоим (раз в час)
+    if nb:
+        stats["border"] = nb
     if learned.get("points") or learned.get("districts") or learned.get("recheck"):
         stats["autolearn"] = learned
     stats["geocoded"] = geocode.run(conn, limit=40)

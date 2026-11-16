@@ -108,6 +108,7 @@
     $("fxConflict").hidden = !(it && it.conflict);
     if (it && it.conflict) $("fxConflict").innerHTML = `${ic("alert")}<div><b>Спор:</b> ${esc(it.conflict)}.
       <small>Выберите верный район — сервис запомнит (галочки «научить» ниже).</small></div>`;
+    renderDispute(it);
     if (!it) {
       $("fxDone").innerHTML = `Очередь разобрана 🎉 <br><span class="note">Разобрано за сессию: ${ss.done.length}</span>`;
       return;
@@ -125,6 +126,7 @@
     $("fxText").textContent = it.text;
     // 24.10: очередь «Ремонт» — слова о состоянии подсвечены, ответ — одной кнопкой под текстом
     $("fxRepair").hidden = kind !== "repair";
+    $("fxExplain").hidden = kind === "repair";
     if (kind === "repair") {
       $("fxText").innerHTML = esc(it.text || "").replace(/(ремонт\S*|отделк\S*|чистов\S*|предчистов\S*|пчо|п\/чо|white\s*box|чернов\S*|состояни\S*|бетон\S*)/gi, "<mark>$1</mark>");
       $("fxRepairGuess").textContent = `сервис думает: ${(it.repair_why && it.repair_why.result) || { yes: "с ремонтом", no: "без ремонта" }[it.repair] || "не указано"}`;
@@ -190,6 +192,46 @@
     if (needMap) showGeo(it);
     window.scrollTo({ top: 0 });
   }
+
+  // 16.11: правила и нейросеть прочитали текст по-разному — выбор одним нажатием заполняет поле
+  const DSP = { rooms: "Комнаты", area: "Площадь, м²", floor: "Этаж", floors: "Этажность", price: "Цена", street: "Улица",
+    house: "Дом", complex: "ЖК", district: "Район" };
+  const dspText = (f, v) => f === "price" ? price(v, item && item.deal) : f === "rooms" && +v === 0 ? "студия" : String(v);
+  function renderDispute(it) {
+    const d = it && it.dispute;
+    $("fxDispute").hidden = !d;
+    if (!d) return;
+    $("fxDispute").innerHTML = `${ic("alert")}<div><b>Правила и нейросеть прочитали текст по-разному.</b>
+      <small>Нажмите верное — поле ниже заполнится. Потом «Сохранить».</small>
+      <div class="fx-dsp">${Object.entries(d).map(([f, v]) => `<div class="fx-dsp-r"><span>${esc(DSP[f] || f)}</span>
+        ${[["rules", "правила"], ["ai", "нейросеть"]].map(([w, t]) => `<button type="button" class="chip" data-dsp="${esc(f)}"
+          data-v="${esc(v[w])}">${t}: <b>${esc(dspText(f, v[w]))}</b></button>`).join("")}</div>`).join("")}</div></div>`;
+  }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-dsp]");
+    if (!b || !item) return;
+    const f = b.dataset.dsp, v = b.dataset.v;
+    b.parentElement.querySelectorAll("[data-dsp]").forEach((x) => x.classList.toggle("on", x === b));
+    if (f === "price") {
+      const rent = item.deal === "rent";
+      $("fxPriceIn").value = String(+(+v / (rent ? 1000 : 1e6)).toFixed(rent ? 0 : 3)).replace(".", ",");
+      if (window.moneyHints) window.moneyHints(document);
+    } else if (f === "district") pickDistrict(v);
+    else if (f === "complex") { $("fxComplex").value = v; renderLearn(); }
+    else {
+      const el = document.querySelector(`#fxFields [name="f_${f}"]`);
+      if (el) { el.value = f === "rooms" ? String(Math.min(+v, 5)) : String(v).replace(".", ","); $("fxFields").open = true; }
+    }
+  });
+  // 16.11: «Объяснить адрес» — выделенные слова (или пусто) → окно web/explain.js
+  $("fxExplainBtn").addEventListener("click", () => {
+    if (!window.ExplainAddr) return;
+    const sel = String(getSelection()).trim();
+    window.ExplainAddr.open({ phrase: sel && $("fxText").contains(getSelection().anchorNode) ? sel : "", onDone: (res) => {
+      toast(`Запомнили ${res.label}. Поправлено объявлений: ${res.changed}`, 4500);
+      if (item) fetchItem(item.id).then(show);
+    } });
+  });
 
   // Группа: одна правка — сразу для всех объектов того же ЖК / дома / улицы
   function renderGroup() {
@@ -639,6 +681,7 @@
   });
   // Клавиши: Enter — сохранить и дальше, → — пропустить, ← — назад, 1–9 — район из подсказок
   document.addEventListener("keydown", (e) => {
+    if (e.target.closest && e.target.closest(".ex-dlg")) return;   // окно «Объяснить адрес» — свои клавиши
     const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
     if (e.key === "Enter") {
       const id = document.activeElement.id;

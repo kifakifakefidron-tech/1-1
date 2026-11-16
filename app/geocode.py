@@ -162,8 +162,8 @@ def learn(conn: sqlite3.Connection, row, lat: float, lon: float) -> int:
     return fixed
 
 
-def _district_from_map(conn: sqlite3.Connection, r, coords) -> None:
-    """Района в объявлении нет, а точная точка есть — район по карте районов."""
+def _district_from_map(conn: sqlite3.Connection, r, coords, src: str = "map") -> None:
+    """Района в объявлении нет, а точная точка есть — район по карте районов (src — откуда точка: угол/ориентир — слабее)."""
     from . import districtmap
     if not districtmap.auto_enabled():
         return
@@ -171,8 +171,8 @@ def _district_from_map(conn: sqlite3.Connection, r, coords) -> None:
     if hit and hit[1] == "district":
         from .ingest import _reindex, make_search_text
         st = make_search_text({**dict(r), "district": hit[0]})
-        conn.execute("UPDATE listings SET district = ?, district_src = 'map', search_text = ? WHERE id = ? AND district IS NULL",
-                     (hit[0], st, r["id"]))
+        conn.execute("UPDATE listings SET district = ?, district_src = ?, search_text = ? WHERE id = ? AND district IS NULL",
+                     (hit[0], src, st, r["id"]))
         _reindex(conn, r["id"], st)
 
 
@@ -214,8 +214,9 @@ def run(conn: sqlite3.Connection, limit: int = 30) -> int:
             hit = known.point(r)
         if hit:
             conn.execute("UPDATE listings SET lat=?, lon=?, geo_status=?, geo_src=? WHERE id=?", (*hit, r["id"]))
-            if not r["district"]:
-                _district_from_map(conn, r, hit[:2])
+            if not r["district"] and not r["settlement"]:
+                from .placehints import HINT_SRC
+                _district_from_map(conn, r, hit[:2], HINT_SRC.get(hit[3], "map"))
             conn.commit()
             done += 1
             continue

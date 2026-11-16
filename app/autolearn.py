@@ -18,7 +18,7 @@ import sqlite3
 import time
 from collections import Counter, defaultdict
 
-from . import districtmap, geo, geocode, learning, osmaddr
+from . import districtmap, geo, geocode, learning, osmaddr, placehints
 from .textnorm import words
 
 log = logging.getLogger(__name__)
@@ -36,6 +36,8 @@ GEO_SRC = {"feed-house": "тот же дом в фиде СТРЕЛ", "feed-cx":
            "learned": "ваши правки точек", "geocoder": "поиск по адресу (проверен)"}
 DISTRICT_SRC = {"map": "по карте районов (точка внутри контура)", "vote-house": "так в других объявлениях этого дома",
                 "vote-cx": "так в других объявлениях этого ЖК"}
+GEO_SRC.update(placehints.GEO_SRC)            # 16.11: угол улиц, ориентир, ваше объяснение адреса
+DISTRICT_SRC.update(placehints.DISTRICT_SRC)  # 16.11: по чату, по ориентиру, по углу, на стыке районов
 
 
 _CX_TAIL = re.compile(r"(?:\s+(?:очередь|оч|литер|лит|корпус|корп|секция|дом|этап|фаза|жк))*(?:\s+\d+[а-я]?)+$"
@@ -183,6 +185,10 @@ class Known:
         hit = self.cx_point(row)
         if hit:
             return *hit[0], "ok", hit[1]   # центр ЖК — не дом (уровень complex по geo_src): одна метка ЖК, район не решает
+        # 16.11: ваше объяснение адреса → угол улиц → ориентир («у ТЦ Галерея») — точнее середины улицы
+        ph = placehints.point_hint(self.conn, row)
+        if ph and self.plausible(row, ph[0], ph[1]):
+            return ph
         if osm and self.plausible(row, osm[0], osm[1]):   # дома нет — середина улицы (примерно)
             return osm
         return None
@@ -223,6 +229,12 @@ def fill_points(conn: sqlite3.Connection, known: Known | None = None) -> int:
         if hit and (r["lat"], r["lon"]) != hit[:2]:
             conn.execute("UPDATE listings SET lat = ?, lon = ?, geo_status = ?, geo_src = ? WHERE id = ?",
                          (*hit, r["id"]))
+            # 16.11: угол / ориентир / ваше объяснение, а района нет — район по нарисованному контуру под точкой
+            dsrc = placehints.HINT_SRC.get(hit[3])
+            if dsrc and not r["district"] and not r["settlement"] and not r["admin_fixed"] and r["source"] != "own":
+                dname = placehints.district_at_hint(conn, hit[0], hit[1])
+                if dname:
+                    _set_district(conn, r, dname, dsrc)
             n += 1
     conn.commit()
     return n
@@ -329,7 +341,6 @@ def candidates(conn: sqlite3.Connection, row, votes=None) -> list[tuple[str, str
 
 def fill_districts(conn: sqlite3.Connection) -> dict:
     """Объекты без района: ставим район, если источники согласны. Спорные — остаются админу."""
-    from .ingest import _reindex, make_search_text, make_title
     votes = _votes(conn)
     done = disputed = 0
     conn.execute("UPDATE listings SET place_conflict = NULL WHERE place_conflict LIKE 'votes:%'")
@@ -337,6 +348,11 @@ def fill_districts(conn: sqlite3.Connection) -> dict:
                              AND admin_fixed = 0 AND source != 'own'""").fetchall():
         cands = candidates(conn, r, votes)
         if not cands:
+            # 16.11: других источников нет — район по чату, где почти всё из одного района (слабая подсказка)
+            ch = placehints.chat_district(conn, r["id"])
+            if ch:
+                _set_district(conn, r, ch, "chat")
+                done += 1
             continue
         if len({d for d, _ in cands}) > 1:
             disputed += 1
@@ -344,21 +360,31 @@ def fill_districts(conn: sqlite3.Connection) -> dict:
             conn.execute("UPDATE listings SET place_conflict = ? WHERE id = ?",
                          ("votes:" + "; ".join(f"{why[s]} — «{d}»" for d, s in cands), r["id"]))
             continue
-        d = {**dict(r), "district": cands[0][0]}
-        d["title"] = make_title(d)
-        d["search_text"] = make_search_text(d)
-        conn.execute("UPDATE listings SET district = ?, district_src = ?, title = ?, search_text = ? WHERE id = ?",
-                     (d["district"], cands[0][1], d["title"], d["search_text"], r["id"]))
-        _reindex(conn, r["id"], d["search_text"])
+        _set_district(conn, r, cands[0][0], cands[0][1])
         done += 1
     conn.commit()
     return {"districts": done, "disputed": disputed}
 
 
+def _set_district(conn: sqlite3.Connection, r, name: str, src: str) -> None:
+    from .ingest import _reindex, make_search_text, make_title
+    d = {**dict(r), "district": name}
+    d["title"] = make_title(d)
+    d["search_text"] = make_search_text(d)
+    conn.execute("UPDATE listings SET district = ?, district_src = ?, title = ?, search_text = ? WHERE id = ?",
+                 (name, src, d["title"], d["search_text"], r["id"]))
+    _reindex(conn, r["id"], d["search_text"])
+
+
 def hints(conn: sqlite3.Connection, row) -> list[dict]:
     """Подсказки для экрана разбора: районы по карте и по соседним объявлениям."""
-    return [{"name": d, "why": {"map": "по карте районов", "vote-house": "так в объявлениях этого дома",
-                                "vote-cx": "так в объявлениях этого ЖК"}[src]} for d, src in candidates(conn, row)]
+    why = {"map": "по карте районов", "vote-house": "так в объявлениях этого дома", "vote-cx": "так в объявлениях этого ЖК"}
+    out = [{"name": d, "why": why.get(src, src)} for d, src in candidates(conn, row)]
+    if not out and not row["settlement"]:
+        ch = placehints.chat_district(conn, row["id"])
+        if ch:
+            out.append({"name": ch, "why": "так почти во всём чате, где прислали"})
+    return out
 
 
 # ─── перепроверка всех объектов (справочник адресов + нарисованные районы) ─

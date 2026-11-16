@@ -128,3 +128,17 @@
 .ln-qm em.ok { color: var(--ok); }
 .ln-qm em.bad { color: var(--bad); }
 .ln-qm.muted { opacity: .7; }
+
+/* 16.11: «Сервис не понял — объясните» */
+.ln-unp-l { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px; }
+.ln-unp-l li { display: grid; grid-template-columns: 1fr auto auto; gap: 6px 14px; align-items: center; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: var(--r-md, 12px); background: var(--card); }
+.ln-unp-t { font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
+.ln-unp-n { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.ln-unp-n b { color: var(--bad); font-weight: 600; }
+.ln-unp-a { display: flex; gap: 6px; }
+@media (max-width: 640px) {
+  .ln-unp-l li { grid-template-columns: 1fr; }
+  .ln-unp-n { white-space: normal; }
+}
+.ln-unp-a .chip.gold { background: var(--gold); color: var(--teal-900); border-color: transparent; font-weight: 600; }

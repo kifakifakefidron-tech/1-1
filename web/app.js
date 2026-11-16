@@ -1362,7 +1362,8 @@
         ${contactHTML(o)}
         ${gone ? "" : `<div class="dv-acts">${actions}</div>`}
         ${o.lat && o.lon && !o.loading && ["street", "district"].includes(o.geo_level)
-          ? `<p class="dv-vague">Адрес уточняется — в объявлении ${o.geo_level === "street" ? "указана только улица" : "указан только район"}, поэтому на карте объекта нет.</p>` : ""}
+          ? `<p class="dv-vague">Адрес уточняется — в объявлении ${o.geo_hint ? `только ${o.geo_hint}` : o.geo_level === "street" ? "указана только улица" : "указан только район"}, поэтому на карте объекта нет.</p>` : ""}
+        ${o.district_note && !o.loading ? `<p class="dv-vague">Район «${esc(o.district)}» определён примерно — ${esc(o.district_note)}. Уточните у агента.</p>` : ""}
         ${o.lat && o.lon && !o.loading && !["street", "district"].includes(o.geo_level) ? `<div class="dv-map-wrap"><div class="dv-map" id="dvMap" aria-label="Объект на карте"></div>
           ${o.geo_approx ? `<p class="note dv-map-note">Место примерное — в объявлении нет точного адреса</p>` : ""}</div>` : ""}
         <div class="dv-accs">

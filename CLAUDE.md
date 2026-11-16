@@ -1243,6 +1243,30 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   о расхождении; подсказки #placeDChips/#placeCChips — «X по точке на карте», «… было» (data-pset); метку передвинули и района
   нет — ставится сам; точки нет — метка в центре контура района, карта по контуру. Сравнение имён — pzKey (регистр, ё, «п.»).
   districtmap._bbox — контур без lat_min… в базе считается по точкам (запрос ?at= падал с TypeError).
+- 16.11 (ночь, Артём — точность адресов и районов, пп. 1, 2, 7, 8): app/placehints.py — подсказки места, которые раньше
+  терялись: УГОЛ УЛИЦ («угол Красной и Северной», «Ставропольская / Вишняковой»: обе улицы → справочник OSM, точка — середина
+  между ближайшими домами, только если ≤ CORNER_KM 250 м; geo_src 'osm-corner', approx); ОРИЕНТИРЫ — таблица osm_places
+  (Overpass раз в 30 дней, placehints.maybe_refresh: ТЦ, рынки, парки, школы/гимназии/лицеи «№ N», больницы, стадионы,
+  вокзалы; одноимённые дальше 1,5 км — не используем), «рядом с ТЦ Галерея» → ближайший дом своей улицы ≤ 1 км или сам
+  ориентир (geo_src 'osm-landmark', approx); в autolearn.Known.point — после центра ЖК, до середины улицы, с plausible;
+  fill_points/geocode._district_from_map(src) ставят район по контуру с district_src corner/landmark/phrase. РАЙОН ПО ЧАТУ
+  (chat_priors: чат с ≥15 объектами и ≥80 % из одного района или район в названии чата) — только когда других источников нет
+  (fill_districts, district_src 'chat'). ОБЪЯСНЕНИЯ АДМИНА: learned_rules kind 'place_phrase' (ключ — words фразы) →
+  placehints.apply_phrases в ingest.save_object до learning.apply, learn_phrase сразу проставляет уже собранным (только пустые
+  поля, admin_fixed не трогает, журнал 'объяснение адреса'); POST /api/admin/place-phrase, окно web/explain.js (ExplainAddr.open)
+  на /learn («Сервис не понял — объясните», app/unparsed.py, GET /api/admin/unparsed: строки-адреса объявлений без района,
+  одинаковые с точностью до цифр — вместе) и на /fix (#fxExplainBtn — выделенные слова). СТЫК РАЙОНОВ: placehints.border
+  (раз в час) — точный дом ≤ 100 м от соседнего нарисованного района → extra_districts, добавленное — listings.border_districts
+  (пересчитывается и снимается). СЛАБЫЙ РАЙОН: search.row_to_item district_note (placehints.WEAK: chat, landmark, corner, vote-cx)
+  и geo_hint → в окне объекта «Район … определён примерно». НЕЙРОСЕТЬ: parser._disputes — где ОБА (правила и нейросеть) что-то
+  нашли и не согласны (комнаты, площадь > 1, этаж, этажность, цена > 5 %, улица, дом, ЖК, район) → listings.parse_dispute,
+  очередь brain «Правила и нейросеть спорят» (kind dispute, /fix: #fxDispute — кнопки «правила: X / нейросеть: Y» заполняют
+  поля; правка админа обнуляет). app/aiplace.py — объявлениям без района (один раз, listings.ai_checked; ≤5 за цикл, ≤40 с;
+  db.flush до запроса; текст без телефонов и имён) нейросеть ВЫБИРАЕТ из списков (улицы OSM и ЖК по основам слов текста, все
+  районы) и обязана привести цитату из текста; заполняются только пустые поля, district_src 'ai', журнал 'нейросеть'. Новые
+  источники — в выборке «Проверить решения сервиса» (brain._WEAK_D/_AUTO_GEO, SRC_LABEL). Dockerfile копирует tools/
+  (`docker compose exec web python -m tools.geo_audit`). Отложено: справочник ФНС ГАР — только для проверки и написания
+  (приоритет: правила админа > точки OSM > ГАР), правка района/адреса агентом своих объектов, жалоба «неверный адрес» → /fix.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

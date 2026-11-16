@@ -564,6 +564,11 @@ def row_to_item(r: sqlite3.Row, with_contacts: bool) -> dict:
     keys = r.keys()
     d["price_doubt"] = bool(r["price_doubt"]) if "price_doubt" in keys else False
     d["geo_level"] = geo_level(r["lat"], r["geo_status"], r["geo_src"]) if "geo_src" in keys and "lat" in keys else None
+    # 16.11 (Артём, п. 7): слабый источник района/точки — в окне объекта «определён примерно»
+    from .placehints import WEAK
+    d["district_note"] = WEAK.get(r["district_src"]) if "district_src" in keys and d.get("district") else None
+    d["geo_hint"] = {"osm-corner": "угол улиц", "osm-landmark": "ориентир", "phrase": "описание места"}.get(
+        r["geo_src"]) if "geo_src" in keys else None
     d["verified"] = bool(r["verified"]) if "verified" in r.keys() else None
     d["photos"] = json.loads(r["photos"] or "[]")
     from . import thumbs

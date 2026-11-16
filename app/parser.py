@@ -37,6 +37,7 @@ class ParsedObject:
     room_kind: str | None = None      # studio | classic | euro | mini
     article: str | None = None        # «Артикул: 337» — объект есть на сайте СТРЕЛ
     extra_districts: list[str] = field(default_factory=list)   # ещё районы (правила админа: объект на границе)
+    disputes: dict = field(default_factory=dict)   # 16.11: {поле: {"rules": …, "ai": …}} — правила и нейросеть не согласны
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -314,14 +315,56 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
         phones = [sender]
 
     description = strip_phones(_clean_description(fragment))
+    disputes = _disputes(obj, r, rk, strict_price, deal, fragment, text_words) if obj else {}
 
     return ParsedObject(
         type=otype, deal=deal, rooms=rooms, area=area, land=land, floor=floor, floors=floors,
         price=price, district=district, complex=complex_rec.name if complex_rec else None,
         settlement=settlement, street=street, house=(house or "").strip() or None,
         description=description, fragment=fragment.strip(), phones=phones, phone_roles=roles,
-        room_kind=room_kind, article=rules.extract_article(fragment),
+        room_kind=room_kind, article=rules.extract_article(fragment), disputes=disputes,
     )
+
+
+def _disputes(obj: dict, r, rk, strict_price, deal: str, fragment: str, text_words: str) -> dict:
+    """16.11 (Артём: «сверка правил и нейросети»): где правила и нейросеть прочитали текст по-разному.
+    Сравниваем только когда ОБА что-то нашли — пустое у одного не спор. Решает админ на /fix?kind=dispute."""
+    out = {}
+
+    def put(f, a, b):
+        out[f] = {"rules": a, "ai": b}
+    ai_rooms = _int(obj.get("rooms"))
+    ru_rooms = rk[1] if rk else r.rooms
+    if ai_rooms is not None and ru_rooms is not None and ai_rooms != ru_rooms:
+        put("rooms", ru_rooms, ai_rooms)
+    ai_area = _num(obj.get("area_m2"))
+    if ai_area and r.area and abs(ai_area - r.area) > 1 and not (r.land and abs(ai_area - r.land) < 0.01):
+        put("area", r.area, ai_area)
+    for f in ("floor", "floors"):
+        a, b = getattr(r, f), _int(obj.get(f))
+        if a and b and a != b:
+            put(f, a, b)
+    ai_price = _int(obj.get("price_rub"))
+    if strict_price and ai_price and ai_price >= (300_000 if deal == "sale" else 1000) \
+            and abs(ai_price - strict_price) / strict_price > 0.05:
+        put("price", strict_price, ai_price)
+    ai_street = obj.get("street") if _in_text(obj.get("street"), text_words) and not is_field_label(obj.get("street")) else None
+    if ai_street and r.street and words(ai_street).replace("улица ", "") not in words(r.street) \
+            and words(r.street) not in words(ai_street):
+        put("street", r.street, ai_street)
+    ai_house = str(obj.get("house") or "").strip()
+    if ai_house and r.house and _in_text(ai_house, text_words) and words(ai_house).replace(" ", "") != words(r.house).replace(" ", ""):
+        put("house", r.house, ai_house)
+    cx_ai = obj.get("complex")
+    cx_ru = geo.find_complex_in_text(fragment)
+    if cx_ai and cx_ru and _in_text(re.sub(r"(?i)^\s*(?:жк|ж/к)\s+", "", cx_ai), text_words) \
+            and geo.complex_key(cx_ai) != geo.complex_key(cx_ru.name):
+        put("complex", cx_ru.name, geo.pretty_name(re.sub(r"(?i)^\s*(?:жк|ж/к)\s+", "", cx_ai)))
+    d_ru = geo.find_district_in_text(fragment)
+    d_ai = geo.canonical_district(obj.get("district")) if obj.get("district") and _in_text(obj.get("district"), text_words) else None
+    if d_ru and d_ai and d_ru != d_ai:
+        put("district", d_ru, d_ai)
+    return out
 
 
 # Подписи полей объявления — не улицы («Площадь: 45 м²», «Этаж 3/9», «Цена 5 млн»): нейросеть иногда отдаёт их улицей

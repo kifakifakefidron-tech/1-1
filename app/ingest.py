@@ -338,6 +338,8 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
     """Создаёт новый объект или обновляет найденный дубль. Возвращает (id, как сопоставили)."""
     # Правки админа (ЖК/район) — до поиска дублей: объявление совпадёт с уже исправленной карточкой
     osmaddr.apply(conn, o)      # опечатка в улице («Командоская») — до правил и дублей: одна улица, а не две
+    from . import placehints
+    placehints.apply_phrases(conn, o)   # 16.11: ваши объяснения «эти слова = район / ЖК / улица» — пустые поля
     learning.apply(conn, o)
     if o.complex:   # «Краснодар», «Жилой квартал»… — не ЖК; тот же ЖК в другом написании — принятое в базе название
         from . import cxnorm, geoaudit
@@ -477,6 +479,10 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         )
         d["search_text"] = merged["search_text"]
     _reindex(conn, lid, d["search_text"])
+    if d.get("disputes"):   # 16.11: правила и нейросеть разобрали по-разному — в очередь «спорят» (пока админ не решил)
+        conn.execute("""UPDATE listings SET parse_dispute = ? WHERE id = ? AND parse_dispute IS NULL
+                        AND COALESCE(admin_fixed, 0) = 0 AND source = 'chat'""",
+                     (json.dumps(d["disputes"], ensure_ascii=False), lid))
     # «Под задатком», «забронирована» — с продажи снят сразу; новый пост без задатка возвращает объект
     from .rules import under_deposit, is_sold
     from .region import mark_foreign
@@ -763,6 +769,7 @@ def set_fields(conn: sqlite3.Connection, listing_id: int, fields: dict, user_id:
     adm.update({k: ("" if (k == "repair" and v is None) else v) for k, v in ch.items()})
     sets["admin_fields"] = json.dumps(adm, ensure_ascii=False)
     sets["admin_fixed"] = 1
+    sets["parse_dispute"] = None   # 16.11: спор правил и нейросети решён админом
     if "street" in ch or "house" in ch:
         sets["geo_status"] = r["geo_status"] if r["geo_status"] in ("manual", "feed") else "pending"   # новый адрес — искать точку заново
     conn.execute(f"UPDATE listings SET {', '.join(f'{k} = ?' for k in sets)} WHERE id = ?", (*sets.values(), listing_id))

@@ -2410,7 +2410,7 @@ def api_admin_place(request: Request, body: dict | None = None):
     d["title"] = make_title(d)
     d["search_text"] = make_search_text(d)
     conn.execute("""UPDATE listings SET complex = ?, district = ?, extra_districts = ?, search_text = ?, admin_fixed = 1,
-                    district_src = NULL, place_conflict = NULL, geo_status = CASE WHEN geo_status IN ('manual', 'learned', 'feed') THEN geo_status ELSE 'pending' END
+                    district_src = NULL, place_conflict = NULL, parse_dispute = NULL, geo_status = CASE WHEN geo_status IN ('manual', 'learned', 'feed') THEN geo_status ELSE 'pending' END
                     WHERE id = ?""", (cx, district, json.dumps(extra, ensure_ascii=False), d["search_text"], lid))
     _reindex(conn, lid, d["search_text"])
     for field, old, new in (("complex", row["complex"], cx), ("district", row["district"], district)):
@@ -2502,6 +2502,7 @@ def _fix_item(conn, lid: int) -> dict | None:
         "zone": _zone(conn, r["district"]),
         "learn_stats": learning.safety(conn, r),   # распределение улицы и ЖК по районам — какие правила безопасно учить
         "repair_why": ingest.explain_repair(conn, r),   # 31.10: очередь «Ремонт» — как сервис решил, что сработало и что выключено
+        "dispute": json.loads(r["parse_dispute"]) if r["parse_dispute"] else None,   # 16.11: правила ≠ нейросеть
     }
 
 
@@ -2824,6 +2825,31 @@ def api_admin_repair_phrase(request: Request, body: dict | None = None):
         return _err(res["error"])
     _bump_cache()
     return JSONResponse(res)
+
+
+def api_admin_place_phrase(request: Request, body: dict | None = None):
+    """16.11: «Объяснить адрес» — POST {phrase, district|complex|street,house|settlement|lat,lon|none} → правило для всех
+    объявлений с этими словами (placehints.learn_phrase): сейчас — только пустые поля, правленые вами не трогаются."""
+    user, err = _need_admin(request)
+    if err:
+        return err
+    body = body or {}
+    from . import placehints
+    res = placehints.learn_phrase(db.get(), str(body.get("phrase") or ""), body, user["id"])
+    if res.get("error"):
+        return _err(res["error"])
+    _bump_cache()
+    return JSONResponse(res)
+
+
+def api_admin_unparsed(request: Request, body: dict | None = None):
+    """16.11: «Сервис не понял» — строки, похожие на адрес, которые сервис не прочитал (app/unparsed.py)."""
+    _, err = _need_admin(request)
+    if err:
+        return err
+    from . import unparsed
+    items = unparsed.report(db.get(), fresh=request.query_params.get("fresh") == "1")
+    return JSONResponse({"items": items[:120], "total": len(items)})
 
 
 def api_admin_fix(request: Request, body: dict | None = None):
@@ -3371,6 +3397,8 @@ routes = [
     Route("/api/admin/geo-queue", threaded(api_admin_geo_queue)),
     Route("/api/admin/fix", threaded(api_admin_fix), methods=["GET", "POST"]),
     Route("/api/admin/repair-phrase", threaded(api_admin_repair_phrase), methods=["POST"]),
+    Route("/api/admin/place-phrase", threaded(api_admin_place_phrase), methods=["POST"]),
+    Route("/api/admin/unparsed", threaded(api_admin_unparsed)),
     Route("/api/admin/geo-audit", threaded(api_admin_geo_audit), methods=["GET", "POST"]),
     Route("/api/admin/dir", threaded(api_admin_dir), methods=["GET", "POST"]),
     Route("/api/admin/reconcile", threaded(api_admin_reconcile), methods=["GET", "POST"]),

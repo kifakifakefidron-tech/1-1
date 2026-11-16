@@ -217,6 +217,11 @@ CREATE TABLE IF NOT EXISTS osm_addr (
     lat REAL NOT NULL, lon REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_osm_addr ON osm_addr (street_key, house_key);
+-- 16.11: ориентиры из OpenStreetMap (app/placehints.py): ТЦ, рынки, парки, школы, стадионы, вокзалы, больницы
+CREATE TABLE IF NOT EXISTS osm_places (
+    kind TEXT NOT NULL, key TEXT NOT NULL, name TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_osm_places ON osm_places (kind, key);
 CREATE TABLE IF NOT EXISTS geo_learned (
     key TEXT PRIMARY KEY,            -- addr:<посёлок>|<улица>|<дом>  или  cx:<ЖК>
     lat REAL NOT NULL, lon REAL NOT NULL, n INTEGER NOT NULL DEFAULT 1, ts INTEGER NOT NULL, label TEXT
@@ -458,6 +463,9 @@ MIGRATIONS = [
     ("users", "consent_at", "INTEGER"),       # когда дал согласие на обработку ПДн (галочка при входе, документ /consent)
     ("users", "consent_ver", "TEXT"),         # редакция документа согласия (POLICY_DATE)
     ("client_items", "question", "TEXT"),     # последний вопрос клиента из подборки (ответ «нравится» не трогает)    # цена «под вопросом» (pricefix): вне сортировок/фильтров по цене    # «этажи 2 и 6» — в посте несколько квартир (ТЗ «админка-гео» P4.0.2)
+    ("listings", "parse_dispute", "TEXT"),     # 16.11: правила и нейросеть разошлись — {поле: {rules, ai}} (очередь «спорят»)
+    ("listings", "ai_checked", "INTEGER"),     # 16.11: нейросеть уже выбирала адрес из списка вариантов (aiplace)
+    ("listings", "border_districts", "TEXT"),  # 16.11: районы, добавленные в extra_districts как «дом на стыке» (placehints.border)
     ("listings", "description_ts", "INTEGER"), # когда последний раз обновлялся текст объявления          # цвет подборки в списке (палитра settings.COLORS)
     ("collections", "client_title", "TEXT"),   # заголовок, который видит клиент (название подборки — только агенту)   # подборка сделана для клиента CRM («Всё в подборку»)   # настройки аккаунта (app/settings.py): вид подборок, порядок блоков кабинета   # цвет события в планере (gold, sky, …; пусто — по виду события)   # событие по клиенту (CRM)  # источники спорят: «rule:…» (правило ≠ карта), «votes:…» (карта ≠ соседи)   # откуда район, если его поставил сервис сам: map | vote-house | vote-cx                     # какую ошибочную цену разбор давал (её и не принимаем)   # админ сам поставил продажу/аренду — автоматика не трогает                     # свой текст объявления для клиента (вместо исходного)                              # статус агента по объекту: call | show | think | refuse | deal                   # % к медиане м² по ЖК/району (hooks.update_market_diff)
 ]
