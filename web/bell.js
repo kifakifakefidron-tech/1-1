@@ -46,7 +46,8 @@
   // «Открыть» и «Все уведомления», полоска — сколько осталось до закрытия (наведение — пауза)
   const KIND = { search: ["search", "Новое по поиску"], price: ["trend-down", "Цена изменилась"], gone: ["x-circle", "Объект снят"],
     client: ["users", "Клиент"], own: ["home", "Мой объект"], plan: ["calendar", "Планер"], sub: ["card", "Подписка"],
-    billing: ["coins", "Оплата сервиса"], buyer: ["briefcase", "Есть покупатель"] };
+    billing: ["coins", "Оплата сервиса"], buyer: ["briefcase", "Есть покупатель"],
+    feedback: ["chat", "Поддержка"] };
   const ic = (name) => (window.ic ? window.ic(name) : ICON);
   function pop(n) {
     let box = document.getElementById("bellPop");

@@ -73,7 +73,7 @@
         card(o.users, "пользователей"), card(o.users_access, "с открытым доступом", { ok: true }), card(o.users_paid, "оплатили подписку", { ok: o.users_paid > 0 }),
         ...(o.agent_consent ? [card(`${o.agent_consent.verified} из ${o.agent_consent.agents}`, "агентов подтвердили номер"),
           card(o.agent_consent.published, "дали согласие на показ номера"), card(o.agent_consent.hidden, "агентов скрыли номер")] : []),
-        card(o.views_24h, "открытий номеров за сутки"), card(o.complaints_new, "новых жалоб", { warn: o.complaints_new > 0 }),
+        card(o.views_24h, "открытий номеров за сутки"), card(o.complaints_new, "новых жалоб и отзывов", { warn: o.complaints_new > 0 }),
         card(o.optouts, "скрытых номеров"),
       ]),
       sec("Сервис", [
@@ -427,12 +427,36 @@
     restored: "Вернули на сайт" };
   const CM_OBJ = { active: ["ok", "на сайте"], hidden: ["warn", "снят вами"], deleted: ["bad", "удалён навсегда"], gone: ["off", "снят (продан / срок)"] };
   let cmShow = "new";
+  // 16.11 (Артём): идеи и отзывы из «Поддержки» (reason 'feedback:<вид>', без объекта) — своя карточка и свои решения
+  const FB_KIND = { idea: "Идея", ux: "Неудобно", bug: "Ошибка на сайте", other: "Другое" };
+  const FB_STATUS = { kept: "Прочитано", done: "Сделали — автору ушло уведомление" };
+  function feedbackCard(c, who) {
+    const kind = String(c.reason).slice(9);
+    const lines = (c.text || "").split("\n");
+    const meta = lines.filter((l) => /^(Где|Можно связаться для уточнения): /.test(l));
+    const text = lines.filter((l) => !meta.includes(l)).join("\n").trim();
+    const acts = c.status === "new" ? `
+        <button type="button" class="cm-b" data-cm-act="keep" data-c="${c.id}" title="Прочитали — убрать из новых">${icn("check")}Прочитано</button>
+        <button type="button" class="cm-b" data-cm-act="done" data-c="${c.id}" title="Сделали по совету — автору придёт уведомление">${icn("star")}Сделали</button>`
+      : `<span class="cm-done">${esc(FB_STATUS[c.status] || CM_STATUS[c.status] || c.status)}${c.decided_at ? ` · ${when(c.decided_at)}` : ""}</span>
+        ${c.status !== "done" ? `<button type="button" class="cm-b" data-cm-act="done" data-c="${c.id}">${icn("star")}Сделали</button>` : ""}
+        <button type="button" class="cm-b ghost" data-cm-act="reopen" data-c="${c.id}">Снова в новые</button>`;
+    return `<article class="cm-card fb${c.status === "new" ? " new" : ""}">
+      <div class="cm-obj cm-fb"><span class="cm-noph">${icn("chat")}</span>
+        <span><b>Обратная связь</b><em class="cm-st fb-${esc(kind)}">${esc(FB_KIND[kind] || "Другое")}</em></span></div>
+      <div class="cm-body">
+        <p class="cm-meta"><time>${when(c.ts)}</time>${who}</p>
+        <p class="cm-text">${esc(text) || "Без текста."}</p>
+        ${meta.length ? `<p class="cm-fbmeta">${meta.map((l) => esc(l)).join("<br>")}</p>` : ""}
+        <div class="cm-acts">${acts}</div></div></article>`;
+  }
   function complaintCard(c, compact) {
     // 29.10: кто подал жалобу — номер (звонок в одно нажатие), имя, почта
     const w = c.who;
     const who = !w ? `<span class="cm-who">гость</span>` : `<span class="cm-who">${w.phones.length
       ? w.phones.map((p, i) => `<a class="cmp-tel" href="tel:${esc(w.tel[i])}">${esc(p)}</a>`).join(", ") : "номера нет"}${
       [w.name, w.email].filter(Boolean).map((x) => ` · ${esc(x)}`).join("")}</span>`;
+    if (String(c.reason || "").startsWith("feedback:")) return feedbackCard(c, who);
     const own = (() => { try { return JSON.parse(c.photos || "[]"); } catch { return []; } })();
     const ph = [...(c.text || "").matchAll(/^Фото: (\S+)$/gm)].map((m) => m[1]);
     const text = (c.text || "").replace(/^Фото: .*$/gm, "").trim();
@@ -461,9 +485,10 @@
     const { items, counts } = await call(`/api/admin/complaints?status=${cmShow}`);
     $("cmN").textContent = counts.new || "";
     $("cmD").textContent = counts.done || "";
+    $("cmF").textContent = counts.feedback || "";
     document.querySelectorAll("#cmTabs [data-cm]").forEach((b) => b.classList.toggle("on", b.dataset.cm === cmShow));
     $("complaints").innerHTML = items.length ? items.map((c) => complaintCard(c)).join("")
-      : `<p class="ad-empty">${cmShow === "new" ? "Новых жалоб нет — всё разобрано." : "Пока пусто."}</p>`;
+      : `<p class="ad-empty">${cmShow === "new" ? "Новых жалоб нет — всё разобрано." : cmShow === "feedback" ? "Идей и отзывов пока нет." : "Пока пусто."}</p>`;
   }
   async function complaintAct(b) {
     const a = b.dataset.cmAct;

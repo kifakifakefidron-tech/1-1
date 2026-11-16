@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/static/motion.css?v=36">
 <link rel="stylesheet" href="/static/doc.css?v=3">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=125">
+<link rel="stylesheet" href="/static/glass.css?v=126">
 </head>
 <body>
 <header class="nav"><div class="nav-in">
@@ -43,6 +43,62 @@
     <p class="support-acts"><a class="pill" href="tel:{{SUPPORT_TEL}}">Позвонить</a>
       <button type="button" class="pill light" data-max="{{SUPPORT_TEL}}">Написать в MAX</button></p>
   </div>
+
+  <!-- 16.11 (Артём): обратная связь и советы по улучшению — приходят админу во вкладку «Жалобы» -->
+  <h2 id="feedback">Идеи и обратная связь</h2>
+  <section class="fb-box">
+    <p class="fb-lead">Чего не хватает в 1+1? Что неудобно? Что сломалось? Напишите — каждое сообщение читаем сами
+      и решаем, что сделать. Когда сделаем по вашему совету, придёт уведомление.</p>
+
+    <details class="fb-how" open>
+      <summary>Как написать, чтобы мы поняли с первого раза</summary>
+      <ol>
+        <li><b>Одна мысль — одно сообщение.</b> Три идеи — лучше три коротких сообщения, чем одно длинное.</li>
+        <li><b>Где это было.</b> Раздел или страница: поиск, окно объекта, клиенты, подборка, планер… Можно вставить ссылку из адресной строки.</li>
+        <li><b>Что вы делали и что получилось.</b> «Нажал “Клиенту”, выбрал Анну — окно закрылось, объект не добавился».</li>
+        <li><b>Как хотелось бы.</b> «Чтобы в подборке можно было поменять порядок фото».</li>
+        <li><b>Зачем это вам.</b> «Клиенты смотрят с телефона, первое фото должно быть самым красивым» — так мы поймём, насколько это важно.</li>
+      </ol>
+      <div class="fb-ex">
+        <p><span>Так понятно</span>«В фильтрах нет “не первый этаж”. Мои покупатели почти всегда просят без первого — приходится
+          листать и отсеивать руками. Хочу галочку в “Ещё фильтры”».</p>
+        <p class="bad"><span>Так непонятно</span>«Фильтры неудобные, сделайте нормально».</p>
+      </div>
+      <p class="fb-small">Жалобу на конкретное объявление (продано, неверная цена, чужие фото, ваш номер) удобнее отправить
+        из окна объекта — «Сообщить об ошибке», тогда мы сразу видим, о каком объекте речь.</p>
+    </details>
+
+    <form class="fb-form" id="fbForm" novalidate hidden>
+      <p class="fb-label">О чём сообщение</p>
+      <div class="fb-kinds" role="radiogroup">
+        <label><input type="radio" name="kind" value="idea" checked><span><b>Идея</b><small>Добавить или улучшить</small></span></label>
+        <label><input type="radio" name="kind" value="ux"><span><b>Неудобно</b><small>Работает, но мешает</small></span></label>
+        <label><input type="radio" name="kind" value="bug"><span><b>Ошибка</b><small>Что-то сломалось</small></span></label>
+        <label><input type="radio" name="kind" value="other"><span><b>Другое</b><small>Вопрос, спасибо, отзыв</small></span></label>
+      </div>
+      <label class="fb-label" for="fbText">Ваше сообщение</label>
+      <textarea id="fbText" name="text" rows="6" maxlength="3000" data-grow
+        placeholder="Например: в подборке хочу менять порядок фото — клиенты смотрят с телефона, первым должно быть самое красивое"></textarea>
+      <p class="fb-count"><span id="fbCount">0</span> / 3000</p>
+      <label class="fb-label" for="fbPage">Где это (необязательно)</label>
+      <input id="fbPage" name="page" maxlength="300" placeholder="Раздел или ссылка на страницу">
+      <label class="fb-check"><input type="checkbox" name="call_me" checked> Можно связаться со мной, если нужно уточнить</label>
+      <p class="fb-err" id="fbErr" hidden></p>
+      <button type="submit" class="pill fb-send" id="fbSend">Отправить</button>
+    </form>
+
+    <div class="fb-guest" id="fbGuest" hidden>
+      <p>Чтобы написать, войдите — так мы будем знать, кому ответить, и сообщим, когда сделаем.</p>
+      <a class="pill" href="/?support=1">Войти и написать</a>
+    </div>
+
+    <div class="fb-done" id="fbDone" hidden>
+      <b>Спасибо! Сообщение получили.</b>
+      <p>Прочитаем и решим, что сделать. Если понадобится уточнить — свяжемся. Когда сделаем, придёт уведомление.</p>
+      <button type="button" class="pill light" id="fbMore">Написать ещё</button>
+    </div>
+  </section>
+
   <h2>Связь</h2>
   <ul>
     <li>Почта для обращений, претензий и вопросов о персональных данных: <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a></li>
@@ -56,6 +112,7 @@
 <script src="/static/pickers.js?v=19"></script>
 <script src="/static/max.js?v=3"></script>
 <script src="/static/rail.js?v=38"></script>
-<script src="/static/bell.js?v=7"></script>
+<script src="/static/bell.js?v=8"></script>
+<script src="/static/feedback.js?v=1"></script>
 </body>
 </html>

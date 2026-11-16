@@ -448,6 +448,32 @@ def test_complaint_never_hides_listing_admin_decides(env):
     assert len(c.get(f"/api/listings/{lid}").json()["complaints"]) == 4
 
 
+def test_feedback_reaches_admin_complaints(env):
+    """16.11 (Артём): идеи и обратная связь из «Поддержки» приходят админу в «Жалобы»; «Сделали» — автору уведомление."""
+    c, conn, lid = env
+    assert c.post("/api/feedback", json={"kind": "idea", "text": "Хочу фильтр не первый этаж"}).status_code == 401   # гость — нельзя
+    u = accounts.upsert_phone_user(conn, "+79185550099")
+    c.cookies.set(server.SESSION, accounts.create_session(conn, u["id"]))
+    assert c.post("/api/feedback", json={"kind": "idea", "text": "мало"}).status_code == 400   # слишком коротко
+    r = c.post("/api/feedback", json={"kind": "hack", "text": "В фильтрах нет «не первый этаж» — добавьте, пожалуйста",
+                                      "page": "/ поиск", "call_me": True})
+    assert r.status_code == 200
+    row = conn.execute("SELECT * FROM complaints WHERE reason LIKE 'feedback:%'").fetchone()
+    assert row["reason"] == "feedback:other" and row["listing_id"] is None and row["user_id"] == u["id"]
+    assert "Где: / поиск" in row["text"] and "Можно связаться для уточнения: да" in row["text"]
+    c.cookies.clear()
+    admin = _login(c, conn, email="boss5@example.ru")
+    conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (admin["id"],))
+    conn.commit()
+    d = c.get("/api/admin/complaints?status=feedback").json()
+    assert d["counts"]["feedback"] == 1 and len(d["items"]) == 1
+    assert d["items"][0]["who"]["phones"] == ["+7 918 555-00-99"]
+    assert c.post("/api/admin/complaints", json={"id": row["id"], "action": "done"}).json()["status"] == "done"
+    n = conn.execute("SELECT title, kind FROM notices WHERE user_id = ? AND kind = 'feedback'", (u["id"],)).fetchall()
+    assert len(n) == 1 and "учли" in n[0]["title"]
+    assert c.get("/api/admin/complaints").json()["counts"]["feedback"] == 0
+
+
 def test_admin_edits_filters_and_users_filter(env):
     """02.11: «Правки» — кто правил (агенты / админ / сервис), поиск; «Пользователи» — быстрые фильтры."""
     c, conn, lid = env

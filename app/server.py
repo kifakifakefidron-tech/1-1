@@ -1147,6 +1147,36 @@ def api_complaint(request: Request, body: dict | None = None):
     return JSONResponse({"ok": True})
 
 
+# 16.11 (Артём): обратная связь и советы по улучшению — форма в «Поддержке» (/contacts#feedback). Приходит админу во вкладку
+# «Жалобы» (та же таблица complaints, listing_id пустой, reason 'feedback:<вид>'), только вошедшим — видно, кто написал.
+FEEDBACK_KINDS = {"idea": "Идея", "ux": "Неудобно", "bug": "Ошибка на сайте", "other": "Другое"}
+
+
+def api_feedback(request: Request, body: dict | None = None):
+    user, err = _need_user(request)
+    if err:
+        return _err("Чтобы написать, войдите — так мы сможем ответить и сказать, когда сделаем.", 401)
+    if _too_often(request, "feedback", 8, 3600):
+        return _err("Вы уже написали несколько сообщений — спасибо! Попробуйте ещё раз через час.", 429)
+    body = body or {}
+    kind = str(body.get("kind") or "other")
+    kind = kind if kind in FEEDBACK_KINDS else "other"
+    text = re.sub(r"[ \t]+\n", "\n", str(body.get("text") or "")).strip()[:3000]
+    if len(text) < 10:
+        return _err("Напишите чуть подробнее — хотя бы одно предложение.")
+    where = str(body.get("page") or "").strip()[:300]
+    lines = [text]
+    if where:
+        lines.append(f"Где: {where}")
+    if body.get("call_me"):
+        lines.append("Можно связаться для уточнения: да")
+    conn = db.get()
+    conn.execute("INSERT INTO complaints (listing_id, user_id, reason, text, ts) VALUES (NULL,?,?,?,?)",
+                 (user["id"], f"feedback:{kind}", "\n".join(lines)[:3500], int(time.time())))
+    conn.commit()
+    return JSONResponse({"ok": True})
+
+
 # ─── оплата (подготовлено, выключено) ──────────────────────────────────────
 def api_pay(request: Request, body: dict | None = None):
     """GET — тарифы и последний платёж (страница /pay); POST {days} — создать платёж и вернуть ссылку ЮKassa."""
@@ -1533,10 +1563,13 @@ def api_admin_complaints(request: Request, body: dict | None = None):
     show = qp.get("status", "new")
     lid = _num(qp.get("listing"), int)
     where, args = ("c.listing_id = ?", [lid]) if lid else \
-        ("c.status = 'new'", []) if show == "new" else ("c.status != 'new'", []) if show == "done" else ("1", [])
+        ("c.status = 'new'", []) if show == "new" else ("c.status != 'new'", []) if show == "done" else \
+        ("c.reason LIKE 'feedback:%'", []) if show == "feedback" else ("1", [])
     counts = {r[0]: r[1] for r in conn.execute(
         "SELECT CASE WHEN status = 'new' THEN 'new' ELSE 'done' END, COUNT(*) FROM complaints GROUP BY 1")}
-    return JSONResponse({"items": complaints_list(conn, where, args), "counts": {"new": counts.get("new", 0), "done": counts.get("done", 0)}})
+    fb = conn.execute("SELECT COUNT(*) FROM complaints WHERE reason LIKE 'feedback:%' AND status = 'new'").fetchone()[0]
+    return JSONResponse({"items": complaints_list(conn, where, args),
+                         "counts": {"new": counts.get("new", 0), "done": counts.get("done", 0), "feedback": fb}})
 
 
 # 02.11 (Артём): жалобу разбирает админ. Решения: оставить как есть / исправлено / снять с сайта / удалить навсегда / вернуть на сайт
@@ -1564,6 +1597,12 @@ def complaint_decide(conn, cid: int, action: str) -> dict:
                      (status, now, lid, cid))
     else:
         conn.execute("UPDATE complaints SET status = ?, decided_at = ? WHERE id = ?", (status, None if status == "new" else now, cid))
+    if action == "done" and str(row["reason"] or "").startswith("feedback:") and row["user_id"] and row["status"] != "done":
+        # 16.11: обратная связь — «Сделали» сообщает автору, что его совет учли
+        first = (row["text"] or "").split("\n")[0].strip()
+        notices.add(conn, row["user_id"], "feedback", "Спасибо — ваше предложение учли",
+                    "Сделали то, о чём вы писали в поддержку: «" + (first[:140] + ("…" if len(first) > 140 else "")) + "»",
+                    url="/contacts#feedback", dedup_s=0)
     conn.commit()
     act = conn.execute("SELECT is_active FROM listings WHERE id = ?", (lid,)).fetchone() if lid else None
     return {"ok": True, "status": status, "listing_active": bool(act and act[0])}
@@ -3263,6 +3302,7 @@ routes = [
     Route("/api/favorites/{id:int}", threaded(api_favorite_toggle), methods=["POST"]),
     Route("/api/promo", threaded(api_promo), methods=["POST"]),
     Route("/api/complaints", threaded(api_complaint), methods=["POST"]),
+    Route("/api/feedback", threaded(api_feedback), methods=["POST"]),
     Route("/api/pay", threaded(api_pay), methods=["GET", "POST"]),
     Route("/pay", threaded(pay_page)),
     Route("/api/payments/yookassa", threaded(api_yookassa), methods=["POST"]),

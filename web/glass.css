@@ -1501,6 +1501,57 @@ summary { transition: color .2s var(--m-out); }
 .support-acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .support-acts .pill { text-decoration: none; }
 
+/* 16.11: «Идеи и обратная связь» в «Поддержке» — подсказка, как писать, и форма (web/feedback.js) */
+.fb-box { display: grid; gap: 16px; margin: 8px 0 28px; padding: 20px; border-radius: 22px; border: 1px solid var(--glass-line);
+  background: rgba(255, 255, 255, .03); }
+.fb-box p { margin: 0; }
+.fb-lead { font-size: 15.5px; line-height: 1.55; color: var(--ink); }
+.fb-how { border-radius: 18px; border: 1px solid rgba(227, 203, 143, .25); background: rgba(227, 203, 143, .05); padding: 0 16px; }
+.fb-how summary { cursor: pointer; padding: 14px 0; font-weight: 600; color: var(--gold-100, var(--ink)); list-style-position: inside; }
+.fb-how ol { margin: 0 0 14px; padding-left: 22px; display: grid; gap: 8px; line-height: 1.5; }
+.fb-how ol b { color: var(--gold-100, var(--ink)); font-weight: 600; }
+.fb-ex { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin: 0 0 12px; }
+.fb-ex p { padding: 12px 14px; border-radius: 14px; background: rgba(126, 211, 166, .08); border: 1px solid rgba(126, 211, 166, .25);
+  font-size: 14px; line-height: 1.5; }
+.fb-ex p.bad { background: rgba(226, 120, 100, .07); border-color: rgba(226, 150, 130, .28); }
+.fb-ex span { display: block; margin-bottom: 4px; font: 600 12px var(--body); letter-spacing: .04em; text-transform: uppercase; color: #b7e4c7; }
+.fb-ex p.bad span { color: #f0b4a5; }
+.fb-small { margin: 0 0 14px !important; font-size: 13px; line-height: 1.5; color: var(--ink-3); }
+.fb-form { display: grid; gap: 8px; }
+.fb-form[hidden], .fb-guest[hidden], .fb-done[hidden] { display: none; }
+.fb-label { margin: 8px 0 0 !important; font-weight: 600; font-size: 14px; color: var(--ink-2, var(--ink)); }
+.fb-kinds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.fb-kinds label { position: relative; cursor: pointer; }
+.fb-kinds input { position: absolute; opacity: 0; pointer-events: none; }
+.fb-kinds span { display: grid; gap: 2px; height: 100%; padding: 11px 13px; border-radius: 14px; border: 1px solid var(--glass-line);
+  background: rgba(255, 255, 255, .03); transition: border-color .2s, background .2s; }
+.fb-kinds b { font-weight: 600; font-size: 14.5px; }
+.fb-kinds small { font-size: 12px; color: var(--ink-3); line-height: 1.35; }
+.fb-kinds label:hover span { border-color: rgba(227, 203, 143, .4); }
+.fb-kinds input:checked + span { border-color: var(--gold-300); background: rgba(227, 203, 143, .14); box-shadow: inset 0 0 0 1px var(--gold-300); }
+.fb-kinds input:checked + span b { color: var(--gold-100); }
+.fb-kinds input:focus-visible + span { outline: 2px solid var(--gold-300); outline-offset: 2px; }
+.fb-form textarea, .fb-form input:not([type]) { width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 14px;
+  border: 1px solid var(--glass-line-2, var(--glass-line)); background: rgba(0, 0, 0, .18); color: var(--ink); font: 15px/1.5 var(--body); }
+.fb-form textarea { min-height: 140px; resize: vertical; }
+.fb-form textarea:focus, .fb-form input:not([type]):focus { outline: none; border-color: var(--gold-300); }
+.fb-count { justify-self: end; margin-top: -4px !important; font-size: 12px; color: var(--ink-3); }
+.fb-check { display: flex; gap: 10px; align-items: center; margin-top: 6px; font-size: 14px; cursor: pointer; }
+.fb-check input { width: 18px; height: 18px; accent-color: var(--gold-300); }
+.fb-err { padding: 10px 13px; border-radius: 12px; background: rgba(226, 120, 100, .12); color: #f0b4a5; font-size: 14px; }
+.fb-send { justify-self: start; margin-top: 6px; min-width: 160px; }
+.fb-send:disabled { opacity: .6; }
+.fb-guest, .fb-done { display: grid; gap: 10px; justify-items: start; padding: 16px; border-radius: 16px; border: 1px dashed rgba(227, 203, 143, .35); }
+.fb-guest .pill { text-decoration: none; }
+.fb-done { border-style: solid; border-color: rgba(126, 211, 166, .35); background: rgba(126, 211, 166, .07); }
+.fb-done b { font: 600 19px var(--head); color: var(--gold-100, var(--ink)); }
+@media (max-width: 640px) {
+  .fb-box { padding: 16px 14px; }
+  .fb-kinds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fb-form textarea, .fb-form input:not([type]) { font-size: 16px; }
+  .fb-send { justify-self: stretch; }
+}
+
 /* 25.10: третья галочка входа — «Я агент» (по желанию), с пояснением мелко */
 .consent-chk.agent-chk { border-color: rgba(227, 203, 143, .4); background: rgba(227, 203, 143, .06); }
 .consent-chk.agent-chk b { color: var(--gold-100, var(--ink)); font-weight: 600; }

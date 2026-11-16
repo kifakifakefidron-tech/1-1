@@ -11,11 +11,11 @@
   const KINDS = {
     search: ["Поиски", "search"], price: ["Цена", "trend-down"], gone: ["Сняты", "x-circle"], client: ["Клиенты", "users"],
     own: ["Мои объекты", "home"], plan: ["Планер", "calendar"], sub: ["Подписка", "card"], billing: ["Оплаты", "coins"],
-    buyer: ["Покупатели", "briefcase"],
+    buyer: ["Покупатели", "briefcase"], feedback: ["Поддержка", "chat"],
   };
   // 24.10b: отметка вида на карточке (образец Артёма)
   const PILL = { search: "Новое по поиску", price: "Цена в избранном", gone: "Снят с продажи", client: "Клиент", own: "Мой объект",
-    plan: "Планер", sub: "Подписка", billing: "Оплата", buyer: "Есть покупатель" };
+    plan: "Планер", sub: "Подписка", billing: "Оплата", buyer: "Есть покупатель", feedback: "Поддержка" };
   let data = null, filter = "";
   const unreadAtOpen = new Set();   // что было непрочитанным при открытии — подсвечиваем до ухода со страницы
 

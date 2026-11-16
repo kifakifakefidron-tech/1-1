@@ -2042,7 +2042,7 @@
   // Теперь просто перезагружаем её (открытый объект и фильтры — в адресе), «Вы вошли» показываем уже после загрузки.
   async function afterLogin() {
     if ($("loginDlg").open) closeDlg($("loginDlg"));
-    const next = { fav: "/work", cabinet: "/cabinet", agent: "/my", num: "/agent" }[ss("loginNext")];
+    const next = { fav: "/work", cabinet: "/cabinet", agent: "/my", num: "/agent", support: "/contacts#feedback" }[ss("loginNext")];
     try { sessionStorage.setItem("justIn", "1"); sessionStorage.removeItem("loginNext"); } catch { /* */ }
     if (next) { location.replace(next); return; }
     const u = new URL(location.href);
@@ -2931,7 +2931,7 @@
       geoQueue = sp.get("geo");
       setTimeout(() => openGeoEdit(openId), 700);
     }
-    const act = ["login", "fav", "cabinet", "agent", "num"].find((k) => sp.has(k));
+    const act = ["login", "fav", "cabinet", "agent", "num", "support"].find((k) => sp.has(k));
     if (act) {
       sp.delete(act);
       history.replaceState(null, "", sp.toString() ? `?${sp}` : location.pathname);
@@ -2941,6 +2941,7 @@
       else if (act === "cabinet") { location.replace(me() ? "/cabinet" : "/?login=1"); return; }
       else if (act === "agent") { location.replace("/my"); return; }   // «Мои объекты» — отдельная страница
       else if (act === "num") { location.replace("/agent"); return; }   // «Ваш номер на 1+1»
+      else if (act === "support") { location.replace("/contacts#feedback"); return; }   // 16.11: обратная связь
     }
   }
 

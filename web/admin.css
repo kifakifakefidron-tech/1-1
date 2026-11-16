@@ -514,3 +514,13 @@ tr.peek td { background: rgba(0, 0, 0, .12); }
   .us-row { grid-template-columns: 40px minmax(0, 1fr) auto; gap: 10px; padding: 12px; }
   .us-ava { width: 40px; height: 40px; }
 }
+
+/* 16.11: идеи и отзывы из «Поддержки» во вкладке «Жалобы» */
+.cm-card.fb.new { box-shadow: inset 3px 0 0 #7ed3a6; border-color: rgba(126, 211, 166, .35); }
+.cm-fb { cursor: default; }
+.cm-fb .cm-noph { color: #b7e4c7; background: rgba(126, 211, 166, .1); }
+.cm-st.fb-idea { background: rgba(126, 211, 166, .14); color: #b7e4c7; }
+.cm-st.fb-ux { background: rgba(240, 190, 120, .14); color: #f3d29a; }
+.cm-st.fb-bug { background: rgba(226, 120, 100, .16); color: #f0b4a5; }
+.cm-fbmeta { margin: 0; font-size: 13px; color: var(--ink-3); line-height: 1.5; }
+.cm-fb:hover b { text-decoration: none; }
