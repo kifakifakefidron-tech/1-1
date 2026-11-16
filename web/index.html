@@ -30,7 +30,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=36">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=126">
+<link rel="stylesheet" href="/static/glass.css?v=127">
 </head>
 <body>
 <svg class="flame-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs><linearGradient id="flameFire" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#d9541e"/><stop offset="1" stop-color="#f6b36b"/></linearGradient></defs></svg>
@@ -100,6 +100,9 @@
       <a class="pill light" href="/requests" id="heroReq">Запросы покупателей</a>
     </div>
   </section>
+  <!-- 16.11 (Артём: «карта неудобная»): поиск, фильтры и строка над выдачей — одна панель; в режиме карты на компьютере
+       она слева (своя прокрутка), карта справа неподвижна; в режиме списка обёртка не влияет на вид (display: contents) -->
+  <div class="map-side" id="mapSide">
   <form class="search" id="searchForm" role="search">
     <label class="visually-hidden" for="q">Поиск</label>
     <div class="q-wrap">
@@ -225,7 +228,6 @@
     </div>
     <div class="bar-tools">
       <button type="button" class="chip reset-chip" id="resetBtn" hidden>✕ Сбросить фильтры</button>
-      <button type="button" class="chip view-chip" id="viewChip" data-tab="map">Карта</button>
       <button type="button" class="chip" id="newTodayBtn" aria-pressed="false">Новое сегодня</button>
       <button type="button" class="chip hot-chip" id="hotBtn" aria-pressed="false" title="Цена снизилась на 10 % и больше за неделю или объект на 15–45 % дешевле средней по ЖК или району"><svg class="flame" viewBox="0 0 16 20" aria-hidden="true"><g class="f-body"><path class="f-out" d="M8 19.5c3.6 0 6-2.5 6-5.9 0-3.7-2.8-5.7-3.8-9.3-.6 2.1-1.7 3.4-2.9 3.9.3-2.8-.9-5.6-3.1-7.2.1 3.4-2.5 5.8-2.5 9.7 0 4.4 2.8 8.8 6.3 8.8z"/></g><circle class="f-spark" cx="12.6" cy="4.6" r=".75"/><circle class="f-spark" cx="3.4" cy="6.4" r=".6"/><circle class="f-spark" cx="9.5" cy="2.5" r=".55"/><circle class="f-spark" cx="5.8" cy="3.2" r=".5"/></svg>Горячие предложения<span class="hot-n" id="hotN" hidden></span></button>
       <button type="button" class="chip" id="watchBtn" title="Поиск сохранится в «Мои поиски», а о новых объектах по нему придёт уведомление и письмо">🔔 Сохранить поиск и следить</button>
@@ -247,14 +249,25 @@
     </div>
   </div>
 
-  <div id="mapBox" class="map" hidden></div>
-  <p class="map-note" id="mapNote" hidden></p>
+  </div>
+
+  <div class="map-wrap" id="mapWrap" hidden>
+    <div id="mapBox" class="map"></div>
+    <p class="map-note" id="mapNote" hidden></p>
+    <!-- карточка выбранной метки: на телефоне — шторка снизу, на компьютере — справа сверху; карта при этом не двигается -->
+    <div class="mcard" id="mapCard" role="dialog" aria-label="Объект на карте" hidden></div>
+  </div>
   <ol class="results" id="results"></ol>
   <div class="more-results"><button type="button" id="loadMore" class="pill" hidden>Показать ещё</button>
     <div class="guest-more" id="guestMore" hidden><b>Дальше — после входа</b><span>Без входа видны первые 5 страниц. Войдите по номеру телефона — 14 дней бесплатно.</span>
       <a class="pill" href="/?login=1">Войти</a></div></div>
 </main>
 
+<!-- 16.11: заметная кнопка «Показать на карте / Показать списком» — всегда внизу по центру -->
+<button type="button" class="view-fab" id="viewFab" data-view-toggle aria-label="Показать на карте">
+  <svg class="vf-map" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 6.5 9 4z"/><path d="M9 4v13M15 6.5v13"/></svg>
+  <svg class="vf-list" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/></svg>
+  <span>Показать на карте</span></button>
 <button type="button" class="new-pill" id="newPill" hidden>↑ Новые объекты: <b id="newCount"></b></button>
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
 <div class="cmp-bar" id="cmpBar" hidden><span id="cmpText"></span>
@@ -491,7 +504,7 @@
 <script src="/static/yasel.js?v=4"></script>
 <script src="/static/bell.js?v=8"></script>
 <script src="/static/lightbox.js?v=4"></script>
-<script src="/static/app.js?v=162"></script>
+<script src="/static/app.js?v=163"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>

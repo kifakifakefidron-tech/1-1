@@ -686,11 +686,19 @@
   }
 
   // ─── карта ──────────────────────────────────────────────────────────────
+  // 16.11 (Артём: «при фильтрации всё крутится, карта отдаляется и сбрасывается»): карта сама меняет масштаб ТОЛЬКО
+  // 1) при первом показе; 2) когда сменили место поиска (район, ЖК, строка поиска, улица/дом); 3) когда в видимой
+  // части не осталось ни одного найденного объекта. Нажатие на метку или район — карточка #mapCard (на телефоне
+  // шторка снизу, на компьютере справа сверху); карта при этом не двигается и фильтры сами не меняются.
+  const canHover = window.matchMedia ? window.matchMedia("(hover: hover) and (pointer: fine)").matches : true;
+  let mapSel = "";                    // выбранная метка: "id:123" / "cx:<ЖК>" / "dz:<район>"
+  const mapMarkers = new Map();       // ключ метки → маркер (чтобы подсветить выбранную)
+  const mapPoints = new Map();        // id → точка карты (id, lat, lon, price, level)
   function ensureMap() {
     if (map || !window.L) return;
-    map = L.map("mapBox", { scrollWheelZoom: true, zoomControl: false, attributionControl: false })
+    map = L.map("mapBox", { scrollWheelZoom: true, zoomControl: false, attributionControl: false, wheelPxPerZoomLevel: 90 })
       .setView([45.035, 38.975], 11);
-    L.control.zoom({ position: "bottomright" }).addTo(map);
+    L.control.zoom({ position: "bottomright", zoomInTitle: "Приблизить", zoomOutTitle: "Отдалить" }).addTo(map);
     // Подпись источника карты обязательна по условиям OpenStreetMap — оставляем маленькой, без флага и «Leaflet»
     L.control.attribution({ prefix: false, position: "bottomleft" })
       .addAttribution('© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>')
@@ -698,7 +706,7 @@
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, className: "map-tiles" }).addTo(map);
     // Группы объектов — круглые значки с числом; чем больше объектов, тем крупнее
     cluster = L.markerClusterGroup ? L.markerClusterGroup({
-      showCoverageOnHover: false, maxClusterRadius: 55, spiderfyOnMaxZoom: true,
+      showCoverageOnHover: false, maxClusterRadius: 55, spiderfyOnMaxZoom: true, spiderfyDistanceMultiplier: 1.6,
       iconCreateFunction: (c) => {
         const n = c.getAllChildMarkers().reduce((t, m) => t + (m.options.n || 1), 0);   // метка ЖК = её число объектов
         const size = n < 10 ? 40 : n < 50 ? 48 : 58;
@@ -707,22 +715,16 @@
     }) : L.layerGroup();
     map.addLayer(cluster);
     initDistrictLayer();
-    $("mapBox").addEventListener("click", (e) => {
-      const b = e.target.closest("[data-open]");
-      if (b) openDetail(Number(b.dataset.open));
-      const cx = e.target.closest("[data-cx-list]");
-      if (cx) {   // метка ЖК → этот ЖК в фильтр и список
-        if (!state.complexes.includes(cx.dataset.cxList)) state.complexes.push(cx.dataset.cxList);
-        state.view = "list";
-        map.closePopup();
-        syncControls();
-        refresh();
-      }
-    });
+    map.on("click", () => closeMapCard());   // нажали на пустое место — закрыть карточку, и только
+    // размер карты поменялся (повернули телефон, открыли «Ещё фильтры») — дорисовать, не сдвигая
+    if (window.ResizeObserver) new ResizeObserver(() => { if (map) map.invalidateSize({ pan: false }); }).observe($("mapBox"));
+    else window.addEventListener("resize", () => map && map.invalidateSize({ pan: false }));
+    bindMapCard();
   }
 
-  // Слой районов: контуры поверх подложки, под метками. Наведение — название и число объектов,
-  // нажатие — район в фильтр (ещё раз — убрать). Включается кнопкой «Районы» на карте (запоминается).
+  // Слой районов: контуры поверх подложки, под метками. Наведение — название и число объектов (на компьютере),
+  // нажатие — карточка района с кнопкой «Показать только этот район» (раньше нажатие сразу меняло фильтр, и любое
+  // касание карты на телефоне уводило её к другому району). Включается кнопкой «Районы» на карте (запоминается).
   let districtLayer = null, districtShapes = [], districtCounts = new Map();
   const districtLabels = window.L ? L.layerGroup() : null;
   // Цвета — hex (Leaflet не понимает CSS-переменные): бирюза 1+1 и шампань
@@ -739,6 +741,7 @@
         const b = L.DomUtil.create("button", "dz-toggle");
         b.type = "button";
         b.innerHTML = `${ic("map")}<span>Районы</span>`;
+        b.title = "Показать границы районов";
         b.classList.toggle("on", dzOn());
         L.DomEvent.disableClickPropagation(b);
         b.addEventListener("click", () => {
@@ -754,25 +757,30 @@
     showDistricts();
   }
   async function showDistricts() {
-    if (!dzOn()) { if (districtLayer) districtLayer.remove(); return; }
+    if (!dzOn()) {
+      if (districtLayer) districtLayer.remove();
+      if (districtLabels) districtLabels.remove();
+      if (mapSel.startsWith("dz:")) closeMapCard();
+      return;
+    }
     if (!districtLayer) {
       let d;
       try { d = await getJSON("/api/districts/map"); } catch { return; }
       districtLayer = L.layerGroup();
       districtShapes = d.districts.map((z) => {
         const shape = L.polygon(z.rings, { pane: "districts", ...DZ_STYLE, className: "dz-shape" });
-        shape.bindTooltip(() => {
-          const n = districtCounts.get(z.name);
-          return `<b>${esc(z.name)}</b><br>${n ? `${num(n)} ${plural(n, "объект", "объекта", "объектов")}` : "пока нет объектов"}`;
-        }, { sticky: true, direction: "top", className: "dz-tip", opacity: 1 });
-        shape.on("mouseover", () => shape.setStyle(state.districts.includes(z.name) ? DZ_HOVER_ON : DZ_HOVER));
-        shape.on("mouseout", () => styleDistricts());
-        shape.on("click", () => {
-          const had = state.districts.includes(z.name);
-          toggle(state.districts, z.name);
-          toast(had ? `Район «${z.name}» убран из фильтра` : `Показываем район «${z.name}»`);
-          syncControls();
-          refresh();
+        if (canHover) {   // на телефоне подсказка «по наведению» всплывала бы от каждого касания — там есть карточка
+          shape.bindTooltip(() => {
+            const n = districtCounts.get(z.name);
+            return `<b>${esc(z.name)}</b><br>${n ? `${num(n)} ${plural(n, "объект", "объекта", "объектов")}` : "пока нет объектов"}`;
+          }, { sticky: true, direction: "top", className: "dz-tip", opacity: 1 });
+          shape.on("mouseover", () => shape.setStyle(state.districts.includes(z.name) ? DZ_HOVER_ON : DZ_HOVER));
+          shape.on("mouseout", () => styleDistricts());
+        }
+        shape.on("click", (e) => {
+          L.DomEvent.stop(e);
+          if (mapSel) { closeMapCard(); return; }   // открыта карточка — касание мимо её просто закрывает
+          showMapCard(`dz:${z.name}`, districtCardHTML(z.name));
         });
         shape.zoneName = z.name;
         districtLayer.addLayer(shape);
@@ -791,66 +799,234 @@
   function styleDistricts() {
     for (const sh of districtShapes) sh.setStyle(state.districts.includes(sh.zoneName) ? DZ_ON : DZ_STYLE);
     const zoomed = map && map.getZoom() >= 13;
-    districtLabels.eachLayer((l) => {
+    if (districtLabels) districtLabels.eachLayer((l) => {
       const el = l.getElement();
       if (el) el.classList.toggle("show", zoomed || state.districts.includes(l.zoneName));
       if (el) el.classList.toggle("on", state.districts.includes(l.zoneName));
     });
   }
 
-  function popupHTML(p, extra) {
-    const head = p.complex ? `ЖК ${p.complex}` : (p.district || (p.street ? `ул. ${p.street}` : ""));
-    return `<div class="map-card" data-pid="${p.id}">
-      ${p.photo ? `<img src="${esc(thumb(p.photo))}" data-full="${esc(p.photo)}" alt="${esc(p.title)}" loading="lazy">` : ""}
-      <div class="mc-body">
-        ${head ? `<div class="mc-head">${esc(head)}</div>` : ""}
-        <div class="mc-price">${esc(fmtPrice(p.price, state.deal))}</div>
-        ${p.title ? `<div class="mc-title">${esc(p.title)}</div>` : ""}
-        ${p.level && p.level !== "house" ? `<div class="mc-approx">Место примерное — в объявлении нет точного адреса</div>` : ""}
-        <div class="mc-extra">${extra ?? `<div class="skel"><i></i><i></i></div>`}</div>
-        <span class="mc-more" data-open="${p.id}">Подробнее →</span>
-        ${me() && me().is_admin ? `<button type="button" class="mc-geo" data-geo-edit="${p.id}">📍 поправить</button><button type="button" class="mc-geo off" data-geo-off="${p.id}">убрать с карты</button>` : ""}
-        <span class="mc-logo" aria-hidden="true">${LOGO}</span>
-      </div></div>`;
+  // ─── карточка на карте ──────────────────────────────────────────────────
+  // 16.11 (Артём: «карточку на карте сделать удобной, “Подробнее” — заметной, кнопка копирования сливалась»):
+  // крупное фото, цена, адрес, номер с понятными кнопками «Копировать / Позвонить / MAX» и большая кнопка
+  // «Открыть объект». Нажатие на свободное место карточки — тоже открывает объект.
+  const prettyPhone = (p) => { const d = String(p).replace(/\D/g, ""); return d.length === 11 ? `+7 ${d.slice(1, 4)} ${d.slice(4, 7)}-${d.slice(7, 9)}-${d.slice(9)}` : p; };
+  function cardPhones(o) {
+    if (o.phones && o.phones.length) {
+      const p = o.phones[0], m = (o.phones_meta || {})[p] || {};
+      const more = o.phones.length - 1;
+      return `<div class="mc2-phone">
+        <div class="mc2-num"><a href="tel:${esc(p)}">${esc(prettyPhone(p))}</a>${m.confirmed ? `<span class="mc2-ok" title="Агент подтвердил номер">${ic("check")}проверен</span>` : ""}
+          <button type="button" class="mc2-copy" data-copy-phone="${esc(prettyPhone(p))}" title="Скопировать номер">${ic("copy")}<span>Копировать</span></button></div>
+        <div class="mc2-call${m.no_max ? " one" : ""}"><a class="mc2-btn gold" href="tel:${esc(p)}">${ic("phone")}Позвонить</a>
+          ${m.no_max ? "" : `<button type="button" class="mc2-btn line" data-max="${esc(p)}">${ic("chat")}Написать в MAX</button>`}</div>
+        ${more > 0 ? `<small class="mc2-more-ph">Ещё ${more} ${plural(more, "номер", "номера", "номеров")} — в карточке объекта</small>` : ""}
+      </div>`;
+    }
+    if (o.phones_limit) return `<div class="mc2-phone locked"><small>На сегодня открыто максимум номеров — завтра лимит обновится.</small></div>`;
+    if (o.phones_masked && o.phones_masked.length) {
+      return `<div class="mc2-phone locked"><div class="mc2-num"><span>${esc(o.phones_masked[0])}</span></div>
+        ${me() ? `<button type="button" class="mc2-btn gold wide" data-pay>Открыть номер — оформить подписку</button>`
+          : `<button type="button" class="mc2-btn gold wide" data-login>Войти и открыть номер</button>`}</div>`;
+    }
+    return "";
+  }
+  function objCardHTML(p, o) {
+    const deal = (o && o.deal) || state.deal;
+    const head = o ? (o.complex ? `ЖК ${o.complex}` : (o.district || (o.street ? `ул. ${o.street}` : ""))) : "";
+    const photos = (o && o.photos) || [];
+    const fav = me() && (me().favorites || []).includes(p.id);
+    const ph = photos.length
+      ? `<div class="mc2-ph"><img src="${esc(pic(o, 0))}" data-full="${esc(photos[0])}" alt="${esc((o && o.title) || "")}" loading="lazy">${photos.length > 1 ? `<span class="mc2-n">${photos.length} фото</span>` : ""}</div>`
+      : o ? `<div class="mc2-ph none"><span>Фото у агента</span></div>` : `<div class="mc2-ph skel"></div>`;
+    const addr = o ? address(o) : "";
+    const approx = p.level && p.level !== "house";
+    const adm = me() && me().is_admin
+      ? `<div class="mc2-adm"><button type="button" data-geo-edit="${p.id}">${ic("pin")}Поправить точку</button><button type="button" class="off" data-geo-off="${p.id}">${ic("x-circle")}Убрать с карты</button></div>` : "";
+    return `<div class="mc2" data-card-open="${p.id}">
+      <div class="mc2-top">${ph}
+        <div class="mc2-b">
+          ${head ? `<div class="mc2-head">${esc(head)}</div>` : ""}
+          <div class="mc2-price">${esc(fmtPrice(o ? o.price : p.price, deal))}</div>
+          ${o && o.price_m2 && deal !== "rent" ? `<div class="mc2-m2">${esc(num(o.price_m2))} ₽/м²</div>` : ""}
+          ${o ? (o.title ? `<div class="mc2-title">${esc(o.title)}</div>` : "") : `<div class="skel"><i></i><i></i></div>`}
+        </div>
+        <button type="button" class="fav-btn mc2-fav${fav ? " on" : ""}" data-fav="${p.id}" aria-label="${fav ? "Убрать из избранного" : "В избранное"}">${HEART}</button>
+      </div>
+      ${addr ? `<div class="mc2-addr">${ic("pin")}<span>${esc(addr)}</span></div>` : ""}
+      ${approx ? `<div class="mc-approx">Место примерное — в объявлении нет точного адреса</div>` : ""}
+      ${o ? cardPhones(o) : ""}
+      <button type="button" class="mc2-open" data-open="${p.id}"><span>Открыть объект</span>${ic("chevron")}</button>
+      ${adm}
+    </div>`;
+  }
+  function cxCardHTML(c) {
+    return `<div class="mc2 mc2-cx">
+      <div class="mc2-head">Жилой комплекс</div>
+      <div class="mc2-price">ЖК ${esc(c.complex)}</div>
+      <div class="mc2-title">${num(c.n)} ${plural(c.n, "объект", "объекта", "объектов")}${c.price_min ? ` · от ${esc(fmtPrice(c.price_min, state.deal))}` : ""}</div>
+      <div class="mc-approx">Точка — центр ЖК: дом в объявлениях не указан</div>
+      <button type="button" class="mc2-open" data-cx-list="${esc(c.complex)}"><span>Показать ${c.n > 1 ? "все" : ""} списком</span>${ic("chevron")}</button>
+      <button type="button" class="mc2-sec" data-map-zoom="${c.lat},${c.lon}">${ic("plus")}Приблизить сюда</button>
+    </div>`;
+  }
+  function districtCardHTML(name) {
+    const n = districtCounts.get(name) || 0;
+    const on = state.districts.includes(name);
+    return `<div class="mc2 mc2-cx">
+      <div class="mc2-head">Район</div>
+      <div class="mc2-price">${esc(name)}</div>
+      <div class="mc2-title">${n ? `${num(n)} ${plural(n, "объект", "объекта", "объектов")} по вашему поиску` : "По вашему поиску здесь пока нет объектов"}</div>
+      <button type="button" class="mc2-open" data-dz-toggle="${esc(name)}"><span>${on ? "Убрать район из поиска" : "Искать только в этом районе"}</span>${ic("chevron")}</button>
+      <button type="button" class="mc2-sec" data-dz-zoom="${esc(name)}">${ic("plus")}Приблизить к району</button>
+    </div>`;
   }
 
-  // В окошке метки: параметры, адрес, цена за м² и телефон (если есть доступ)
-  async function fillPopup(popup, p) {
+  function pinIcon(p, sel) {
+    return L.divIcon({ className: "pin-wrap", iconSize: null,
+      html: `<div class="pin${p.level && p.level !== "house" ? " approx" : ""}${sel ? " sel" : ""}">${esc(fmtShortPrice(p.price, state.deal))}</div>` });
+  }
+  function cxIcon(c, sel) {
+    return L.divIcon({ className: "pin-wrap", iconSize: null,
+      html: `<div class="pin cx${sel ? " sel" : ""}">${esc(c.complex.length > 22 ? c.complex.slice(0, 21) + "…" : c.complex)} · ${num(c.n)}</div>` });
+  }
+  function markSelected(key, on) {
+    const mk = mapMarkers.get(key);
+    if (mk && mk.selIcon) mk.setIcon(mk.selIcon(on));
+    if (mk && on) mk.setZIndexOffset(1000); else if (mk) mk.setZIndexOffset(0);
+  }
+  function showMapCard(key, html) {
+    if (mapSel && mapSel !== key) markSelected(mapSel, false);
+    mapSel = key;
+    markSelected(key, true);
+    const box = $("mapCard");
+    box.innerHTML = `<span class="mcard-grab" aria-hidden="true"></span>
+      <button type="button" class="mcard-x" data-mc-close aria-label="Закрыть">${ic("x")}</button>${html}`;
+    box.scrollTop = 0;
+    if (box.hidden) {
+      box.hidden = false;
+      box.classList.remove("in"); void box.offsetWidth; box.classList.add("in");
+    }
+    document.body.classList.add("mc-open");
+  }
+  function closeMapCard() {
+    if (!mapSel) return;
+    markSelected(mapSel, false);
+    mapSel = "";
+    const box = $("mapCard");
+    box.hidden = true;
+    box.innerHTML = "";
+    document.body.classList.remove("mc-open");
+  }
+  // Выбранная метка оказалась под карточкой — сдвигаем карту ровно настолько, чтобы её было видно (масштаб не меняем)
+  function revealUnderCard(ll) {
+    const box = $("mapCard");
+    if (!map || box.hidden) return;
+    const mr = $("mapBox").getBoundingClientRect(), cr = box.getBoundingClientRect();
+    const pt = map.latLngToContainerPoint(ll);
+    const card = { l: cr.left - mr.left - 24, r: cr.right - mr.left + 24, t: cr.top - mr.top - 56, b: cr.bottom - mr.top + 16 };
+    if (pt.x < card.l || pt.x > card.r || pt.y < card.t || pt.y > card.b) return;
+    const bottomSheet = cr.width > mr.width * 0.7;   // телефон: карточка снизу — метку поднимаем над ней
+    const dx = bottomSheet ? 0 : pt.x - Math.max(60, card.l / 2);
+    const dy = bottomSheet ? pt.y - Math.max(70, card.t / 2) : 0;
+    if (dx || dy) map.panBy([dx, dy], { animate: true, duration: .35 });
+  }
+  // Объект: карточка сразу (цена с метки), остальное — из /api/listings/{id} (или уже загруженное списком)
+  async function openPointCard(p) {
+    const key = `id:${p.id}`;
+    const cached = known.get(p.id);
+    const full = cached && cached._full ? cached : null;
+    showMapCard(key, objCardHTML(p, full));
+    revealUnderCard([p.lat, p.lon]);
+    if (full) return;
     const r = await call(`/api/listings/${p.id}`);
-    if (!r.ok) { popup.setContent(popupHTML(p, "")); return; }
-    const o = r.data;
-    known.set(o.id, o);
-    // точка карты лёгкая (id, место, цена) — заголовок, фото и ЖК/район дополняем из объекта
-    Object.assign(p, { title: o.title, complex: o.complex, district: o.district, street: o.street, photo: (o.photos || [])[0] || null });
-    const addr = address(o);
-    const phones = o.phones && o.phones.length
-      ? `<div class="mc-phones">${o.phones.map((ph) => `<a class="mc-call" href="tel:${esc(ph)}">${esc(ph)}</a>
-          <button type="button" class="mc-wa" data-max="${esc(ph)}">MAX</button>`).join("")}</div>`
-      : o.phones_masked && o.phones_masked.length
-          ? `<div class="mc-phones locked"><span>${esc(o.phones_masked[0])}</span>${me() ? "" : `<button type="button" class="mc-call" data-login>Войти и открыть номер</button>`}</div>` : "";
-    // Окошко собираем заново уже с адресом и телефоном (update() вернул бы исходный текст)
-    popup.setContent(popupHTML(p, `
-      ${addr ? `<div class="mc-addr">${esc(addr)}</div>` : ""}
-      ${o.price_m2 && o.deal !== "rent" ? `<div class="mc-m2">${esc(num(o.price_m2))} ₽/м² · ${esc(fmtAgo(o.last_seen))}</div>` : ""}
-      ${phones}`));
+    if (mapSel !== key) return;   // пока грузили, выбрали другую метку
+    if (!r.ok) { showMapCard(key, objCardHTML(p, { id: p.id, price: p.price, deal: state.deal })); return; }
+    r.data._full = true;
+    known.set(r.data.id, r.data);
+    showMapCard(key, objCardHTML(p, r.data));
+    revealUnderCard([p.lat, p.lon]);   // карточка выросла (фото, номер) — проверим ещё раз
+  }
+  function bindMapCard() {
+    const box = $("mapCard");
+    box.addEventListener("click", (e) => {
+      const b = e.target.closest("button, a");
+      if (b && b.hasAttribute("data-mc-close")) { closeMapCard(); return; }
+      if (b && b.dataset.open) { openDetail(Number(b.dataset.open)); return; }
+      if (b && b.dataset.cxList) {   // метка ЖК → этот ЖК в фильтр и список
+        if (!state.complexes.includes(b.dataset.cxList)) state.complexes.push(b.dataset.cxList);
+        closeMapCard();
+        state.view = "list";
+        syncControls();
+        refresh();
+        return;
+      }
+      if (b && b.dataset.mapZoom) {
+        const [la, lo] = b.dataset.mapZoom.split(",").map(Number);
+        closeMapCard();
+        map.setView([la, lo], Math.max(map.getZoom() + 2, 16), { animate: true });
+        return;
+      }
+      if (b && b.dataset.dzToggle) {
+        const name = b.dataset.dzToggle, had = state.districts.includes(name);
+        toggle(state.districts, name);
+        closeMapCard();
+        toast(had ? `Район «${name}» убран из поиска` : `Ищем в районе «${name}»`);
+        syncControls();
+        refresh();
+        return;
+      }
+      if (b && b.dataset.dzZoom) {
+        const sh = districtShapes.find((s) => s.zoneName === b.dataset.dzZoom);
+        closeMapCard();
+        if (sh) map.fitBounds(sh.getBounds(), { padding: [24, 24], maxZoom: 15, animate: true });
+        return;
+      }
+      if (b) return;   // номер, MAX, копирование, вход, избранное — у них свои обработчики
+      const card = e.target.closest("[data-card-open]");
+      if (card && !window.getSelection().toString()) openDetail(Number(card.dataset.cardOpen));
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && mapSel && !document.querySelector("dialog[open]")) closeMapCard();
+    });
+    // телефон: карточку можно смахнуть вниз
+    let y0 = null, dy = 0;
+    box.addEventListener("touchstart", (e) => {
+      if (box.scrollTop > 0 || e.touches.length > 1) { y0 = null; return; }
+      y0 = e.touches[0].clientY; dy = 0;
+    }, { passive: true });
+    box.addEventListener("touchmove", (e) => {
+      if (y0 == null) return;
+      dy = e.touches[0].clientY - y0;
+      if (dy > 0) { box.style.transform = `translateY(${dy}px)`; box.style.transition = "none"; }
+    }, { passive: true });
+    box.addEventListener("touchend", () => {
+      if (y0 == null) return;
+      box.style.transition = ""; box.style.transform = "";
+      if (dy > 70) closeMapCard();
+      y0 = null;
+    });
   }
 
   // 18.10 (приёмка п. 8): гостю сервер отдаёт карту по видимой области — на общем виде кружки «N объектов»,
   // приблизил — метки с ценами; сдвинул/приблизил карту — подгружаем эту область
-  let mapFitted = false, guestMoveT = 0, guestMoveBound = false;
-  async function loadMap(fit = true) {
+  let mapFitted = false, guestMoveT = 0, guestMoveBound = false, mapPlaceKey = null;
+  // «Место поиска»: сменилось — карта перелетает к найденному; остальные фильтры (комнаты, цена…) вид не трогают
+  const placeKey = () => JSON.stringify([state.districts, state.complexes, state.q, state.street, state.house, state.deal]);
+  // mode: "auto" — решить самой (см. выше), "fit" — показать всё найденное, "keep" — не двигать карту
+  async function loadMap(mode = "auto") {
     ensureMap();
     if (!map) return;
     const seq = reqSeq;
     const guest = !me();
     let q = apiParams();
-    if (guest && !fit) {
+    if (guest && mode === "keep" && mapFitted) {
       const b = map.getBounds();
       q += `&bbox=${[b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map((x) => x.toFixed(4)).join(",")}`;
     }
     if (guest && !guestMoveBound) {
       guestMoveBound = true;
-      map.on("moveend", () => { if (!me() && mapFitted && state.view === "map") { clearTimeout(guestMoveT); guestMoveT = setTimeout(() => loadMap(false), 350); } });
+      map.on("moveend", () => { if (!me() && mapFitted && state.view === "map") { clearTimeout(guestMoveT); guestMoveT = setTimeout(() => loadMap("keep"), 350); } });
     }
     let res;
     try { res = await getJSON(`/api/map?${q}`); } catch { return; }
@@ -861,68 +1037,107 @@
     // Сколько найденных объектов на карте — чтобы было видно, что ничего не потерялось
     const onMap = pts.length + cxs.reduce((s, c) => s + c.n, 0) + agg.reduce((s, c) => s + c.n, 0);
     const off = res.total - onMap;
-    const vague = res.approx_hidden ? ` ${num(res.approx_hidden)} — адрес уточняется (известна только улица или район).` : "";
-    $("mapNote").textContent = off > 0
-      ? `На карте ${num(onMap)} из ${num(res.total)}.${vague} ${res.pending ? `Ещё ${num(res.pending)} — ищем адрес на карте.` : ""} Все они есть в списке.`
-      : `На карте все ${num(res.total)} ${plural(res.total, "объект", "объекта", "объектов")}.`;
+    const vague = res.approx_hidden ? ` ${num(res.approx_hidden)} — адрес уточняется.` : "";
+    // коротко — на телефоне видна только первая часть (.mn-more прячется)
+    $("mapNote").innerHTML = off > 0
+      ? `На карте ${num(onMap)} из ${num(res.total)}<span class="mn-more">.${esc(vague)} Остальные — в списке</span>`
+      : `На карте все ${num(res.total)} ${plural(res.total, "объект", "объекта", "объектов")}`;
+    if (agg.length && res.guest) $("mapNote").innerHTML += " · приблизьте, чтобы увидеть цены";
     $("mapNote").hidden = !res.total;
     cluster.clearLayers();
+    mapMarkers.clear();
+    mapPoints.clear();
     styleDistricts();
     const markers = pts.map((p) => {
-      const icon = L.divIcon({
-        className: "pin-wrap", iconSize: null,
-        html: `<div class="pin${p.level && p.level !== "house" ? " approx" : ""}">${esc(fmtShortPrice(p.price, state.deal))}</div>`,
-      });
-      const mk = L.marker([p.lat, p.lon], { icon, riseOnHover: true })
-        .bindPopup(popupHTML(p), { closeButton: false, className: "map-pop", offset: [0, -30], maxWidth: 280, minWidth: 250 });
-      mk.on("popupopen", (e) => fillPopup(e.popup, p));
+      const key = `id:${p.id}`;
+      const mk = L.marker([p.lat, p.lon], { icon: pinIcon(p, mapSel === key), riseOnHover: true, keyboard: true, title: fmtPrice(p.price, state.deal) });
+      mk.selIcon = (on) => pinIcon(p, on);
+      mk.on("click", () => openPointCard(p));
+      mapMarkers.set(key, mk);
+      mapPoints.set(p.id, p);
       return mk;
     });
-    // ЖК без точного дома — одна метка ЖК с числом объектов (а не гора меток в одной точке); нажатие — ЖК в фильтр, списком
+    // ЖК без точного дома — одна метка ЖК с числом объектов (а не гора меток в одной точке)
     cxs.forEach((c) => {
-      const icon = L.divIcon({ className: "pin-wrap", iconSize: null,
-        html: `<div class="pin cx">${esc(c.complex.length > 22 ? c.complex.slice(0, 21) + "…" : c.complex)} · ${num(c.n)}</div>` });
-      const mk = L.marker([c.lat, c.lon], { icon, riseOnHover: true, n: c.n }).bindPopup(`<div class="map-card"><div class="mc-body">
-          <div class="mc-head">ЖК ${esc(c.complex)}</div>
-          <div class="mc-title">${num(c.n)} ${plural(c.n, "объект", "объекта", "объектов")}${c.price_min ? ` · от ${esc(fmtPrice(c.price_min, state.deal))}` : ""}</div>
-          <div class="mc-approx">Точка — центр ЖК: дом в объявлениях не указан</div>
-          <span class="mc-more" data-cx-list="${esc(c.complex)}">Показать списком →</span></div></div>`,
-        { closeButton: false, className: "map-pop", offset: [0, -30], maxWidth: 280, minWidth: 220 });
+      const key = `cx:${c.complex}`;
+      const mk = L.marker([c.lat, c.lon], { icon: cxIcon(c, mapSel === key), riseOnHover: true, n: c.n });
+      mk.selIcon = (on) => cxIcon(c, on);
+      mk.on("click", () => { showMapCard(key, cxCardHTML(c)); revealUnderCard([c.lat, c.lon]); });
+      mapMarkers.set(key, mk);
       markers.push(mk);
     });
     agg.forEach((c) => {   // гость, общий вид: кружок с числом объектов; нажатие — приблизить сюда
       const icon = L.divIcon({ className: "pin-wrap", iconSize: null, html: `<div class="pin agg">${num(c.n)}</div>` });
-      markers.push(L.marker([c.lat, c.lon], { icon, n: c.n }).on("click", () => map.flyTo([c.lat, c.lon], Math.min(17, map.getZoom() + 2), { duration: 0.5 })));
+      markers.push(L.marker([c.lat, c.lon], { icon, n: c.n }).on("click", () => map.setView([c.lat, c.lon], Math.min(17, map.getZoom() + 2), { animate: true })));
     });
-    if (agg.length && res.guest) {
-      $("mapNote").textContent = `${$("mapNote").textContent} Приблизьте карту, чтобы увидеть цены, — или войдите.`.trim();
-    }
     if (cluster.addLayers) cluster.addLayers(markers); else markers.forEach((m) => cluster.addLayer(m));
-    const chosen = districtShapes.filter((sh) => state.districts.includes(sh.zoneName));
+    // выбранный объект пропал из поиска — карточку закрываем; остался — подсветка уже стоит
+    if (mapSel.startsWith("id:") && !mapMarkers.has(mapSel)) closeMapCard();
+    else if (mapSel.startsWith("cx:") && !mapMarkers.has(mapSel)) closeMapCard();
+    else if (mapSel.startsWith("dz:")) showMapCard(mapSel, districtCardHTML(mapSel.slice(3)));
+    if (mode === "keep" && mapFitted) return;
     const all = pts.map((p) => [p.lat, p.lon]).concat(cxs.map((c) => [c.lat, c.lon]), agg.map((c) => [c.lat, c.lon]));
-    if (!fit) return;   // гость двигал карту сам — вид не меняем
+    const chosen = districtShapes.filter((sh) => state.districts.includes(sh.zoneName));
+    const pk = placeKey();
+    const view = map.getBounds();
+    const visible = all.some((ll) => view.contains(ll));
+    const needFit = mode === "fit" || !mapFitted || pk !== mapPlaceKey || !visible;
+    mapPlaceKey = pk;
+    if (!needFit) return;
+    const first = !mapFitted;
     mapFitted = true;
-    if (all.length) map.flyToBounds(coreBounds(all).pad(0.1), { maxZoom: 15, duration: 0.6 });
-    if (mapScrollPending) {
-      mapScrollPending = false;
-      requestAnimationFrame(() => { $("mapBox").scrollIntoView({ block: "start" }); map.invalidateSize(); });
-    }
-    else if (chosen.length) map.flyToBounds(chosen.reduce((b, sh) => b.extend(sh.getBounds()), L.latLngBounds([])).pad(0.1), { maxZoom: 15, duration: 0.6 });   // объектов нет — к району
-    setTimeout(() => map.invalidateSize(), 0);
+    const opts = { padding: [28, 28], maxZoom: 15, animate: !first, duration: .45 };
+    if (all.length) map.fitBounds(coreBounds(all), opts);
+    else if (chosen.length) map.fitBounds(chosen.reduce((b, sh) => b.extend(sh.getBounds()), L.latLngBounds([])), opts);   // объектов нет — к району
   }
 
   function applyView() {
     const isMap = state.view === "map";
-    $("mapBox").hidden = !isMap;
-    if (!isMap) $("mapNote").hidden = true;
+    const was = document.body.classList.contains("map-mode");
+    $("mapWrap").hidden = !isMap;
+    if (!isMap) { $("mapNote").hidden = true; closeMapCard(); }
     $("results").hidden = isMap;
     if (isMap) $("loadMore").hidden = true;
-    // акт 14.10: карта — отдельный экран: на всю высоту, без приветствия, сразу на виду
-    const was = document.body.classList.contains("map-mode");
+    // акт 14.10 / 16.11: карта — отдельный экран: на компьютере фильтры слева, карта справа на всю высоту;
+    // на телефоне карта занимает всё место под строкой поиска, страница не прокручивается
     document.body.classList.toggle("map-mode", isMap);
-    if (isMap && !was) mapScrollPending = true;   // прокрутим к карте, когда она нарисуется (loadMap)
+    document.documentElement.classList.toggle("map-mode", isMap);
+    if (isMap) measureNav();
+    if (isMap !== was) {
+      window.scrollTo(0, 0);
+      if (map) requestAnimationFrame(() => map.invalidateSize({ pan: false }));
+    }
+    updateViewFab();
   }
-  let mapScrollPending = false;
+  function switchView(v) {
+    if (favMode) setFavMode(false);
+    if (state.view === v) return;
+    const go = () => {
+      state.view = v;
+      syncControls();
+      writeUrl();
+      applyView();
+      setTab(v);
+      if (v === "map") loadMap(); else loadList();
+    };
+    if (document.startViewTransition && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) document.startViewTransition(go);
+    else go();
+  }
+  // высота шапки (на планшете она над картой) — чтобы панель фильтров и карта встали ровно под ней
+  function measureNav() {
+    const nav = document.querySelector("body > .nav");
+    if (nav && nav.offsetHeight) document.body.style.setProperty("--map-navh", `${nav.offsetHeight}px`);
+  }
+  window.addEventListener("resize", () => { if (state.view === "map") measureNav(); });
+  function updateViewFab() {
+    const b = $("viewFab");
+    if (!b) return;
+    const isMap = state.view === "map";
+    b.classList.toggle("is-map", isMap);
+    b.hidden = favMode || EMBED;
+    b.querySelector("span").textContent = isMap ? "Показать списком" : "Показать на карте";
+    b.setAttribute("aria-label", isMap ? "Показать списком" : "Показать на карте");
+  }
   // Масштаб карты — по основной массе точек: одна далёкая точка (Тимашевск, Выселки) не уводит карту за город
   function coreBounds(ll) {
     if (ll.length < 20) return L.latLngBounds(ll);
@@ -1220,7 +1435,7 @@
     if (d && d.open) d.close();
     if ($("detail").open) closeDlg($("detail"));
     document.querySelectorAll(`.item[data-id="${id}"]`).forEach((el) => { el.style.transition = "opacity .3s, transform .3s"; el.style.opacity = "0"; el.style.transform = "scale(.96)"; setTimeout(() => el.remove(), 300); });
-    if (map) loadMap();
+    if (map) loadMap("keep");
     toast("Скрыто для вас. Вернуть — «В работе» → «Скрытые»", 3500);
   }
 
@@ -1401,7 +1616,7 @@
         + (r.data.applied ? `. Поправлено ещё объектов: ${r.data.applied}` : ""), 5000);
     if (geoQueue) { nextInQueue(); return; }
     if ($("detail").open && openedId === geoId) openDetail(geoId);
-    if (state.view === "map") loadMap();
+    if (state.view === "map") loadMap("keep");
   }
   // 10.11 (Артём): убрать метку объекта с карты одной кнопкой (Сочи, Адлер и т. п. вставали в центр Краснодара)
   async function geoOffOn(id, off) {
@@ -1412,7 +1627,7 @@
     toast(off ? "Метка убрана с карты — сервис сам её не вернёт" : "Вернули: точку найдём по адресу заново", 4000);
     if (map) map.closePopup();
     if ($("detail").open && openedId === id) openDetail(id);
-    if (state.view === "map") loadMap();
+    if (state.view === "map") loadMap("keep");
   }
   // Следующий объект из очереди админки
   async function nextInQueue() {
@@ -1793,7 +2008,7 @@
     window.scrollTo({ top: 0, behavior: "smooth" });
     loadList();
     loadFacets();
-    if (state.view === "map") loadMap();
+    if (state.view === "map") loadMap("keep");
   }
 
   // ─── шторка фильтров (телефон) ──────────────────────────────────────────
@@ -1830,8 +2045,7 @@
   // ─── нижняя панель (телефон) ────────────────────────────────────────────
   function setTab(tab) {
     document.querySelectorAll(".tabbar [data-tab], .nav-links [data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
-    const vc = $("viewChip");   // кнопка «Карта / Список» в строке над выдачей (на телефоне — единственный переключатель)
-    if (vc) { vc.dataset.tab = tab === "map" ? "list" : "map"; vc.textContent = tab === "map" ? "Список" : "Карта"; }
+    updateViewFab();   // 16.11: заметная кнопка «Показать на карте / списком» внизу
   }
 
   const known = new Map();  // объекты, которые уже пришли списком/картой — для мгновенного открытия
@@ -2292,6 +2506,7 @@
       if (more && !more.contains(e.target)) more.open = false;   // «Ещё ▾» — закрыть при клике мимо
       const t = e.target.closest("button");
       if (!t) return;
+      if (t.hasAttribute("data-view-toggle")) { switchView(state.view === "map" ? "list" : "map"); return; }
       if (t.dataset.fav) { e.stopPropagation(); toggleFavorite(Number(t.dataset.fav)); return; }
       if (t.dataset.crm) { setCrm(Number(t.dataset.id), t.dataset.crm, t); return; }
       if (t.dataset.cmp) { e.stopPropagation(); toggleCompare(Number(t.dataset.cmp)); return; }
@@ -2407,15 +2622,8 @@
       else if (t.dataset.room) toggle(state.rooms, Number(t.dataset.room));
       else if (t.dataset.district) toggle(state.districts, t.dataset.district);
       else if (t.dataset.complex) toggle(state.complexes, t.dataset.complex);
-      else if (t.dataset.view) {
-        if (state.view === t.dataset.view) return;
-        state.view = t.dataset.view;
-        syncControls();
-        writeUrl();
-        applyView();
-        if (state.view === "map") loadMap(); else loadList();
-        return;
-      } else return;
+      else if (t.dataset.view) { switchView(t.dataset.view); return; }
+      else return;
       syncControls();
       refresh();
     });

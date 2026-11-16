@@ -633,8 +633,7 @@ html.embed dialog::backdrop { background: transparent !important; backdrop-filte
 
 /* Карта — отдельный экран (акт 14.10): на всю высоту окна, приветствие спрятано */
 body.map-mode #hero { display: none; }
-body.map-mode #mapBox { height: calc(100dvh - 120px); min-height: 420px; scroll-margin-top: 96px; }
-@media (max-width: 820px) { body.map-mode #mapBox { height: calc(100dvh - 170px); } }
+/* 16.11: раскладка режима карты — в конце файла («КАРТА — ОТДЕЛЬНЫЙ ЭКРАН») */
 
 /* Окно «Клиенту» — целиком на экране на любой ширине (акт 14.10: обрезалось на ~800 px) */
 .client-dlg { max-height: calc(100dvh - 24px); overflow: auto; }
@@ -1789,3 +1788,212 @@ dialog, .lb, .ov-box { overscroll-behavior: contain; }
 .np-saved.on { opacity: 1; }
 .np-saved.bad { color: var(--bad); }
 @media (prefers-reduced-motion: reduce) { .np-sw, .np-sw::after { transition: none; } }
+
+/* ─── 16.11 КАРТА — ОТДЕЛЬНЫЙ ЭКРАН (Артём: «фильтры сползают, всё крутится, фильтры открываются под картой») ───
+   Компьютер: фильтры слева своей прокруткой, карта справа неподвижна на всю высоту. Телефон: карта занимает всё под
+   строкой поиска, страница не прокручивается, фильтры — шторкой поверх карты. Слои Leaflet (z-index до 1000) заперты
+   внутри .map-wrap (isolation), поэтому шторка фильтров, выпадающие списки и строка поиска — всегда над картой. */
+.map-side { display: contents; }
+.map-wrap { position: relative; isolation: isolate; z-index: 0; }
+.map-wrap[hidden], .mcard[hidden] { display: none !important; }
+.map-wrap .map { margin-top: 14px; }
+.map-wrap .map-note { position: absolute; z-index: 500; top: 12px; right: 12px; margin: 0;
+  max-width: calc(100% - 150px); padding: 7px 14px; border-radius: 999px; background: rgba(1, 40, 39, .82); color: var(--gold-200);
+  font: 500 12.5px/1.35 var(--body); text-align: center; pointer-events: none; box-shadow: 0 4px 14px rgba(0, 20, 20, .3);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+body.map-mode #results, body.map-mode .more-results, body.map-mode .foot { display: none !important; }
+body.map-mode .bar-right > :not(.view) { display: none !important; }   /* сортировка на карте ни на что не влияет */
+html.map-mode { overflow: hidden; }                                      /* экран карты не прокручивается — ничего не «едет» */
+body.map-mode .map-wrap .map { height: 100% !important; margin: 0; min-height: 0; }
+
+@media (min-width: 641px) {
+  body.map-mode { --side-w: clamp(300px, 28vw, 390px); --m-pad: 14px; --m-top: 14px; --m-bot: 14px; }
+  body.map-mode .wrap { max-width: none; display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); column-gap: 18px;
+    align-items: start; padding: var(--m-pad) 18px 0; }
+  body.map-mode .map-side { display: block; grid-column: 1; grid-row: 1; position: sticky; top: var(--m-top);
+    height: calc(100vh - var(--m-top) - var(--m-bot)); height: calc(100dvh - var(--m-top) - var(--m-bot));
+    overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(243, 232, 188, .25) transparent;
+    padding: 0 6px 28px 0; }
+  body.map-mode .map-wrap { grid-column: 2; grid-row: 1; position: sticky; top: var(--m-top);
+    height: calc(100vh - var(--m-top) - var(--m-bot)); height: calc(100dvh - var(--m-top) - var(--m-bot)); }
+  body.map-mode .map-wrap .map { border-radius: 22px; }
+  body.map-mode .search { margin-top: 0; }
+  body.map-mode .search .q-wrap { flex: 1 1 100%; }
+  body.map-mode .filters { padding: 16px 14px; min-width: 0; }
+  body.map-mode .f-group, body.map-mode .f-chips, body.map-mode .f-seg { min-width: 0; }
+  body.map-mode .f-chips { flex-wrap: wrap; }
+  body.map-mode .f-seg { display: flex; flex-wrap: nowrap; width: 100%; }
+  body.map-mode .f-seg .chip { flex: 1 1 0; min-width: 0; padding-left: 4px; padding-right: 4px; }
+  body.map-mode .search .deal .seg-req { display: none; }   /* запросы покупателей — не про карту */
+  body.map-mode .search .deal { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+  body.map-mode .f-grid { gap: 16px 18px; }
+  body.map-mode .f-group:not(.f-price) { flex: 1 1 100%; }
+  body.map-mode .f-price { flex: 1 1 100%; max-width: none; }
+  body.map-mode .more { grid-template-columns: 1fr; padding: 14px; }
+  body.map-mode .bar { margin-top: 16px; border-bottom: 0; padding-bottom: 0; }
+  body.map-mode .bar-right { width: 100%; }
+  body.map-mode .bar .view { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+}
+/* меню слева есть с 821 px; уже — шапка сверху и панель меню снизу */
+@media (min-width: 641px) and (max-width: 820px) {
+  body.map-mode { --side-w: 300px; --m-pad: 10px; --m-top: calc(var(--map-navh, 67px) + 10px); --m-bot: calc(90px + env(safe-area-inset-bottom)); }
+  body.map-mode .wrap { padding-left: 12px; padding-right: 12px; column-gap: 12px; }
+}
+
+/* телефон: всё под строкой поиска — карта; страница не прокручивается */
+@media (max-width: 640px) {
+  body.map-mode { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  body.map-mode > .nav { flex: none; }
+  body.map-mode .wrap { flex: 1 1 auto; min-height: 0; width: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
+  body.map-mode .search, body.map-mode .bar, body.map-mode .saved-row, body.map-mode .hit-note { flex: none; }
+  body.map-mode .bar { margin: 0 0 8px; padding-bottom: 0; border-bottom: 0; }
+  body.map-mode .bar-right { display: none; }
+  body.map-mode .map-wrap { flex: 1 1 auto; min-height: 220px; margin: 0 -16px; }
+  body.map-mode .map-wrap .map { border-radius: 0; border-left: 0; border-right: 0; }
+  .map-wrap .map-note { right: 10px; max-width: calc(100% - 140px); font-size: 12px; padding: 6px 11px; }
+  .map-wrap .map-note .mn-more { display: none; }
+}
+
+/* выбранная метка — золотая и над соседями */
+.pin.sel { background: var(--gold-300); color: var(--teal-950); border-color: var(--teal-950); transform: translate(-50%, calc(-100% - 11px)) scale(1.14);
+  box-shadow: 0 0 0 4px rgba(227, 203, 143, .45), 0 8px 20px rgba(0, 25, 25, .45); }
+.pin.sel::after { border-color: var(--teal-950); }
+.leaflet-marker-icon:hover .pin.sel { transform: translate(-50%, calc(-100% - 12px)) scale(1.16); }
+.leaflet-container .leaflet-marker-icon:focus { outline: none; }
+.leaflet-container .leaflet-marker-icon:focus-visible .pin { box-shadow: 0 0 0 3px var(--gold-300), 0 4px 12px rgba(0, 30, 30, .35); }
+.leaflet-bar a { touch-action: manipulation; }
+
+/* ─── карточка выбранной метки ─── */
+.mcard { position: absolute; z-index: 1100; top: 14px; right: 14px; width: 368px; max-height: calc(100% - 28px);
+  overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; scrollbar-width: thin;
+  background: var(--gold-100); color: var(--teal-950); border-radius: 22px; font: 14px/1.4 var(--body);
+  box-shadow: 0 22px 60px rgba(0, 25, 25, .42), 0 2px 8px rgba(0, 25, 25, .22); }
+.mcard.in { animation: mcIn .32s var(--m-out, cubic-bezier(.22, 1, .36, 1)) both; }
+@keyframes mcIn { from { opacity: 0; transform: translateY(-10px) scale(.97); } }
+@keyframes mcUp { from { opacity: 0; transform: translateY(40px); } }
+.mcard-grab { display: none; }
+.mcard-x { position: absolute; z-index: 3; top: 10px; right: 10px; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%;
+  display: grid; place-items: center; background: rgba(1, 40, 39, .7); color: var(--gold-100); cursor: pointer;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); transition: background-color .2s; }
+.mcard-x:hover { background: var(--teal-950); }
+.mcard-x .ic { width: 18px; height: 18px; margin: 0; }
+.mc2 { cursor: pointer; }
+.mc2-cx { cursor: default; padding: 18px 0 2px; }
+.mc2-cx > .mc2-head, .mc2-cx > .mc2-price, .mc2-cx > .mc2-title, .mc2-cx > .mc-approx { margin-left: 16px; margin-right: 56px; }
+.mc2-cx > .mc-approx { margin-top: 8px; }
+.mc2-top { position: relative; display: grid; grid-template-columns: 1fr; }
+.mc2-ph { position: relative; height: 188px; background: var(--teal-100); overflow: hidden; border-radius: 22px 22px 0 0; }
+.mc2-ph img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .5s var(--m-out, ease); }
+.mc2:hover .mc2-ph img { transform: scale(1.03); }
+.mc2-ph.none { height: 92px; display: grid; place-items: center; color: var(--teal-600); font-size: 13px; letter-spacing: .03em;
+  background: linear-gradient(160deg, var(--teal-50), var(--teal-100)); }
+.mc2-ph.skel { background: linear-gradient(90deg, var(--teal-50), var(--teal-100), var(--teal-50)); background-size: 200% 100%; animation: mcSk 1.2s linear infinite; }
+@keyframes mcSk { to { background-position: -200% 0; } }
+.mc2-n { position: absolute; left: 10px; bottom: 10px; padding: 3px 9px; border-radius: 999px; background: rgba(1, 40, 39, .72);
+  color: var(--gold-100); font: 600 11.5px var(--body); }
+.mc2-fav.fav-btn { top: 10px; right: 54px; left: auto; width: 36px; height: 36px; background: rgba(1, 40, 39, .7); color: var(--gold-100); }
+.mc2-b { display: grid; gap: 2px; padding: 12px 16px 0; min-width: 0; }
+.mc2-head { font: 600 11.5px/1.3 var(--body); letter-spacing: .07em; text-transform: uppercase; color: var(--teal-600); }
+.mc2-price { font: 600 23px/1.15 var(--head); color: var(--teal-800); letter-spacing: .01em; }
+.mc2-m2 { font-size: 12.5px; color: var(--teal-600); }
+.mc2-title { font-size: 14px; color: var(--teal-950); margin-top: 2px; }
+.mc2-b .skel { display: grid; gap: 6px; padding-top: 4px; }
+.mc2-b .skel i { display: block; height: 10px; border-radius: 5px; background: var(--teal-100); }
+.mc2-b .skel i:last-child { width: 60%; }
+.mc2-addr { display: flex; align-items: flex-start; gap: 6px; margin: 8px 16px 0; font-size: 13px; color: var(--teal-700); }
+.mc2-addr .ic { width: 15px; height: 15px; flex: none; margin: 2px 0 0; color: var(--teal-500); }
+.mc2 .mc-approx { margin: 8px 16px 0; }
+.mc2-phone { display: grid; gap: 10px; margin: 12px 16px 0; padding: 12px; border-radius: 16px; background: #fff;
+  border: 1px solid rgba(3, 83, 82, .14); cursor: default; }
+.mc2-num { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.mc2-num a, .mc2-num > span { font: 600 19px/1.2 var(--head); color: var(--teal-800); text-decoration: none; letter-spacing: .03em; }
+.mc2-ok { display: inline-flex; align-items: center; gap: 3px; font: 600 11.5px var(--body); color: var(--teal-500); }
+.mc2-ok .ic { width: 14px; height: 14px; margin: 0; }
+.mc2-copy { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 13px; border-radius: 999px;
+  border: 1.5px solid var(--teal-600); background: var(--teal-50); color: var(--teal-700); font: 600 13px var(--body); cursor: pointer;
+  transition: background-color .2s, color .2s; }
+.mc2-copy .ic { width: 16px; height: 16px; margin: 0; }
+.mc2-copy:hover { background: var(--teal-100); }
+.mc2-copy.done { background: var(--teal-700); color: var(--gold-100); border-color: var(--teal-700); }
+.mc2-call { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mc2-call.one { grid-template-columns: 1fr; }
+.mc2-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 0 12px;
+  border-radius: 12px; border: 0; font: 600 14px var(--body); text-decoration: none; cursor: pointer; white-space: nowrap; }
+.mc2-btn .ic { width: 17px; height: 17px; margin: 0; }
+.mc2-btn.gold { background: var(--gold-300); color: var(--teal-950) !important; }
+.mc2-btn.gold:hover { background: var(--gold-400); }
+.mc2-btn.line { background: transparent; color: var(--teal-700) !important; border: 1.5px solid var(--teal-600); }
+.mc2-btn.line:hover { background: var(--teal-50); }
+.mc2-btn.wide { width: 100%; }
+.mc2-phone.locked small, .mc2-more-ph { font-size: 12px; color: var(--teal-600); }
+.mc2-open { display: flex; align-items: center; justify-content: center; gap: 8px; width: calc(100% - 32px); min-height: 50px;
+  margin: 14px 16px 16px; border: 0; border-radius: 14px; background: var(--teal-700); color: var(--gold-100);
+  font: 600 15.5px var(--body); cursor: pointer; box-shadow: 0 8px 20px rgba(3, 71, 70, .3); transition: background-color .2s, transform .2s; }
+.mc2-open:hover { background: var(--teal-800); }
+.mc2-open:active { transform: scale(.98); }
+.mc2-open .ic { width: 18px; height: 18px; margin: 0; transition: transform .2s; }
+.mc2-open:hover .ic { transform: translateX(3px); }
+.mc2-cx .mc2-open { margin-bottom: 8px; }
+.mc2-sec { display: flex; align-items: center; justify-content: center; gap: 7px; width: calc(100% - 32px); min-height: 42px;
+  margin: 0 16px 14px; border-radius: 12px; border: 1.5px solid rgba(3, 83, 82, .3); background: transparent; color: var(--teal-700);
+  font: 600 14px var(--body); cursor: pointer; }
+.mc2-sec:hover { background: var(--teal-50); }
+.mc2-sec .ic { width: 16px; height: 16px; margin: 0; }
+.mc2-adm { display: flex; flex-wrap: wrap; gap: 6px; margin: -6px 16px 14px; padding-top: 10px; border-top: 1px dashed rgba(3, 83, 82, .2); }
+.mc2-adm button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(3, 83, 82, .25);
+  background: transparent; color: var(--teal-700); font: 600 12px var(--body); cursor: pointer; }
+.mc2-adm button.off { color: #a3402c; border-color: rgba(163, 64, 44, .35); }
+.mc2-adm .ic { width: 14px; height: 14px; margin: 0; }
+
+/* телефон и планшет (карта узкая): карточка — шторкой снизу, фото слева */
+@media (max-width: 820px) {
+  .mcard { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 76%; border-radius: 22px; }
+  .mcard.in { animation-name: mcUp; }
+  .mcard-grab { display: block; position: absolute; z-index: 2; top: 6px; left: 50%; width: 38px; height: 4px; margin-left: -19px;
+    border-radius: 2px; background: rgba(1, 40, 39, .22); }
+  .mcard-x { top: 12px; right: 10px; width: 34px; height: 34px; background: rgba(1, 40, 39, .08); color: var(--teal-800); }
+  .mc2-top { grid-template-columns: 100px minmax(0, 1fr); gap: 12px; padding: 16px 50px 0 12px; }
+  .mc2-ph, .mc2-ph.none { height: 100px; border-radius: 14px; }
+  .mc2-n { left: 6px; bottom: 6px; font-size: 10.5px; padding: 2px 7px; }
+  .mc2-fav.fav-btn { top: 20px; left: 16px; right: auto; width: 30px; height: 30px; }
+  .mc2-fav.fav-btn svg { width: 16px; height: 16px; }
+  .mc2-b { padding: 0; align-content: start; }
+  .mc2-price { font-size: 21px; }
+  .mc2-title { font-size: 13.5px; }
+  .mc2-addr, .mc2 .mc-approx, .mc2-phone { margin-left: 12px; margin-right: 12px; }
+  .mc2-open { width: calc(100% - 24px); margin: 12px; }
+  .mc2-sec { width: calc(100% - 24px); margin-left: 12px; margin-right: 12px; }
+  .mc2-adm { margin-left: 12px; margin-right: 12px; }
+  .mc2-num a, .mc2-num > span { font-size: 18px; }
+  .mc2-btn { font-size: 13.5px; }
+}
+
+/* ─── заметная кнопка «Показать на карте / списком» (16.11) ─── */
+.view-fab { position: fixed; z-index: 65; left: 50%; bottom: 24px; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 9px; height: 50px; padding: 0 24px 0 19px; border: 0; border-radius: 999px;
+  background: var(--gold-300); color: var(--teal-950); font: 600 15px var(--body); letter-spacing: .01em; cursor: pointer; white-space: nowrap;
+  box-shadow: 0 12px 30px rgba(0, 20, 20, .5), inset 0 0 0 1px rgba(255, 255, 255, .35);
+  transition: transform .3s var(--m-out, ease), opacity .2s, background-color .2s; }
+.view-fab:hover { background: var(--gold-200); transform: translateX(-50%) translateY(-2px); }
+.view-fab:active { transform: translateX(-50%) scale(.97); }
+.view-fab:focus-visible { outline: 3px solid var(--gold-100); outline-offset: 3px; }
+.view-fab svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.view-fab .vf-list, .view-fab.is-map .vf-map { display: none; }
+.view-fab.is-map .vf-list { display: block; }
+.view-fab.is-map { background: var(--teal-800); color: var(--gold-100); box-shadow: 0 12px 30px rgba(0, 20, 20, .45), inset 0 0 0 1px rgba(243, 232, 188, .3); }
+.view-fab.is-map:hover { background: var(--teal-900); }
+.view-fab[hidden] { display: none; }
+body.sheet-open .view-fab { opacity: 0; pointer-events: none; }
+@media (min-width: 821px) {
+  body.has-rail .view-fab { left: calc(50% + 48px); }
+  body.has-rail.map-mode .view-fab { left: calc(50% + (var(--side-w) + 114px) / 2); }
+}
+@media (min-width: 641px) and (max-width: 820px) {
+  .view-fab { bottom: calc(96px + env(safe-area-inset-bottom)); }
+  body.map-mode .view-fab { left: calc(50% + (var(--side-w) + 6px) / 2); }
+}
+@media (max-width: 640px) {
+  .view-fab { bottom: calc(90px + env(safe-area-inset-bottom)); height: 46px; padding: 0 20px 0 16px; font-size: 14.5px; }
+}
+@media (max-width: 820px) { body.mc-open .view-fab { opacity: 0; pointer-events: none; transform: translate(-50%, 16px); } }
+@media (prefers-reduced-motion: reduce) { .mcard.in { animation: none; } .view-fab { transition: none; } }
