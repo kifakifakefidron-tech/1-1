@@ -91,13 +91,16 @@ def test_auto_queue_is_a_daily_sample_with_accuracy(conn):
     from app import brain
     for i in range(brain.SAMPLE_PER_SOURCE + 5):
         lid = add(conn, f"Студия 2{i % 10} м², {i % 9 + 1}/9 эт., ул. Ленина. 3 млн. 8918001{i:04d}")
-        conn.execute("UPDATE listings SET lat = 45.03, lon = 38.97, geo_status = 'approx', geo_src = 'osm-street' WHERE id = ?", (lid,))
+        conn.execute("UPDATE listings SET lat = 45.03, lon = 38.97, geo_status = 'ok', geo_src = 'osm-near' WHERE id = ?", (lid,))
     hl = add(conn, "Студия 30 м², 3/9 эт., ЖК Мозаика, ул. Ленина 5. 3 млн. 89180019999")
     conn.execute("UPDATE listings SET lat = 45.03, lon = 38.97, geo_status = 'ok', geo_src = 'map-cx' WHERE id = ?", (hl,))
     conn.commit()
     assert brain.counts(conn)["auto"] == brain.SAMPLE_PER_SOURCE   # центр ЖК при известном доме — не в выборке
+    conn.execute("UPDATE listings SET geo_status = 'approx', geo_src = 'osm-street' WHERE id = ?", (lid,))
+    assert brain.auto_source(conn, lid) is None   # 16.11: примерные точки — только в «Точка примерная», не в выборке
+    conn.execute("UPDATE listings SET geo_status = 'ok', geo_src = 'osm-near' WHERE id = ?", (lid,))
     src = brain.auto_source(conn, lid)
-    assert src == "point:osm-street" and brain.auto_source(conn, hl) is None
+    assert src == "point:osm-near" and brain.auto_source(conn, hl) is None
     brain.record_review(conn, lid, src, True)
     conn.commit()
-    assert brain.accuracy(conn) == [{"src": src, "label": "Точка — середина улицы", "checked": 1, "ok": 1, "share": 1.0}]
+    assert brain.accuracy(conn) == [{"src": src, "label": "Точка — соседний дом", "checked": 1, "ok": 1, "share": 1.0}]

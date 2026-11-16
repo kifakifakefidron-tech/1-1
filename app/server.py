@@ -1140,9 +1140,11 @@ def api_complaint(request: Request, body: dict | None = None):
             text = (text + "\n" if text else "") + "\n".join(f"Фото: {u}" for u in picked)
     # 02.11 (Артём): жалоба НЕ снимает, не скрывает и не отправляет объект в архив — только запись для админа,
     # решение принимает админ после разбора (вкладка «Жалобы» или блок «Админ» в окне объекта)
-    conn.execute("INSERT INTO complaints (listing_id, user_id, reason, text, ts) VALUES (?,?,?,?,?)",
-                 (lid, user["id"] if user is not None else None,
-                  str(body.get("reason", ""))[:40], text[:3000], int(time.time())))
+    cur = conn.execute("INSERT INTO complaints (listing_id, user_id, reason, text, ts) VALUES (?,?,?,?,?)",
+                       (lid, user["id"] if user is not None else None,
+                        str(body.get("reason", ""))[:40], text[:3000], int(time.time())))
+    if lid and body.get("reason") == "address":   # 16.11: «неверный адрес или район» — объект в очередь разбора «Жалобы на адрес»
+        conn.execute("UPDATE listings SET addr_complaint = ? WHERE id = ? AND addr_complaint IS NULL", (cur.lastrowid, lid))
     conn.commit()
     return JSONResponse({"ok": True})
 
@@ -1592,6 +1594,8 @@ def complaint_decide(conn, cid: int, action: str) -> dict:
         conn.execute("""UPDATE listings SET is_active = 1, hidden_reason = NULL
                         WHERE id = ? AND is_active = 0 AND COALESCE(hidden_reason, '') IN ('', 'admin')""", (lid,))
     status = COMPLAINT_ACTIONS[action]
+    if lid and status != "new":   # 16.11: жалоба разобрана во вкладке «Жалобы» — из очереди «Жалобы на адрес» тоже
+        conn.execute("UPDATE listings SET addr_complaint = NULL WHERE id = ? AND addr_complaint = ?", (lid, cid))
     if action in ("hide", "delete", "restore") and lid:   # объект снят/возвращён — все новые жалобы на него разобраны
         conn.execute("UPDATE complaints SET status = ?, decided_at = ? WHERE listing_id = ? AND (status = 'new' OR id = ?)",
                      (status, now, lid, cid))
@@ -2409,8 +2413,11 @@ def api_admin_place(request: Request, body: dict | None = None):
     d = {**dict(row), "complex": cx, "district": district}
     d["title"] = make_title(d)
     d["search_text"] = make_search_text(d)
+    if row["addr_complaint"]:   # 16.11: жалоба «неверный адрес» разобрана на экране разбора
+        conn.execute("UPDATE complaints SET status = 'done', decided_at = ? WHERE id = ? AND status = 'new'",
+                     (int(time.time()), row["addr_complaint"]))
     conn.execute("""UPDATE listings SET complex = ?, district = ?, extra_districts = ?, search_text = ?, admin_fixed = 1,
-                    district_src = NULL, place_conflict = NULL, parse_dispute = NULL, geo_status = CASE WHEN geo_status IN ('manual', 'learned', 'feed') THEN geo_status ELSE 'pending' END
+                    district_src = NULL, place_conflict = NULL, parse_dispute = NULL, agent_fixed = NULL, addr_complaint = NULL, geo_status = CASE WHEN geo_status IN ('manual', 'learned', 'feed') THEN geo_status ELSE 'pending' END
                     WHERE id = ?""", (cx, district, json.dumps(extra, ensure_ascii=False), d["search_text"], lid))
     _reindex(conn, lid, d["search_text"])
     for field, old, new in (("complex", row["complex"], cx), ("district", row["district"], district)):
@@ -2503,7 +2510,36 @@ def _fix_item(conn, lid: int) -> dict | None:
         "learn_stats": learning.safety(conn, r),   # распределение улицы и ЖК по районам — какие правила безопасно учить
         "repair_why": ingest.explain_repair(conn, r),   # 31.10: очередь «Ремонт» — как сервис решил, что сработало и что выключено
         "dispute": json.loads(r["parse_dispute"]) if r["parse_dispute"] else None,   # 16.11: правила ≠ нейросеть
+        "complaint": _fix_complaint(conn, r["addr_complaint"]),   # 16.11: жалоба «неверный адрес»
+        "agent_edit": _fix_agent_edit(conn, r),                   # 16.11: что поправил агент
     }
+
+
+_PLACE_FIELDS_RU = {"district": "район", "complex": "ЖК", "street": "улица", "house": "дом", "point": "точка на карте"}
+
+
+def _fix_complaint(conn, cid) -> str | None:
+    if not cid:
+        return None
+    c = conn.execute("SELECT text, ts FROM complaints WHERE id = ?", (cid,)).fetchone()
+    return (c["text"] or "без комментария").strip()[:500] if c else None
+
+
+def _fix_agent_edit(conn, r) -> dict | None:
+    if not r["agent_fixed"]:
+        return None
+    u = conn.execute("SELECT name, email FROM users WHERE id = ?", (r["agent_fixed"],)).fetchone()
+    phones = [x[0] for x in conn.execute("SELECT phone FROM agent_phones WHERE user_id = ?", (r["agent_fixed"],))]
+    ch = []
+    for e in conn.execute("""SELECT field, old, new FROM listing_edits WHERE listing_id = ? AND user_id = ? AND reverted = 0
+                             AND field IN ('district', 'complex', 'street', 'house', 'point') ORDER BY id""",
+                          (r["id"], r["agent_fixed"])):
+        if e["field"] == "point":
+            ch.append("точка на карте")
+            continue
+        old, new = json.loads(e["old"] or "null"), json.loads(e["new"] or "null")
+        ch.append(f"{_PLACE_FIELDS_RU[e['field']]}: «{old or '—'}» → «{new or '—'}»")
+    return {"who": (u and (u["name"] or u["email"])) or "агент", "phones": phones, "changes": list(dict.fromkeys(ch))}
 
 
 def _was_district(conn, r) -> str | None:

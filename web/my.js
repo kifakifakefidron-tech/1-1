@@ -154,7 +154,7 @@
     main.innerHTML = `
       <header class="my-head"><div><a class="my-back" href="/my">${ic("chevron-left")}Мои объекты</a>
         <h1>${isNew ? "Новый объект" : "Изменить объявление"}</h1>
-        <p>${isNew ? "Заполните по шагам — справа видно, как объект увидят коллеги в поиске." : own ? esc(o.title) : "Объявление из чатов: можно поменять цену, описание и фото — остальное берётся из сообщения."}</p></div></header>
+        <p>${isNew ? "Заполните по шагам — справа видно, как объект увидят коллеги в поиске." : own ? esc(o.title) : "Объявление из чатов: можно поменять цену, описание, фото, адрес и район — остальное берётся из сообщения."}</p></div></header>
       <div class="my-edit">
         <form id="myForm" class="my-form" autocomplete="off">
           ${own ? `
@@ -197,7 +197,17 @@
             <div class="my-ai-box" id="myAiBox" hidden></div>
           </section>
           <section class="my-sec"><h3><b>${own ? 6 : 3}</b>Фото</h3>${isNew ? `<p class="my-hint">Фото можно будет добавить сразу после публикации — мы откроем этот же объект.</p>` : photosHTML()}</section>
-          ${own ? "" : `<section class="my-sec"><h3><b>4</b>Точка на карте</h3>${geoHTML()}</section>`}
+          ${own ? "" : `<section class="my-sec"><h3><b>4</b>Где</h3>
+            <p class="my-hint">Сервис неверно понял адрес или район? Поправьте — объект сразу будет искаться по-новому,
+              а повторы этого поста в чатах вашу правку не перебьют. Правку проверит администратор.</p>
+            <div class="my-grid2">
+              ${fieldHTML("district", "Район", o.district, 'placeholder="начните вводить: ФМР, Юбилейный…"')}
+              ${fieldHTML("complex", "ЖК", o.complex, 'placeholder="если есть"')}
+              ${fieldHTML("street", "Улица", o.street, 'placeholder="например Красная"')}
+              ${fieldHTML("house", "Дом", o.house, 'placeholder="например 176/2"')}
+            </div>
+            <a class="my-ya" data-ya href="https://yandex.ru/maps/35/krasnodar/" target="_blank" rel="noopener">${ic("search")}Проверить адрес в Яндекс Картах ↗</a>
+            ${geoHTML()}</section>`}
           <p class="err" id="myErr" hidden></p>
         </form>
         <aside class="my-side">
@@ -303,7 +313,7 @@
     $("myUnit").textContent = deal === "rent" ? "₽ в месяц" : "млн ₽";
     const desc = $("myForm").description.value;
     $("myLen").textContent = desc.length;
-    const x = { ...o, ...(own ? v : {}), price, deal, rooms: v.rooms === "" ? null : Number(v.rooms ?? o.rooms) };
+    const x = { ...o, ...(own ? v : { district: v.district, complex: v.complex, street: v.street, house: v.house }), price, deal, rooms: v.rooms === "" ? null : Number(v.rooms ?? o.rooms) };
     const rooms = x.rooms === 0 ? "Студия" : x.rooms ? `${x.rooms}-комн.` : "";
     const what = own ? [TYPES[x.type] || "", rooms, v.area && `${v.area} м²`, v.land && `${v.land} сот.`, v.floor && `${v.floor}${v.floors ? "/" + v.floors : ""} эт.`].filter(Boolean).join(", ") : o.title;
     const photo = (o.photos || [])[0];
@@ -323,12 +333,10 @@
   }
   function bindEdit() {
     const f = $("myForm");
-    if (own) {
-      showFor(f.type.value);
-      if (window.Combo) {
-        Combo(f.district, { options: () => (meta.districts || []).map((d) => ({ value: d })), onPick: updatePreview });
-        Combo(f.complex, { options: () => complexes.map((c) => ({ value: c.name, meta: `${c.n}` })), onPick: updatePreview });
-      }
+    if (own) showFor(f.type.value);
+    if (window.Combo && f.district) {   // 16.11: и у объявлений из чатов — район и ЖК из подсказок
+      Combo(f.district, { options: () => (meta.districts || []).map((d) => ({ value: d })), onPick: updatePreview });
+      Combo(f.complex, { options: () => complexes.map((c) => ({ value: c.name, meta: `${c.n}` })), onPick: updatePreview });
     }
     f.addEventListener("input", updatePreview);
     f.addEventListener("submit", (e) => { e.preventDefault(); save(); });
@@ -363,7 +371,11 @@
     const err = $("myErr");
     err.hidden = true;
     const fd = formVals();
-    if (!own) for (const k of Object.keys(fd)) if (!["price", "description"].includes(k)) delete fd[k];
+    // объявление из чата: цена, описание и — только если меняли — адрес и район (16.11)
+    if (!own) for (const k of Object.keys(fd)) {
+      const place = ["district", "complex", "street", "house"].includes(k);
+      if (!["price", "description"].includes(k) && !(place && String(fd[k] ?? "").trim() !== String(o[k] ?? "").trim())) delete fd[k];
+    }
     if (ptDirty) { fd.lat = pt ? pt.lat : ""; fd.lon = pt ? pt.lon : ""; }
     const btn = document.querySelector(".my-save");
     btn.disabled = true; btn.textContent = "Сохраняем…";

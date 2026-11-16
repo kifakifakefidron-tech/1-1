@@ -31,7 +31,8 @@ AUTO_SRC = (f"(CASE WHEN l.district_src IN {_WEAK_D} THEN 'district:' || l.distr
             f"ELSE 'point:' || l.geo_src END)")
 _AUTO_ALL = (f"((l.admin_fixed = 0 AND (l.district_src IN {_WEAK_D} OR (l.district_src = 'map' "
              f"AND COALESCE(l.geo_src, '') NOT IN {_SURE_GEO} AND l.geo_status NOT IN ('manual', 'learned', 'feed')))) "
-             f"OR (l.geo_src IN {_AUTO_GEO} AND l.geo_status NOT IN ('manual', 'feed') "
+             # 16.11: примерные точки — уже в очереди «Точка примерная», в выборку их не берём (не дублируем)
+             f"OR (l.geo_src IN {_AUTO_GEO} AND l.geo_status NOT IN ('manual', 'feed', 'approx') "
              # центр ЖК при известном доме — не в проверку: такой дом сервис ищет сам (geocode.run: дом раньше ЖК)
              f"AND NOT (l.geo_src IN {_CX_GEO} AND l.street IS NOT NULL AND l.house IS NOT NULL)))")
 SRC_LABEL = {"district:vote-house": "Район «как у соседей по дому»", "district:vote-cx": "Район «как у соседей по ЖК»",
@@ -45,23 +46,35 @@ SRC_LABEL = {"district:vote-house": "Район «как у соседей по 
 VISIBLE = ("l.is_active = 1 AND (l.district IS NOT NULL OR l.complex IS NOT NULL OR l.street IS NOT NULL "
            "OR l.settlement IS NOT NULL)")
 
+_HAS_PLACE = "(l.district IS NOT NULL OR l.settlement IS NOT NULL OR l.admin_fixed = 1)"
 # Единая очередь — по важности. mode: что на экране разбора главное (place — район/ЖК, geo — точка); показываются оба.
 QUEUES: list[dict] = [
     {"key": "conflict", "mode": "place", "label": "Спорные",
      "hint": "Источники не сходятся (ваше правило и ваша карта, карта и соседние объявления) — решите вы",
      "where": "l.place_conflict IS NOT NULL AND l.admin_fixed = 0"},
+    {"key": "complaint", "mode": "place", "label": "Жалобы на адрес",
+     "hint": "Пользователь сообщил: неверный адрес, район или ЖК. «Сохранить» — жалоба разобрана",
+     "where": "l.addr_complaint IS NOT NULL"},
+    {"key": "agent", "mode": "place", "label": "Поправил агент",
+     "hint": "Агент сам поправил адрес или район своего объявления — проверьте. «Сохранить» без правок — подтвердить",
+     "where": "l.agent_fixed IS NOT NULL AND l.addr_complaint IS NULL"},
     {"key": "dispute", "mode": "place", "label": "Правила и нейросеть спорят",
      "hint": "Правила и нейросеть прочитали текст по-разному (комнаты, площадь, этаж, цена, адрес) — выберите, кто прав",
      "where": "l.parse_dispute IS NOT NULL AND l.admin_fixed = 0"},
     {"key": "nodistrict", "mode": "place", "label": "Без района",
      "hint": "Не находятся фильтром по району",
-     "where": "l.district IS NULL AND l.settlement IS NULL AND l.admin_fixed = 0"},
+     "where": "l.district IS NULL AND l.settlement IS NULL AND l.admin_fixed = 0 AND l.place_conflict IS NULL"},
     {"key": "nogeo", "mode": "geo", "label": "Нет на карте",
-     "hint": "Адрес не нашёлся ни в справочнике, ни поиском",
-     "where": "l.lat IS NULL AND l.geo_status IN ('none', 'skip', 'pending')"},
+     "hint": "Адрес не нашёлся ни в справочнике, ни поиском (объекты без района — в очереди «Без района»)",
+     # 16.11: без пересечений — объект без района здесь не показываем (он в «Без района», там же и карта);
+     # 'pending' — сервис ещё ищет точку, в очередь только если ищет дольше суток
+     "where": f"""l.lat IS NULL AND (l.geo_status IN ('none', 'skip') OR (l.geo_status = 'pending'
+                  AND COALESCE(l.added_at, l.first_seen) < CAST(strftime('%s', 'now') AS INTEGER) - 86400)) AND {_HAS_PLACE}"""},
     {"key": "approx", "mode": "geo", "label": "Точка примерная",
-     "hint": "Стоит по улице или району — уточните дом",
-     "where": "l.geo_status = 'approx'"},
+     "hint": "В объявлении есть дом или ЖК, а точка стоит по улице или району — уточните. Объявления, где дом не указан, сюда не попадают",
+     # 16.11: только то, что можно уточнить (дом или ЖК есть); «только улица / только район» — норма, как «квартиры без ЖК»
+     "where": f"""l.geo_status = 'approx' AND {_HAS_PLACE}
+                  AND ((l.street IS NOT NULL AND l.house IS NOT NULL) OR l.complex IS NOT NULL)"""},
     {"key": "auto", "mode": "place", "label": "Проверить решения сервиса",
      "hint": f"Выборка на сегодня: до {SAMPLE_PER_SOURCE} случайных решений по каждому источнику (соседний дом, улица, "
              "центр ЖК, район «по соседям»). «Сохранить» без правок = «верно» — так считается точность источника",
@@ -74,7 +87,7 @@ QUEUES: list[dict] = [
              "для этого текста во всех чатах, по ответам видно, где правило ошибается",
      "where": "l.repair_doubt = 1 AND json_type(l.admin_fields, '$.repair') IS NULL AND l.type IN ('flat', 'new', 'house', 'room')"},
     {"key": "fixed", "mode": "place", "label": "Поправлено вами", "hint": "Ваши правки — можно пересмотреть",
-     "where": "l.admin_fixed = 1"},
+     "where": "l.admin_fixed = 1 AND l.agent_fixed IS NULL"},
 ]
 QUEUE = {q["key"]: q for q in QUEUES}
 # старые ссылки (/fix?mode=geo&kind=none, вкладки админки, письма) → единая очередь

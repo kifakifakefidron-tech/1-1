@@ -159,3 +159,21 @@ def test_unparsed_report_and_explain_api(tmp_path, monkeypatch):
         assert c.post("/api/admin/place-phrase", json={"phrase": "ab"}).status_code == 400
     conn.close()
     db._local.conn = None
+
+
+def test_queues_do_not_overlap(conn, add):
+    """16.11: объект без района и без точки — только в «Без района»; примерная точка без дома/ЖК — не в очереди;
+    примерные точки — не в выборке «Проверить решения сервиса»."""
+    a = add("2-к квартира 50 м², 3/9 эт., ул. Тестовая. 6 млн. 89180000071")["results"][0]["listing_id"]
+    b = add("1-к квартира 40 м², 2/9 эт., ул. Тестовая 7. 5 млн. 89180000072")["results"][0]["listing_id"]
+    conn.execute("UPDATE listings SET district = NULL, lat = NULL, geo_status = 'none' WHERE id = ?", (a,))
+    conn.execute("""UPDATE listings SET district = 'ЦМР', lat = 45.0, lon = 38.9, geo_status = 'approx', geo_src = 'osm-street'
+                    WHERE id = ?""", (b,))
+    conn.commit()
+    ids = lambda key: {r[0] for r in conn.execute(  # noqa: E731
+        f"SELECT l.id FROM listings l WHERE {brain.VISIBLE} AND {brain.QUEUE[key]['where']}")}
+    assert a in ids("nodistrict") and a not in ids("nogeo")
+    assert b in ids("approx") and b not in ids("auto")
+    conn.execute("UPDATE listings SET house = NULL WHERE id = ?", (b,))
+    conn.commit()
+    assert b not in ids("approx")   # дома нет — уточнять нечего

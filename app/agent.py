@@ -25,7 +25,9 @@ from . import accounts, config, geo, notices, rules
 
 DAY = 86400
 CODE_TTL = 30 * 60
-EDIT_FIELDS = ("price", "description", "status")      # что агент может менять в объявлении из чата
+EDIT_FIELDS = ("price", "description", "status",      # что агент может менять в объявлении из чата
+               "district", "complex", "street", "house")   # 16.11: и адрес/район (правку видит админ — очередь «Поправил агент»)
+PLACE_FIELDS = ("district", "complex", "street", "house")
 OWN_FIELDS = ("type", "deal", "rooms", "room_kind", "area", "land", "floor", "floors", "price", "district",
               "complex", "street", "house", "description")
 
@@ -327,7 +329,19 @@ def edit_listing(conn: sqlite3.Connection, user: sqlite3.Row, listing_id: int, d
                 v = rules.remove_phones(v)  # телефоны в описании не публикуем — они берутся из подтверждения
         elif k == "district":
             v = str(v).strip()[:80]
+            if v and row["source"] != "own" and not geo.canonical_district(v):
+                return False, f"Района «{v}» нет в списке — выберите из подсказок или оставьте поле пустым."
             v = (geo.canonical_district(v) or v) if v else None
+        elif k == "complex" and row["source"] != "own":
+            from . import cxnorm, geoaudit
+            v = str(v).strip()[:120] or None
+            if v and geoaudit.is_junk_complex(v):
+                return False, f"«{v}» — не название ЖК. Если ЖК нет, оставьте поле пустым."
+            v = cxnorm.canonical(conn, v) if v else None
+        elif k == "street" and row["source"] != "own":
+            from . import osmaddr
+            v = str(v).strip()[:120] or None
+            v = (osmaddr.fix_street(conn, v) or v) if v else None
         else:
             v = (str(v).strip()[:120]) or None
         if v != row[k]:
@@ -350,6 +364,14 @@ def edit_listing(conn: sqlite3.Connection, user: sqlite3.Row, listing_id: int, d
         _reindex(conn, listing_id, merged["search_text"])
         if changes.keys() & {"street", "house", "complex", "district"}:   # адрес поменялся — точку на карте ищем заново
             conn.execute("UPDATE listings SET geo_status = 'pending' WHERE id = ? AND geo_status NOT IN ('manual', 'feed')", (listing_id,))
+        if row["source"] != "own" and changes.keys() & set(PLACE_FIELDS):
+            # 16.11: агент поправил адрес/район объявления из чата — правка защищена от автоматики и повторов поста
+            # (admin_fixed + admin_fields, как правка админа), а админ видит её в очереди «Поправил агент»
+            adm = json.loads(row["admin_fields"] or "{}")
+            adm.update({k: v for k, v in changes.items() if k in PLACE_FIELDS})
+            conn.execute("""UPDATE listings SET agent_fixed = ?, admin_fixed = 1, admin_fields = ?, place_conflict = NULL,
+                            district_src = CASE WHEN ? THEN 'agent' ELSE district_src END WHERE id = ?""",
+                         (user["id"], json.dumps(adm, ensure_ascii=False), "district" in changes, listing_id))
         for k, v in changes.items():
             _log(conn, listing_id, user["id"], k, row[k], v)
     _set_point(conn, user, row, data)

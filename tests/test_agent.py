@@ -1,6 +1,7 @@
 """Кабинет агента: подтверждение номера кодом из мессенджера, «Мои объявления», правка только своего,
 свой объект на 20 дней с письмом «актуален?», журнал правок с откатом, фото."""
 import base64
+import json
 import time
 
 import pytest
@@ -489,3 +490,38 @@ def test_admin_edits_filters_and_users_filter(env):
     assert c.get(f"/api/admin/edits?who=all&q={lid}").json()["total"] == 1
     u = c.get("/api/admin/users?f=admin").json()
     assert u["total"] == 1 and u["summary"]["admin"] == 1
+
+
+def test_agent_fixes_place_admin_sees_and_confirms(env):
+    """16.11: агент правит адрес/район объявления из чата → правка защищена, админ видит её в очереди «Поправил агент»;
+    жалоба «неверный адрес» → очередь «Жалобы на адрес»; «Сохранить» на /fix закрывает обе."""
+    from app import brain, geo
+    c, conn, lid = env
+    _login(c, conn)
+    _verify(c, conn)
+    d = geo.canonical_district("ФМР")
+    r = c.post(f"/api/agent/listings/{lid}", json={"district": "Нет-такого-района"})
+    assert r.status_code == 400 and "нет в списке" in r.json()["detail"]
+    assert c.post(f"/api/agent/listings/{lid}", json={"district": "фмр", "street": "Красная", "house": "176"}).status_code == 200
+    row = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
+    assert (row["district"], row["street"], row["house"], row["district_src"]) == (d, "Красная", "176", "agent")
+    assert row["admin_fixed"] == 1 and row["agent_fixed"] and json.loads(row["admin_fields"])["district"] == d
+    counts = brain.counts(conn)
+    assert counts["agent"] == 1 and counts["fixed"] == 0
+    # повтор поста из чата правку агента не перебивает
+    mid = ingest.add_message(conn, source="wa", text=AD + " Центр", ts=int(time.time()), chat_id="c3", msg_id="m3")
+    ingest.process_message(conn, mid, use_llm=False)
+    assert conn.execute("SELECT district FROM listings WHERE id = ?", (lid,)).fetchone()[0] == d
+    # жалоба «неверный адрес»
+    assert c.post("/api/complaints", json={"listing_id": lid, "reason": "address", "text": "Это Юбилейный"}).status_code == 200
+    assert brain.counts(conn)["complaint"] == 1 and brain.counts(conn)["agent"] == 0
+    admin = accounts.upsert_email_user(conn, "boss@example.ru")
+    conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (admin["id"],))
+    conn.commit()
+    c.cookies.set(server.SESSION, accounts.create_session(conn, admin["id"]))
+    it = c.get(f"/api/admin/fix?kind=complaint&id={lid}").json()["item"]
+    assert it["complaint"] == "Это Юбилейный" and any("район" in x for x in it["agent_edit"]["changes"])
+    assert c.post(f"/api/admin/listings/{lid}/place", json={"district": d, "complex": "Мозаика"}).status_code == 200
+    counts = brain.counts(conn)
+    assert counts["complaint"] == counts["agent"] == 0 and counts["fixed"] == 1
+    assert conn.execute("SELECT status FROM complaints").fetchone()[0] == "done"

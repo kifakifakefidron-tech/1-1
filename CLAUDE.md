@@ -1267,6 +1267,18 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   источники — в выборке «Проверить решения сервиса» (brain._WEAK_D/_AUTO_GEO, SRC_LABEL). Dockerfile копирует tools/
   (`docker compose exec web python -m tools.geo_audit`). Отложено: справочник ФНС ГАР — только для проверки и написания
   (приоритет: правила админа > точки OSM > ГАР), правка района/адреса агентом своих объектов, жалоба «неверный адрес» → /fix.
+- 16.11 (ночь, Артём: «очереди не конфликтуют? ничего лишнего?», п. 6 «доделай»): ОЧЕРЕДИ /learn без пересечений (brain.QUEUES):
+  nodistrict — без place_conflict; nogeo — только с районом/посёлком (_HAS_PLACE) и none/skip или pending дольше суток (added_at);
+  approx — только с районом и (улица+дом или ЖК) — «только улица/район» норма, в очередь не идёт; выборка auto — без approx-точек
+  (они в approx); fixed — без agent_fixed. Новые: complaint «Жалобы на адрес» (listings.addr_complaint = id жалобы с reason
+  'address' — новая причина в окне объекта «Неверный адрес или район»; решение во вкладке «Жалобы» или «Сохранить» на /fix
+  закрывает и жалобу — status done) и agent «Поправил агент» (listings.agent_fixed = id агента). АГЕНТ ПРАВИТ АДРЕС объявления из
+  чата: agent.EDIT_FIELDS + district/complex/street/house (район — только из списка geo.canonical_district, ЖК — не мусор и
+  cxnorm.canonical, улица — osmaddr.fix_street), /my/edit — раздел «4 Где» (поля + Яндекс + точка), шлются только изменённые
+  поля; правка → admin_fixed 1 + admin_fields (повторы поста и автоматика не перебивают), district_src 'agent', журнал
+  listing_edits; /fix показывает «Поправил агент … : район «A» → «B»» (_fix_agent_edit) и текст жалобы (_fix_complaint);
+  «Сохранить» админа обнуляет agent_fixed и addr_complaint. Очередь «Правила и нейросеть спорят» наполняется только новыми
+  объявлениями, разобранными нейросетью (нужен DEEPSEEK_API_KEY).
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)

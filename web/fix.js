@@ -105,9 +105,17 @@
     $("fxCard").hidden = !it;
     $("fxDone").hidden = !!it;
     $("fxGroup").hidden = true;
-    $("fxConflict").hidden = !(it && it.conflict);
-    if (it && it.conflict) $("fxConflict").innerHTML = `${ic("alert")}<div><b>Спор:</b> ${esc(it.conflict)}.
-      <small>Выберите верный район — сервис запомнит (галочки «научить» ниже).</small></div>`;
+    // спор источников, жалоба «неверный адрес», правка агента (16.11) — одной плашкой над карточкой
+    const notes = [];
+    if (it && it.conflict) notes.push(`<b>Спор:</b> ${esc(it.conflict)}.
+      <small>Выберите верный район — сервис запомнит (галочки «научить» ниже).</small>`);
+    if (it && it.complaint) notes.push(`<b>Жалоба: неверный адрес или район.</b> «${esc(it.complaint)}»
+      <small>Поправьте и нажмите «Сохранить» — жалоба будет отмечена разобранной.</small>`);
+    if (it && it.agent_edit) notes.push(`<b>Поправил агент</b> ${esc(it.agent_edit.who)}${it.agent_edit.phones.length
+      ? ` (${esc(it.agent_edit.phones.join(", "))})` : ""}: ${esc(it.agent_edit.changes.join("; ") || "адрес")}.
+      <small>Верно — «Сохранить» без правок. Неверно — поправьте и сохраните.</small>`);
+    $("fxConflict").hidden = !notes.length;
+    if (notes.length) $("fxConflict").innerHTML = `${ic("alert")}<div>${notes.join("<br>")}</div>`;
     renderDispute(it);
     if (!it) {
       $("fxDone").innerHTML = `Очередь разобрана 🎉 <br><span class="note">Разобрано за сессию: ${ss.done.length}</span>`;
