@@ -838,7 +838,7 @@
     const fav = me() && (me().favorites || []).includes(p.id);
     const ph = photos.length
       ? `<div class="mc2-ph"><img src="${esc(pic(o, 0))}" data-full="${esc(photos[0])}" alt="${esc((o && o.title) || "")}" loading="lazy">${photos.length > 1 ? `<span class="mc2-n">${photos.length} фото</span>` : ""}</div>`
-      : o ? `<div class="mc2-ph none"><span>Фото у агента</span></div>` : `<div class="mc2-ph skel"></div>`;
+      : o ? `<div class="mc2-ph none" aria-hidden="true">${LOGO}<span>Фото у агента</span></div>` : `<div class="mc2-ph skel"></div>`;
     const addr = o ? address(o) : "";
     const approx = p.level && p.level !== "house";
     const adm = me() && me().is_admin
@@ -1643,35 +1643,140 @@
 
   // ─── админ: поправить ЖК и район и научить сервис ──────────────────────
   let placeId = 0, placeQueue = "";
-  // 18.10: карта — в том же окне «Все характеристики»; точка сохраняется, только если её двигали
+  // 18.10: карта — в том же окне «Все характеристики»; точка сохраняется, только если её двигали.
+  // 16.11 (Артём: «как в разборе»): на карте — ваши нарисованные районы; под меткой район подсвечивается и
+  // предлагается кнопкой, района нет — ставится сам после переноса метки; район объекта — золотом.
   let placeMap = null, placeMarker = null, placeGeoDirty = false;
+  let placeZones = [], placeZonesLoaded = false, placeAt = null, placeAtTimer = 0, placeAtSeq = 0;
+  const PZ_ALL = { weight: 1.5, color: "#035352", opacity: .55, fillColor: "#e3cb8f", fillOpacity: .07, dashArray: "5 5" };
+  const PZ_AT = { weight: 3, color: "#0f7d6c", opacity: 1, fillColor: "#5fd3b8", fillOpacity: .2, dashArray: null };
+  const PZ_ON = { weight: 3.5, color: "#b8892f", opacity: 1, fillColor: "#e3cb8f", fillOpacity: .3, dashArray: null };
+  // «п. Российский» и «Российский», «ё» и «е» — один район
+  const pzKey = (s) => String(s || "").toLowerCase().replace(/ё/g, "е").replace(/^(п\.|пос\.|пос[её]лок|мкр\.?|микрорайон)\s*/, "").trim();
+  async function placeLoadZones() {
+    if (placeZonesLoaded || !placeMap) return;
+    placeZonesLoaded = true;
+    let d;
+    try { d = await getJSON("/api/districts/map"); } catch { placeZonesLoaded = false; return; }
+    placeMap.createPane("pzones").style.zIndex = 350;
+    const layer = L.layerGroup().addTo(placeMap);
+    placeZones = (d.districts || []).map((z) => {
+      // контуры не ловят нажатия — нажатие на карту ставит метку, как раньше
+      const shape = L.polygon(z.rings, { pane: "pzones", interactive: false, lineJoin: "round", ...PZ_ALL });
+      const label = L.marker(shape.getBounds().getCenter(), { pane: "pzones", interactive: false, keyboard: false,
+        icon: L.divIcon({ className: "dz-label-wrap", iconSize: null, html: `<span class="dz-label">${esc(z.name)}</span>` }) });
+      layer.addLayer(shape);
+      return { name: z.name, key: pzKey(z.name), shape, label };
+    });
+    placeMap.on("zoomend", stylePlaceZones);
+    stylePlaceZones();
+  }
+  const placeZone = (name) => { const k = pzKey(name); return k ? placeZones.find((z) => z.key === k) : null; };
+  function stylePlaceZones() {
+    if (!placeMap) return;
+    const on = pzKey($("placeDistrict").value), at = pzKey(placeAt && placeAt.district);
+    const big = placeMap.getZoom() >= 13;
+    for (const z of placeZones) {
+      const st = z.key === on ? PZ_ON : z.key === at ? PZ_AT : PZ_ALL;
+      z.shape.setStyle(st);
+      if (st !== PZ_ALL) z.shape.bringToFront();
+      const show = big || st !== PZ_ALL;
+      if (show && !placeMap.hasLayer(z.label)) z.label.addTo(placeMap);
+      else if (!show && placeMap.hasLayer(z.label)) z.label.remove();
+      const el = z.label.getElement();
+      if (el) el.classList.toggle("on", st !== PZ_ALL);
+    }
+  }
   function placeGeoNow() {
     const ll = placeMarker.getLatLng(), o = known.get(placeId) || {};
-    $("placeGeoNow").textContent = placeGeoDirty ? `Новая точка: ${ll.lat.toFixed(6)}, ${ll.lng.toFixed(6)} — сохранится вместе с остальным`
-      : o.lat ? `Сейчас: ${(+o.lat).toFixed(6)}, ${(+o.lon).toFixed(6)}${o.geo_status === "approx" ? " (примерно)" : ""}` : "Точки пока нет — поставьте метку";
+    const pos = placeGeoDirty ? `Новая точка: ${ll.lat.toFixed(6)}, ${ll.lng.toFixed(6)} — сохранится вместе с остальным`
+      : o.lat ? `Сейчас: ${(+o.lat).toFixed(6)}, ${(+o.lon).toFixed(6)}${o.geo_status === "approx" ? " (примерно)" : ""}`
+      : "Точки пока нет — метка в центре района, перетащите её на дом";
+    let where = "";
+    if (placeAt) {
+      const parts = [placeAt.district && `район <b>${esc(placeAt.district)}</b>`, placeAt.complex && `ЖК <b>${esc(placeAt.complex)}</b>`].filter(Boolean);
+      where = parts.length ? `<span class="pg-where">${ic("pin")} По вашей карте районов: ${parts.join(", ")}</span>`
+        : `<span class="pg-where none">Метка вне нарисованных районов</span>`;
+      const d = $("placeDistrict").value.trim();
+      if (placeAt.district && d && pzKey(d) !== pzKey(placeAt.district))
+        where += `<span class="pg-clash">У объекта район «${esc(d)}», а метка — в районе «${esc(placeAt.district)}». Проверьте.</span>`;
+    }
+    $("placeGeoNow").innerHTML = `<span class="pg-pos">${esc(pos)}</span>${where}`;
   }
+  // Район и ЖК под меткой — тот же запрос, что на экране разбора (/fix)
+  function placeLookup() {
+    clearTimeout(placeAtTimer);
+    const seq = ++placeAtSeq;
+    placeAtTimer = setTimeout(async () => {
+      const ll = placeMarker.getLatLng();
+      const r = await call(`/api/admin/fix?at=${ll.lat.toFixed(6)},${ll.lng.toFixed(6)}`);
+      if (seq !== placeAtSeq || !r.ok) return;
+      placeAt = { district: r.data.district || null, complex: r.data.complex || null };
+      // точку только что поставили/передвинули, а района нет — ставим район по точке сразу
+      if (placeGeoDirty && placeAt.district && !$("placeDistrict").value.trim()) {
+        $("placeDistrict").value = placeAt.district;
+        placeAt.auto = true;
+        renderPlaceLearn();
+      }
+      placePointChanged();
+    }, 250);
+  }
+  // Подсказки под полями «Район» и «ЖК»: по точке на карте и как было в объявлении
+  function renderPlaceChips() {
+    const o = known.get(placeId) || {};
+    const d = $("placeDistrict").value.trim(), cx = $("placeComplex").value.trim();
+    const dc = [], cc = [];
+    if (placeAt && placeAt.district) {
+      if (pzKey(placeAt.district) === pzKey(d))
+        dc.push(`<span class="pc-ok">${ic("check")} ${placeAt.auto ? "Поставлен по точке на карте" : "Совпадает с вашей картой районов"}</span>`);
+      else dc.push(`<button type="button" class="chip by-point" data-pset="district" data-v="${esc(placeAt.district)}">${ic("pin")} ${esc(placeAt.district)} <small>по точке на карте</small></button>`);
+    }
+    if (o.district && pzKey(o.district) !== pzKey(d) && !(placeAt && pzKey(placeAt.district) === pzKey(o.district)))
+      dc.push(`<button type="button" class="chip" data-pset="district" data-v="${esc(o.district)}">${esc(o.district)} <small>было</small></button>`);
+    if (placeAt && placeAt.complex && pzKey(placeAt.complex) !== pzKey(cx))
+      cc.push(`<button type="button" class="chip by-point" data-pset="complex" data-v="${esc(placeAt.complex)}">${ic("pin")} ЖК ${esc(placeAt.complex)} <small>по точке</small></button>`);
+    if (o.complex && pzKey(o.complex) !== pzKey(cx))
+      cc.push(`<button type="button" class="chip" data-pset="complex" data-v="${esc(o.complex)}">${esc(o.complex)} <small>было</small></button>`);
+    $("placeDChips").innerHTML = dc.join("");
+    $("placeCChips").innerHTML = cc.join("");
+  }
+  function placePointChanged() { renderPlaceChips(); stylePlaceZones(); placeGeoNow(); }
   function placeMove(ll, zoom) {
     placeMarker.setLatLng(ll);
     placeGeoDirty = true;
     if (zoom) placeMap.setView(ll, zoom);
+    if (placeAt) placeAt.auto = false;
     placeGeoNow();
+    placeLookup();
   }
-  function openPlaceMap(o) {
+  async function openPlaceMap(o) {
     placeGeoDirty = false;
+    placeAt = null;
+    ++placeAtSeq;
     $("placeCoords").value = "";
     if (!window.L) { $("placeGeoNow").textContent = "Карта не загрузилась"; return; }
-    const start = o.lat ? [o.lat, o.lon] : [45.035, 38.975];
     if (!placeMap) {
       placeMap = L.map("placeMap", { zoomControl: true, attributionControl: false });
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(placeMap);
       const icon = L.divIcon({ className: "geo-pin-wrap", iconSize: [36, 46], iconAnchor: [18, 44], html: `<div class="geo-pin">${LOGO}</div>` });
-      placeMarker = L.marker(start, { draggable: true, icon }).addTo(placeMap);
+      placeMarker = L.marker([45.035, 38.975], { draggable: true, icon, zIndexOffset: 1000 }).addTo(placeMap);
       placeMap.on("click", (e) => placeMove(e.latlng));
       placeMarker.on("dragend", () => placeMove(placeMarker.getLatLng()));
+      placeMap.setView([45.035, 38.975], 12);
     }
+    await placeLoadZones();
+    if (placeId !== o.id && o.id) return;   // пока грузились районы, открыли другой объект
+    // точки нет — метка в центре района объекта (по вашей карте), карта — по контуру района
+    const zone = !o.lat && placeZone(o.district);
+    const zb = zone ? zone.shape.getBounds() : null;
+    const start = o.lat ? [o.lat, o.lon] : zb ? zb.getCenter() : [45.035, 38.975];
     placeMarker.setLatLng(start);
-    placeGeoNow();
-    const fit = () => { placeMap.invalidateSize(); placeMap.setView(start, o.lat ? 16 : 12); };
+    placePointChanged();
+    if (o.lat || zone) placeLookup();
+    const fit = () => {
+      placeMap.invalidateSize();
+      if (zb) placeMap.fitBounds(zb, { padding: [24, 24] }); else placeMap.setView(start, o.lat ? 16 : 12);
+    };
     fit(); setTimeout(fit, 120); setTimeout(fit, 500);
   }
   function placeCoordsGo() {
@@ -1698,11 +1803,17 @@
       room_kind: o.room_kind || "", area: o.area ?? "", land: o.land ?? "", floor: o.floor ?? "", floors: o.floors ?? "",
       street: o.street || "", house: o.house || "", settlement: o.settlement || "", repair: o.repair || "none" };
     for (const [k, v] of Object.entries(FV)) { const el = f[`f_${k}`]; if (el) { el.value = String(v).replace(".", ","); el.dataset.orig = el.value; } }
-    $("placeInfo").textContent = [o.title, address(o)].filter(Boolean).join(" · ");
+    $("placeInfo").textContent = [o.title, address(o), o.price ? fmtPrice(o.price, o.deal) : ""].filter(Boolean).join(" · ");
+    // текст объявления — как на экране разбора: видно, что написал агент, пока правите поля
+    const txt = o.description || o.text || "";
+    $("placeText").textContent = txt;
+    $("placeTextBox").hidden = !txt;
+    $("placeFields").open = false;
     $("placeYa").href = `https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(yaQuery(o))}`;
     $("placeSkip").hidden = !placeQueue;
     $("placeLeft").textContent = "";
     renderPlaceLearn();
+    renderPlaceChips();
     openDlg($("placeDlg"));
     openPlaceMap(o);
   }
@@ -2818,8 +2929,8 @@
       renderComplexChosen(); refresh(400);
     });
     // Окно «ЖК и район» (админ)
-    Combo($("placeDistrict"), { options: () => meta.districts || [], onPick: () => renderPlaceLearn() });
-    Combo($("placeComplex"), { options: () => facetComplexes.map((c) => c.name), onPick: () => renderPlaceLearn() });
+    Combo($("placeDistrict"), { options: () => meta.districts || [], onPick: () => { renderPlaceLearn(); placePointChanged(); } });
+    Combo($("placeComplex"), { options: () => facetComplexes.map((c) => c.name), onPick: () => { renderPlaceLearn(); renderPlaceChips(); } });
 
     $("moreBtn").addEventListener("click", () => {
       const open = $("more").hidden;
@@ -2921,8 +3032,24 @@
     $("watchForm").addEventListener("submit", (e) => { e.preventDefault(); saveWatch(); });
     $("placeCoordsGo").addEventListener("click", placeCoordsGo);
     $("placeCoords").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); placeCoordsGo(); } });
-    $("placeForm").addEventListener("input", (e) => { if (e.target.name === "complex" || e.target.name === "district") renderPlaceLearn(); });
-    $("placeForm").addEventListener("change", (e) => { if (e.target.name === "district" || e.target.name === "complex") renderPlaceLearn(); });
+    const placeFieldChanged = (e) => {
+      if (e.target.name !== "complex" && e.target.name !== "district") return;
+      if (placeAt) placeAt.auto = false;
+      renderPlaceLearn();
+      if (placeMap) placePointChanged(); else renderPlaceChips();
+    };
+    $("placeForm").addEventListener("input", placeFieldChanged);
+    $("placeForm").addEventListener("change", placeFieldChanged);
+    // подсказки «по точке на карте» / «было» — одно нажатие ставит значение в поле
+    $("placeForm").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-pset]");
+      if (!b) return;
+      const el = b.dataset.pset === "district" ? $("placeDistrict") : $("placeComplex");
+      el.value = b.dataset.v;
+      if (placeAt) placeAt.auto = false;
+      renderPlaceLearn();
+      if (placeMap) placePointChanged(); else renderPlaceChips();
+    });
     $("placeSkip").addEventListener("click", () => { closeDlg($("placeDlg")); nextPlace(); });
     $("geoSkip").addEventListener("click", () => { closeDlg($("geoDlg")); nextInQueue(); });
     $("geoFind").addEventListener("submit", (e) => {

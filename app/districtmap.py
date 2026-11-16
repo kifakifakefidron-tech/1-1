@@ -105,10 +105,19 @@ def canon(name: str, kind: str = "district") -> str:
 def _polys(conn: sqlite3.Connection) -> list:
     if time.time() - _cache["t"] > 300:
         _cache.update(t=time.time(), polys=[
-            (canon(r["name"], r["kind"]), r["kind"], json.loads(r["polys"]), r["area"],
-             (r["lat_min"], r["lat_max"], r["lon_min"], r["lon_max"]))
-            for r in conn.execute("SELECT * FROM district_polygons ORDER BY area")])
+            (canon(r["name"], r["kind"]), r["kind"], polys, r["area"], _bbox(r, polys))
+            for r in conn.execute("SELECT * FROM district_polygons ORDER BY area")
+            for polys in [json.loads(r["polys"])]])
     return _cache["polys"]
+
+
+def _bbox(r, polys) -> tuple:
+    """Границы контура из базы; нет в базе (старая/ручная запись) — считаем по точкам, иначе district_at падал."""
+    box = (r["lat_min"], r["lat_max"], r["lon_min"], r["lon_max"])
+    if None not in box:
+        return box
+    pts = [pt for p in polys for pt in p] or [(0.0, 0.0)]
+    return (min(a for a, _ in pts), max(a for a, _ in pts), min(b for _, b in pts), max(b for _, b in pts))
 
 
 def _inside(lat: float, lon: float, pts) -> bool:

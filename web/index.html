@@ -30,7 +30,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=36">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=127">
+<link rel="stylesheet" href="/static/glass.css?v=128">
 </head>
 <body>
 <svg class="flame-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs><linearGradient id="flameFire" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#d9541e"/><stop offset="1" stop-color="#f6b36b"/></linearGradient></defs></svg>
@@ -423,49 +423,67 @@
   </div>
 </dialog>
 
-<dialog id="placeDlg" class="small-dlg" aria-labelledby="placeTitle">
+<!-- 16.11 (Артём: «окно правки как в разборе»): слева — текст объявления и поля, справа — карта с вашими районами;
+     район под меткой подсказывается кнопкой, без района — ставится сам; «Сохранить» всегда внизу на виду -->
+<dialog id="placeDlg" class="small-dlg place-dlg" aria-labelledby="placeTitle">
   <span class="grab" aria-hidden="true"></span>
   <div class="dlg-body">
-    <h2 id="placeTitle">Характеристики объекта</h2>
-    <p class="note" id="placeInfo"></p>
-    <p class="note"><a id="placeYa" class="ya-link" target="_blank" rel="noopener">🔎 Найти адрес в Яндекс Картах ↗</a></p>
+    <div class="place-head">
+      <h2 id="placeTitle">Правка объекта</h2>
+      <p class="place-info" id="placeInfo"></p>
+      <p class="place-links"><a id="placeYa" class="ya-link" target="_blank" rel="noopener">Найти адрес в Яндекс Картах ↗</a></p>
+    </div>
     <form id="placeForm" class="agent-form">
-      <label class="agent-field"><span>ЖК (пусто — без ЖК)</span><input name="complex" id="placeComplex" autocomplete="off" placeholder="Название ЖК"></label>
-      <label class="agent-field"><span>Район</span><input name="district" id="placeDistrict" placeholder="Найти район…"></label>
-      <label class="agent-field"><span id="placePriceLabel">Цена, млн ₽ (если разобралась неверно)</span><input name="price" id="placePrice" data-money="sale" inputmode="decimal" autocomplete="off"></label>
-      <div class="adm-fields" id="placeFields">
-        <p class="adm-fields-h">Характеристики <small>— поправьте, что разобралось неверно; повторы объявления правку не перетрут</small></p>
-        <div class="adm-fgrid">
-          <label class="agent-field"><span>Тип</span><select name="f_type"><option value="flat">Квартира</option><option value="room">Комната</option>
-            <option value="house">Дом</option><option value="land">Участок</option><option value="commercial">Коммерция</option></select></label>
-          <label class="agent-field"><span>Сделка</span><select name="f_deal"><option value="sale">Продажа</option><option value="rent">Аренда</option></select></label>
-          <label class="agent-field"><span>Комнат</span><select name="f_rooms"><option value="">—</option><option value="0">Студия</option>
-            <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5+</option></select></label>
-          <label class="agent-field"><span>Планировка</span><select name="f_room_kind"><option value="">—</option><option value="classic">Обычная</option>
-            <option value="euro">Евро</option><option value="mini">Мини</option><option value="studio">Студия</option></select></label>
-          <label class="agent-field"><span>Площадь, м²</span><input name="f_area" inputmode="decimal" autocomplete="off"></label>
-          <label class="agent-field"><span>Участок, сот.</span><input name="f_land" inputmode="decimal" autocomplete="off"></label>
-          <label class="agent-field"><span>Этаж</span><input name="f_floor" inputmode="numeric" autocomplete="off"></label>
-          <label class="agent-field"><span>Этажей в доме</span><input name="f_floors" inputmode="numeric" autocomplete="off"></label>
-          <label class="agent-field"><span>Улица</span><input name="f_street" autocomplete="off"></label>
-          <label class="agent-field"><span>Дом</span><input name="f_house" autocomplete="off"></label>
-          <label class="agent-field"><span>Населённый пункт</span><input name="f_settlement" autocomplete="off" placeholder="если не Краснодар"></label>
-          <label class="agent-field"><span>Ремонт</span><select name="f_repair"><option value="none">не указано</option><option value="yes">С ремонтом</option>
-            <option value="no">Без ремонта (ПЧО, черновая…)</option></select></label>
+      <div class="place-cols">
+        <div class="place-col">
+          <details class="place-text" id="placeTextBox" open><summary>Текст объявления</summary><p id="placeText"></p></details>
+          <div class="adm-fields place-main">
+            <p class="adm-fields-h">Где объект</p>
+            <label class="agent-field"><span>Район</span><input name="district" id="placeDistrict" placeholder="Найти район…"></label>
+            <div class="place-chips" id="placeDChips"></div>
+            <label class="agent-field"><span>ЖК (пусто — без ЖК)</span><input name="complex" id="placeComplex" autocomplete="off" placeholder="Название ЖК"></label>
+            <div class="place-chips" id="placeCChips"></div>
+            <label class="agent-field"><span id="placePriceLabel">Цена, млн ₽ (если разобралась неверно)</span><input name="price" id="placePrice" data-money="sale" inputmode="decimal" autocomplete="off"></label>
+          </div>
+          <details class="adm-fields place-more" id="placeFields">
+            <summary class="adm-fields-h">Характеристики <small>— тип, комнаты, площадь, этаж, адрес, ремонт</small></summary>
+            <p class="note">Поправьте, что разобралось неверно; повторы объявления правку не перетрут.</p>
+            <div class="adm-fgrid">
+              <label class="agent-field"><span>Тип</span><select name="f_type"><option value="flat">Квартира</option><option value="room">Комната</option>
+                <option value="house">Дом</option><option value="land">Участок</option><option value="commercial">Коммерция</option></select></label>
+              <label class="agent-field"><span>Сделка</span><select name="f_deal"><option value="sale">Продажа</option><option value="rent">Аренда</option></select></label>
+              <label class="agent-field"><span>Комнат</span><select name="f_rooms"><option value="">—</option><option value="0">Студия</option>
+                <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5+</option></select></label>
+              <label class="agent-field"><span>Планировка</span><select name="f_room_kind"><option value="">—</option><option value="classic">Обычная</option>
+                <option value="euro">Евро</option><option value="mini">Мини</option><option value="studio">Студия</option></select></label>
+              <label class="agent-field"><span>Площадь, м²</span><input name="f_area" inputmode="decimal" autocomplete="off"></label>
+              <label class="agent-field"><span>Участок, сот.</span><input name="f_land" inputmode="decimal" autocomplete="off"></label>
+              <label class="agent-field"><span>Этаж</span><input name="f_floor" inputmode="numeric" autocomplete="off"></label>
+              <label class="agent-field"><span>Этажей в доме</span><input name="f_floors" inputmode="numeric" autocomplete="off"></label>
+              <label class="agent-field"><span>Улица</span><input name="f_street" autocomplete="off"></label>
+              <label class="agent-field"><span>Дом</span><input name="f_house" autocomplete="off"></label>
+              <label class="agent-field"><span>Населённый пункт</span><input name="f_settlement" autocomplete="off" placeholder="если не Краснодар"></label>
+              <label class="agent-field"><span>Ремонт</span><select name="f_repair"><option value="none">не указано</option><option value="yes">С ремонтом</option>
+                <option value="no">Без ремонта (ПЧО, черновая…)</option></select></label>
+            </div>
+          </details>
+          <div class="place-learn" id="placeLearn"></div>
+        </div>
+        <div class="place-col place-col-map">
+          <div class="adm-fields adm-map">
+            <p class="adm-fields-h">Точка на карте <small>— перетащите метку или нажмите на карту</small></p>
+            <div class="inline-form geo-find">
+              <input id="placeCoords" autocomplete="off" placeholder="Координаты или ссылка с Яндекс/Google Карт" aria-label="Координаты">
+              <button type="button" class="pill light" id="placeCoordsGo">Найти</button>
+            </div>
+            <div id="placeMap" class="geo-map adm-geo-map"></div>
+            <p class="place-geo-now" id="placeGeoNow"></p>
+            <p class="place-legend"><i class="pl-on"></i>район объекта <i class="pl-at"></i>район под меткой <i class="pl-all"></i>ваши районы</p>
+          </div>
         </div>
       </div>
-      <div class="adm-fields adm-map">
-        <p class="adm-fields-h">Точка на карте <small>— перетащите метку, нажмите на карту или вставьте координаты / ссылку из Яндекс Карт</small></p>
-        <div class="inline-form geo-find">
-          <input id="placeCoords" autocomplete="off" placeholder="45.0355, 38.9753 или ссылка с Яндекс/Google Карт" aria-label="Координаты">
-          <button type="button" class="pill light" id="placeCoordsGo">Найти</button>
-        </div>
-        <p class="note geo-now" id="placeGeoNow"></p>
-        <div id="placeMap" class="geo-map adm-geo-map"></div>
-      </div>
-      <div class="place-learn" id="placeLearn"></div>
       <p class="note" id="placeLeft"></p>
-      <div class="dlg-actions">
+      <div class="dlg-actions place-actions">
         <button type="button" class="ghost" data-close>Отмена</button>
         <button type="button" class="ghost" id="placeSkip" hidden>Пропустить →</button>
         <button type="submit" class="pill">Сохранить</button>
@@ -504,7 +522,7 @@
 <script src="/static/yasel.js?v=4"></script>
 <script src="/static/bell.js?v=8"></script>
 <script src="/static/lightbox.js?v=4"></script>
-<script src="/static/app.js?v=163"></script>
+<script src="/static/app.js?v=164"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>

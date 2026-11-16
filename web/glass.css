@@ -1863,86 +1863,103 @@ body.map-mode .map-wrap .map { height: 100% !important; margin: 0; min-height: 0
 .leaflet-container .leaflet-marker-icon:focus-visible .pin { box-shadow: 0 0 0 3px var(--gold-300), 0 4px 12px rgba(0, 30, 30, .35); }
 .leaflet-bar a { touch-action: manipulation; }
 
-/* ─── карточка выбранной метки ─── */
+/* ─── карточка выбранной метки (16.11 v2, Артём: «под цвета нашего сайта») — тёмное бирюзовое стекло, шампань ───
+   Фон почти непрозрачный: под карточкой — пёстрая подложка карты, текст должен читаться. */
 .mcard { position: absolute; z-index: 1100; top: 14px; right: 14px; width: 368px; max-height: calc(100% - 28px);
   overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; scrollbar-width: thin;
-  background: var(--gold-100); color: var(--teal-950); border-radius: 22px; font: 14px/1.4 var(--body);
-  box-shadow: 0 22px 60px rgba(0, 25, 25, .42), 0 2px 8px rgba(0, 25, 25, .22); }
+  scrollbar-color: rgba(243, 232, 188, .25) transparent;
+  background: linear-gradient(180deg, rgba(4, 78, 76, .97), rgba(2, 52, 51, .98)); color: var(--ink);
+  border: 1px solid var(--glass-line-2); border-radius: 22px; font: 14px/1.4 var(--body);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  box-shadow: 0 24px 64px rgba(0, 18, 18, .55), 0 2px 8px rgba(0, 18, 18, .3), inset 0 1px 0 rgba(255, 255, 255, .08); }
 .mcard.in { animation: mcIn .32s var(--m-out, cubic-bezier(.22, 1, .36, 1)) both; }
 @keyframes mcIn { from { opacity: 0; transform: translateY(-10px) scale(.97); } }
 @keyframes mcUp { from { opacity: 0; transform: translateY(40px); } }
 .mcard-grab { display: none; }
-.mcard-x { position: absolute; z-index: 3; top: 10px; right: 10px; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%;
-  display: grid; place-items: center; background: rgba(1, 40, 39, .7); color: var(--gold-100); cursor: pointer;
-  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); transition: background-color .2s; }
-.mcard-x:hover { background: var(--teal-950); }
+.mcard-x { position: absolute; z-index: 3; top: 10px; right: 10px; width: 36px; height: 36px; padding: 0; border: 1px solid var(--glass-line-2);
+  border-radius: 50%; display: grid; place-items: center; background: rgba(1, 34, 33, .72); color: var(--ink); cursor: pointer;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); transition: background-color .2s, color .2s; }
+.mcard-x:hover { background: var(--teal-950); color: var(--gold-200); }
 .mcard-x .ic { width: 18px; height: 18px; margin: 0; }
 .mc2 { cursor: pointer; }
 .mc2-cx { cursor: default; padding: 18px 0 2px; }
 .mc2-cx > .mc2-head, .mc2-cx > .mc2-price, .mc2-cx > .mc2-title, .mc2-cx > .mc-approx { margin-left: 16px; margin-right: 56px; }
 .mc2-cx > .mc-approx { margin-top: 8px; }
 .mc2-top { position: relative; display: grid; grid-template-columns: 1fr; }
-.mc2-ph { position: relative; height: 188px; background: var(--teal-100); overflow: hidden; border-radius: 22px 22px 0 0; }
+.mc2-ph { position: relative; height: 188px; background: var(--chip, rgba(255, 255, 255, .06)); overflow: hidden; border-radius: 21px 21px 0 0; }
 .mc2-ph img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .5s var(--m-out, ease); }
 .mc2:hover .mc2-ph img { transform: scale(1.03); }
-.mc2-ph.none { height: 92px; display: grid; place-items: center; color: var(--teal-600); font-size: 13px; letter-spacing: .03em;
-  background: linear-gradient(160deg, var(--teal-50), var(--teal-100)); }
-.mc2-ph.skel { background: linear-gradient(90deg, var(--teal-50), var(--teal-100), var(--teal-50)); background-size: 200% 100%; animation: mcSk 1.2s linear infinite; }
+/* «Фото у агента» — та же заглушка, что в карточке списка: логотип-план и подпись */
+.mc2-ph.none { height: 150px; display: grid; place-items: center; align-content: center; gap: 6px; color: var(--ink-3);
+  background: linear-gradient(160deg, rgba(243, 232, 188, .07), rgba(243, 232, 188, .015)); border-bottom: 1px solid var(--glass-line); }
+.mc2-ph.none .logo { width: 72px; height: 72px; opacity: .5; }
+.mc2-ph.none .logo .walls path { animation: none; stroke-dashoffset: 0; }
+.mc2-ph.none span { font-size: 13px; letter-spacing: .03em; opacity: .85; }
+.mc2-ph.skel { background: linear-gradient(90deg, rgba(255, 255, 255, .04), rgba(255, 255, 255, .1), rgba(255, 255, 255, .04));
+  background-size: 200% 100%; animation: mcSk 1.2s linear infinite; }
 @keyframes mcSk { to { background-position: -200% 0; } }
-.mc2-n { position: absolute; left: 10px; bottom: 10px; padding: 3px 9px; border-radius: 999px; background: rgba(1, 40, 39, .72);
-  color: var(--gold-100); font: 600 11.5px var(--body); }
-.mc2-fav.fav-btn { top: 10px; right: 54px; left: auto; width: 36px; height: 36px; background: rgba(1, 40, 39, .7); color: var(--gold-100); }
-.mc2-b { display: grid; gap: 2px; padding: 12px 16px 0; min-width: 0; }
-.mc2-head { font: 600 11.5px/1.3 var(--body); letter-spacing: .07em; text-transform: uppercase; color: var(--teal-600); }
-.mc2-price { font: 600 23px/1.15 var(--head); color: var(--teal-800); letter-spacing: .01em; }
-.mc2-m2 { font-size: 12.5px; color: var(--teal-600); }
-.mc2-title { font-size: 14px; color: var(--teal-950); margin-top: 2px; }
+.mc2-n { position: absolute; left: 10px; bottom: 10px; padding: 3px 9px; border-radius: 999px; background: rgba(1, 34, 33, .75);
+  color: var(--ink); font: 600 11.5px var(--body); }
+.mc2-fav.fav-btn { top: 10px; right: 54px; left: auto; width: 36px; height: 36px; background: rgba(1, 34, 33, .72); color: var(--ink);
+  border: 1px solid var(--glass-line-2); }
+.mc2-b { display: grid; gap: 2px; padding: 14px 16px 0; min-width: 0; }
+.mc2-head { font: 600 11.5px/1.3 var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--gold); }
+.mc2-price { font: 600 24px/1.15 var(--head); color: var(--ink); letter-spacing: .01em; }
+.mc2-m2 { font-size: 12.5px; color: var(--ink-3); }
+.mc2-title { font-size: 14px; color: var(--ink-2); margin-top: 2px; }
 .mc2-b .skel { display: grid; gap: 6px; padding-top: 4px; }
-.mc2-b .skel i { display: block; height: 10px; border-radius: 5px; background: var(--teal-100); }
+.mc2-b .skel i { display: block; height: 10px; border-radius: 5px; background: rgba(255, 255, 255, .09); }
 .mc2-b .skel i:last-child { width: 60%; }
-.mc2-addr { display: flex; align-items: flex-start; gap: 6px; margin: 8px 16px 0; font-size: 13px; color: var(--teal-700); }
-.mc2-addr .ic { width: 15px; height: 15px; flex: none; margin: 2px 0 0; color: var(--teal-500); }
+.mc2-addr { display: flex; align-items: flex-start; gap: 6px; margin: 8px 16px 0; font-size: 13px; color: var(--ink-3); }
+.mc2-addr .ic { width: 15px; height: 15px; flex: none; margin: 2px 0 0; color: var(--gold); }
 .mc2 .mc-approx { margin: 8px 16px 0; }
-.mc2-phone { display: grid; gap: 10px; margin: 12px 16px 0; padding: 12px; border-radius: 16px; background: #fff;
-  border: 1px solid rgba(3, 83, 82, .14); cursor: default; }
+.mcard .mc-approx { background: rgba(227, 203, 143, .12); color: var(--gold-200); border: 1px dashed rgba(227, 203, 143, .45); }
+/* контакт — отдельная плашка: номер крупно, «Копировать» обведено золотом (раньше сливалось с фоном) */
+.mc2-phone { display: grid; gap: 10px; margin: 14px 16px 0; padding: 12px; border-radius: 16px;
+  background: rgba(1, 34, 33, .45); border: 1px solid var(--glass-line); cursor: default; }
 .mc2-num { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
-.mc2-num a, .mc2-num > span { font: 600 19px/1.2 var(--head); color: var(--teal-800); text-decoration: none; letter-spacing: .03em; }
-.mc2-ok { display: inline-flex; align-items: center; gap: 3px; font: 600 11.5px var(--body); color: var(--teal-500); }
+.mc2-num a, .mc2-num > span { font: 600 19px/1.2 var(--head); color: var(--ink); text-decoration: none; letter-spacing: .03em; }
+.mc2-ok { display: inline-flex; align-items: center; gap: 3px; font: 600 11.5px var(--body); color: var(--ok, #7fd6b8); }
 .mc2-ok .ic { width: 14px; height: 14px; margin: 0; }
 .mc2-copy { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 13px; border-radius: 999px;
-  border: 1.5px solid var(--teal-600); background: var(--teal-50); color: var(--teal-700); font: 600 13px var(--body); cursor: pointer;
-  transition: background-color .2s, color .2s; }
+  border: 1.5px solid rgba(227, 203, 143, .6); background: rgba(227, 203, 143, .1); color: var(--gold-200); font: 600 13px var(--body);
+  cursor: pointer; transition: background-color .2s, color .2s, border-color .2s; }
 .mc2-copy .ic { width: 16px; height: 16px; margin: 0; }
-.mc2-copy:hover { background: var(--teal-100); }
-.mc2-copy.done { background: var(--teal-700); color: var(--gold-100); border-color: var(--teal-700); }
+.mc2-copy:hover { background: rgba(227, 203, 143, .2); border-color: var(--gold); }
+.mc2-copy.done { background: var(--gold-300); color: var(--teal-950); border-color: var(--gold-300); }
 .mc2-call { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .mc2-call.one { grid-template-columns: 1fr; }
 .mc2-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 0 12px;
-  border-radius: 12px; border: 0; font: 600 14px var(--body); text-decoration: none; cursor: pointer; white-space: nowrap; }
+  border-radius: 12px; border: 0; font: 600 14px var(--body); text-decoration: none; cursor: pointer; white-space: nowrap;
+  transition: background-color .2s, border-color .2s; }
 .mc2-btn .ic { width: 17px; height: 17px; margin: 0; }
 .mc2-btn.gold { background: var(--gold-300); color: var(--teal-950) !important; }
-.mc2-btn.gold:hover { background: var(--gold-400); }
-.mc2-btn.line { background: transparent; color: var(--teal-700) !important; border: 1.5px solid var(--teal-600); }
-.mc2-btn.line:hover { background: var(--teal-50); }
+.mc2-btn.gold:hover { background: var(--gold-200); }
+.mc2-btn.line { background: rgba(255, 255, 255, .04); color: var(--ink) !important; border: 1.5px solid var(--glass-line-2); }
+.mc2-btn.line:hover { background: rgba(255, 255, 255, .09); border-color: rgba(243, 232, 188, .45); }
 .mc2-btn.wide { width: 100%; }
-.mc2-phone.locked small, .mc2-more-ph { font-size: 12px; color: var(--teal-600); }
+.mc2-phone.locked small, .mc2-more-ph { font-size: 12px; color: var(--ink-3); }
+/* главное действие — золотая «Открыть объект» */
 .mc2-open { display: flex; align-items: center; justify-content: center; gap: 8px; width: calc(100% - 32px); min-height: 50px;
-  margin: 14px 16px 16px; border: 0; border-radius: 14px; background: var(--teal-700); color: var(--gold-100);
-  font: 600 15.5px var(--body); cursor: pointer; box-shadow: 0 8px 20px rgba(3, 71, 70, .3); transition: background-color .2s, transform .2s; }
-.mc2-open:hover { background: var(--teal-800); }
+  margin: 14px 16px 16px; border: 0; border-radius: 14px; background: var(--gold-300); color: var(--teal-950);
+  font: 600 15.5px var(--body); cursor: pointer; box-shadow: 0 10px 26px rgba(0, 15, 15, .4), inset 0 0 0 1px rgba(255, 255, 255, .35);
+  transition: background-color .2s, transform .2s; }
+.mc2-open:hover { background: var(--gold-200); }
 .mc2-open:active { transform: scale(.98); }
+.mc2-open:focus-visible { outline: 3px solid var(--gold-100); outline-offset: 2px; }
 .mc2-open .ic { width: 18px; height: 18px; margin: 0; transition: transform .2s; }
 .mc2-open:hover .ic { transform: translateX(3px); }
 .mc2-cx .mc2-open { margin-bottom: 8px; }
 .mc2-sec { display: flex; align-items: center; justify-content: center; gap: 7px; width: calc(100% - 32px); min-height: 42px;
-  margin: 0 16px 14px; border-radius: 12px; border: 1.5px solid rgba(3, 83, 82, .3); background: transparent; color: var(--teal-700);
+  margin: 0 16px 14px; border-radius: 12px; border: 1.5px solid var(--glass-line-2); background: transparent; color: var(--ink);
   font: 600 14px var(--body); cursor: pointer; }
-.mc2-sec:hover { background: var(--teal-50); }
+.mc2-sec:hover { background: rgba(255, 255, 255, .07); }
 .mc2-sec .ic { width: 16px; height: 16px; margin: 0; }
-.mc2-adm { display: flex; flex-wrap: wrap; gap: 6px; margin: -6px 16px 14px; padding-top: 10px; border-top: 1px dashed rgba(3, 83, 82, .2); }
-.mc2-adm button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(3, 83, 82, .25);
-  background: transparent; color: var(--teal-700); font: 600 12px var(--body); cursor: pointer; }
-.mc2-adm button.off { color: #a3402c; border-color: rgba(163, 64, 44, .35); }
+.mc2-adm { display: flex; flex-wrap: wrap; gap: 6px; margin: -6px 16px 14px; padding-top: 10px; border-top: 1px solid var(--glass-line); }
+.mc2-adm button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--glass-line-2);
+  background: transparent; color: var(--ink-2); font: 600 12px var(--body); cursor: pointer; }
+.mc2-adm button:hover { color: var(--ink); background: rgba(255, 255, 255, .06); }
+.mc2-adm button.off { color: #f0a08e; border-color: rgba(240, 160, 142, .4); }
 .mc2-adm .ic { width: 14px; height: 14px; margin: 0; }
 
 /* телефон и планшет (карта узкая): карточка — шторкой снизу, фото слева */
@@ -1950,10 +1967,12 @@ body.map-mode .map-wrap .map { height: 100% !important; margin: 0; min-height: 0
   .mcard { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 76%; border-radius: 22px; }
   .mcard.in { animation-name: mcUp; }
   .mcard-grab { display: block; position: absolute; z-index: 2; top: 6px; left: 50%; width: 38px; height: 4px; margin-left: -19px;
-    border-radius: 2px; background: rgba(1, 40, 39, .22); }
-  .mcard-x { top: 12px; right: 10px; width: 34px; height: 34px; background: rgba(1, 40, 39, .08); color: var(--teal-800); }
+    border-radius: 2px; background: rgba(243, 232, 188, .3); }
+  .mcard-x { top: 12px; right: 10px; width: 34px; height: 34px; background: rgba(255, 255, 255, .07); }
   .mc2-top { grid-template-columns: 100px minmax(0, 1fr); gap: 12px; padding: 16px 50px 0 12px; }
-  .mc2-ph, .mc2-ph.none { height: 100px; border-radius: 14px; }
+  .mc2-ph, .mc2-ph.none { height: 100px; border-radius: 14px; border: 1px solid var(--glass-line); }
+  .mc2-ph.none .logo { width: 52px; height: 52px; }
+  .mc2-ph.none span { font-size: 11px; }
   .mc2-n { left: 6px; bottom: 6px; font-size: 10.5px; padding: 2px 7px; }
   .mc2-fav.fav-btn { top: 20px; left: 16px; right: auto; width: 30px; height: 30px; }
   .mc2-fav.fav-btn svg { width: 16px; height: 16px; }
@@ -1966,6 +1985,77 @@ body.map-mode .map-wrap .map { height: 100% !important; margin: 0; min-height: 0
   .mc2-adm { margin-left: 12px; margin-right: 12px; }
   .mc2-num a, .mc2-num > span { font-size: 18px; }
   .mc2-btn { font-size: 13.5px; }
+}
+
+/* ─── окно правки объекта админом (16.11, «как в разборе»): слева текст и поля, справа карта с вашими районами ─── */
+.place-head { padding-right: 44px; }
+.place-head h2 { margin: 0 0 4px; }
+.place-info { margin: 0; font-size: 14px; color: var(--ink-2); }
+.place-links { margin: 4px 0 0; font-size: 13px; }
+.place-cols { display: grid; gap: 16px; margin-top: 14px; }
+.place-col { display: grid; gap: 12px; align-content: start; min-width: 0; }
+.place-text { border: 1px solid var(--glass-line); border-radius: 14px; background: rgba(255, 255, 255, .035); }
+.place-text summary { padding: 10px 14px; font: 600 13px var(--body); color: var(--gold); cursor: pointer; letter-spacing: .02em; }
+.place-text p { margin: 0; padding: 0 14px 12px; max-height: 210px; overflow-y: auto; white-space: pre-wrap; font-size: 13.5px;
+  line-height: 1.5; color: var(--ink-2); scrollbar-width: thin; }
+.place-text[hidden] { display: none; }
+.place-main { display: grid; gap: 8px; }
+.place-main .agent-field { margin: 0; }
+.place-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -2px 0 2px; }
+.place-chips:empty { display: none; }
+.place-chips .chip { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 4px 11px; font-size: 13px; cursor: pointer; }
+.place-chips .chip small { color: var(--ink-3); font-size: 11.5px; }
+.place-chips .chip.by-point { border-color: rgba(95, 211, 184, .55); background: rgba(95, 211, 184, .1); }
+.place-chips .chip.by-point:hover { background: rgba(95, 211, 184, .2); }
+.place-chips .chip .ic { width: 15px; height: 15px; margin: 0; }
+.pc-ok { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--ok, #7fd6b8); }
+.pc-ok .ic { width: 15px; height: 15px; margin: 0; }
+.place-more > summary { list-style: none; cursor: pointer; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; margin: 0; }
+.place-more > summary::-webkit-details-marker { display: none; }
+.place-more > summary::after { content: "›"; margin-left: auto; font-size: 18px; line-height: 1; transition: transform .2s; color: var(--gold); }
+.place-more[open] > summary::after { transform: rotate(90deg); }
+.place-more > .note { margin: 8px 0; }
+.place-geo-now { display: grid; gap: 4px; margin: 8px 0 0; font-size: 13px; color: var(--ink-3); }
+.place-geo-now .pg-where { display: block; color: var(--ink); }
+.place-geo-now .pg-where .ic { width: 15px; height: 15px; margin: 0 4px 0 0; vertical-align: -3px; color: #5fd3b8; }
+.place-geo-now .pg-where.none { color: var(--ink-3); }
+.place-geo-now .pg-clash { padding: 6px 10px; border-radius: 10px; background: rgba(240, 160, 142, .12); border: 1px solid rgba(240, 160, 142, .4);
+  color: #f6c2b6; }
+.place-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 6px 0 0; font-size: 12px; color: var(--ink-3); }
+.place-legend i { display: inline-block; width: 14px; height: 10px; margin-right: -6px; border-radius: 3px; vertical-align: -1px; }
+.place-legend .pl-on { background: rgba(227, 203, 143, .45); border: 2px solid #b8892f; }
+.place-legend .pl-at { background: rgba(95, 211, 184, .3); border: 2px solid #0f7d6c; }
+.place-legend .pl-all { background: rgba(227, 203, 143, .1); border: 1.5px dashed rgba(243, 232, 188, .6); }
+#placeMap .dz-label-wrap { pointer-events: none; }
+#placeMap .dz-label-wrap.on .dz-label { background: rgba(1, 34, 33, .85); color: var(--gold-100); }
+#placeForm { padding: 0; }
+#placeDlg .dlg-body { overflow-x: clip; }   /* не hidden: иначе тело окна — своя прокрутка, и «Сохранить» не липнет к низу */
+/* «Сохранить» всегда на виду — внизу окна */
+.place-actions { position: sticky; bottom: 0; z-index: 5; margin: 14px -26px -26px; padding: 12px 26px 16px;
+  background: linear-gradient(180deg, rgba(4, 62, 60, .9), rgba(3, 52, 51, .98)); border-top: 1px solid var(--glass-line);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border-radius: 0 0 24px 24px; }
+@media (min-width: 980px) {
+  #placeDlg.place-dlg { width: min(1180px, calc(100vw - 48px)); max-width: none; }
+  .place-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 22px; align-items: start; }
+  .place-col-map { position: sticky; top: 0; }
+  .place-col-map .adm-geo-map { height: min(56vh, 520px); }
+}
+@media (min-width: 700px) and (max-width: 979px) {
+  #placeDlg.place-dlg { width: min(760px, calc(100vw - 32px)); }
+}
+@media (max-width: 979px) {
+  /* на узком экране карта — сразу после «Где объект», характеристики ниже */
+  .place-cols { grid-template-columns: 1fr; }
+  .place-col { display: contents; }
+  .place-text { order: 1; }
+  .place-main { order: 2; }
+  .place-col-map > .adm-map { order: 3; }
+  .place-more { order: 4; }
+  .place-learn { order: 5; }
+  .place-cols { display: flex; flex-direction: column; }
+}
+@media (max-width: 640px) {
+  .place-text p { max-height: 150px; }
 }
 
 /* ─── заметная кнопка «Показать на карте / списком» (16.11) ─── */

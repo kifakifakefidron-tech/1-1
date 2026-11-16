@@ -220,3 +220,17 @@ def test_one_point_with_many_houses_is_not_house_level(env):
     assert autolearn.unstack_points(conn) == 3
     r = conn.execute("SELECT geo_src, geo_status FROM listings WHERE id = ?", (ids[0],)).fetchone()
     assert (r[0], r[1]) == ("stacked", "pending") and search.geo_level(45.07, "pending", "stacked") == "complex"
+
+
+def test_point_lookup_works_without_stored_bounds(env):
+    """16.11: окно правки объекта спрашивает «какой район под меткой» (/api/admin/fix?at=). Контур без границ в базе
+    (старая или вписанная вручную запись) раньше ронял этот запрос — теперь границы считаются по точкам."""
+    c, conn = env
+    ring = [[45.0, 39.0], [45.0, 39.1], [45.1, 39.1], [45.1, 39.0]]
+    conn.execute("""INSERT INTO district_polygons (name, kind, source, polys, area, ts)
+                    VALUES ('ФМР', 'district', 'admin', ?, 0.01, 0)""", (json.dumps([ring]),))
+    conn.commit()
+    districtmap._cache["t"] = 0
+    r = c.get("/api/admin/fix?at=45.05,39.05")
+    assert r.status_code == 200 and r.json()["district"] == "ФМР"
+    assert c.get("/api/admin/fix?at=45.5,39.5").json()["district"] is None

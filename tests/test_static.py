@@ -30,3 +30,24 @@ def test_map_screen_layout():
     assert "refresh()" not in dz and "showMapCard" in dz
     # служебные перезагрузки карты не двигают её
     assert 'loadMap("keep")' in js and "flyToBounds" not in js
+
+
+def test_place_edit_window_like_fix():
+    """16.11: окно правки объекта админом — как экран разбора: текст объявления, подсказки района/ЖК «по точке на карте»,
+    ваши нарисованные районы на карте; карточка на карте — в цветах сайта, заглушка фото — как в списке."""
+    from pathlib import Path
+    web = Path(__file__).resolve().parent.parent / "web"
+    html = (web / "index.html").read_text(encoding="utf-8")
+    js = (web / "app.js").read_text(encoding="utf-8")
+    css = (web / "glass.css").read_text(encoding="utf-8")
+    dlg = html[html.index('<dialog id="placeDlg"'):]
+    dlg = dlg[:dlg.index("</dialog>")]
+    for id_ in ('id="placeText"', 'id="placeDChips"', 'id="placeCChips"', 'id="placeMap"', 'class="dlg-actions place-actions"'):
+        assert id_ in dlg
+    place = js[js.index("function placeLoadZones"):js.index("function placeCoordsGo")]
+    assert "/api/districts/map" in place and "/api/admin/fix?at=" in place
+    assert "interactive: false" in place   # контуры не мешают ставить метку нажатием
+    assert '<div class="mc2-ph none" aria-hidden="true">${LOGO}<span>Фото у агента</span></div>' in js
+    card = css[css.index(".mcard { position: absolute"):css.index("/* ─── окно правки объекта админом")]
+    assert "var(--gold-100); color: var(--teal-950)" not in card   # больше не светлая
+    assert ".mc2-open {" in card and "background: var(--gold-300)" in card
