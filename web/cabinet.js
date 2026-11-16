@@ -402,9 +402,13 @@
     const r = me.ref;
     if (!r) { $("wRef").hidden = true; return; }
     const link = `${location.origin}/?ref=${r.code}`;
-    const text = `Пользуюсь 1+1 — все объекты Краснодара из риелторских чатов в одном поиске: ${link}`;
-    put("wRef", `${head("gift", "Приведи коллегу")}
-      <p class="g-sub" style="margin:0">Отправьте ссылку коллеге — новым 14 дней бесплатно.${r.invited ? ` Пришли по ссылке: ${r.invited}.` : ""}</p>
+    const text = `Пользуюсь 1+1 — все объекты Краснодара из риелторских чатов в одном поиске, с картой и номерами агентов. По моей ссылке — 14 дней бесплатно: ${link}`;
+    const bonus = r.days > 0;
+    put("wRef", `${head("gift", bonus ? `Приведи коллегу — +${r.days} дней` : "Приведи коллегу")}
+      <p class="g-sub" style="margin:0">${bonus
+        ? `Отправьте ссылку коллеге-риелтору: ему — 14 дней бесплатно, вам — +${r.days} дней доступа, когда он войдёт и подтвердит свой номер.`
+        : "Отправьте ссылку коллеге — новым 14 дней бесплатно."}${r.invited ? ` Пришли по ссылке: ${r.invited}${bonus ? `, подтвердили номер: ${r.rewarded}` : ""}.` : ""}</p>
+      ${bonus && r.rewarded ? `<p class="wr-earned"><b>+${r.rewarded * r.days}</b> дней вы уже получили за коллег</p>` : ""}
       <div class="wr-link"><input readonly value="${esc(link)}" aria-label="Ваша ссылка"><button type="button" class="pill light" id="refCopy">${ic("link")}</button>
         <button type="button" class="pill light" data-share-text="${esc(text)}" aria-label="Поделиться">${ic("share")}</button></div>`, 12);
   }

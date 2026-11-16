@@ -201,8 +201,8 @@ def test_own_listing_needs_place(env):
     assert r.status_code == 400 and "район" in r.json()["detail"]
 
 
-def test_referral_no_bonus_since_2510(env, monkeypatch):
-    """25.10 (Артём: «никаких больше подарков»): приглашение запоминается, но дней пригласившему не добавляется."""
+def test_referral_bonus_7_days(env, monkeypatch):
+    """16.11 (Артём: «верни бонус +7 дней»): коллега пришёл по ссылке и подтвердил номер — пригласившему +7 дней, один раз."""
     c, conn, _ = env
     inviter = _login(c, conn, email="boss@example.ru")
     code = c.get("/api/me").json()["me"]["ref"]["code"]
@@ -217,8 +217,33 @@ def test_referral_no_bonus_since_2510(env, monkeypatch):
     new = conn.execute("SELECT * FROM users WHERE email = 'new@example.ru'").fetchone()
     assert new["referred_by"] == inviter["id"]
     server._hits.clear()   # лимит «подтверждений в час» общий для всех тестов
-    _verify(c, conn, phone="+7 918 222-33-44", sender="79182223344")   # подтвердил номер — бонуса больше нет
-    assert accounts.get_user(conn, inviter["id"])["paid_until"] == before
+    _verify(c, conn, phone="+7 918 222-33-44", sender="79182223344")   # подтвердил номер — пригласившему +7 дней
+    after = accounts.get_user(conn, inviter["id"])["paid_until"]
+    assert after - max(before, int(time.time())) >= 7 * 86400 - 60
+    assert c.get("/api/me").json()["me"]["ref"] is not None
+    notes = conn.execute("SELECT title FROM notices WHERE user_id = ? AND title LIKE '+7 дней%'", (inviter["id"],)).fetchall()
+    assert len(notes) == 1
+    assert accounts.reward_referrer(conn, new["id"]) is False   # второй раз за того же коллегу — нет
+
+
+def test_referral_bonus_once_per_phone():
+    """Тот же номер с другой почты (накрутка) бонуса больше не даёт; без подтверждённого номера — тоже."""
+    conn = db.connect(":memory:")
+    now = int(time.time())
+    ids = []
+    for e in ("boss@x.ru", "a@x.ru", "b@x.ru", "c@x.ru"):
+        ids.append(conn.execute("INSERT INTO users (email, created, last_seen) VALUES (?,?,?)", (e, now, now)).lastrowid)
+    boss, a, b, c2 = ids
+    conn.execute("UPDATE users SET referred_by = ? WHERE id IN (?,?,?)", (boss, a, b, c2))
+    conn.execute("INSERT INTO agent_phones (phone, user_id, verified_at) VALUES ('+79180000001', ?, ?)", (boss, now))
+    conn.execute("INSERT INTO agent_phones (phone, user_id, verified_at) VALUES ('+79182223344', ?, ?)", (a, now))
+    conn.commit()
+    assert accounts.reward_referrer(conn, a) is True
+    conn.execute("DELETE FROM agent_phones WHERE user_id = ?", (a,))          # номер «переехал» на другой аккаунт
+    conn.execute("INSERT INTO agent_phones (phone, user_id, verified_at) VALUES ('+79182223344', ?, ?)", (b, now))
+    conn.commit()
+    assert accounts.reward_referrer(conn, b) is False                          # тот же номер — второй раз нет
+    assert accounts.reward_referrer(conn, c2) is False                         # без подтверждённого номера — нет
 
 
 def test_admin_phone_base(env):

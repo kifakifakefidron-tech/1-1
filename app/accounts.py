@@ -294,15 +294,30 @@ def attach_referrer(conn: sqlite3.Connection, user_id: int, code: str | None) ->
 
 
 def reward_referrer(conn: sqlite3.Connection, user_id: int) -> bool:
-    """Приглашённый подтвердил свой номер агента — пригласившему +REF_DAYS дней (один раз за коллегу)."""
+    """Приглашённый подтвердил свой номер агента — пригласившему +REF_DAYS дней (один раз за коллегу).
+    16.11 (Артём: «верни бонус +7 дней»): защита от накруток — бонус только за НОВЫЙ номер: номер, за который бонус уже
+    давали (trials «ref:+7…»), и номер самого пригласившего не считаются; без подтверждённого номера бонуса нет."""
     from . import notices
     u = get_user(conn, user_id)
-    if config.REF_DAYS <= 0 or u is None or not u["referred_by"] or u["ref_rewarded"]:   # 25.10: подарков нет
+    if config.REF_DAYS <= 0 or u is None or not u["referred_by"] or u["ref_rewarded"] or u["referred_by"] == user_id:
         return False
+    inviter = get_user(conn, u["referred_by"])
+    if inviter is None or inviter["blocked"]:
+        return False
+    phones = [r[0] for r in conn.execute("SELECT phone FROM agent_phones WHERE user_id = ?", (user_id,))]
+    mine = {r[0] for r in conn.execute("SELECT phone FROM agent_phones WHERE user_id = ?", (inviter["id"],))}
+    fresh = [p for p in phones if p not in mine
+             and not conn.execute("SELECT 1 FROM trials WHERE phone = ?", (f"ref:{p}",)).fetchone()]
+    if not fresh:
+        return False
+    now = int(time.time())
+    for p in phones:
+        conn.execute("INSERT OR IGNORE INTO trials (phone, user_id, ts) VALUES (?,?,?)", (f"ref:{p}", user_id, now))
     conn.execute("UPDATE users SET ref_rewarded = 1 WHERE id = ?", (user_id,))
-    extend(conn, u["referred_by"], config.REF_DAYS)
-    notices.add(conn, u["referred_by"], "sub", f"🎁 +{config.REF_DAYS} дней доступа",
-                "Коллега, которого вы пригласили, подтвердил свой номер. Спасибо, что рассказали о 1+1!", url="/?cabinet=1")
+    extend(conn, inviter["id"], config.REF_DAYS)
+    notices.add(conn, inviter["id"], "sub", f"+{config.REF_DAYS} дней доступа — спасибо за коллегу",
+                "Коллега, которого вы пригласили, вошёл и подтвердил свой номер. Дни уже добавлены к вашему доступу.",
+                url="/cabinet", dedup_s=0)
     conn.commit()
     return True
 

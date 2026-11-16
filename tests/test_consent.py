@@ -61,4 +61,4 @@ def test_no_choice_at_signup_changes_nothing():
 
 def test_trial_is_14_days():
     from app import config
-    assert config.TRIAL_DAYS == 14 and config.REF_DAYS == 0 and consent.BONUS_DAYS == 0
+    assert config.TRIAL_DAYS == 14 and config.REF_DAYS == 7 and consent.BONUS_DAYS == 0

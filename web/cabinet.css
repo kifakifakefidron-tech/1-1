@@ -515,3 +515,7 @@ body.d-arranging .g:not(.lifting) { opacity: .85; }
   .d-hello { font-size: 36px; }
   .d-promo { flex-wrap: wrap; } .d-promo input, .d-promo button { flex: 1 1 100%; min-width: 0; }
 }
+
+/* 16.11 «Приведи коллегу» снова с бонусом: сколько дней уже получено */
+.wr-earned { margin: 10px 0 0; color: var(--ink-2); font-size: 13.5px; }
+.wr-earned b { color: var(--gold-300); font: 600 18px var(--head); margin-right: 4px; }
