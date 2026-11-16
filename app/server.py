@@ -2488,30 +2488,47 @@ def api_admin_place_queue(request: Request, body: dict | None = None):
     return JSONResponse({"items": [dict(r) for r in rows], "counts": counts, "rules": learning.list_rules(conn)})
 
 
+def _fix_safe(what: str, fn, default=None):
+    """17.11: подсказка экрана разбора упала — объект всё равно открывается, ошибка — в журнал и админу на экран."""
+    try:
+        return fn()
+    except Exception as e:  # noqa: BLE001
+        log.exception("Экран разбора: не получилось «%s»", what)
+        if getattr(_fix_err, "list", None) is not None:
+            _fix_err.list.append(f"{what}: {type(e).__name__}: {e}"[:300])
+        return default
+
+
+_fix_err = threading.local()   # ошибки подсказок текущего запроса (у каждого потока — свои)
+
+
 def _fix_item(conn, lid: int) -> dict | None:
     r = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
     if r is None:
         return None
     text = (r["fragment"] or r["description"] or "")[:2000]
     photos = json.loads(r["photos"] or "[]")
+    S = _fix_safe
     return {k: r[k] for k in ("id", "title", "price", "deal", "type", "rooms", "area", "floor", "floors", "complex",
                               "district", "street", "house", "settlement", "lat", "lon", "geo_status", "admin_fixed",
                               "source", "room_kind", "repair")} | {
         "text": text, "photo": photos[0] if photos else None, "photos": photos[:12], "land": r["land"],
         "phones": json.loads(r["phones"] or "[]"),
         "extra_districts": json.loads(r["extra_districts"] or "[]"),
-        "suggest": _fix_suggest(conn, r, text),
-        "learned": [label for _, label in geocode.learn_keys(r)],
+        "suggest": S("подсказки районов", lambda: _fix_suggest(conn, r, text), {"districts": [], "complexes": []}),
+        "learned": S("выученное", lambda: [label for _, label in geocode.learn_keys(r)], []),
         "geo_src": autolearn.GEO_SRC.get(r["geo_src"] or "") if r["geo_src"] != "geocoder" else None,
         "district_src": autolearn.DISTRICT_SRC.get(r["district_src"] or ""),
-        "was_district": _was_district(conn, r),
+        "was_district": S("район до перепроверки", lambda: _was_district(conn, r)),
         "conflict": (r["place_conflict"] or "").split(":", 1)[-1] or None,
-        "zone": _zone(conn, r["district"]),
-        "learn_stats": learning.safety(conn, r),   # распределение улицы и ЖК по районам — какие правила безопасно учить
-        "repair_why": ingest.explain_repair(conn, r),   # 31.10: очередь «Ремонт» — как сервис решил, что сработало и что выключено
-        "dispute": json.loads(r["parse_dispute"]) if r["parse_dispute"] else None,   # 16.11: правила ≠ нейросеть
-        "complaint": _fix_complaint(conn, r["addr_complaint"]),   # 16.11: жалоба «неверный адрес»
-        "agent_edit": _fix_agent_edit(conn, r),                   # 16.11: что поправил агент
+        "zone": S("контур района", lambda: _zone(conn, r["district"])),
+        # распределение улицы и ЖК по районам — какие правила безопасно учить
+        "learn_stats": S("безопасность правил", lambda: learning.safety(conn, r), {}),
+        # 31.10: очередь «Ремонт» — как сервис решил, что сработало и что выключено
+        "repair_why": S("разбор ремонта", lambda: ingest.explain_repair(conn, r), {"steps": []}),
+        "dispute": S("спор правил и нейросети", lambda: json.loads(r["parse_dispute"]) if r["parse_dispute"] else None),
+        "complaint": S("жалоба", lambda: _fix_complaint(conn, r["addr_complaint"])),   # 16.11: жалоба «неверный адрес»
+        "agent_edit": S("правка агента", lambda: _fix_agent_edit(conn, r)),             # 16.11: что поправил агент
     }
 
 
@@ -2894,6 +2911,20 @@ def api_admin_fix(request: Request, body: dict | None = None):
     _, err = _need_admin(request)
     if err:
         return err
+    _fix_err.list = []
+    try:
+        res = _admin_fix(request, body)
+    except Exception as e:  # noqa: BLE001 — 17.11: вместо «вечной загрузки» — понятная ошибка на экране
+        log.exception("Экран разбора упал")
+        return _err(f"Экран разбора: ошибка сервера — {type(e).__name__}: {str(e)[:200]}", 500)
+    if _fix_err.list and isinstance(res, JSONResponse) and res.status_code == 200:
+        data = json.loads(res.body)
+        data["warnings"] = list(_fix_err.list)
+        return JSONResponse(data)
+    return res
+
+
+def _admin_fix(request: Request, body: dict | None = None):
     conn = db.get()
     learning.sync_districts(conn)
     q = request.query_params

@@ -44,11 +44,14 @@
     const opts = { credentials: "same-origin", method: body ? "POST" : "GET" };
     if (body) { opts.headers = { "Content-Type": "application/json" }; opts.body = JSON.stringify(body); }
     // База на секунду занята фоновой работой (503) — тихо повторяем, а не показываем ошибку
-    let r = await fetch(url, opts);
-    for (let i = 0; i < 4 && r.status === 503; i++) {
-      await new Promise((res) => setTimeout(res, 1500 * (i + 1)));
+    let r;
+    try {
       r = await fetch(url, opts);
-    }
+      for (let i = 0; i < 4 && r.status === 503; i++) {
+        await new Promise((res) => setTimeout(res, 1500 * (i + 1)));
+        r = await fetch(url, opts);
+      }
+    } catch { return { ok: false, status: 0, data: { detail: "Нет связи с сервером" } }; }
     let d = {};
     try { d = await r.json(); } catch { /* */ }
     return { ok: r.ok, status: r.status, data: d };
@@ -57,13 +60,21 @@
     : `${(p / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} млн ₽`;
 
   // ─── очередь ──────────────────────────────────────────────────────────
+  let loadErr = "";   // 17.11: сервер ответил ошибкой — показываем её, а не «очередь разобрана»
   async function fetchItem(id) {
     const q = new URLSearchParams({ mode, kind });
     if (id) q.set("id", id);
     const r = id ? await call(`/api/admin/fix?${q}`)
       : await call(`/api/admin/fix?${q}`, { exclude: [...ss.done, ...ss.skipped, ...(item ? [item.id] : [])] });
     if (r.status === 403 || r.status === 401) { $("fxDenied").hidden = false; return null; }
-    if (!r.ok) { toast(r.data.detail || "Не получилось загрузить"); return null; }
+    if (!r.ok) {   // 17.11: не молчим — пишем, что именно сломалось (код ответа сервера)
+      const msg = r.data.detail || `Не получилось загрузить (ответ сервера ${r.status || "нет"})`;
+      toast(msg, 8000);
+      loadErr = msg;
+      return null;
+    }
+    loadErr = "";
+    if (r.data.warnings && r.data.warnings.length) toast(`Часть подсказок не загрузилась: ${r.data.warnings.join("; ")}`, 8000);
     left = r.data.left;
     group = r.data.group || null;
     if (r.data.kind !== kind) { kind = r.data.kind; ss = load(); }
@@ -118,7 +129,9 @@
     if (notes.length) $("fxConflict").innerHTML = `${ic("alert")}<div>${notes.join("<br>")}</div>`;
     renderDispute(it);
     if (!it) {
-      $("fxDone").innerHTML = `Очередь разобрана 🎉 <br><span class="note">Разобрано за сессию: ${ss.done.length}</span>`;
+      $("fxDone").innerHTML = loadErr
+        ? `${esc(loadErr)}<br><span class="note">Обновите страницу. Если повторяется — пришлите этот текст.</span>`
+        : `Очередь разобрана 🎉 <br><span class="note">Разобрано за сессию: ${ss.done.length}</span>`;
       return;
     }
     $("fxTitle").textContent = it.title;

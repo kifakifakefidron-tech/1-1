@@ -509,10 +509,20 @@ def _districts_in(name: str | None) -> set[str]:
     return out
 
 
-def chat_priors(conn: sqlite3.Connection) -> dict:
-    """{(source, chat_id): район} — для чатов, где почти всё из одного района (или район в названии чата)."""
+def chat_priors(conn: sqlite3.Connection, compute: bool = True) -> dict:
+    """{(source, chat_id): район} — для чатов, где почти всё из одного района (или район в названии чата).
+    17.11: считает только worker (compute=True, раз в 10 мин) и кладёт в state chat_priors; сайт (экран разбора)
+    берёт готовое из state — тяжёлый запрос по всем сообщениям больше не идёт внутри запроса страницы."""
     if time.time() - _chat["t"] < 600:
         return _chat["map"]
+    if not compute:
+        try:
+            raw = json.loads(db.get_state(conn, "chat_priors") or "{}")
+        except ValueError:
+            raw = {}
+        out = {tuple(k.split("	", 1)): v for k, v in raw.items() if "	" in k}
+        _chat.update(t=time.time(), map=out)
+        return out
     since = int(time.time()) - 60 * 86400
     stats: dict = defaultdict(Counter)
     for r in conn.execute("""SELECT m.source, m.chat_id, l.district, COUNT(DISTINCT l.id) FROM listings l
@@ -536,12 +546,13 @@ def chat_priors(conn: sqlite3.Connection) -> dict:
             if total < 5 or c[d] / total >= 0.5:
                 out[ch] = d
     _chat.update(t=time.time(), map=out, stats=stats)
+    db.set_state(conn, "chat_priors", json.dumps({f"{a}	{b}": d for (a, b), d in out.items()}, ensure_ascii=False))
     return out
 
 
-def chat_district(conn: sqlite3.Connection, listing_id: int) -> str | None:
+def chat_district(conn: sqlite3.Connection, listing_id: int, compute: bool = True) -> str | None:
     """Район по чатам, где прислали объявление: все «районные» чаты согласны — этот район."""
-    pri = chat_priors(conn)
+    pri = chat_priors(conn, compute)
     if not pri:
         return None
     got = {pri.get((r[0], r[1])) for r in conn.execute(

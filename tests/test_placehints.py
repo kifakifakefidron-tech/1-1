@@ -177,3 +177,35 @@ def test_queues_do_not_overlap(conn, add):
     conn.execute("UPDATE listings SET house = NULL WHERE id = ?", (b,))
     conn.commit()
     assert b not in ids("approx")   # дома нет — уточнять нечего
+
+
+def test_fix_screen_survives_broken_hint(tmp_path, monkeypatch):
+    """17.11: одна подсказка экрана разбора упала — объект всё равно открывается, админ видит, что именно сломалось."""
+    from starlette.testclient import TestClient
+
+    from app import accounts, config, db, server
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "t.db"))
+    monkeypatch.setattr(db._local, "conn", None, raising=False)
+    server._cache.clear()
+    conn = db.get()
+    u = accounts.upsert_email_user(conn, "admin@example.ru")
+    conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (u["id"],))
+    mid = ingest.add_message(conn, source="wa", chat_id="c", msg_id="f1", ts=int(time.time()),
+                             text="2-к квартира 50 м², 3/9 эт., ул. Тестовая 5. 6 млн. 89180000081")
+    lid = ingest.process_message(conn, mid, use_llm=False)["results"][0]["listing_id"]
+    conn.execute("UPDATE listings SET district = NULL WHERE id = ?", (lid,))
+    conn.commit()
+
+    def boom(*a, **k):
+        raise RuntimeError("тест")
+    monkeypatch.setattr(server, "_fix_suggest", boom)
+    with TestClient(server.app) as c:
+        c.cookies.set(server.SESSION, accounts.create_session(conn, u["id"]))
+        d = c.post("/api/admin/fix?kind=nodistrict", json={"exclude": []}).json()
+        assert d["item"]["id"] == lid and d["item"]["suggest"] == {"districts": [], "complexes": []}
+        assert any("подсказки районов" in w for w in d["warnings"])
+        monkeypatch.setattr(server, "_fix_groups", boom)
+        r = c.post("/api/admin/fix?kind=nodistrict", json={"exclude": []})
+        assert r.status_code == 500 and "RuntimeError" in r.json()["detail"]
+    conn.close()
+    db._local.conn = None

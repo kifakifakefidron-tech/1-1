@@ -227,6 +227,8 @@ def fill_points(conn: sqlite3.Connection, known: Known | None = None) -> int:
                              AND geo_status IN ('pending', 'none', 'skip', 'approx')""").fetchall():
         hit = known.point(r)
         if hit and (r["lat"], r["lon"]) != hit[:2]:
+            if n and n % 200 == 0:
+                conn.commit()   # 17.11: не держать базу занятой весь проход
             conn.execute("UPDATE listings SET lat = ?, lon = ?, geo_status = ?, geo_src = ? WHERE id = ?",
                          (*hit, r["id"]))
             # 16.11: угол / ориентир / ваше объяснение, а района нет — район по нарисованному контуру под точкой
@@ -381,7 +383,7 @@ def hints(conn: sqlite3.Connection, row) -> list[dict]:
     why = {"map": "по карте районов", "vote-house": "так в объявлениях этого дома", "vote-cx": "так в объявлениях этого ЖК"}
     out = [{"name": d, "why": why.get(src, src)} for d, src in candidates(conn, row)]
     if not out and not row["settlement"]:
-        ch = placehints.chat_district(conn, row["id"])
+        ch = placehints.chat_district(conn, row["id"], compute=False)   # сайт — только готовое от worker
         if ch:
             out.append({"name": ch, "why": "так почти во всём чате, где прислали"})
     return out

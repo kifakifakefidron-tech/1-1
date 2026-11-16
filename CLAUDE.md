@@ -1279,6 +1279,11 @@ whatshapp_ai_agents-new, WaFindHouse-new). Старое приложение и 
   listing_edits; /fix показывает «Поправил агент … : район «A» → «B»» (_fix_agent_edit) и текст жалобы (_fix_complaint);
   «Сохранить» админа обнуляет agent_fixed и addr_complaint. Очередь «Правила и нейросеть спорят» наполняется только новыми
   объявлениями, разобранными нейросетью (нужен DEEPSEEK_API_KEY).
+- 17.11 (Артём: «не открывается ни один пункт разбора»): экран разбора больше не падает целиком. server._fix_safe — каждая
+  подсказка карточки (районы, контур, ремонт, жалоба, правка агента…) отдельно: упала — объект открывается, в ответе warnings
+  (fix.js — тост «Часть подсказок не загрузилась: …»), в журнале web — traceback «Экран разбора: не получилось …». Ошибка
+  всего запроса — 500 с текстом ошибки (fix.js пишет её вместо «Очередь разобрана»). placehints.chat_priors считает только
+  worker (state chat_priors), сайт берёт готовое (chat_district(compute=False)); fill_points сохраняет каждые 200 точек.
 - `app/geocode.py` — Nominatim
 - `app/worker.py` — фоновый цикл (`python -m app.worker`)
 - `app/server.py` — веб/API (`uvicorn app.server:app --port 8090`)
