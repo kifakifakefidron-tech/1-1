@@ -600,9 +600,17 @@ def process_message(conn: sqlite3.Connection, message_id: int, use_llm: bool | N
     # Тот же текст уже разбирали (его разослали по десяткам чатов) — не тратим
     # нейросеть второй раз, просто отмечаем, что объект снова присылали.
     prev = conn.execute(
-        "SELECT id, kind, objects FROM messages WHERE text_hash = ? AND status = 'done' AND id != ? ORDER BY id DESC LIMIT 1",
+        "SELECT id, kind, objects, sender FROM messages WHERE text_hash = ? AND status = 'done' AND id != ? ORDER BY id DESC LIMIT 1",
         (m["text_hash"], m["id"]),
     ).fetchone()
+    if prev is not None and prev["sender"] != m["sender"]:
+        sender, previous = (rules.normalize_phone(str(raw or "").split("@")[0])
+                            for raw in (m["sender"], prev["sender"]))
+        if sender and previous:
+            from . import phonegroups
+            phonegroups.refresh(conn)
+            if phonegroups.canon(sender) != phonegroups.canon(previous) and not rules.find_phones(m["text"]):
+                prev = None
     listing_ids = []
     if prev is not None:
         # только объекты, которые ещё есть в базе (удалённые по сроку — пропали вместе с карточкой)

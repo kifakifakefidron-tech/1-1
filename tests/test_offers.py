@@ -1,7 +1,7 @@
 import json
 import time
 
-from app import hooks, offers, search
+from app import dupfix, dupreview, hooks, ingest, offers, search
 
 
 def listing(conn, phone, *, price=6800000, floor=16, house="59", media=("a", "b"), deal="sale"):
@@ -127,3 +127,70 @@ def test_new_offers_cannot_republish_a_known_property(conn):
     conn.execute("UPDATE listings SET is_active=0 WHERE id=?", (older,))
     assert [row["id"] for row in items(new_days=1)] == [fresh]
     assert items()[1]["first_seen"] == born
+
+
+DETAIL = ("Двухкомнатная квартира на Домбайской улице, чистый подъезд, кухня с выходом на застеклённую лоджию. "
+          "Окна выходят во двор на детскую площадку. Отдельная гардеробная справа от входа. Показ после шести.")
+
+
+def test_recheck_links_one_photo_with_property_text_and_queues_weak_matches(conn):
+    a = listing(conn, "79000000001", media=("a", "b"), price=6800000)
+    b = listing(conn, "79000000002", media=("a",), price=7400000)
+    c = listing(conn, "79000000003", media=("a", "c"))
+    rejected = listing(conn, "79000000004", media=("a",))
+    wrong_floor = listing(conn, "79000000005", floor=17, media=())
+    for lid, phone, price in ((a, "79000000001", "6 800 000"), (b, "79000000002", "7 400 000"),
+                              (rejected, "79000000004", "6 800 000")):
+        conn.execute("UPDATE listings SET description=? WHERE id=?", (f"{DETAIL} Цена {price} руб. {phone}", lid))
+    conn.execute("UPDATE listings SET first_seen=1 WHERE id=?", (a,))
+    decide(conn, a, rejected, "diff")
+    decide(conn, b, rejected, "diff")
+    evidence = "SELECT id, photos, description, phones, price, first_seen FROM listings ORDER BY id"
+    before = list(map(tuple, conn.execute(evidence)))
+
+    assert dupreview.recheck_offers(conn, batch=1) == {"rows": 1, "linked": 0, "queued": 0}
+    assert dupreview.recheck_offers(conn)["linked"] == 1
+    assert dupreview.recheck_offers(conn) == {}
+    assert list(map(tuple, conn.execute(evidence))) == before
+    assert {row["id"] for row in offers.groups(conn)[a]} == {a, b}
+    assert c not in offers.groups(conn)
+    assert not conn.execute("SELECT 1 FROM dup_pairs WHERE a=? OR b=?", (wrong_floor, wrong_floor)).fetchone()
+    status = conn.execute("SELECT status, kind FROM dup_pairs WHERE a=? AND b=?", (a, b)).fetchone()
+    assert tuple(status) == ("market", "offer_photo")
+    assert conn.execute("SELECT status FROM dup_pairs WHERE a=? AND b=?", (a, rejected)).fetchone()[0] == "diff"
+
+    review = conn.execute("SELECT id FROM dup_pairs WHERE a=? AND b=? AND status='open'", (a, c)).fetchone()
+    assert dupreview.decide(conn, review["id"], "same", user_id=1) == {"ok": True, "status": "market"}
+    assert {row["id"] for row in offers.groups(conn)[a]} == {a, b, c}
+    assert list(map(tuple, conn.execute(evidence))) == before
+    conn.execute("UPDATE listings SET is_active=0 WHERE id=?", (a,))
+    assert offers.archived_publications(conn, b)[b][0] == 1
+
+
+def test_similar_finds_older_properties_and_omits_doubtful_prices_and_excluded_ids(conn):
+    a = listing(conn, "79000000001", media=())
+    b = listing(conn, "79000000002", media=())
+    conn.execute("UPDATE listings SET type='new', street='ул. Домбайская' WHERE id=?", (a,))
+    conn.execute("UPDATE listings SET last_seen=1, price_doubt=1 WHERE id=?", (b,))
+    conn.executemany("""INSERT INTO listings(type, deal, rooms, area, floor, floors, street, house, price,
+        title, first_seen, last_seen) VALUES ('flat','sale',2,54,16,24,'Красная',?,6800000,'Другая квартира',1,2)""",
+        ((str(i),) for i in range(630)))
+    row = conn.execute("SELECT * FROM listings WHERE id=?", (a,)).fetchone()
+    assert [(item["id"], item["price"]) for item in hooks.same_elsewhere(conn, row)] == [(b, None)]
+    assert hooks.same_elsewhere(conn, row, exclude={b}) == []
+
+
+def test_reposted_text_with_separate_agent_phones_cannot_merge_original_data(conn):
+    announcement = "Продам 2-к квартиру 54 м², 16/24 этаж, Краснодар, ЖК Губернский, ул. Домбайская 59. " + DETAIL
+    now = int(time.time())
+    for i, (phone, price) in enumerate((("79000000001", "6 800 000"), ("79000000002", "6 800 000"),
+                                       ("79000000001", "6 900 000"))):
+        mid = ingest.add_message(conn, source="wa", text=f"{announcement} Цена {price} руб.",
+                                 ts=now + i, msg_id=f"distinct-{i}", sender=phone)
+        assert ingest.process_message(conn, mid, use_llm=False)["status"] == "done"
+    rows = list(conn.execute("SELECT id, price, phones FROM listings ORDER BY id"))
+    assert [(row["price"], json.loads(row["phones"])) for row in rows] == [
+        (6900000, ["+79000000001"]), (6800000, ["+79000000002"])]
+    assert dupfix.run(conn)["merged"] == 0
+    assert dupreview.scan(conn)["auto"] == 0
+    assert conn.execute("SELECT COUNT(*) FROM listings WHERE is_active=1").fetchone()[0] == 2

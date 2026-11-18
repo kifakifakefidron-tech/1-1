@@ -122,9 +122,11 @@ def same_object(o: ParsedObject, row: sqlite3.Row) -> tuple[bool, str]:
     from .phonegroups import canon_set
     phones_row = canon_set(json.loads(row["phones"] or "[]"))
     phone = bool(phones_row & canon_set(o.phones)) if o.phones and phones_row else None
+    if phone is False:
+        return False, "другой агент"
     price = _close(o.price, row["price"], 0.15, 0)
 
-    # Тот же текст (поменялась разве что цена) — одно объявление, с какого бы номера его ни переслали.
+    # Тот же текст (поменялась разве что цена) — повтор при совпадающих или неизвестных контактах.
     # 24.10m (пример Артёма 10678/10564): ПРОВЕРЯЕМ ДО «явных различий» — один и тот же текст «Гондаря Беличенко 86» разобрался
     # то улицей Гондаря, то Беличенко, и правило «разные улицы» делало две карточки. Площадь/этаж в тексте разные — это не близнецы.
     if text_twin(o.fragment, row["fragment"]):
@@ -190,13 +192,17 @@ def find_match(conn: sqlite3.Connection, o: ParsedObject, frag_hash: str, now: i
     from . import phonegroups
     phonegroups.refresh(conn)
     # 1) Дословный репост того же текста
-    row = conn.execute(
+    rows = conn.execute(
         """SELECT l.* FROM listing_events e JOIN listings l ON l.id = e.listing_id
-           WHERE e.fragment_hash = ? ORDER BY e.ts DESC LIMIT 1""",
+           WHERE e.fragment_hash = ? GROUP BY l.id ORDER BY MAX(e.ts) DESC""",
         (frag_hash,),
-    ).fetchone()
-    if row is not None and row["type"] in TYPE_GROUPS.get(o.type or "", ()) and row["deal"] == o.deal:
-        return row, "repost"
+    )
+    phones = phonegroups.canon_set(o.phones)
+    for row in rows:
+        previous = phonegroups.canon_set(json.loads(row["phones"] or "[]"))
+        if row["type"] in TYPE_GROUPS.get(o.type or "", ()) and row["deal"] == o.deal \
+                and (not (phones and previous) or bool(phones & previous)):
+            return row, "repost"
 
     # 2) Тот же объект по характеристикам — по всей базе
     groups = TYPE_GROUPS.get(o.type or "", (o.type,))

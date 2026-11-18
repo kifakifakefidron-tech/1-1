@@ -736,9 +736,9 @@ def api_listing(request: Request, body: dict | None = None):
     archived = offers.archived_publications(conn, None if group else lid) if row["is_active"] else {}
     first_seen, migrated, _ = offers.first_publication(group or (row,), archived)
     d.update(first_seen=first_seen, catalog_migrated=bool(migrated))
+    hidden = offers.hidden_ids(conn, user["id"] if user else None)
     if group:
         d["market"] = hooks.offer_market(conn, group, None if row["price_doubt"] else row["price"])
-        hidden = offers.hidden_ids(conn, user["id"] if user else None)
         visible = [item for item in group if item["id"] not in hidden]
         if len(visible) > 1:
             d["offer_group"] = offers.summary(visible)
@@ -749,7 +749,7 @@ def api_listing(request: Request, body: dict | None = None):
         d["market"] = hot_mk or (hooks.market_for(conn, d) if not row["price_doubt"] else None)
         diff = row["market_diff"]
     d["hot"] = hooks.is_hot({**d, "price_doubt": row["price_doubt"], "market_diff_raw": diff})
-    d["same"] = hooks.same_elsewhere(conn, row)
+    d["same"] = hooks.same_elsewhere(conn, row, exclude=hidden | {item["id"] for item in group or ()})
     tools_access = bool(user and access)
     d["tools_access"] = tools_access
     d["note"] = hooks.get_note(conn, user["id"], lid) if tools_access else None

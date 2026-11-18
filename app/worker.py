@@ -176,6 +176,13 @@ def tick(conn) -> dict:
             stats["dups"] = dr
     except Exception:  # noqa: BLE001
         log.exception("проверка повторов не прошла")
+    try:
+        offer_check = dupreview.recheck_offers(conn)
+        if offer_check:
+            stats["offer_check"] = offer_check
+    except Exception:  # noqa: BLE001
+        conn.rollback()
+        log.exception("перепроверка похожих предложений не прошла")
     lap("повторы")
     from . import cxnorm
     cx = cxnorm.maybe_run(conn)   # один раз (ТЗ v2, P1.7): одно название на один ЖК, отчёт — в админке

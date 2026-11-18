@@ -21,7 +21,7 @@ import sqlite3
 import time
 from collections import defaultdict
 
-from . import config, db, geo
+from . import config, db, geo, offers
 from .dedupe import _close, _house_eq, text_twin
 from .ownmatch import _move
 from .textnorm import words
@@ -31,6 +31,8 @@ KINDS = {
     "agent": "Тот же агент, место, комнаты и этаж",
     "similar": "Текст похож, номера те же",
     "nodetail": "Тот же агент и место, этаж или площадь не указаны",
+    "offer_review": "Возможно, один объект у разных агентов",
+    "offer_photo": "Один объект по фото и характеристикам",
 }
 AUTO = ("text", "agent")          # склеиваются сами всегда
 DOUBT = ("similar", "nodetail")   # в очередь; сами — только если админ доверил (state dup_trust)
@@ -265,6 +267,8 @@ def decide(conn: sqlite3.Connection, pid: int, verdict: str, user_id: int = 0, k
     p = conn.execute("SELECT * FROM dup_pairs WHERE id = ?", (pid,)).fetchone()
     if p is None:
         return {"ok": False, "error": "Пара не найдена"}
+    if verdict == "same" and p["kind"] in ("offer_review", "offer_photo"):
+        verdict = "market"
     now = int(time.time())
     if verdict == "diff":
         if p["status"] in ("same", "auto"):
@@ -361,6 +365,10 @@ def scan(conn: sqlite3.Connection, budget_s: float = 8.0, full: bool = False) ->
                 if not c:
                     continue
                 kind, score, why = c
+                pa, pb = _phones(o["phones"]), _phones(r["phones"])
+                if pa and pb and not pa & pb:
+                    doubts.append((score, o["id"], "offer_review", why))
+                    continue
                 if kind in AUTO or kind in trust:
                     k, d = choose_keep(conn, o["id"], r["id"])
                     merge(conn, k, d, kind, status="auto", why=why, score=score)
@@ -387,6 +395,93 @@ def scan(conn: sqlite3.Connection, budget_s: float = 8.0, full: bool = False) ->
             conn.commit()
     db.set_state(conn, "dup_scan_id", str(last))
     conn.commit()
+    return res
+
+
+def recheck_offers(conn: sqlite3.Connection, batch: int = 250, budget_s: float = 3.0) -> dict:
+    """Возвращаемся к старым карточкам с места и затем проверяем новые, не меняя их содержимое."""
+    start = time.monotonic()
+    cursor = int(db.get_state(conn, "offer_check_id", "0"))
+    if not conn.execute("""SELECT 1 FROM listings WHERE id > ? AND is_active = 1
+                           AND (street IS NOT NULL OR complex IS NOT NULL) LIMIT 1""", (cursor,)).fetchone():
+        return {}
+
+    from . import phonegroups
+    phonegroups.refresh(conn)
+    rows = conn.execute(f"""SELECT {offers.MATCH_FIELDS} FROM listings WHERE is_active = 1
+                            AND (street IS NOT NULL OR complex IS NOT NULL) ORDER BY id""").fetchall()
+    places, contacts = {}, {}
+    buckets = defaultdict(list)
+
+    def keys(row):
+        prefix = (row["deal"], offers.property_type(row["type"]), row["rooms"])
+        if prefix[1] == "flat" and row["rooms"] is None:
+            return []
+        return [(*prefix, i, value) for i, value in enumerate(places[row["id"]]) if value]
+
+    for row in rows:
+        lid = row["id"]
+        places[lid] = offers.place_keys(row)
+        contacts[lid] = offers.contact_keys(row)
+        for key in keys(row):
+            buckets[key].append(row)
+    strong = defaultdict(list)
+    for a, b in sorted(offers.photo_matches(conn)):
+        if b > cursor:
+            strong[b].append(a)
+    decisions = {(a, b): (status, user_id) for a, b, status, user_id in conn.execute(
+        "SELECT a, b, status, user_id FROM dup_pairs WHERE b > ?", (cursor,))}
+
+    res = {"rows": 0, "linked": 0, "queued": 0}
+    links, reviews = [], []
+    for row in rows:
+        lid = row["id"]
+        if lid <= cursor:
+            continue
+        if res["rows"] and (res["rows"] >= batch or time.monotonic() - start >= budget_s):
+            break
+        res["rows"] += 1
+        cursor = lid
+        for oid in strong.get(lid, ()):
+            status, user_id = decisions.get((oid, lid), (None, None))
+            if status not in (None, "open") or user_id:
+                continue
+            links.append((oid, lid))
+            decisions[oid, lid] = "market", None
+
+        candidates = {}
+        for key in keys(row):
+            for other in buckets[key]:
+                oid = other["id"]
+                if oid >= lid:
+                    break
+                if oid in candidates or (oid, lid) in decisions or contacts[lid] & contacts[oid]:
+                    continue
+                candidates[oid] = offers.similar_signals(row, other, places[lid], places[oid])
+        ranked = sorted(((oid, why) for oid, why in candidates.items() if why),
+                        key=lambda pair: (len(pair[1]), pair[0]), reverse=True)
+        for oid, why in ranked[:PER_ROW]:
+            reviews.append((oid, lid, len(why) / 5, json.dumps(why, ensure_ascii=False)))
+
+    now = int(time.time())
+    if links:
+        res["linked"] = conn.executemany("""INSERT INTO dup_pairs(a, b, kind, score, why, status, created_at)
+            SELECT ?, ?, 'offer_photo', 1, '["Совпали фото и характеристики"]', 'market', ?
+            WHERE EXISTS (SELECT 1 FROM listings WHERE id = ? AND is_active = 1)
+              AND EXISTS (SELECT 1 FROM listings WHERE id = ? AND is_active = 1)
+            ON CONFLICT(a,b) DO UPDATE SET kind=excluded.kind, score=1, why=excluded.why, status='market'
+            WHERE dup_pairs.status='open' AND COALESCE(dup_pairs.user_id, 0)=0""",
+            ((a, b, now, a, b) for a, b in links)).rowcount
+    if reviews:
+        res["queued"] = conn.executemany("""INSERT OR IGNORE INTO dup_pairs(a, b, kind, score, why, status, created_at)
+            SELECT ?, ?, 'offer_review', ?, ?, 'open', ?
+            WHERE EXISTS (SELECT 1 FROM listings WHERE id = ? AND is_active = 1)
+              AND EXISTS (SELECT 1 FROM listings WHERE id = ? AND is_active = 1)""",
+            ((a, b, score, why, now, a, b) for a, b, score, why in reviews)).rowcount
+    if res["linked"]:
+        conn.execute("""INSERT INTO state(key, value) VALUES ('cache_ver', ?)
+                        ON CONFLICT(key) DO UPDATE SET value=excluded.value""", (str(time.time()),))
+    db.set_state(conn, "offer_check_id", str(cursor))
     return res
 
 

@@ -1325,7 +1325,7 @@
       <small>${esc(p.title)}</small></li>`).join("")}</ul>` : "";
     const grouped = new Set((o.offer_group?.offers || []).map((offer) => offer.id));
     const same = (o.same || []).filter((offer) => !grouped.has(offer.id));
-    const sameBody = same.length ? `<p class="note">Тот же или очень похожий объект у других агентов — сверьте детали.</p>
+    const sameBody = same.length ? `<p class="note">Возможно, это тот же объект. Сверьте адрес и характеристики.</p>
       <ul class="dv-list">${same.map((s) => `<li><button type="button" class="link" data-open-id="${s.id}">${esc(fmtPrice(s.price, o.deal))}</button>
         <small>${esc(s.title)} · ${esc(fmtAgo(s.last_seen))}</small></li>`).join("")}</ul>` : "";
     const H = o.history || [];

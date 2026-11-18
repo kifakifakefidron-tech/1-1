@@ -11,7 +11,7 @@ import sqlite3
 import time
 from collections import defaultdict
 
-from . import db, geo
+from . import db, geo, offers, phonegroups
 from .dedupe import _close, text_twin
 from .ownmatch import _move
 from .textnorm import words
@@ -26,6 +26,9 @@ def _place(r) -> str | None:
 
 
 def _twins(a, b) -> bool:
+    pa, pb = offers.contact_keys(a), offers.contact_keys(b)
+    if pa and pb and not pa & pb:
+        return False
     for k in ("rooms", "floor", "floors"):
         if a[k] is not None and b[k] is not None and a[k] != b[k]:
             return False
@@ -43,6 +46,7 @@ def find_main(conn: sqlite3.Connection, row) -> int | None:
     p = _place(row)
     if not p:
         return None
+    phonegroups.refresh(conn)
     for r in conn.execute("""SELECT * FROM listings WHERE is_active = 1 AND id != ? AND deal = ? AND rooms IS ? AND fragment IS NOT NULL
                              AND (complex = ? OR street = ?) ORDER BY first_seen LIMIT 200""",
                           (row["id"], row["deal"], row["rooms"], row["complex"], row["street"])).fetchall():
@@ -52,6 +56,7 @@ def find_main(conn: sqlite3.Connection, row) -> int | None:
 
 
 def run(conn: sqlite3.Connection, apply: bool = False) -> dict:
+    phonegroups.refresh(conn)
     rows = conn.execute("""SELECT * FROM listings WHERE source = 'chat' AND is_active = 1 AND hidden_reason IS NULL
                            AND COALESCE(owner_user_id, 0) = 0 AND fragment IS NOT NULL""").fetchall()
     groups: dict[tuple, list] = defaultdict(list)

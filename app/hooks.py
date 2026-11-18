@@ -11,7 +11,6 @@ import hashlib
 import hmac
 import json
 import logging
-import re
 import sqlite3
 import statistics
 import threading
@@ -19,7 +18,6 @@ import time
 import urllib.parse
 
 from . import config, db, geo
-from .textnorm import words
 
 log = logging.getLogger(__name__)
 DAY = 86400
@@ -221,69 +219,47 @@ def annotate(conn: sqlite3.Connection, items: list[dict]) -> list[dict]:
 
 
 # ─── «продают ещё N агентов» ───────────────────────────────────────────────
-def _norm_street(v: str | None) -> str | None:
-    w = words(v or "")
-    w = re.sub(r"\b(?:ул|улица|пр кт|проспект|пер|переулок|проезд|бульвар|б р|шоссе)\b", " ", w)
-    return " ".join(w.split()) or None
-
-
-def same_elsewhere(conn: sqlite3.Connection, row: sqlite3.Row, limit: int = 10) -> list[dict]:
-    """Тот же объект у других агентов. 24.10j (Артём: «похожие редко вылезают»): раньше нужны были И площадь, И этаж —
-    у объявлений без них похожих не было вовсе. Теперь: тот же тип, сделка, комнаты и место (ЖК или улица; дом — если у обоих),
-    явные различия (этаж, этажность, площадь > 3 % / 2 м²) — не он; и хотя бы ДВА совпадения из: площадь, этаж, этажность,
-    цена в пределах 7 % (цена — только вместе с совпавшей площадью или этажом)."""
-    # 26.10: решения админа на /dups — «один объект, разные агенты» показываем всегда, «разные объекты» — никогда
-    linked, banned = [], set()
-    for a, b, st in conn.execute("SELECT a, b, status FROM dup_pairs WHERE (a = ? OR b = ?) AND status IN ('market', 'diff', 'split')",
-                                 (row["id"], row["id"])):
+def same_elsewhere(conn: sqlite3.Connection, row: sqlite3.Row, limit: int = 10,
+                   exclude: set[int] | None = None) -> list[dict]:
+    """Похожие предложения вне подтверждённой группы."""
+    from . import offers, phonegroups
+    excluded = {row["id"], *(exclude or ())}
+    linked = []
+    for a, b, status in conn.execute("""SELECT a, b, status FROM dup_pairs
+        WHERE (a = ? OR b = ?) AND (status IN ('diff', 'split') OR
+              (status = 'market' AND (kind != 'offer_photo' OR COALESCE(user_id, 0) != 0)))""",
+        (row["id"], row["id"])):
         other = b if a == row["id"] else a
-        (linked.append(other) if st == "market" else banned.add(other))
-    pinned = [dict(r) for r in conn.execute(
-        f"""SELECT id, price, title, last_seen FROM listings WHERE is_active = 1 AND id IN ({','.join('?' * len(linked))})""",
-        linked)] if linked else []
-    if not (row["complex"] or row["street"]) or row["rooms"] is None and row["type"] in ("flat", "new"):
-        return pinned[:limit]
-    phones = set(json.loads(row["phones"] or "[]"))
-    rows = conn.execute(
-        """SELECT id, price, title, last_seen, phones, complex, street, house, area, floor, floors FROM listings
-           WHERE is_active = 1 AND id != ? AND deal = ? AND type IN (?, ?) AND rooms IS ?
-             AND (complex IS NOT NULL OR street IS NOT NULL)
-           ORDER BY last_seen DESC LIMIT 600""",
-        (row["id"], row["deal"], row["type"], "new" if row["type"] == "flat" else row["type"], row["rooms"])).fetchall()
-    key = geo.complex_key(row["complex"]) if row["complex"] else None
-    street = _norm_street(row["street"])
+        if status == "market" and other not in excluded:
+            linked.append(other)
+        excluded.add(other)
 
-    def close(a, b, rel, abs_):
-        return None if a is None or b is None else abs(a - b) <= max(abs_, rel * max(a, b))
-    out = []
-    for r in rows:
-        if r["id"] in banned or r["id"] in linked:
-            continue
-        r_key = geo.complex_key(r["complex"]) if r["complex"] else None
-        r_street = _norm_street(r["street"])
-        if key and r_key and key != r_key:
-            continue
-        if street and r_street and street != r_street:
-            continue
-        if row["house"] and r["house"] and words(row["house"]) != words(r["house"]):
-            continue
-        if not ((key and r_key) or (street and r_street)):   # место должно совпасть хоть по чему-то
-            continue
-        if phones & set(json.loads(r["phones"] or "[]")):
-            continue
-        checks = [close(row["area"], r["area"], 0.03, 2),
-                  None if row["floor"] is None or r["floor"] is None else row["floor"] == r["floor"],
-                  None if row["floors"] is None or r["floors"] is None else row["floors"] == r["floors"],
-                  close(row["price"], r["price"], 0.07, 0)]
-        if any(c is False for c in checks[:3]):   # другой этаж / дом / площадь — другая квартира
-            continue
-        if checks[3] and not (checks[0] or checks[1]):   # 24.10j (Артём): цена считается, только если совпала площадь или этаж
-            checks[3] = None
-        if sum(1 for c in checks if c) < 2:
-            continue
-        out.append({"id": r["id"], "price": r["price"], "title": r["title"], "last_seen": r["last_seen"]})
-    out.sort(key=lambda x: (x["price"] is None, x["price"] or 0))
-    return (pinned + out)[:limit]
+    def public(r):
+        return {"id": r["id"], "price": offers.known_price(r), "title": r["title"], "last_seen": r["last_seen"]}
+
+    pinned = [public(r) for r in conn.execute(
+        f"""SELECT id, price, price_doubt, title, last_seen FROM listings
+            WHERE is_active = 1 AND deal = ? AND id IN ({','.join('?' * len(linked))}) ORDER BY last_seen DESC""",
+        (row["deal"], *linked))] if linked else []
+    place = offers.place_keys(row)
+    kind = offers.property_type(row["type"])
+    if len(pinned) >= limit or not any(place) or (kind == "flat" and row["rooms"] is None):
+        return pinned[:limit]
+
+    phonegroups.refresh(conn)
+    phones = offers.contact_keys(row)
+    conn.create_function("offer_street", 1, offers.street_key, deterministic=True)
+    types = ("flat", "new") if kind == "flat" else (kind, kind)
+    possible = []
+    for r in conn.execute(f"""SELECT {offers.MATCH_FIELDS} FROM listings
+           WHERE is_active = 1 AND deal = ? AND type IN (?, ?) AND rooms IS ?
+             AND ((? IS NOT NULL AND cxkey(complex) = ?) OR (? != '' AND offer_street(street) = ?))""",
+        (row["deal"], *types, row["rooms"], place[0], place[0], place[1], place[1])):
+        if r["id"] not in excluded and not phones & offers.contact_keys(r) \
+                and offers.similar_signals(row, r, place, offers.place_keys(r)):
+            possible.append(public(r))
+    possible.sort(key=lambda x: (x["price"] is None, x["price"] or 0, -x["last_seen"]))
+    return (pinned + possible)[:limit]
 
 
 # ─── заметки ───────────────────────────────────────────────────────────────
