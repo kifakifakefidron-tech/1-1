@@ -96,13 +96,14 @@
     show(it);
   }
   async function back() {
+    if (busy) return;
     const id = ss.history.pop();
     save();
     if (!id) { toast("Это первый объект в этой сессии"); return; }
     show(await fetchItem(id));
   }
   function skip() {
-    if (!item) return;
+    if (!item || busy) return;
     for (const id of [item.id, ...(group ? group.ids : [])]) if (!ss.skipped.includes(id)) ss.skipped.push(id);
     ss.history.push(item.id);
     save();
@@ -112,6 +113,8 @@
   // ─── показ объекта ────────────────────────────────────────────────────
   function show(it) {
     item = it;
+    $("fxCard").classList.toggle("review-price", mode === "price");
+    document.body.classList.toggle("price-queue", mode === "price");
     renderTop();
     $("fxCard").hidden = !it;
     $("fxDone").hidden = !!it;
@@ -135,7 +138,9 @@
       return;
     }
     $("fxTitle").textContent = it.title;
-    $("fxPrice").textContent = price(it.price, it.deal);
+    $("fxPrice").textContent = mode === "price"
+      ? (it.price ? `Разобрано: ${it.price.toLocaleString("ru-RU")} ₽` : "Сумма не распознана")
+      : price(it.price, it.deal);
     $("fxNow").innerHTML = [
       it.complex ? `ЖК <b>${esc(it.complex)}</b>` : "ЖК —",
       it.district ? `район <b>${esc([it.district, ...(it.extra_districts || [])].join(", "))}</b>${it.district_src
@@ -147,7 +152,7 @@
     $("fxText").textContent = it.text;
     // 24.10: очередь «Ремонт» — слова о состоянии подсвечены, ответ — одной кнопкой под текстом
     $("fxRepair").hidden = kind !== "repair";
-    $("fxExplain").hidden = kind === "repair";
+    $("fxExplain").hidden = kind === "repair" || mode === "price";
     if (kind === "repair") {
       $("fxText").innerHTML = esc(it.text || "").replace(/(ремонт\S*|отделк\S*|чистов\S*|предчистов\S*|пчо|п\/чо|white\s*box|чернов\S*|состояни\S*|бетон\S*)/gi, "<mark>$1</mark>");
       $("fxRepairGuess").textContent = `сервис думает: ${(it.repair_why && it.repair_why.result) || { yes: "с ремонтом", no: "без ремонта" }[it.repair] || "не указано"}`;
@@ -186,11 +191,22 @@
         ${(it.phones || []).map((p) => `<button type="button" class="chip danger" data-del-phone="${esc(p)}">🗑 Удалить все объекты от ${esc(p)}<small>новые объявления с этого номера будут появляться</small></button>
           <button type="button" class="chip danger" data-ban-phone="${esc(p)}">🚫 Никогда не добавлять на сайт объявления от ${esc(p)}<small>удалит всё от номера и не будет принимать новое</small></button>`).join("")}</div></details>`;
     const rent = it.deal === "rent";
-    $("fxPriceLabel").textContent = rent ? "Цена, тыс. ₽/мес" : "Цена, млн ₽";
-    $("fxPriceIn").value = it.price ? String(+(it.price / (rent ? 1000 : 1e6)).toFixed(rent ? 0 : 3)).replace(".", ",") : "";
+    $("fxPriceLabel").textContent = mode === "price" ? "Подтверждённая цена" : rent ? "Цена, тыс. ₽/мес" : "Цена, млн ₽";
+    $("fxPriceIn").value = mode !== "price" && it.price ? String(+(it.price / (rent ? 1000 : 1e6)).toFixed(rent ? 0 : 3)).replace(".", ",") : "";
     $("fxPriceIn").dataset.orig = $("fxPriceIn").value;
     $("fxPriceIn").dataset.money = rent ? "rent" : "sale";
+    $("fxPriceIn").dataset.edited = "";
+    $("fxPriceIn").placeholder = mode === "price" ? (rent ? "Например, 35 000 ₽ в месяц" : "Например, 5 400 000 ₽") : "Если разобралась неверно — впишите верную";
+    $("fxPriceNote").hidden = mode !== "price";
     if (window.moneyHints) window.moneyHints(document);
+    if (mode === "price") {
+      $("fxPlace").hidden = false;
+      $("fxGeoBox").open = false;
+      $("fxHide").hidden = true;
+      geoDirty = false;
+      window.scrollTo({ top: 0 });
+      return;
+    }
     // 18.10: все характеристики — здесь же
     const FV = { type: it.type === "new" ? "flat" : it.type, deal: it.deal || "sale", rooms: it.rooms == null ? "" : String(Math.min(it.rooms, 5)),
       room_kind: it.room_kind || "", area: it.area ?? "", land: it.land ?? "", floor: it.floor ?? "", floors: it.floors ?? "",
@@ -489,11 +505,29 @@
   });
   async function submit(extra) {
     if (!item || busy) return;
+    if (mode === "price") {
+      const value = $("fxPriceIn").value.trim();
+      if (!value) { $("fxPriceIn").focus(); toast("Введите подтверждённую цену"); return; }
+      busy = true;
+      $("fxSave").disabled = true;
+      const result = await call(`/api/admin/listings/${item.id}/action`, { action: "price", price: value });
+      if (result.ok) {
+        const learned = [];
+        if (result.data.learned) learned.push("цена этого объявления");
+        if (result.data.learned_notation) learned.push("запись цены для разбора");
+        await finish([item.id], learned);
+      } else toast(result.data.detail || "Не получилось сохранить цену");
+      busy = false;
+      $("fxSave").disabled = false;
+      return;
+    }
     busy = true;
     let r, groupSent = false;
     const learnedAll = [];
     let applied = 0;
-    const priceChanged = !!$("fxPriceIn").value.trim() && $("fxPriceIn").value !== $("fxPriceIn").dataset.orig;
+    const priceInput = $("fxPriceIn");
+    const priceChanged = !!priceInput.value.trim() && (priceInput.value !== priceInput.dataset.orig ||
+      (item.price_doubt && priceInput.dataset.edited));
     const fields = {};
     document.querySelectorAll("#fxFields [name^='f_']").forEach((el) => { if (el.value !== el.dataset.orig) fields[el.name.slice(2)] = el.value; });
     if (kind === "repair" && repairPick) fields.repair = repairPick;   // ответ засчитываем, даже если совпал с догадкой
@@ -527,14 +561,16 @@
       if (mode === "geo") groupSent = !!group && !extra;   // точка дома/ЖК переносит всю группу (сервис запоминает её)
     }
     busy = false;
-    const solved = [item.id, ...(groupSent ? group.ids : [])];
+    finish([item.id, ...(groupSent ? group.ids : [])], learnedAll, applied);
+  }
+
+  function finish(solved, learned, applied = 0) {
     for (const id of solved) if (!ss.done.includes(id)) ss.done.push(id);
     ss.skipped = ss.skipped.filter((x) => !solved.includes(x));
     ss.history.push(item.id);
     save();
-    const learned = learnedAll;
     toast(`✓ Сохранено${learned.length ? " · выучено: " + learned.join("; ") : ""}${applied ? ` · поправлено ещё ${applied}` : ""}`, 4000);
-    next();
+    return next();
   }
 
   // Режим «ЖК и районы»: точку можно поправить тут же, не уходя из очереди
@@ -611,12 +647,18 @@
   function renderTop() {
     $("fxKinds").innerHTML = queues.map((q) => `<button type="button" class="chip${q.key === kind ? " on" : ""}${q.key === "conflict" && qcounts[q.key] ? " hot" : ""}"
       data-kind="${q.key}" title="${esc(q.hint)}">${esc(q.label)} <b>${(qcounts[q.key] ?? 0).toLocaleString("ru-RU")}</b></button>`).join("");
+    const rail = $("fxKinds");
+    if (mode === "price" && rail.scrollWidth > rail.clientWidth) {
+      const selected = rail.querySelector(".on");
+      if (selected) rail.scrollLeft = selected.offsetLeft - (rail.clientWidth - selected.offsetWidth) / 2;
+    }
     const cur = queues.find((q) => q.key === kind);
     $("fxQHint").textContent = cur ? cur.hint : "";
     $("fxProgress").innerHTML = `Осталось: <b>${left}</b> · разобрано: <b>${ss.done.length}</b>${ss.skipped.length ? ` · пропущено: ${ss.skipped.length}` : ""}`;
     history.replaceState(null, "", `/fix?kind=${kind}`);
   }
   function switchTo(k) {
+    if (busy) return;
     kind = k; item = null; ss = load();
     next();
   }
@@ -675,6 +717,7 @@
     },
   });
   $("fxComplex").addEventListener("input", renderLearn);
+  $("fxPriceIn").addEventListener("input", (e) => { e.target.dataset.edited = "1"; });
   $("fxPlace").addEventListener("submit", (e) => { e.preventDefault(); submit(); });
   $("fxGeoBox").addEventListener("toggle", () => { if ($("fxGeoBox").open && item && !$("fxGeoBox").classList.contains("geo-mode")) showGeo(item); });
   // ТЗ «админка-гео» P4.5: точка из Яндекс Карт одним действием — открыли Яндекс, скопировали ссылку, вернулись на вкладку
@@ -707,6 +750,7 @@
     if (e.key === "Enter") {
       const id = document.activeElement.id;
       if (id === "fxCoords") return;                       // Enter в поле координат — «Найти»
+      if (id === "fxPriceIn" && mode === "price") { e.preventDefault(); submit(); return; }
       if (e.ctrlKey || e.metaKey) { e.preventDefault(); submit(); return; }   // Ctrl/Cmd+Enter — сохранить из любого поля
       if (typing) {   // в поле со списком Enter выбирает пункт и НЕ сохраняет объект
         e.preventDefault();

@@ -14,14 +14,78 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import time
 from collections import Counter
+from decimal import Decimal
 
 from . import db, rules
 
 SRC = "проверка цены"
 MERGE_MAX_JUMP = 0.25   # склейка: новая цена дальше 25 % от прежней — не перебивает (скорее всего, другой объект)
+NOTATION_KIND = "price_notation"
+_PRICE_LINE = re.compile(r"^[^\w]*цена\s*[:=-]?\s*((?:[0-9]{1,10}|[0-9]{1,3}(?: [0-9]{3}){1,3})(?:[.,][0-9]{1,3})?)$", re.I)
+_UNITS = {1: "рубли", 1000: "тысячи рублей", 1_000_000: "миллионы рублей"}
+
+
+def _notation(text: str, deal: str) -> tuple[str, Decimal, str] | None:
+    # Только отдельная строка с одной ценой без единиц.
+    lines = rules.normalize_digits(text).splitlines()
+    prices = [line.strip().replace("\u00a0", " ").replace("\u202f", " ") for line in lines
+              if re.match(r"^[^\w]*цена\b", line, re.I)]
+    if len(prices) != 1 or not (match := _PRICE_LINE.fullmatch(prices[0])):
+        return None
+    raw = match[1].strip()
+    amount = raw.replace(" ", "").replace(",", ".")
+    whole, _, decimal = amount.partition(".")
+    if whole.startswith("0"):
+        return None
+    style = "с пробелами" if " " in raw else "без пробелов"
+    kind = "дробное" if decimal else "целое"
+    key = f"{deal}:{len(whole)}:{kind}:{style}"
+    return key, Decimal(amount), f"{kind} число, {len(whole)} цифр до разделителя, {style}"
+
+
+def _saved_multiplier(conn, key: str) -> int | None:
+    row = conn.execute("SELECT value FROM learned_rules WHERE kind=? AND key=?", (NOTATION_KIND, key)).fetchone()
+    return json.loads(row[0]).get("multiplier") if row else None
+
+
+def learn_notation(conn, text: str, deal: str, price: int) -> bool:
+    notation = _notation(text, deal)
+    if not notation:
+        return False
+    key, amount, shape = notation
+    multiplier = next((n for n in _UNITS if amount * n == price), None)
+    if not multiplier:
+        return False
+    existing = conn.execute("SELECT value FROM learned_rules WHERE kind=? AND key=?", (NOTATION_KIND, key)).fetchone()
+    agreed = not existing or json.loads(existing[0]).get("multiplier") == multiplier
+    label = f"{'Аренда' if deal == 'rent' else 'Продажа'} · «Цена» без единиц ({shape})"
+    label += f" → {_UNITS[multiplier]}" if agreed else " · разные ответы админа"
+    conn.execute("""INSERT INTO learned_rules(kind,key,value,label,n,ts) VALUES (?,?,?,?,1,?)
+        ON CONFLICT(kind,key) DO UPDATE SET value=excluded.value,label=excluded.label,n=n+1,ts=excluded.ts""",
+        (NOTATION_KIND, key, json.dumps({"multiplier": multiplier if agreed else None}), label, int(time.time())))
+    return agreed
+
+
+def learned_price(conn, fragment: str, deal: str, type_: str, area: float | None) -> int | None:
+    notation = _notation(fragment, deal)
+    if not notation:
+        return None
+    key, amount, _ = notation
+    multiplier = _saved_multiplier(conn, key)
+    price = amount * multiplier if multiplier in _UNITS else None
+    return int(price) if price and price == int(price) and plausible(int(price), deal, type_, area) else None
+
+
+def model_hints(conn, text: str) -> tuple[str, ...]:
+    hints = []
+    for deal, name in (("sale", "продаже"), ("rent", "аренде")):
+        if (notation := _notation(text, deal)) and (scale := _saved_multiplier(conn, notation[0])) in _UNITS:
+            hints.append(f"При {name} строку «Цена» без валюты ({notation[2]}) читай как {_UNITS[scale]}.")
+    return tuple(hints)
 
 # Абсолютные пределы (₽): продажа / аренда в месяц
 ABS = {

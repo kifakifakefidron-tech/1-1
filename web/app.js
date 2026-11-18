@@ -414,6 +414,7 @@
   // ─── результаты ─────────────────────────────────────────────────────────
   // Отметки на карточке: новое за сутки, цена снизилась (за 2 недели), заметно ниже рынка
   const marketLabel = (diff) => diff <= -3 ? `Ниже рынка на ${-diff}%` : diff >= 3 ? `Выше рынка на ${diff}%` : "По рынку";
+  const publishedAfter = (o, ts) => !o.catalog_migrated && o.first_seen > ts;
 
   function badgesHTML(o, inSearch = false) {
     const now = loadedAt || Date.now() / 1000;
@@ -422,7 +423,7 @@
     if (st) b.push(`<span class="mark crm crm-${st}">${STATUSES[st]}</span>`);
     if (o.source === "feed" && !o.appletv) b.push(`<span class="mark partner" title="Объект партнёра «СТРЕЛЫ»">${STRELY}СТРЕЛЫ</span>`);
     if (o.verified && o.source !== "feed") b.push(`<span class="mark verified" title="Агент подтвердил свой номер в 1+1">✓ ${innerWidth < 640 ? "Проверен" : "Проверенный агент"}</span>`);
-    if (o.first_seen > now - 86400) b.push(`<span class="mark new">Новое</span>`);
+    if (publishedAfter(o, now - 86400)) b.push(`<span class="mark new">Новое</span>`);
     if (o.prev_price && o.price && o.prev_price > o.price && o.price_changed_at > now - 14 * 86400 && o.hot !== "drop") {   // у горячей — строка под ценой
       b.push(`<span class="mark down">Цена ↓ ${esc(fmtShortPrice(o.prev_price - o.price, o.deal))}</span>`);
     }
@@ -551,7 +552,7 @@
 
   function itemHTML(o) {
     const group = favMode ? null : o.offer_group;
-    const hit = hitSince && o.first_seen > hitSince;   // новое в этом поиске — выделяем один раз
+    const hit = hitSince && publishedAfter(o, hitSince);   // новое в этом поиске — выделяем один раз
     const price = group ? group.min_price : o.price;
     const ownPrice = price === o.price && !group?.price_range;
     const tag = (hit ? `<div class="marks"><span class="mark hit">Новое в вашем поиске</span></div>` : "") +
@@ -582,7 +583,7 @@
       ${addr ? `<div class="item-place">${esc(addr)}</div>` : ""}
       ${o.description ? `<p class="item-desc">${esc(o.description)}</p>` : ""}
       <div class="item-foot">
-        <div class="item-meta" title="Сколько дней объявление на 1+1 (с первого появления в чатах риелторов) и когда его присылали последний раз"><span class="on-sale">${esc(onSite(daysOnSale(o)))}</span> · ${esc(updated(o.last_seen))}</div>
+        <div class="item-meta" title="Когда объект появился и когда его обновили"><span class="on-sale">${esc(o.catalog_migrated ? "В каталоге 1+1" : onSite(daysOnSale(o)))}</span> · ${esc(updated(o.last_seen))}</div>
         ${favMode ? `<a class="plan-btn" href="/planner?add=show&listing=${o.id}" title="Запланировать показ или звонок" aria-label="Запланировать">📅</a>` : ""}
         ${me()?.access ? `<button type="button" class="cmp-btn cli-btn" data-client-open="${o.id}" title="Клиенту: в подборку клиента" aria-label="Клиенту">${ic("users")}</button>` : ""}
         <button type="button" class="cmp-btn${cmp.includes(o.id) ? " on" : ""}" data-cmp="${o.id}" title="Сравнить" aria-label="Добавить к сравнению">⚖</button>
@@ -1277,7 +1278,7 @@
       : "";
     const m = o.market;
     const marketTag = m && m.diff <= -3 ? `<span class="dv-tag good">−${-m.diff}% к рынку</span>` : m && m.diff >= 3 ? `<span class="dv-tag high">+${m.diff}% к рынку</span>` : "";
-    const days = o.first_seen ? daysOnSale(o) : null;
+    const days = o.first_seen && !o.catalog_migrated ? daysOnSale(o) : null;
     const u = me();
     const toolsAccess = o.tools_access ?? !!u?.access;
     const admin = u && u.is_admin;
@@ -1896,6 +1897,7 @@
     f.price.value = o.price ? String(+(o.price / (rent ? 1000 : 1e6)).toFixed(rent ? 0 : 3)).replace(".", ",") : "";
     f.price.dataset.orig = f.price.value;
     f.price.dataset.money = rent ? "rent" : "sale";
+    f.price.dataset.edited = "";
     if (window.moneyHints) window.moneyHints(document);
     // 18.10: все характеристики — в этом же окне
     const FV = { type: o.type === "new" ? "flat" : o.type, deal: o.deal || "sale", rooms: o.rooms == null ? "" : String(Math.min(o.rooms, 5)),
@@ -1938,7 +1940,8 @@
     const learn = {};
     ["addr", "alias", "cx_district", "street"].forEach((k) => { if (f[`learn_${k}`] && f[`learn_${k}`].checked) learn[k] = true; });
     const body = { complex: f.complex.value, district: f.district.value, learn };
-    if (f.price.value.trim() && f.price.value !== f.price.dataset.orig) body.price = f.price.value;
+    if (f.price.value.trim() && (f.price.value !== f.price.dataset.orig ||
+        (known.get(placeId)?.price_doubt && f.price.dataset.edited))) body.price = f.price.value;
     const fields = {};
     f.querySelectorAll("[name^='f_']").forEach((el) => { if (el.value !== el.dataset.orig) fields[el.name.slice(2)] = el.value; });
     if (Object.keys(fields).length) body.fields = fields;
@@ -3251,6 +3254,7 @@
     $("placeCoordsGo").addEventListener("click", placeCoordsGo);
     $("placeCoords").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); placeCoordsGo(); } });
     const placeFieldChanged = (e) => {
+      if (e.target.name === "price") e.target.dataset.edited = "1";
       if (e.target.name !== "complex" && e.target.name !== "district") return;
       if (placeAt) placeAt.auto = false;
       renderPlaceLearn();

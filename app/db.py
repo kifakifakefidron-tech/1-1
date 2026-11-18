@@ -587,6 +587,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
                             WHERE ext_id LIKE 'appletv:row:%' AND json_valid(phones)
                               AND json_array_length(phones) > 1""", (artem,))
         conn.execute("INSERT OR IGNORE INTO state(key, value) VALUES ('appletv_media_cleanup', '1')")
+    if not conn.execute("SELECT 1 FROM state WHERE key = 'confirmed_prices_v2'").fetchone():
+        conn.execute("""UPDATE listings SET price_doubt = NULL, price_fixed = 1 WHERE price_doubt = 1 AND price > 0 AND
+                        (price_fixed = 1 OR (owner_user_id IS NOT NULL AND EXISTS (
+                            SELECT 1 FROM listing_edits e WHERE e.listing_id=listings.id AND e.field='price'
+                            AND e.user_id=listings.owner_user_id AND e.reverted=0 AND e.new=CAST(listings.price AS TEXT)
+                        )))""")
+        conn.execute("INSERT OR IGNORE INTO state(key, value) VALUES ('confirmed_prices_v2', '1')")
     conn.commit()
 
 

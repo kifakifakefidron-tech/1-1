@@ -22,6 +22,7 @@ import time
 from pathlib import Path
 
 from . import accounts, config, geo, listing_video, notices, rules
+from .search import NEWEST_FIRST
 
 DAY = 86400
 CODE_TTL = 30 * 60
@@ -251,16 +252,16 @@ def _phone_like(phones: list[str]) -> tuple[str, list]:
 def my_listings(conn: sqlite3.Connection, user_id: int) -> list[sqlite3.Row]:
     phones = verified_phones(conn, user_id)
     if not phones:
-        return conn.execute("""SELECT * FROM listings l WHERE owner_user_id = ?
+        return conn.execute(f"""SELECT * FROM listings l WHERE owner_user_id = ?
                                AND COALESCE(hidden_reason, '') != 'appletv_chat'
-                               ORDER BY last_seen DESC""", (user_id,)).fetchall()
+                               ORDER BY l.is_active DESC, {NEWEST_FIRST}""", (user_id,)).fetchall()
     cond, params = _phone_like(phones)
     # 18.10: и объекты с сайта (фид) с этим номером — чтобы было видно всё своё (править их — на сайте); без потолка 300;
     # скрытые копии своих объектов (приклеены к карточке с сайта — ownmatch) не показываем
     return conn.execute(f"""SELECT * FROM listings l WHERE (l.owner_user_id = ? OR (({cond})
                             AND (l.owner_user_id IS NULL OR l.owner_user_id = ?)))
                             AND COALESCE(l.hidden_reason, '') NOT IN ('strely', 'own_dup', 'strely_photo', 'appletv_chat')
-                            ORDER BY l.is_active DESC, l.last_seen DESC LIMIT 3000""",
+                            ORDER BY l.is_active DESC, {NEWEST_FIRST} LIMIT 3000""",
                         [user_id, *params, user_id]).fetchall()
 
 
@@ -383,6 +384,9 @@ def edit_listing(conn: sqlite3.Connection, user: sqlite3.Row, listing_id: int, d
                          owner_edited_at = ? WHERE id = ?""",
                      [*changes.values(), merged["title"], merged["search_text"],
                       _price_m2(merged["price"], merged["area"]), user["id"], now, listing_id])
+        if "price" in changes:
+            conn.execute("UPDATE listings SET price_doubt = NULL, price_fixed = 1, price_wrong = ? WHERE id = ?",
+                         (row["price"], listing_id))
         _reindex(conn, listing_id, merged["search_text"])
         if changes.keys() & {"street", "house", "complex", "district"}:   # адрес поменялся — точку на карте ищем заново
             conn.execute("UPDATE listings SET geo_status = 'pending' WHERE id = ? AND geo_status NOT IN ('manual', 'feed')", (listing_id,))

@@ -14,6 +14,7 @@ import sqlite3
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
+from collections import Counter
 
 from . import config, db, geo, geocode, learning, parser, rules
 from .ingest import _price_m2, _reindex, make_search_text, make_title
@@ -46,7 +47,6 @@ def _vendor(v: str | None) -> tuple[str | None, int | None, str | None]:
 
 def placeholder_pictures(offers: list[ET.Element]) -> set[str]:
     """Картинки, которые стоят у многих объектов сразу, — заглушки вроде «Фото в пути»."""
-    from collections import Counter
     c = Counter(p.text.strip() for o in offers for p in o.findall("picture") if p.text)
     return {url for url, n in c.items() if n >= 3}
 
@@ -110,10 +110,11 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
     added = updated = 0
     from .ingest import banned_photos
     skip = set(placeholder_pictures(offers)) | banned_photos(conn)   # заглушки и фото, которые админ удалил
-    for o in offers:
-        d = parse_offer(o, skip)
-        if not d:
-            continue
+    parsed = [d for offer in offers if (d := parse_offer(offer, skip))]
+    articles = Counter(d["article"] for d in parsed if d["article"])
+    ids = {d["ext_id"] for d in parsed}
+    columns = "id, ext_id, price, lat, lon, geo_status, deal, deal_fixed, hidden_reason, price_fixed, price_wrong"
+    for d in parsed:
         seen.add(d["ext_id"])
         if conn.execute("SELECT 1 FROM banned WHERE kind = 'feed' AND key = ?", (d["ext_id"],)).fetchone():
             continue
@@ -122,8 +123,19 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
             d["complex"] = cxnorm.canonical(conn, d["complex"])
         learning.apply(conn, d)   # правки админа по ЖК/району действуют и на объекты партнёра
         d["search_text"] = make_search_text(d)
-        row = conn.execute("SELECT id, price, lat, lon, geo_status, deal, deal_fixed FROM listings WHERE ext_id = ?",
+        row = conn.execute(f"SELECT {columns} FROM listings WHERE ext_id = ?",
                            (d["ext_id"],)).fetchone()
+        if row is None and articles[d["article"]] == 1:
+            same_article = conn.execute(f"""SELECT {columns} FROM listings WHERE source='feed'
+                                           AND ext_id LIKE 'feed:%' AND article = ? LIMIT 2""", (d["article"],)).fetchall()
+            if len(same_article) == 1 and same_article[0]["ext_id"] not in ids:
+                row = same_article[0]
+                if row["hidden_reason"] in ("admin", "phone") or conn.execute(
+                    "SELECT 1 FROM banned WHERE kind='feed' AND key=?", (row["ext_id"],)
+                ).fetchone():
+                    continue
+        if row and row["price_fixed"] and d["price"] == row["price_wrong"]:
+            d["price"] = row["price"]
         if row and row["deal_fixed"]:   # админ сам перенёс в аренду/продажу — фид не перебивает
             d["deal"] = row["deal"]
             d["title"] = make_title(d)
@@ -147,10 +159,10 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
                        lat=CASE WHEN geo_status = 'manual' THEN lat ELSE ? END,
                        lon=CASE WHEN geo_status = 'manual' THEN lon ELSE ? END,
                        geo_status=CASE WHEN geo_status = 'manual' THEN 'manual' ELSE ? END, room_kind=?, rooms_mask=?,
-                       article=?, is_active=1,
+                       article=?, ext_id=?, is_active=1,
                        last_seen=CASE WHEN price_changed THEN ? ELSE last_seen END
                    WHERE id=?""".replace("price_changed", "1" if row["price"] != d["price"] else "0"),
-                vals + (now, lid))
+                vals + (d["ext_id"], now, lid))
             updated += 1
         else:
             cur = conn.execute(

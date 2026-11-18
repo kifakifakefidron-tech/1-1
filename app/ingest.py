@@ -354,7 +354,7 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
     d = o.to_dict()
     from .rules import multi_units
     d["multi_units"] = multi_units(o.fragment) or None
-    from .pricefix import check as price_check   # «Цена 5400» = 5,4 млн; 1,6 млрд за двушку — цена «под вопросом»
+    from .pricefix import check as price_check, learned_price
     was_price = d["price"]
     d["price"], d["price_doubt"] = price_check(d["price"], d["deal"], d["type"], d["area"])   # склейку повторов это не меняет (P3)
     if was_price and d["price"] and d["price"] > was_price and rules.explicit_rub(o.fragment, was_price):
@@ -364,7 +364,10 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         return ban[0] or 0, "banned"
     if d.get("phones") and set(d["phones"]) & banned_phones(conn):   # номер удалён админом целиком
         return 0, "banned"
-    learned_fix(conn, fh, d)   # этот же текст админ уже поправлял (цена, продажа/аренда) — сразу правильно
+    if checked := learned_price(conn, o.fragment, d["deal"], d["type"], d["area"]):
+        d["price"], d["price_doubt"] = checked, False
+        d["disputes"].pop("price", None)
+    learned_fix(conn, fh, d)   # точное исправление этого объявления важнее правила записи
     if d.get("article"):
         own = conn.execute("SELECT id FROM listings WHERE source = 'feed' AND ext_id LIKE 'feed:%' AND article = ? AND is_active = 1",
                            (d["article"],)).fetchone()
@@ -425,7 +428,7 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
                 merged[k] = v
         # Карточкой управляет агент (кабинет): его цену меняет только более свежий пост, описание не трогаем
         owned = bool(cur_d.get("owner_user_id"))
-        new_price = False
+        new_price = confirmed_price = False
         # Акт 14.10, Б2: повтор другого типа/комнатности, с ценой «под вопросом» или дальше 25 % от прежней —
         # цену карточки не перебивает (обычно это чужой объект, склеенный по похожему тексту)
         other = ((d.get("type") and cur_d.get("type") and d["type"] != cur_d["type"] and {d["type"], cur_d["type"]} != {"flat", "new"})
@@ -434,6 +437,7 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
                     and abs(d["price"] - cur_d["price"]) / cur_d["price"] > 0.25)
         if ts >= cur_d["last_seen"] and d["price"] and ts > (cur_d.get("owner_edited_at") or 0) \
                 and not other and not jump and not (d.get("price_doubt") and not cur_d.get("price_doubt")):
+            confirmed_price = d["price"] == cur_d["price"] and not d.get("price_doubt")
             if not cur_d.get("price_fixed") or d["price"] not in (cur_d.get("price_wrong"), cur_d["price"]):
                 new_price = d["price"] != cur_d["price"]
                 merged["price"] = d["price"]   # исправленную админом цену меняет только действительно новая цена
@@ -480,7 +484,7 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
              json.dumps(list(dict.fromkeys(json.loads(cur_d.get("extra_districts") or "[]") + (d.get("extra_districts") or []))),
                         ensure_ascii=False), json.dumps(roles, ensure_ascii=False),
              merged["description"] != cur_d["description"], ts,
-             merged["price"] != cur_d["price"], 1 if d.get("price_doubt") else None, lid),
+             new_price or confirmed_price, 1 if d.get("price_doubt") else None, lid),
         )
         d["search_text"] = merged["search_text"]
     _reindex(conn, lid, d["search_text"])
@@ -629,7 +633,12 @@ def process_message(conn: sqlite3.Connection, message_id: int, use_llm: bool | N
         return {"status": "repost", "listings": listing_ids}
 
     try:
-        kind, objects = parser.parse(m["text"], sender_phone=m["sender"], use_llm=use_llm)
+        hints = ()
+        if use_llm or (use_llm is None and llm.available()):
+            from .pricefix import model_hints
+            hints = model_hints(conn, m["text"])
+        options = {"price_hints": hints} if hints else {}
+        kind, objects = parser.parse(m["text"], sender_phone=m["sender"], use_llm=use_llm, **options)
     except Exception as e:  # noqa: BLE001 — одно кривое сообщение не должно останавливать поток
         log.exception("Ошибка разбора сообщения %s", m["id"])
         conn.execute("UPDATE messages SET status='error', error=? WHERE id=?", (str(e)[:500], m["id"]))
@@ -689,6 +698,8 @@ def learned_fix(conn: sqlite3.Connection, fh: str, d: dict) -> None:
         if kind == "frag_price" and v.get("price"):
             d["price"] = int(v["price"])
             d["price_doubt"] = False   # цену проверил админ — не «под вопросом»
+            if d.get("disputes"):
+                d["disputes"].pop("price", None)
         elif kind == "frag_deal" and v.get("deal") in ("sale", "rent"):
             d["deal"] = v["deal"]
         elif kind == "frag_fields":   # 18.10: этот текст админ уже поправлял (тип, комнаты, площадь, этаж, адрес…)
@@ -806,17 +817,29 @@ def set_price(conn: sqlite3.Connection, listing_id: int, price: int, user_id: in
     if r is None:
         return {"error": "не найдено"}
     old = r["price"]
+    dispute_data = r["parse_dispute"]
+    if dispute_data:
+        try:
+            disputes = json.loads(dispute_data)
+            if isinstance(disputes, dict) and "price" in disputes:
+                del disputes["price"]
+                dispute_data = json.dumps(disputes) if disputes else None
+        except ValueError:
+            pass   # старая запись о споре не должна блокировать исправление цены
     # 24.10: правка админа снимает «Цена уточняется» (price_doubt) — раньше плашка висела и после правки
-    conn.execute("""UPDATE listings SET price = ?, price_m2 = ?, price_fixed = 1, price_doubt = NULL,
+    conn.execute("""UPDATE listings SET price = ?, price_m2 = ?, price_fixed = 1, price_doubt = NULL, parse_dispute = ?,
                     price_wrong = CASE WHEN ? != ? THEN ? ELSE price_wrong END WHERE id = ?""",
-                 (price, _price_m2(price, r["area"]), old or 0, price, old, listing_id))
+                 (price, _price_m2(price, r["area"]), dispute_data,
+                  old or 0, price, old, listing_id))
     if user_id:
         conn.execute("INSERT INTO listing_edits (listing_id, user_id, ts, field, old, new) VALUES (?,?,?,?,?,?)",
                      (listing_id, user_id, int(time.time()), "price", json.dumps(old), json.dumps(price)))
-    conn.commit()
+    from .pricefix import learn_notation
+
+    learned_notation = r["source"] == "chat" and learn_notation(conn, r["fragment"] or r["description"] or "", r["deal"], price)
     n = learn_listing_fix(conn, listing_id, "frag_price", {"price": price, "wrong": old},
                           f"{r['title']}: цена {old or '—'} → {price}")
-    return {"ok": True, "price": price, "learned": n}
+    return {"ok": True, "price": price, "price_doubt": False, "learned": n, "learned_notation": learned_notation}
 
 
 def ban_listing(conn: sqlite3.Connection, listing_id: int) -> dict:

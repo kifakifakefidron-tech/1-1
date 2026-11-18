@@ -61,6 +61,9 @@ QUEUES: list[dict] = [
     {"key": "dispute", "mode": "place", "label": "Правила и нейросеть спорят",
      "hint": "Правила и нейросеть прочитали текст по-разному (комнаты, площадь, этаж, цена, адрес) — выберите, кто прав",
      "where": "l.parse_dispute IS NOT NULL AND l.admin_fixed = 0"},
+    {"key": "price", "mode": "price", "label": "Сомнительные цены",
+     "hint": "Сверьте цену с исходным объявлением. Подтверждённая сумма появится в карточке.",
+     "where": "l.price_doubt = 1", "base": "l.is_active = 1"},
     {"key": "nodistrict", "mode": "place", "label": "Без района",
      "hint": "Не находятся фильтром по району",
      "where": "l.district IS NULL AND l.settlement IS NULL AND l.admin_fixed = 0 AND l.place_conflict IS NULL"},
@@ -126,7 +129,7 @@ def queue_key(mode: str | None, kind: str | None) -> str:
 
 
 def counts(conn: sqlite3.Connection) -> dict:
-    return {q["key"]: conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {VISIBLE} AND {q['where']}").fetchone()[0]
+    return {q["key"]: conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {q.get('base', VISIBLE)} AND {q['where']}").fetchone()[0]
             for q in QUEUES}
 
 
@@ -201,7 +204,7 @@ def overview(conn: sqlite3.Connection) -> dict:
             "districts_drawn": one("SELECT COUNT(*) FROM district_polygons WHERE kind = 'district' AND source = 'admin'"),
             "complex_contours": one("SELECT COUNT(*) FROM district_polygons WHERE kind = 'complex'"),
             "osm_addr": one("SELECT COUNT(*) FROM osm_addr"),
-            "prices": rules.get("frag_price", 0) + rules.get("frag_deal", 0),
+            "prices": rules.get("frag_price", 0) + rules.get("frag_deal", 0) + rules.get("price_notation", 0),
         },
         "recheck": json.loads(rep[0]) | {"active_edits": one(
             "SELECT COUNT(*) FROM listing_edits WHERE user_id = ? AND reverted = 0", autolearn.SERVICE_UID)} if rep else None,
@@ -210,7 +213,7 @@ def overview(conn: sqlite3.Connection) -> dict:
 
 # ─── всё выученное — одним списком ─────────────────────────────────────────
 KNOW_KINDS = {"addr": "Дом", "cx_alias": "Название ЖК", "cx_district": "ЖК → район", "street": "Улица → район",
-              "frag_price": "Цена", "frag_deal": "Продажа / аренда", "point": "Точка на карте",
+              "frag_price": "Цена объявления", "price_notation": "Запись цены", "frag_deal": "Продажа / аренда", "point": "Точка на карте",
               "frag_repair": "Ремонт (этот текст)", "repair_phrase": "Ремонт: слова", "place_phrase": "Адрес: ваше объяснение"}
 
 

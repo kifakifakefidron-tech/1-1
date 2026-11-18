@@ -4,7 +4,7 @@ import json
 import time
 from datetime import datetime, timedelta, timezone
 
-from app import applet, config, db, feed, ingest, parser, search, stats
+from app import agent, applet, config, db, feed, ingest, parser, search, stats
 
 
 SLAVA = ("+79000000011", "+79000000012")
@@ -196,3 +196,42 @@ def test_new_description_format_refreshes_existing_offer_between_slots(conn, mon
     assert ["Показ по договорённости" in desc for desc in descriptions] == [True, True, False]
     assert "Техника остаётся при продаже" in descriptions[2]
     assert applet.maybe_sync(conn) is None
+
+
+def test_sync_does_not_lift_existing_properties(conn, monkeypatch):
+    configure(monkeypatch)
+    now = int(time.time())
+    old = now - 4 * 86400
+
+    def yml(ext, price, article="733", house=10):
+        return (f'<offer id="{ext}"><price>{price}</price><vendorCode>{article}</vendorCode>'
+                f'<description>2-к квартира 38 м², ЖК Зелёный театр, ул. Тургенева {house}.</description></offer>')
+
+    def feed_body(*records):
+        return ("<yml_catalog><shop><offers>" + "".join(records) + "</offers></shop></yml_catalog>").encode()
+
+    feed.sync(conn, feed_body(yml("original", 6_000_000)), old)
+    old_apple = values("734", addr="Западный Обход 39/2")
+    applet.sync(conn, snapshot(old_apple), old + 80)
+    conn.execute("INSERT INTO users(id, created) VALUES (1, ?)", (old,))
+    conn.executemany("INSERT INTO agent_phones(user_id,phone,verified_at) VALUES (1,?,?)",
+                     [(ARTEM, now), (SLAVA[0], now)])
+    conn.executemany("""INSERT INTO listings (source,type,deal,title,rooms,area,street,price,phones,first_seen,last_seen,owner_user_id)
+                        VALUES (?, 'flat','sale', ?, 2, 38, 'Тургенева', ?, ?, ?, ?, ?)""",
+                     [("chat", "Объект из чата", 7_100_000, "[]", now - 3000, now, None),
+                      ("own", "Мой объект", 7_500_000, "[]", now - 2000, now - 2000, 1)])
+    conn.commit()
+
+    before = {r["ext_id"]: (r["id"], r["first_seen"]) for r in conn.execute("SELECT * FROM listings")}
+    result = feed.sync(conn, feed_body(yml("changed-key", 6_200_000), yml("fresh", 8_000_000, "111", 22)), now)
+    assert result["updated"] == 1 and result["added"] == 1 and result["hidden"] == 0
+    old_apple[11] = "р.6100"
+    updated = applet.sync(conn, snapshot(old_apple, values("735", addr="Западный Обход 39/3")), now + 1)
+    assert updated["updated"] == updated["added"] == 1
+    after = {r["ext_id"]: (r["id"], r["first_seen"]) for r in conn.execute("SELECT * FROM listings")}
+    assert after["feed:changed-key"] == before["feed:original"]
+    assert after["appletv:article:734"] == before["appletv:article:734"]
+    expected = [after["appletv:article:735"][0], after["feed:fresh"][0]]
+    qr = search.Query(new_days=1)
+    assert [r["id"] for r in search.search(conn, qr, now + 1, False, group_offers=True)["items"] if r["source"] == "feed"] == expected
+    assert [r["id"] for r in agent.my_listings(conn, 1)][:2] == expected

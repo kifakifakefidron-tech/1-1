@@ -76,7 +76,7 @@ def numbered(text: str, limit: int = 8000) -> str:
     return "\n".join(out)
 
 
-def parse_message(text: str, retries: int = 2) -> dict:
+def parse_message(text: str, retries: int = 2, *, price_hints: tuple[str, ...] = ()) -> dict:
     """Возвращает словарь по схеме из SYSTEM_PROMPT. Бросает LLMError."""
     body = {
         "model": config.DEEPSEEK_MODEL,
@@ -84,7 +84,8 @@ def parse_message(text: str, retries: int = 2) -> dict:
         "max_tokens": 4000,
         "response_format": {"type": "json_object"},
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": SYSTEM_PROMPT + ("\nПодтверждённые админом единицы цены:\n" + "\n".join(price_hints)
+                                                         if price_hints else "")},
             {"role": "user", "content": numbered(text)},
         ],
     }

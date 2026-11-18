@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.min.css">
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=36">
-<link rel="stylesheet" href="/static/fix.css?v=20">
+<link rel="stylesheet" href="/static/fix.css?v=21">
 <link rel="stylesheet" href="/static/theme.css?v=16">
 <link rel="stylesheet" href="/static/glass.css?v=129">
 </head>
@@ -100,9 +100,10 @@
           <div class="chips" id="fxComplexes"></div>
           <input id="fxComplex" placeholder="Название ЖК — или пусто, если ЖК нет">
         </div>
-        <div class="fx-block">
-          <div class="fx-label" id="fxPriceLabel">Цена, млн ₽</div>
+        <div class="fx-block fx-price-review">
+          <label class="fx-label" id="fxPriceLabel" for="fxPriceIn">Цена, млн ₽</label>
           <input id="fxPriceIn" data-money="sale" inputmode="decimal" autocomplete="off" placeholder="Если разобралась неверно — впишите верную">
+          <p id="fxPriceNote" class="note" hidden>Сверьте сумму с текстом. Сервис запомнит исправление для этого объявления и сможет применить подтверждённый формат записи к похожим.</p>
         </div>
         <details class="fx-block fx-fields" id="fxFields" open>
           <summary class="fx-label">Характеристики — поправьте, что разобралось неверно</summary>
@@ -169,6 +170,6 @@
 <script src="/static/yasel.js?v=4"></script>
 <script src="/static/lightbox.js?v=4"></script>
 <script src="/static/explain.js?v=1"></script>
-<script src="/static/fix.js?v=33"></script>
+<script src="/static/fix.js?v=34"></script>
 </body>
 </html>

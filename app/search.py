@@ -15,10 +15,11 @@ from . import config, geo
 from .rules import TYPE_LABELS
 from .textnorm import norm, words
 
+NEWEST_FIRST = "l.catalog_migrated ASC, l.first_seen DESC, l.id DESC"
 SORTS = {   # цена «под вопросом» (pricefix) в сортировках по цене — в самом конце
     # 24.10 (Артём): «сначала свежие» — по тому, когда объект ВПЕРВЫЕ появился (новые сегодня сверху), а не по последнему
     # повтору в чатах: иначе старый объект, который снова прислали, прыгал наверх
-    "new": "l.first_seen DESC, l.id DESC",
+    "new": NEWEST_FIRST,
     "price_asc": "l.price IS NULL OR l.price_doubt IS 1, l.price ASC, l.id DESC",
     "price_desc": "l.price IS NULL OR l.price_doubt IS 1, l.price DESC, l.id DESC",
     "price_m2": "l.price_m2 IS NULL OR l.price_doubt IS 1, l.price_m2 ASC, l.id DESC",
@@ -566,6 +567,7 @@ def row_to_item(r: sqlite3.Row, with_contacts: bool) -> dict:
     if not with_contacts:   # списки и все без доступа: без имён агентов, комиссии и «номеров с опечатками» (152-ФЗ)
         d["description"] = public_text(d["description"])
     keys = r.keys()
+    d["catalog_migrated"] = bool(r["catalog_migrated"]) if "catalog_migrated" in keys else False
     d["price_doubt"] = bool(r["price_doubt"]) if "price_doubt" in keys else False
     d["geo_level"] = geo_level(r["lat"], r["geo_status"], r["geo_src"]) if "geo_src" in keys and "lat" in keys else None
     # 16.11 (Артём, п. 7): слабый источник района/точки — в окне объекта «определён примерно»
@@ -597,10 +599,10 @@ def search(conn: sqlite3.Connection, qr: Query, now: int, with_contacts: bool, *
     order = SORTS.get(qr.sort, SORTS["new"])
     if qr.sort == "budget" and qr.budget_near:   # ближе к бюджету клиента
         order = f"l.price IS NULL, ABS(l.price - {int(qr.budget_near)}) ASC, l.id DESC"
-    if qr.hl:   # новое в сохранённом поиске — наверх
-        order = f"(l.first_seen > {int(qr.hl)}) DESC, " + order
     if group_offers:
-        return _grouped_search(conn, qr, where, params, order, size, page)
+        return _grouped_search(conn, qr, where, params, order, size, page, now)
+    if qr.hl:   # новое в сохранённом поиске — наверх
+        order = f"(l.catalog_migrated = 0 AND l.first_seen > {int(qr.hl)}) DESC, " + order
     total = conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {where}", params).fetchone()[0]
     rows = conn.execute(
         f"SELECT l.*, {VERIFIED} AS verified FROM listings l WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
@@ -614,30 +616,44 @@ def search(conn: sqlite3.Connection, qr: Query, now: int, with_contacts: bool, *
     }
 
 
-def _grouped_search(conn, qr, where, params, order, size, page):
+def _grouped_search(conn, qr, where, params, order, size, page, now):
     from . import hooks, offers
 
-    ids = [r[0] for r in conn.execute(f"SELECT l.id FROM listings l WHERE {where} ORDER BY {order}", params)]
-    groups = offers.groups(conn) if ids else {}
+    candidates = conn.execute(f"SELECT l.id,l.first_seen,l.catalog_migrated FROM listings l WHERE {where} ORDER BY {order}", params).fetchall()
+    groups = offers.groups(conn) if candidates else {}
+    archived = offers.archived_publications(conn) if candidates else {}
     hidden = offers.hidden_ids(conn, qr.hide_user)
-    matching = set(ids)
+    matching = {r["id"] for r in candidates}
     seen = set()
     unique = []
-    for lid in ids:
+    for row in candidates:
+        lid = row["id"]
         group = groups.get(lid)
         key = min(row["id"] for row in group) if group else lid
         if key not in seen:
             seen.add(key)
+            published = offers.first_publication(group or (row,), archived)
+            first_seen, migrated, _ = published
+            if qr.since and (migrated or first_seen <= qr.since):
+                continue
+            if qr.new_days and (migrated or first_seen < now - qr.new_days * 86400):
+                continue
             site = next((r["id"] for r in group if offers.is_site(r) and r["id"] in matching), None) if group else None
-            unique.append(site or lid)
+            unique.append((site or lid, published))
+    if order == NEWEST_FIRST:
+        unique.sort(key=lambda entry: (entry[1][1], -entry[1][0], -entry[1][2]))
+    if qr.hl:
+        unique.sort(key=lambda entry: bool(entry[1][1] or entry[1][0] <= qr.hl))
     chunk = unique[(page - 1) * size:page * size]
     items = []
     if chunk:
+        ids = [lid for lid, _ in chunk]
         rows = {r["id"]: r for r in conn.execute(f"SELECT l.*, {VERIFIED} AS verified FROM listings l "
-                f"WHERE l.is_active = 1 AND l.id IN ({','.join('?' * len(chunk))})", chunk)}
-        for lid in chunk:
+                f"WHERE l.is_active = 1 AND l.id IN ({','.join('?' * len(ids))})", ids)}
+        for lid, (first_seen, migrated, _) in chunk:
             if lid in rows:
                 item = row_to_item(rows[lid], False)
+                item.update(first_seen=first_seen, catalog_migrated=bool(migrated))
                 if lid in groups:
                     group = groups[lid]
                     visible = [row for row in group if row["id"] not in hidden]

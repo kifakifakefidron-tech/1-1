@@ -210,7 +210,8 @@ def annotate(conn: sqlite3.Connection, items: list[dict]) -> list[dict]:
         it["market_n"] = mk["n"] if ok and mk else None   # «ниже рынка на 18 % · по 23 объектам»
         it["market_diff_raw"] = diff
         it["hot"] = is_hot(it)
-        it.pop("price_doubt", None)
+        if not doubt:
+            it.pop("price_doubt", None)
         if ok and mk:   # 29.10: для шкалы «к рынку» на горячей карточке — с чем сравнили и средняя цена такой же площади
             it["market_base"] = mk["base"]
             it["market_median"] = mk["median"]
@@ -474,7 +475,7 @@ def _new_since(conn, s, since: int, now: int, size: int = 10) -> dict:
     from . import search
     qr = search.query_from_params(QueryParams(s["params"]))
     qr.since, qr.sort, qr.size, qr.page = since, "new", size, 1
-    return search.search(conn, qr, now, False)
+    return search.search(conn, qr, now, False, group_offers=True)
 
 
 def check_saved(conn: sqlite3.Connection, send, user_id: int | None = None) -> int:

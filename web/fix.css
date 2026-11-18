@@ -116,6 +116,24 @@
 .fx-queues .chip b { margin-left: 4px; font-weight: 600; opacity: .8; }
 .fx-queues .chip.hot { border-color: color-mix(in srgb, var(--bad) 60%, transparent); }
 .fx-queues .chip.hot b { color: var(--bad); opacity: 1; }
+.review-price #fxPlace > :not(.fx-price-review), .review-price #fxGeoBox { display: none; }
+.review-price .fx-price-review {
+  display: grid; gap: 10px; padding: 16px; border: 1px solid rgba(227, 203, 143, .35);
+  border-radius: 16px; background: rgba(227, 203, 143, .07);
+}
+.review-price .fx-price-review .fx-label { color: var(--gold-200); }
+.review-price #fxPriceIn { min-height: 48px; font-size: 18px; }
+.review-price #fxPriceNote { margin: 0; line-height: 1.45; }
+@media (max-width: 640px) {
+  .price-queue .fx-queues {
+    position: relative; display: flex; flex-wrap: nowrap; overflow-x: auto;
+    scrollbar-width: thin; padding-bottom: 4px;
+  }
+  .price-queue .fx-queues .chip { flex: 0 0 auto; white-space: nowrap; }
+  .price-queue .fx { padding-bottom: calc(108px + env(safe-area-inset-bottom)); }
+  .review-price .fx-actions { position: static; }
+  .review-price .fx-save { flex-basis: 100%; min-height: 44px; }
+}
 .fx-qhint { margin: 6px 0 0; }
 .fx-conflict { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; margin: 0 0 14px; font-size: 14px;
   border: 1px solid color-mix(in srgb, var(--bad) 50%, transparent); border-radius: var(--r-md, 14px);

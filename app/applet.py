@@ -236,6 +236,8 @@ def sync(conn: sqlite3.Connection, body: bytes, now: int | None = None) -> dict:
             prev = existing.get(ext)
             if prev and prev["hidden_reason"] in ("admin", "phone"):
                 continue
+            if prev and prev["price_fixed"] and item["price"] == prev["price_wrong"]:
+                item["price"] = prev["price"]
             if item["complex"]:
                 item["complex"] = None if geoaudit.is_junk_complex(item["complex"]) else cxnorm.canonical(conn, item["complex"])
             item.update(title=make_title(item), photos="[]", url=None,

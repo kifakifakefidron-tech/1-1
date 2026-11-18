@@ -101,3 +101,29 @@ def test_strely_first_with_own_media_and_one_market_basis(conn, monkeypatch):
     assert [(o["id"], o["matches"]) for o in item["offer_group"]["offers"]] == [(site, False), (other, True)]
     item = next(i for i in search.search(conn, search.Query(), now, False, group_offers=True)["items"] if i.get("offer_group"))
     assert item["id"] == site and item["photos"][0] == f"/photos/{site}/" + "a" * 16 + ".jpg"
+
+
+def test_new_offers_cannot_republish_a_known_property(conn):
+    now = int(time.time())
+    older = listing(conn, "79000000001", price=6_900_000, media=())
+    newer = listing(conn, "79000000002", price=6_500_000, media=())
+    fresh = listing(conn, "79000000003", price=6_000_000, house="61", media=())
+    imported = listing(conn, "79000000004", house="62", media=())
+    born = now - 3 * 86400
+    conn.execute("UPDATE listings SET first_seen=? WHERE id=?", (born, older))
+    conn.execute("UPDATE listings SET catalog_migrated=1 WHERE id=?", (imported,))
+    decide(conn, older, newer, "market")
+
+    def items(**kw):
+        return search.search(conn, search.Query(**kw), now, False, group_offers=True)["items"]
+
+    # Дешёвое новое предложение проходит фильтр, но сохраняет дату старой карточки.
+    matched = items(price_max=6_600_000, hl=now - 60)
+    assert [row["id"] for row in matched] == [fresh, newer]
+    assert matched[1]["first_seen"] == born
+    assert [row["id"] for row in items(new_days=1)] == [fresh]
+    assert [row["id"] for row in items(since=now - 60)] == [fresh]
+    assert [row["id"] for row in items()] == [fresh, newer, imported]
+    conn.execute("UPDATE listings SET is_active=0 WHERE id=?", (older,))
+    assert [row["id"] for row in items(new_days=1)] == [fresh]
+    assert items()[1]["first_seen"] == born

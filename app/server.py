@@ -733,6 +733,9 @@ def api_listing(request: Request, body: dict | None = None):
     d["can_edit"] = bool(user) and agent.can_edit(conn, user, row)[0]
     # 31.10: «к рынку» и «почему горячее» — по тем же 15+ похожим, что фильтр; если их меньше — строка «к рынку» по 3+ (ЖК) / 5+ (район)
     group = offers.for_listing(conn, row) if row["is_active"] else None
+    archived = offers.archived_publications(conn, None if group else lid) if row["is_active"] else {}
+    first_seen, migrated, _ = offers.first_publication(group or (row,), archived)
+    d.update(first_seen=first_seen, catalog_migrated=bool(migrated))
     if group:
         d["market"] = hooks.offer_market(conn, group, None if row["price_doubt"] else row["price"])
         hidden = offers.hidden_ids(conn, user["id"] if user else None)
@@ -2521,7 +2524,7 @@ def api_admin_place(request: Request, body: dict | None = None):
         price = _parse_admin_price(body.get("price"), row["deal"])
         if price is None:
             return _err("Цена не распознана. Пишите «3,2» (млн) или «3200000».")
-        if price != row["price"]:
+        if price != row["price"] or row["price_doubt"]:
             ingest.set_price(conn, lid, price, user["id"])
             learned = learned + [f"цена → {_price_text(price, row['deal'])}"]
     d = {**dict(row), "complex": cx, "district": district}
@@ -2616,19 +2619,24 @@ def _fix_safe(what: str, fn, default=None):
 _fix_err = threading.local()   # ошибки подсказок текущего запроса (у каждого потока — свои)
 
 
-def _fix_item(conn, lid: int) -> dict | None:
+def _fix_item(conn, lid: int, *, price_only: bool = False) -> dict | None:
     r = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
     if r is None:
         return None
-    text = (r["fragment"] or r["description"] or "")[:2000]
+    text = ((r["description"] if price_only and r["source"] != "chat" else None)
+            or r["fragment"] or r["description"] or "")[:2000]
     photos = json.loads(r["photos"] or "[]")
     S = _fix_safe
-    return {k: r[k] for k in ("id", "title", "price", "deal", "type", "rooms", "area", "floor", "floors", "complex",
-                              "district", "street", "house", "settlement", "lat", "lon", "geo_status", "admin_fixed",
-                              "source", "room_kind", "repair")} | {
+    item = {k: r[k] for k in ("id", "title", "price", "deal", "type", "rooms", "area", "floor", "floors", "complex",
+                             "district", "street", "house", "settlement", "lat", "lon", "geo_status", "admin_fixed",
+                             "source", "room_kind", "repair", "price_doubt")} | {
         "text": text, "photo": photos[0] if photos else None, "photos": photos[:12], "land": r["land"],
         "phones": json.loads(r["phones"] or "[]"),
         "extra_districts": json.loads(r["extra_districts"] or "[]"),
+    }
+    if price_only:
+        return item
+    return item | {
         "suggest": S("подсказки районов", lambda: _fix_suggest(conn, r, text), {"districts": [], "complexes": []}),
         "learned": S("выученное", lambda: [label for _, label in geocode.learn_keys(r)], []),
         "geo_src": autolearn.GEO_SRC.get(r["geo_src"] or "") if r["geo_src"] != "geocoder" else None,
@@ -3043,7 +3051,9 @@ def _admin_fix(request: Request, body: dict | None = None):
     learning.sync_districts(conn)
     q = request.query_params
     kind = brain.queue_key(q.get("mode"), q.get("kind"))   # одна очередь «Обучения» (старые ссылки тоже понимаем)
-    mode, where = brain.QUEUE[kind]["mode"], brain.QUEUE[kind]["where"]
+    queue = brain.QUEUE[kind]
+    mode, where = queue["mode"], queue["where"]
+    visible = queue.get("base", _VISIBLE)
     if q.get("at"):   # район под точкой (метку двигают на карте разбора)
         try:
             lat, lon = (float(x) for x in q["at"].split(",")[:2])
@@ -3052,22 +3062,23 @@ def _admin_fix(request: Request, body: dict | None = None):
         hit = districtmap.district_at(conn, lat, lon)
         return JSONResponse({"district": hit[0] if hit and hit[1] == "district" else None,
                              "complex": districtmap.complex_at(conn, lat, lon)})
-    left = conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE} AND {where}").fetchone()[0]
+    left = conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {visible} AND {where}").fetchone()[0]
     exclude = {int(x) for x in q.get("exclude", "").split(",") if x.strip().isdigit()}
     if request.method == "POST":   # разобранные/пропущенные — в теле запроса, не в адресе (длина адреса ограничена)
         exclude |= {int(x) for x in ((body or {}).get("exclude") or []) if str(x).isdigit()}
     group = None
     if q.get("id"):
-        item = _fix_item(conn, _num(q.get("id"), int) or 0)   # конкретный объект (из базы номера, из окна объекта)
-        if item and kind not in ("auto", "fixed"):
+        item = _fix_item(conn, _num(q.get("id"), int) or 0, price_only=mode == "price")
+        if item and kind not in ("auto", "fixed", "price"):
             row = conn.execute("SELECT * FROM listings WHERE id = ?", (item["id"],)).fetchone()
             group = _group_of(conn, mode, kind, where, row, exclude)
-    elif kind in ("auto", "fixed"):   # проверка выборочно — по одному, свежие первыми
+    elif kind in ("auto", "fixed", "price"):   # проверка по одному
         ex = list(exclude)[:2000]
         ph = ",".join("?" * len(ex)) or "0"
-        row = conn.execute(f"""SELECT l.id FROM listings l WHERE {_VISIBLE} AND {where} AND l.id NOT IN ({ph})
-                               ORDER BY l.last_seen DESC LIMIT 1""", ex).fetchone()
-        item = _fix_item(conn, row[0]) if row else None
+        order = "l.first_seen DESC, l.id DESC" if mode == "price" else "l.last_seen DESC"
+        row = conn.execute(f"""SELECT l.id FROM listings l WHERE {visible} AND {where} AND l.id NOT IN ({ph})
+                               ORDER BY {order} LIMIT 1""", ex).fetchone()
+        item = _fix_item(conn, row[0], price_only=mode == "price") if row else None
     else:
         groups = _fix_groups(conn, mode, kind, where, exclude)
         item = _fix_item(conn, groups[0]["ids"][0]) if groups else None
@@ -3081,7 +3092,7 @@ def _admin_fix(request: Request, body: dict | None = None):
                  "same_place": not group["key"].startswith("street:"),
                  "items": [{"id": g["id"], "title": g["title"], "addr": ", ".join(x for x in (g["street"], g["house"]) if x),
                             "complex": g["complex"], "district": g["district"]} for g in rows_g]}
-    complexes = sorted({c.name for _, c in geo._complexes()} | {r[0] for r in conn.execute(
+    complexes = [] if mode == "price" else sorted({c.name for _, c in geo._complexes()} | {r[0] for r in conn.execute(
         "SELECT DISTINCT complex FROM listings WHERE complex IS NOT NULL AND is_active = 1")},
         key=lambda x: x.lower().replace("ё", "е"))
     return JSONResponse({"item": item, "group": group, "left": left, "mode": mode, "kind": kind, "counts": brain.counts(conn),

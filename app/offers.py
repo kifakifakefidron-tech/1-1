@@ -53,13 +53,39 @@ def hidden_ids(conn: sqlite3.Connection, user_id: int | None) -> set[int]:
     return {row[0] for row in conn.execute("SELECT listing_id FROM hidden_listings WHERE user_id = ?", (user_id,))}
 
 
+def publication(row) -> tuple[int, int, int]:
+    return row["first_seen"], row["catalog_migrated"], row["id"]
+
+
+def archived_publications(conn: sqlite3.Connection, lid: int | None = None) -> dict[int, tuple[int, int, int]]:
+    """Первая публикация подтверждённого дубля учитывается и после снятия предложения."""
+    by_id = {}
+    endpoint = " AND (a.id = ? OR b.id = ?)" if lid is not None else ""
+    for active_id, first_seen, migrated, old_id in conn.execute(f"""SELECT
+        CASE WHEN a.is_active THEN a.id ELSE b.id END,
+        CASE WHEN a.is_active THEN b.first_seen ELSE a.first_seen END,
+        CASE WHEN a.is_active THEN b.catalog_migrated ELSE a.catalog_migrated END,
+        CASE WHEN a.is_active THEN b.id ELSE a.id END
+        FROM dup_pairs p JOIN listings a ON a.id = p.a JOIN listings b ON b.id = p.b
+        WHERE p.status = 'market' AND a.deal = b.deal AND a.is_active != b.is_active{endpoint}""",
+        (lid, lid) if lid is not None else ()):
+        published = first_seen, migrated, old_id
+        by_id[active_id] = min(published, by_id.get(active_id, published))
+    return by_id
+
+
+def first_publication(rows, archived: dict) -> tuple[int, int, int]:
+    published = min(map(publication, rows))
+    return min((published, *(archived[row["id"]] for row in rows if row["id"] in archived)))
+
+
 def groups(conn: sqlite3.Connection, hide_user: int | None = None) -> dict:
     """Каждый участник группы должен совпадать с каждым. Решение «разные» отменяет автоматическую связь."""
     decisions = {(a, b): status for a, b, status in conn.execute(
         "SELECT a, b, status FROM dup_pairs WHERE status IN ('market', 'diff', 'split')")}
     rows = {r["id"]: r for r in conn.execute("""SELECT l.id, l.source, l.type, l.deal, l.settlement, l.street, l.house,
         l.complex, l.rooms, l.room_kind, l.floor, l.floors, l.area, l.photos, l.phones, l.price, l.price_doubt, l.last_seen,
-        l.ext_id, l.district, l.repair, l.price_m2,
+        l.ext_id, l.district, l.repair, l.price_m2, l.first_seen, l.catalog_migrated,
         CASE WHEN l.source = 'own' THEN (SELECT MAX(e.ts) FROM listing_edits e
             WHERE e.listing_id = l.id AND e.field = 'confirm' AND e.new = '"yes"' AND e.reverted = 0) END AS confirmed_at
         FROM listings l WHERE l.is_active = 1 AND (

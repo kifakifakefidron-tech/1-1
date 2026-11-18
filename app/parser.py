@@ -407,7 +407,8 @@ def _is_meaningful(o: ParsedObject) -> bool:
     return o.price is not None and o.type is not None and has_size
 
 
-def parse(text: str, sender_phone: str | None = None, use_llm: bool | None = None) -> tuple[str, list[ParsedObject]]:
+def parse(text: str, sender_phone: str | None = None, use_llm: bool | None = None,
+          *, price_hints: tuple[str, ...] = ()) -> tuple[str, list[ParsedObject]]:
     """Возвращает (kind, objects). kind: listing | request | other."""
     text = rules.normalize_digits(text).strip()
     if len(text) < 15:
@@ -426,7 +427,8 @@ def parse(text: str, sender_phone: str | None = None, use_llm: bool | None = Non
             # трансграничная передача персональных данных). Номера достаём сами правилами.
             # Замена построчная — номера строк для ответа нейросети не сдвигаются.
             # нейросеть (зарубежная) получает текст без телефонов и имён агентов — меньше чужих ПДн за границу
-            res = llm.parse_message(mask_names(rules.mask_phones(text, "[телефон]"), "[имя]"))
+            options = {"price_hints": price_hints} if price_hints else {}
+            res = llm.parse_message(mask_names(rules.mask_phones(text, "[телефон]"), "[имя]"), **options)
         except llm.LLMError as e:
             log.warning("Нейросеть недоступна, разбираю правилами: %s", e)
         else:
