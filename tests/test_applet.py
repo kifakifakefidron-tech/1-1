@@ -23,8 +23,10 @@ def values(article="", price="6000", addr="Западный Обход 39/1 к6"
     r[2], r[3], r[4], r[5], r[6] = article, "Е2", "Западный обход", addr, "Зелёный театр"
     r[8], r[9], r[10], r[11], r[13] = "177", "7/16", "38", f"р.{price}", "Рем/меб/тех"
     r[16], r[27], r[29] = "Сейф 9999", "79000000019", "Контакты владельца и код от сейфа 9999"
-    r[30] = f"❌Е2 КВ❌\nЦена 4600\nВячеслав Цветков\n{SLAVA[0]}\n{SLAVA[1]}"
-    r[31] = f"♟Е2 КВ♟\n{'ФОТО+ПРЕЗЕНТАЦИЯ' if presentation else ''}\nАртём\n{ARTEM}"
+    r[30] = (f"❌Е2 КВ❌\n▪️ Состояние: РЕМ/МЕБ/ТЕХ\n▪️ Показ по договорённости\n"
+             f"Ключи в сейфе, код 9999\nКвартира №177\nЦена 4600\nВячеслав Цветков\n{SLAVA[0]}\n{SLAVA[1]}")
+    r[31] = (f"♟Е2 КВ♟\n▪️ Техника остаётся при продаже\n"
+             f"{'ФОТО+ПРЕЗЕНТАЦИЯ' if presentation else ''}\nАртём\n{ARTEM}")
     return r
 
 
@@ -42,7 +44,9 @@ def test_catalog_scope_price_and_private_columns(monkeypatch):
     assert items[0]["floor"] == 7 and items[0]["area"] == 38
     assert [item["phones"] for item in items] == [list(SLAVA), list(SLAVA), [ARTEM], list(SLAVA)]
     assert items[2]["ext_id"].startswith(applet.STAYL)
-    assert items[0]["description"].splitlines() == ["С ремонтом", "Есть мебель", "Есть техника"]
+    assert items[0]["description"].splitlines() == ["❌Е2 КВ❌", "▪️ Состояние: РЕМ/МЕБ/ТЕХ", "▪️ Показ по договорённости"]
+    assert items[2]["description"] == "♟Е2 КВ♟\n▪️ Техника остаётся при продаже"
+    assert all("177" not in item["description"] and "4600" not in item["description"] for item in items)
     assert all("9999" not in json.dumps(item) and "79000000019" not in json.dumps(item) for item in items)
 
 
@@ -153,6 +157,7 @@ def test_sync_uses_moscow_slots_and_retries_only_failed_slot(conn, monkeypatch):
     # Вчерашний запуск уже выполнен, до 08:00 новый импорт не нужен.
     yesterday = int(datetime(2026, 11, 17, 19, tzinfo=moscow).timestamp())
     db.set_state(conn, "appletv_completed_slot", str(yesterday))
+    db.set_state(conn, applet.IMPORTED_FORMAT, applet.FORMAT)
     assert at(7, 59) is None and not calls
     assert at(8)["added"] == 1
     assert at(14, 59) is None and len(calls) == 1
@@ -167,3 +172,27 @@ def test_sync_uses_moscow_slots_and_retries_only_failed_slot(conn, monkeypatch):
     assert at(19, 10) == {"unchanged": True} and len(calls) == 4
     assert at(7, 59, day=19) is None and len(calls) == 4
     assert at(8, day=19) == {"unchanged": True} and len(calls) == 5
+
+
+def test_new_description_format_refreshes_existing_offer_between_slots(conn, monkeypatch):
+    configure(monkeypatch)
+    body = snapshot(values("733"), values(addr="Западный Обход 39/2"))
+    now = int(datetime(2026, 11, 18, 16, tzinfo=timezone(timedelta(hours=3))).timestamp())
+    applet.sync(conn, body, now - 3600)
+    before = conn.execute("SELECT id,price,area,floor,phones,repair,repair_doubt FROM listings ORDER BY id").fetchall()
+    assert before[0]["repair"] == "yes"
+    conn.execute("UPDATE listings SET description=''")
+    db.set_state(conn, applet.IMPORTED_FORMAT, "1")
+    db.set_state(conn, "appletv_snapshot", "old snapshot signature")
+    db.set_state(conn, "appletv_completed_slot", str(now - 3600))
+    monkeypatch.setattr(applet.time, "time", lambda: now)
+    monkeypatch.setattr(applet.urllib.request, "urlopen", lambda *a, **kw: io.BytesIO(body))
+
+    result = applet.maybe_sync(conn)
+    assert result["updated"] == 3 and result["added"] == result["hidden"] == 0
+    after = conn.execute("SELECT id,price,area,floor,phones,repair,repair_doubt FROM listings ORDER BY id").fetchall()
+    assert after == before
+    descriptions = [row[0] for row in conn.execute("SELECT description FROM listings ORDER BY id")]
+    assert ["Показ по договорённости" in desc for desc in descriptions] == [True, True, False]
+    assert "Техника остаётся при продаже" in descriptions[2]
+    assert applet.maybe_sync(conn) is None

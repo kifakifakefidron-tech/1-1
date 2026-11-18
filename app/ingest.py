@@ -288,12 +288,12 @@ def recheck_phrase(conn: sqlite3.Connection, key: str) -> int:
     return n
 
 
-def _reindex(conn: sqlite3.Connection, listing_id: int, text: str) -> None:
+def _reindex(conn: sqlite3.Connection, listing_id: int, text: str, *, repair_text: str | None = None) -> None:
     conn.execute("DELETE FROM listings_fts WHERE rowid = ?", (listing_id,))
     conn.execute("INSERT INTO listings_fts(rowid, search_text) VALUES (?, ?)", (listing_id, text))
     # состояние «с ремонтом / без ремонта» — по тому же тексту (фильтр «Ремонт»); тот же текст админ уже разбирал — его ответ;
     # дальше — выученные слова (repair_phrase), потом правила
-    rep, doubt = repair_now(conn, listing_id, text)
+    rep, doubt = repair_now(conn, listing_id, text if repair_text is None else repair_text)
     conn.execute("""UPDATE listings SET repair = CASE WHEN json_type(admin_fields, '$.repair') IS NOT NULL
                     THEN NULLIF(json_extract(admin_fields, '$.repair'), '') ELSE ? END,
                     repair_doubt = CASE WHEN json_type(admin_fields, '$.repair') IS NOT NULL THEN 0 ELSE ? END WHERE id = ?""",

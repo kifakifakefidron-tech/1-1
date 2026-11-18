@@ -420,8 +420,7 @@
     const b = [];
     const st = myStatus(o.id);
     if (st) b.push(`<span class="mark crm crm-${st}">${STATUSES[st]}</span>`);
-    if (o.appletv) b.push('<span class="mark">Яблоня</span>');
-    else if (o.source === "feed") b.push(`<span class="mark partner" title="Объект партнёра «СТРЕЛЫ»">${STRELY}СТРЕЛЫ</span>`);
+    if (o.source === "feed" && !o.appletv) b.push(`<span class="mark partner" title="Объект партнёра «СТРЕЛЫ»">${STRELY}СТРЕЛЫ</span>`);
     if (o.verified && o.source !== "feed") b.push(`<span class="mark verified" title="Агент подтвердил свой номер в 1+1">✓ ${innerWidth < 640 ? "Проверен" : "Проверенный агент"}</span>`);
     if (o.first_seen > now - 86400) b.push(`<span class="mark new">Новое</span>`);
     if (o.prev_price && o.price && o.prev_price > o.price && o.price_changed_at > now - 14 * 86400 && o.hot !== "drop") {   // у горячей — строка под ценой
@@ -1295,7 +1294,7 @@
     // раскрывающиеся строки
     const chart = priceChartHTML(o, true);
     const priceBody = (days != null ? `<p class="dv-line">⏳ ${days < 1 ? "<b>Новое на 1+1</b> — появилось сегодня" : `На 1+1 — <b>${esc(daysText(days))}</b>`}
-          <small>${o.appletv ? "считаем с первой загрузки объявления из базы «Яблоня»" : "считаем с первого появления объявления в чатах риелторов"}</small></p>` : "")
+          <small>считаем с первой публикации объявления на 1+1</small></p>` : "")
       + (m ? `<p class="dv-line"><b>${marketLabel(m.diff)}</b>
           <small>медиана цены м² — ${esc(num(m.median))} ₽ · ${esc(m.base)}, ${m.n} ${plural(m.n, "объект", "объекта", "объектов")}</small></p>` : "")
       + chart;
@@ -1450,7 +1449,7 @@
             : "правка, точка, фото, история", adminBody, { cls: "admin" + (cmNew.length ? " has-cm" : "") })}
           ${reportHTML(o)}
         </div>
-        <p class="dv-foot">${o.appletv ? `Источник — «Яблоня» · обновлено ${esc(fmtAgo(o.last_seen))}`
+        <p class="dv-foot">${o.appletv ? `Обновлено ${esc(fmtAgo(o.last_seen))}`
           : `Появилось на 1+1: ${esc(fmtAgo(o.first_seen))} · последний раз присылали: ${esc(fmtAgo(o.last_seen))}`}</p>
         ${brandLine("поиск объектов Краснодара из риелторских чатов")}
       </div>
@@ -2300,11 +2299,11 @@
     nav.querySelector('[data-offer-step="-1"]').disabled = at === 0;
     nav.querySelector('[data-offer-step="1"]').disabled = at === offers.length - 1;
     const rail = nav.querySelector(".offer-nav-prices");
-    const signature = JSON.stringify([deal, offers.map(o => [o.id, o.price, o.source_label, o.matches])]);
+    const signature = JSON.stringify([deal, offers.map(o => [o.id, o.price, o.site, o.matches])]);
     if (rail.dataset.offers !== signature) {
       rail.innerHTML = offers.map((offer, i) => `<button type="button"
         class="offer-price${offer.matches ? "" : " outside"}" data-offer-id="${offer.id}" aria-pressed="false">
-        <span class="offer-source">${esc(offer.source_label || `Агент ${i + 1}`)}</span>
+        <span class="offer-source">${offer.site ? "СТРЕЛЫ" : `Агент ${i + 1}`}</span>
         <b>${esc(offer.price == null ? "Цена уточняется" : fmtPrice(offer.price, deal))}</b>
         ${offer.matches ? "" : '<small class="offer-outside">Вне фильтров</small>'}</button>`).join("");
       rail.dataset.offers = signature;

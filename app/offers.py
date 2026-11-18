@@ -113,7 +113,7 @@ def for_listing(conn: sqlite3.Connection, row: sqlite3.Row, hide_user: int | Non
 
 def summary(group, matching: set[int] | None = None) -> dict:
     offers = [{"id": r["id"], "price": None if r["price_doubt"] else r["price"], "last_seen": r["last_seen"],
-               "source_label": "СТРЕЛЫ" if is_site(r) else "Яблоня" if (r["ext_id"] or "").startswith("appletv:") else None,
+               "source_label": "СТРЕЛЫ" if is_site(r) else None,
                "site": is_site(r),
                "confirmed_at": r["confirmed_at"], "matches": matching is None or r["id"] in matching} for r in group]
     offers.sort(key=lambda offer: (not offer["site"], not offer["matches"]))

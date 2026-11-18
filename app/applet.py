@@ -19,11 +19,21 @@ PREFIX = "appletv:"
 STAYL = PREFIX + "stayl:"
 SYNCED = "appletv_synced"
 SPLIT = "appletv_separate_offers"
+FORMAT = "2"
+IMPORTED_FORMAT = "appletv_import_format"
 REPLACED = "appletv_chat"
 REMOVED = "appletv_removed"
 MAX_BYTES = 8_000_000
 SYNC_HOURS = (8, 15, 19)  # Москва
 RETRY_SECONDS = 10 * 60
+PRIVATE_LINE = re.compile(
+    r"\b(?:ключи|сейф\w*|гнездыш\w*|домофон\w*|парол\w*|паспорт\w*|владелец|фио|доступ)\b"
+    r"|\bключ\s+(?:от|у|в|под|лежит)\b"
+    r"|\b(?:код|кв\.?|квартира)\s*(?:(?:[:№#-]|no)\s*|\s+)\d+"
+    r"|\b(?:собственник|контакт|телефон)\s*[:—]"
+)
+AD_FOOTER = re.compile(r"^(?:цена\b|артикул\b|фото\s*(?:\+|и)\s*презентаци|презентация\s+на\s+сайте|"
+                       r"[a-z]{2}\s*:\s*\d)")
 log = logging.getLogger(__name__)
 
 
@@ -91,6 +101,21 @@ def _listing_type(value: str) -> tuple[str, int | None, str | None]:
     raise ValueError("Неизвестный тип объекта в таблице «Яблоня»")
 
 
+def _ad_description(text: str) -> str:
+    lines = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        label = re.sub(r"^[\W_]+", "", norm(rules.normalize_digits(line)))
+        if re.match(r"^(?:вячеслав\s+цветков|артем)\b", label):
+            break
+        if not re.search(r"[а-яa-z]", label) or _phones(line) or PRIVATE_LINE.search(label):
+            continue
+        if AD_FOOTER.match(label) or "https://" in label or "http://" in label:
+            continue
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def _sheet_row(r: list[str]) -> dict:
     from . import parser
 
@@ -116,7 +141,7 @@ def _sheet_row(r: list[str]) -> dict:
     floor, floors = rules.extract_floor(r[9])
     if floor is None and re.fullmatch(r"\d{1,2}", r[9]):
         floor = int(r[9])
-    # Свободный текст может содержать коды и данные владельца. Описание собираем из открытых характеристик.
+    # Для классификации ремонта используем структурированную колонку, а не текст объявления.
     condition_text = norm(r[13])
     condition = rules.detect_repair(r[13])
     if condition is None and condition_text.startswith("рем"):
@@ -124,13 +149,13 @@ def _sheet_row(r: list[str]) -> dict:
     finish = ("Предчистовая отделка" if re.search(r"\bпчо\b|предчистов", condition_text)
               else "Частичный ремонт" if "частичный ремонт" in condition_text
               else {"no": "Без ремонта", "yes": "С ремонтом"}.get(condition))
-    description = [finish] if finish else []
+    repair_context = [finish] if finish else []
     if re.search(r"(?:^|/)меб(?:ель)?(?:/|$)", condition_text):
-        description.append("Есть мебель")
+        repair_context.append("Есть мебель")
     if re.search(r"(?:^|/)тех(?:ника)?(?:/|$)", condition_text):
-        description.append("Есть техника")
+        repair_context.append("Есть техника")
     if norm(r[15]) == "нет":
-        description.append("Без обременений")
+        repair_context.append("Без обременений")
     if code:
         identifier = "article:" + code
     else:
@@ -139,8 +164,8 @@ def _sheet_row(r: list[str]) -> dict:
     return {"ext_id": PREFIX + identifier, "article": code or None, "type": otype, "deal": "sale", "rooms": rooms,
             "room_kind": room_kind, "floor": floor, "floors": floors, "area": area, "land": None,
             "district": district, "complex": complex_name, "settlement": p["settlement"], "street": p["street"],
-            "house": p["house"], "description": "\n".join(description), "fragment": place, "repair": condition,
-            "price": price}
+            "house": p["house"], "fragment": place, "repair": condition,
+            "price": price, "repair_context": "\n".join(repair_context)}
 
 
 def parse_csv(body: bytes) -> list[dict]:
@@ -169,11 +194,11 @@ def parse_csv(body: bytes) -> list[dict]:
         row_id = row_data["ext_id"]
         subscriptions = []
         if s:
-            subscriptions.append((row_id, list(slava)))
+            subscriptions.append((row_id, list(slava), r[30]))
         if a and not from_site:
-            subscriptions.append((STAYL + row_id.removeprefix(PREFIX), [artem]))
-        for ext, phones in subscriptions:
-            item = {**row_data, "ext_id": ext, "phones": phones}
+            subscriptions.append((STAYL + row_id.removeprefix(PREFIX), [artem], r[31]))
+        for ext, phones, text in subscriptions:
+            item = {**row_data, "ext_id": ext, "phones": phones, "description": _ad_description(text)}
             if result.setdefault(ext, item) != item:
                 raise ValueError("В «Яблоне» две разные строки имеют один ключ объекта")
     if not (slava_seen and artem_seen):
@@ -187,8 +212,8 @@ def sync(conn: sqlite3.Connection, body: bytes, now: int | None = None) -> dict:
 
     now = int(now or time.time())
     slava, artem = numbers()
-    signature = hashlib.sha256(body + repr((SPLIT, slava, artem, db.get_state(conn, "feed_synced"))).encode()).hexdigest()
-    if db.get_state(conn, "appletv_snapshot") == signature:
+    signature = hashlib.sha256(body + repr((FORMAT, slava, artem, db.get_state(conn, "feed_synced"))).encode()).hexdigest()
+    if db.get_state(conn, "appletv_snapshot") == signature and db.get_state(conn, IMPORTED_FORMAT) == FORMAT:
         return {"unchanged": True}
     items = parse_csv(body)  # сначала проверяем весь снимок, потом меняем базу
     managed = {*slava, artem}
@@ -217,21 +242,23 @@ def sync(conn: sqlite3.Connection, body: bytes, now: int | None = None) -> dict:
                         price_m2=_price_m2(item["price"], item["area"]),
                         rooms_mask=rules.rooms_mask(item["room_kind"], item["rooms"]),
                         phones=json.dumps(item["phones"]))
+            repair_context = item.pop("repair_context")
             item["search_text"] = make_search_text(item)
+            repair_text = make_search_text({**item, "description": repair_context})
             cols = tuple(item)
             if prev:
                 lid = prev["id"]
                 if not prev["is_active"] or any(prev[k] != item[k] for k in cols):
                     conn.execute(f"UPDATE listings SET {', '.join(c + '=?' for c in cols)}, is_active=1, hidden_reason=NULL, "
                                  "last_seen=?, sold_at=NULL WHERE id=?", (*item.values(), now, prev["id"]))
-                    _reindex(conn, prev["id"], item["search_text"])
+                    _reindex(conn, prev["id"], item["search_text"], repair_text=repair_text)
                     stats["updated"] += 1
             else:
                 old_combined = splitting and ext.startswith(STAYL) and PREFIX + ext.removeprefix(STAYL) in existing
                 lid = conn.execute(f"INSERT INTO listings ({', '.join(cols)}, source,first_seen,last_seen,catalog_migrated) "
                                    f"VALUES ({','.join('?' * len(cols))},'feed',?,?,?)",
                                    (*item.values(), now, now, initial or old_combined)).lastrowid
-                _reindex(conn, lid, item["search_text"])
+                _reindex(conn, lid, item["search_text"], repair_text=repair_text)
                 stats["added"] += 1
             saved[ext] = lid
             if site := yml.get(item["article"]):
@@ -261,6 +288,7 @@ def sync(conn: sqlite3.Connection, body: bytes, now: int | None = None) -> dict:
                                  (json.dumps(cleaned), json.dumps(roles), old["id"]))
             conn.execute("INSERT OR REPLACE INTO state(key,value) VALUES (?, '1')", (SPLIT,))
         conn.execute("INSERT OR REPLACE INTO state(key,value) VALUES (?,?)", (SYNCED, str(now)))
+        conn.execute("INSERT OR REPLACE INTO state(key,value) VALUES (?,?)", (IMPORTED_FORMAT, FORMAT))
         conn.execute("INSERT OR REPLACE INTO state(key,value) VALUES ('appletv_snapshot',?)", (signature,))
         if splitting or any(stats[k] for k in ("added", "updated", "hidden", "chat_replaced")):
             conn.execute("INSERT OR REPLACE INTO state(key,value) VALUES ('cache_ver',?)", (str(time.time()),))
@@ -275,10 +303,12 @@ def maybe_sync(conn: sqlite3.Connection) -> dict | None:
     due = max((today + hour * 3600 for hour in SYNC_HOURS if today + hour * 3600 <= now),
               default=today - (24 - SYNC_HOURS[-1]) * 3600)
     completed = int(db.get_state(conn, "appletv_completed_slot") or 0)
-    attempt = int(db.get_state(conn, "appletv_attempt_at") or 0)
-    if completed >= due or (attempt >= due and now - attempt < RETRY_SECONDS):
+    attempt_key = f"appletv_attempt_at_{FORMAT}"
+    attempt = int(db.get_state(conn, attempt_key) or 0)
+    refresh_format = db.get_state(conn, IMPORTED_FORMAT) != FORMAT
+    if (completed >= due and not refresh_format) or (attempt >= due and now - attempt < RETRY_SECONDS):
         return None
-    db.set_state(conn, "appletv_attempt_at", str(now))
+    db.set_state(conn, attempt_key, str(now))
     request = urllib.request.Request(config.APPLET_CSV_URL, headers={"User-Agent": "1plus1-search/1.0"})
     try:
         with urllib.request.urlopen(request, timeout=20) as response:

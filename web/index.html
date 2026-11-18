@@ -28,7 +28,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=36">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=134">
+<link rel="stylesheet" href="/static/glass.css?v=135">
 </head>
 <body>
 <svg class="flame-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs><linearGradient id="flameFire" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#d9541e"/><stop offset="1" stop-color="#f6b36b"/></linearGradient></defs></svg>
@@ -293,17 +293,15 @@
     <button class="close" id="closeDetail" aria-label="Закрыть">✕</button>
   </div>
   <nav class="detail-offers" id="detailOffers" aria-label="Предложения по объекту" data-no-swipe hidden>
-    <div class="offer-board">
-      <div class="offer-board-head">
+    <div class="offer-board-head">
+      <button type="button" class="offer-arrow prev" data-offer-step="-1" aria-label="Предыдущее предложение"></button>
+      <div class="offer-board-title">
         <b class="offer-count" aria-live="polite"></b>
         <span class="offer-status"></span>
       </div>
-      <div class="offer-board-track">
-        <button type="button" class="offer-arrow prev" data-offer-step="-1" aria-label="Предыдущее предложение"></button>
-        <div class="offer-nav-prices" role="group" aria-label="Выбрать предложение"></div>
-        <button type="button" class="offer-arrow next" data-offer-step="1" aria-label="Следующее предложение"></button>
-      </div>
+      <button type="button" class="offer-arrow next" data-offer-step="1" aria-label="Следующее предложение"></button>
     </div>
+    <div class="offer-nav-prices" role="group" aria-label="Выбрать предложение"></div>
   </nav>
   <div id="detailBody"></div>
 </dialog>
@@ -531,7 +529,7 @@
 <script src="/static/yasel.js?v=4"></script>
 <script src="/static/bell.js?v=8"></script>
 <script src="/static/lightbox.js?v=4"></script>
-<script src="/static/app.js?v=173"></script>
+<script src="/static/app.js?v=174"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>
