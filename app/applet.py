@@ -12,6 +12,7 @@ import time
 import urllib.request
 
 from . import config, db, geo, rules
+from .stats import day_start
 from .textnorm import norm, words
 
 PREFIX = "appletv:"
@@ -21,6 +22,8 @@ SPLIT = "appletv_separate_offers"
 REPLACED = "appletv_chat"
 REMOVED = "appletv_removed"
 MAX_BYTES = 8_000_000
+SYNC_HOURS = (8, 15, 19)  # Москва
+RETRY_SECONDS = 10 * 60
 log = logging.getLogger(__name__)
 
 
@@ -268,9 +271,14 @@ def maybe_sync(conn: sqlite3.Connection) -> dict | None:
     if not config.APPLET_CSV_URL:
         return None
     now = int(time.time())
-    if now - int(db.get_state(conn, "appletv_attempt") or 0) < config.APPLET_SYNC_SECONDS:
+    today = day_start(now)
+    due = max((today + hour * 3600 for hour in SYNC_HOURS if today + hour * 3600 <= now),
+              default=today - (24 - SYNC_HOURS[-1]) * 3600)
+    completed = int(db.get_state(conn, "appletv_completed_slot") or 0)
+    attempt = int(db.get_state(conn, "appletv_attempt_at") or 0)
+    if completed >= due or (attempt >= due and now - attempt < RETRY_SECONDS):
         return None
-    db.set_state(conn, "appletv_attempt", str(now))
+    db.set_state(conn, "appletv_attempt_at", str(now))
     request = urllib.request.Request(config.APPLET_CSV_URL, headers={"User-Agent": "1plus1-search/1.0"})
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
@@ -278,7 +286,8 @@ def maybe_sync(conn: sqlite3.Connection) -> dict | None:
         if len(body) > MAX_BYTES:
             raise ValueError("CSV «Яблони» больше допустимого размера")
         result = sync(conn, body, now)
-        return None if result.get("unchanged") else result
+        db.set_state(conn, "appletv_completed_slot", str(due))
+        return result
     except Exception as e:  # noqa: BLE001 — сохраняем последний успешный снимок
         log.warning("Синхронизация «Яблони» отложена: %s", type(e).__name__)
         return {"error": str(e)[:200] if isinstance(e, ValueError) else type(e).__name__}

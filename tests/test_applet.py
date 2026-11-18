@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import time
+from datetime import datetime, timedelta, timezone
 
 from app import applet, config, db, feed, ingest, parser, search, stats
 
@@ -125,3 +126,44 @@ def test_upgrade_splits_existing_contacts_without_new_listing_stats(conn, monkey
     assert all(json.loads(entry["photos"]) == [] for entry in entries)
     assert stats.collect(conn, now)["listings"]["added"] == before
     assert applet.sync(conn, body)["unchanged"]
+
+
+def test_sync_uses_moscow_slots_and_retries_only_failed_slot(conn, monkeypatch):
+    configure(monkeypatch)
+    body = snapshot(values("733"))
+    moscow = timezone(timedelta(hours=3))
+    now = 0
+    calls = []
+    failing = False
+
+    def fetch(request, timeout):
+        calls.append(now)
+        if failing:
+            raise TimeoutError
+        return io.BytesIO(body)
+
+    monkeypatch.setattr(applet.time, "time", lambda: now)
+    monkeypatch.setattr(applet.urllib.request, "urlopen", fetch)
+
+    def at(hour, minute=0, day=18):
+        nonlocal now
+        now = int(datetime(2026, 11, day, hour, minute, tzinfo=moscow).timestamp())
+        return applet.maybe_sync(conn)
+
+    # Вчерашний запуск уже выполнен, до 08:00 новый импорт не нужен.
+    yesterday = int(datetime(2026, 11, 17, 19, tzinfo=moscow).timestamp())
+    db.set_state(conn, "appletv_completed_slot", str(yesterday))
+    assert at(7, 59) is None and not calls
+    assert at(8)["added"] == 1
+    assert at(14, 59) is None and len(calls) == 1
+    assert at(15) == {"unchanged": True} and len(calls) == 2
+    completed = db.get_state(conn, "appletv_completed_slot")
+    failing = True
+    assert at(19)["error"] == "TimeoutError"
+    assert at(19, 9) is None and len(calls) == 3
+    assert db.get_state(conn, "appletv_completed_slot") == completed
+    assert conn.execute("SELECT COUNT(*) FROM listings WHERE is_active=1").fetchone()[0] == 1
+    failing = False
+    assert at(19, 10) == {"unchanged": True} and len(calls) == 4
+    assert at(7, 59, day=19) is None and len(calls) == 4
+    assert at(8, day=19) == {"unchanged": True} and len(calls) == 5

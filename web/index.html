@@ -25,12 +25,10 @@
 <meta name="apple-mobile-web-app-title" content="1+1">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="stylesheet" href="/static/vendor/fonts/fonts.css?v=1">
-<link rel="stylesheet" href="/static/vendor/leaflet/leaflet.min.css">
-<link rel="stylesheet" href="/static/vendor/leaflet/MarkerCluster.min.css">
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=36">
 <link rel="stylesheet" href="/static/theme.css?v=16">
-<link rel="stylesheet" href="/static/glass.css?v=133">
+<link rel="stylesheet" href="/static/glass.css?v=134">
 </head>
 <body>
 <svg class="flame-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs><linearGradient id="flameFire" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#d9541e"/><stop offset="1" stop-color="#f6b36b"/></linearGradient></defs></svg>
@@ -294,7 +292,19 @@
     <button type="button" class="fav-btn d-iconbtn" id="detailFav" data-fav="" aria-label="В избранное"></button>
     <button class="close" id="closeDetail" aria-label="Закрыть">✕</button>
   </div>
-  <nav class="detail-offers" id="detailOffers" aria-label="Предложения агентов по этой квартире" data-no-swipe hidden></nav>
+  <nav class="detail-offers" id="detailOffers" aria-label="Предложения по объекту" data-no-swipe hidden>
+    <div class="offer-board">
+      <div class="offer-board-head">
+        <b class="offer-count" aria-live="polite"></b>
+        <span class="offer-status"></span>
+      </div>
+      <div class="offer-board-track">
+        <button type="button" class="offer-arrow prev" data-offer-step="-1" aria-label="Предыдущее предложение"></button>
+        <div class="offer-nav-prices" role="group" aria-label="Выбрать предложение"></div>
+        <button type="button" class="offer-arrow next" data-offer-step="1" aria-label="Следующее предложение"></button>
+      </div>
+    </div>
+  </nav>
   <div id="detailBody"></div>
 </dialog>
 
@@ -397,8 +407,6 @@
   <div class="dlg-body" id="cabinetBody"></div>
 </dialog>
 
-<script src="/static/vendor/leaflet/leaflet.min.js"></script>
-<script src="/static/vendor/leaflet/leaflet.markercluster.min.js"></script>
 <dialog id="geoDlg" class="small-dlg geo-dlg" aria-labelledby="geoTitle">
   <span class="grab" aria-hidden="true"></span>
   <div class="dlg-body">
@@ -523,7 +531,7 @@
 <script src="/static/yasel.js?v=4"></script>
 <script src="/static/bell.js?v=8"></script>
 <script src="/static/lightbox.js?v=4"></script>
-<script src="/static/app.js?v=172"></script>
+<script src="/static/app.js?v=173"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>

@@ -8,6 +8,7 @@
   const $ = (id) => document.getElementById(id);
   const ic = (n) => (window.ic ? window.ic(n) : "");   // тонкие иконки (web/icons.js)
   const PAGE_SIZE = 32;  // делится и на 4 (компьютер), и на 2 (телефон)
+  const compactScreen = matchMedia("(max-width: 640px)");
   // ?embed=1 — окно объекта поверх другой страницы сайта (web/objview.js): показываем только окно объекта,
   // ссылки уводят всю вкладку, а закрытие окна сообщаем странице, которая его открыла
   const EMBED = new URLSearchParams(location.search).has("embed") && window.parent !== window;
@@ -688,7 +689,10 @@
     }
     // Карточки появляются волной: у каждой своя небольшая задержка
     data.items.forEach((o) => known.set(o.id, o));
-    const html = data.items.map((o, i) => itemHTML(o).replace('<li class="item', `<li style="--d:${Math.min(i, 12) * 35}ms" class="item`)).join("");
+    const html = data.items.map((o, i) => {
+      const card = itemHTML(o);
+      return compactScreen.matches ? card : card.replace('<li class="item', `<li style="--d:${Math.min(i, 12) * 35}ms" class="item`);
+    }).join("");
     if (append) $("results").insertAdjacentHTML("beforeend", html);
     else $("results").innerHTML = html || (favMode
       ? `<li class="empty"><span class="empty-logo">${LOGO}</span><b>Пока пусто</b>Нажмите ♡ на объекте, чтобы сохранить его сюда.</li>`
@@ -715,6 +719,31 @@
   // части не осталось ни одного найденного объекта. Нажатие на метку или район — карточка #mapCard (на телефоне
   // шторка снизу, на компьютере справа сверху); карта при этом не двигается и фильтры сами не меняются.
   const canHover = window.matchMedia ? window.matchMedia("(hover: hover) and (pointer: fine)").matches : true;
+  const mapFiles = new Map();
+  function loadMapFile(name, script = false) {
+    if (!mapFiles.has(name)) {
+      const el = document.createElement(script ? "script" : "link");
+      const url = `/static/vendor/leaflet/${name}`;
+      if (script) el.src = url;
+      else { el.rel = "stylesheet"; el.href = url; }
+      const loading = new Promise((resolve, reject) => {
+        el.onload = resolve;
+        el.onerror = () => { el.remove(); mapFiles.delete(name); reject(new Error("Не загрузился " + name)); };
+      });
+      mapFiles.set(name, loading);
+      if (script) document.head.append(el);
+      else document.head.insertBefore(el, document.head.querySelector('link[href^="/static/style.css"]'));
+    }
+    return mapFiles.get(name);
+  }
+
+  async function loadLeaflet(withClusters = false) {
+    await Promise.all([loadMapFile("leaflet.min.css"), loadMapFile("leaflet.min.js", true)]);
+    if (withClusters) {
+      await Promise.allSettled([loadMapFile("MarkerCluster.min.css"), loadMapFile("leaflet.markercluster.min.js", true)]);
+    }
+  }
+
   let mapSel = "";                    // выбранная метка: "id:123" / "cx:<ЖК>" / "dz:<район>"
   const mapMarkers = new Map();       // ключ метки → маркер (чтобы подсветить выбранную)
   const mapPoints = new Map();        // id → точка карты (id, lat, lon, price, level)
@@ -738,6 +767,7 @@
       },
     }) : L.layerGroup();
     map.addLayer(cluster);
+    districtLabels = L.layerGroup();
     initDistrictLayer();
     map.on("click", () => closeMapCard());   // нажали на пустое место — закрыть карточку, и только
     // размер карты поменялся (повернули телефон, открыли «Ещё фильтры») — дорисовать, не сдвигая
@@ -750,7 +780,7 @@
   // нажатие — карточка района с кнопкой «Показать только этот район» (раньше нажатие сразу меняло фильтр, и любое
   // касание карты на телефоне уводило её к другому району). Включается кнопкой «Районы» на карте (запоминается).
   let districtLayer = null, districtShapes = [], districtCounts = new Map();
-  const districtLabels = window.L ? L.layerGroup() : null;
+  let districtLabels = null;
   // Цвета — hex (Leaflet не понимает CSS-переменные): бирюза 1+1 и шампань
   const DZ_STYLE = { weight: 2, color: "#035352", opacity: .8, fillColor: "#e3cb8f", fillOpacity: .1, lineJoin: "round" };
   const DZ_HOVER = { weight: 3, color: "#035352", opacity: 1, fillColor: "#e3cb8f", fillOpacity: .26 };
@@ -1039,9 +1069,19 @@
   const placeKey = () => JSON.stringify([state.districts, state.complexes, state.q, state.street, state.house, state.deal]);
   // mode: "auto" — решить самой (см. выше), "fit" — показать всё найденное, "keep" — не двигать карту
   async function loadMap(mode = "auto") {
+    const seq = reqSeq;
+    if (!map) {
+      try { await loadLeaflet(true); }
+      catch {
+        if (seq !== reqSeq || state.view !== "map") return;
+        $("mapNote").textContent = "Карта не загрузилась. Откройте её ещё раз.";
+        $("mapNote").hidden = false;
+        return;
+      }
+      if (seq !== reqSeq || state.view !== "map") return;
+    }
     ensureMap();
     if (!map) return;
-    const seq = reqSeq;
     const guest = !me();
     let q = apiParams();
     if (guest && mode === "keep" && mapFitted) {
@@ -1232,7 +1272,7 @@
     ].filter(([, v]) => v != null && v !== "").map(([k, v]) => `<div${String(v).length > 13 ? ' class="wide"' : ""}><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("");
     const photos = o.photos || [];
     const gallery = photos.length
-      ? `<div class="dv-gal-wrap"><div class="dv-gal${photos.length === 1 ? " one" : ""}" data-lb="obj">${photos.map((u, i) => `<a href="${esc(u)}" aria-label="Открыть фото ${i + 1}"><img src="${esc(u)}" alt="${esc(o.title)} — фото ${i + 1}" ${i ? 'loading="lazy"' : ""}></a>`).join("")}</div>
+      ? `<div class="dv-gal-wrap"><div class="dv-gal${photos.length === 1 ? " one" : ""}" data-lb="obj">${photos.map((u, i) => `<a href="${esc(u)}" aria-label="Открыть фото ${i + 1}"><img src="${esc(compactScreen.matches ? pic(o, i) : u)}" data-full="${esc(u)}" alt="${esc(o.title)} — фото ${i + 1}" decoding="async" ${i ? 'loading="lazy"' : ""}></a>`).join("")}</div>
         ${photos.length > 1 ? `<button type="button" class="ph-nav prev" data-gal-step="-1" aria-label="Назад">${ic("chevron-left")}</button>
           <button type="button" class="ph-nav next" data-gal-step="1" aria-label="Вперёд">${ic("chevron")}</button>` : ""}</div>`
       : "";
@@ -1420,11 +1460,27 @@
 
 
   // Мини-карта в окне объекта: где он (примерное место — кругом)
-  let detailMap = null;
-  function drawDetailMap(o) {
+  let detailMap = null, detailMapObserver = null;
+  function clearDetailMap() {
+    detailMapObserver?.disconnect();
+    detailMapObserver = null;
     if (detailMap) { detailMap.remove(); detailMap = null; }
-    const el = document.getElementById("dvMap");
-    if (!el || !window.L || !o.lat || !o.lon || ["street", "district"].includes(o.geo_level)) return;
+  }
+  function watchDetailMap(o) {
+    const el = $("dvMap");
+    if (!el) return;
+    if (!window.IntersectionObserver) { drawDetailMap(el, o); return; }
+    detailMapObserver = new IntersectionObserver(([entry], observer) => {
+      if (!entry.isIntersecting) return;
+      observer.disconnect();
+      drawDetailMap(el, o);
+    }, { root: $("detail") });
+    detailMapObserver.observe(el);
+  }
+  async function drawDetailMap(el, o) {
+    try { await loadLeaflet(); }
+    catch { if (el.isConnected) el.textContent = "Карта не загрузилась"; return; }
+    if (!el.isConnected || !$("detail").open) return;
     detailMap = L.map(el, { zoomControl: false, scrollWheelZoom: false, dragging: !L.Browser.mobile, attributionControl: false })
       .setView([o.lat, o.lon], o.geo_approx ? 14 : 16);
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(detailMap);
@@ -1440,7 +1496,8 @@
       L.marker([o.lat, o.lon], { icon: L.divIcon({ className: "dv-pin-wrap", html: '<span class="dv-pin"></span>', iconSize: [28, 28], iconAnchor: [14, 28] }) }).addTo(detailMap);
     }
     L.control.zoom({ position: "bottomright" }).addTo(detailMap);
-    setTimeout(() => detailMap && detailMap.invalidateSize(), 250);   // окно раскрывается с анимацией
+    const drawn = detailMap;
+    requestAnimationFrame(() => { if (detailMap === drawn) drawn.invalidateSize(); });
   }
 
   // «Скрыть для себя»: объект пропадает только у этого агента (продан, не сотрудничает…), вернуть — «В работе» → «Скрытые»
@@ -1584,15 +1641,19 @@
     if (o.complex) return `ЖК ${o.complex}, Краснодар`;
     return `${o.district || ""} ${place}`.trim();
   }
-  function openGeoEdit(id) {
+  async function openGeoEdit(id) {
     const o = known.get(id) || {};
     geoId = id;
     const dlg = $("geoDlg");
     $("geoTitle").textContent = o.title || "Объект";
     $("geoAddr").textContent = address(o) || "адрес не указан";
     $("geoYa").href = `https://yandex.ru/maps/35/krasnodar/?text=${encodeURIComponent(yaQuery(o))}`;
+    $("geoSave").disabled = $("geoCoords").disabled = true;
+    $("geoNow").textContent = "Загружаем карту…";
     openDlg(dlg);
-    if (!window.L) { toast("Карта не загрузилась"); return; }
+    try { await loadLeaflet(); }
+    catch { toast("Карта не загрузилась"); return; }
+    if (!dlg.open || geoId !== id) return;
     const start = o.lat ? [o.lat, o.lon] : [45.035, 38.975];
     if (!geoMap) {
       geoMap = L.map("geoMap", { zoomControl: true, attributionControl: false });
@@ -1604,6 +1665,7 @@
       geoMarker.on("dragend", showGeoNow);
     }
     geoMarker.setLatLng(start);
+    $("geoSave").disabled = $("geoCoords").disabled = false;
     $("geoCoords").value = "";
     $("geoSkip").hidden = !geoQueue;
     $("geoLeft").textContent = "";
@@ -1789,7 +1851,9 @@
     placeAt = null;
     ++placeAtSeq;
     $("placeCoords").value = "";
-    if (!window.L) { $("placeGeoNow").textContent = "Карта не загрузилась"; return; }
+    try { await loadLeaflet(); }
+    catch { $("placeGeoNow").textContent = "Карта не загрузилась"; return; }
+    if (!$("placeDlg").open || (placeId !== o.id && o.id)) return;
     if (!placeMap) {
       placeMap = L.map("placeMap", { zoomControl: true, attributionControl: false });
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(placeMap);
@@ -1800,7 +1864,7 @@
       placeMap.setView([45.035, 38.975], 12);
     }
     await placeLoadZones();
-    if (placeId !== o.id && o.id) return;   // пока грузились районы, открыли другой объект
+    if (!$("placeDlg").open || (placeId !== o.id && o.id)) return;   // пока грузились районы, открыли другой объект
     // точки нет — метка в центре района объекта (по вашей карте), карта — по контуру района
     const zone = !o.lat && placeZone(o.district);
     const zb = zone ? zone.shape.getBounds() : null;
@@ -1815,6 +1879,7 @@
     fit(); setTimeout(fit, 120); setTimeout(fit, 500);
   }
   function placeCoordsGo() {
+    if (!placeMarker) return;
     const ll = parseCoords($("placeCoords").value);
     if (!ll) { toast("Не понял координаты. Пример: 45.0355, 38.9753"); return; }
     placeMove(ll, 17);
@@ -2224,25 +2289,41 @@
     nav.hidden = offers.length < 2 || at < 0;
     if (nav.hidden) return;
     const active = document.activeElement;
-    const focusStep = nav.contains(active) ? active.dataset.offerStep : null;
-    const focusPrice = nav.contains(active) && active.dataset.offerId;
     const current = offers[at];
-    const arrow = (step, label, symbol) => `<button type="button" class="offer-arrow" data-offer-step="${step}"
-      ${offers[at + step] ? "" : "disabled"} aria-label="${label}">${symbol}</button>`;
-    const freshness = current.confirmed_at ? `Владелец подтвердил актуальность ${fmtAgo(current.confirmed_at)}`
-      : `Последнее обновление: ${fmtAgo(current.last_seen)}`;
-    nav.innerHTML = `<div class="offer-nav-head">${arrow(-1, "Предыдущее предложение", "←")}
-      <div class="offer-nav-current"><b aria-live="polite">Предложение ${at + 1} из ${offers.length}</b>
-        <small>${esc(freshness)}${current.matches ? "" : " · вне текущих фильтров"}</small></div>
-      ${arrow(1, "Следующее предложение", "→")}</div>
-      <div class="offer-nav-prices" role="group" aria-label="Выбрать предложение">${offers.map((offer) => `<button type="button"
-        class="offer-price${offer.matches ? "" : " outside"}" data-offer-id="${offer.id}" aria-pressed="${offer.id === openedId}">
-        ${offer.source_label ? `<span class="offer-source">${esc(offer.source_label)}</span>` : ""}
-        ${esc(offer.price == null ? "Цена уточняется" : fmtPrice(offer.price, deal))}${offer.matches ? "" : `<span class="offer-outside">Вне фильтров</span>`}</button>`).join("")}</div>`;
-    const selected = nav.querySelector('[aria-pressed="true"]');
-    selected?.scrollIntoView({ block: "nearest", inline: "nearest" });
-    if (focusStep) (nav.querySelector(`[data-offer-step="${focusStep}"]:not(:disabled)`) || selected)?.focus({ preventScroll: true });
-    else if (focusPrice) selected?.focus({ preventScroll: true });
+    const count = nav.querySelector(".offer-count");
+    const number = `Предложение ${at + 1} из ${offers.length}`;
+    if (count.textContent !== number) count.textContent = number;
+    const status = nav.querySelector(".offer-status");
+    const freshness = current.confirmed_at ? `Подтверждено ${fmtAgo(current.confirmed_at)}`
+      : `Обновлено ${fmtAgo(current.last_seen)}`;
+    if (status.textContent !== freshness) status.textContent = freshness;
+    nav.querySelector('[data-offer-step="-1"]').disabled = at === 0;
+    nav.querySelector('[data-offer-step="1"]').disabled = at === offers.length - 1;
+    const rail = nav.querySelector(".offer-nav-prices");
+    const signature = JSON.stringify([deal, offers.map(o => [o.id, o.price, o.source_label, o.matches])]);
+    if (rail.dataset.offers !== signature) {
+      rail.innerHTML = offers.map((offer, i) => `<button type="button"
+        class="offer-price${offer.matches ? "" : " outside"}" data-offer-id="${offer.id}" aria-pressed="false">
+        <span class="offer-source">${esc(offer.source_label || `Агент ${i + 1}`)}</span>
+        <b>${esc(offer.price == null ? "Цена уточняется" : fmtPrice(offer.price, deal))}</b>
+        ${offer.matches ? "" : '<small class="offer-outside">Вне фильтров</small>'}</button>`).join("");
+      rail.dataset.offers = signature;
+    }
+    const previous = rail.querySelector('[aria-pressed="true"]');
+    const selected = rail.children[at];
+    if (previous !== selected) {
+      previous?.setAttribute("aria-pressed", "false");
+      selected.setAttribute("aria-pressed", "true");
+      if (rail.scrollWidth > rail.clientWidth) {
+        const left = selected.offsetLeft - rail.scrollLeft;
+        const right = left + selected.offsetWidth;
+        if (left < 0) rail.scrollLeft += left;
+        else if (right > rail.clientWidth) rail.scrollLeft += right - rail.clientWidth;
+      }
+    }
+    if ((nav.contains(active) && active.disabled) || (active?.dataset.offerId && !active.isConnected)) {
+      selected.focus({ preventScroll: true });
+    }
   }
 
   function stepOffer(step) {
@@ -2267,7 +2348,9 @@
     let start = null;
     dialog.addEventListener("touchstart", (event) => {
       const touch = event.touches[0];
-      start = event.touches.length === 1 && event.target.closest("#detailOffers, .dv-head")
+      const rail = event.target.closest(".offer-nav-prices");
+      const scrollable = rail && rail.scrollWidth > rail.clientWidth;
+      start = event.touches.length === 1 && !scrollable && event.target.closest("#detailOffers, .dv-head")
         ? [touch.clientX, touch.clientY] : null;
     }, { passive: true });
     dialog.addEventListener("touchend", (event) => {
@@ -2282,6 +2365,7 @@
 
   async function openDetail(id, opts = {}) {
     const dlg = $("detail");
+    const body = $("detailBody");
     const request = ++detailRequest;
     if (opts.push && openedId && dlg.open && openedId !== id) detailStack.push(openedId);
     if (!dlg.open) detailStack = [];
@@ -2292,16 +2376,21 @@
     openedId = id;
     $("detailBack").hidden = !detailStack.length;
     setOpenParam(id);
-    $("detailBody").innerHTML = `<div class="d-loading">${LOGO}<p>Открываем объект…</p></div>`;
-    // Сразу показываем то, что уже знаем (фото, цена, описание), номер и история догрузятся
+    clearDetailMap();
     const pre = known.get(id);
-    if (pre) $("detailBody").innerHTML = detailHTML({ ...pre, market: pre.offer_group ? null : pre.market,
-      phones_masked: null, history: [], loading: true });
+    body.setAttribute("aria-busy", "true");
+    if (pre && !compactScreen.matches) {
+      body.innerHTML = detailHTML({ ...pre, market: pre.offer_group ? null : pre.market,
+        phones_masked: null, history: [], loading: true });
+    } else {
+      body.innerHTML = `<div class="d-loading">${LOGO}<p id="dTitle">${pre ? esc(pre.title) : "Открываем объект…"}</p></div>`;
+    }
     openDlg(dlg);
-    renderDetailOffers(opts.deal || pre?.deal || state.deal);
+    renderDetailOffers(opts.deal || pre?.deal || detailGroup?.deal || state.deal);
     dlg.scrollTop = 0;
     const r = await call(`/api/listings/${id}`);  // тихие повторы — внутри call()
     if (request !== detailRequest) return;  // пока грузилось, открыли другой объект или закрыли окно
+    body.removeAttribute("aria-busy");
     if (r.ok) {
       // Подменяем содержимое без прыжка: та же прокрутка, мягкое проявление догруженного
       const top = dlg.scrollTop;
@@ -2314,12 +2403,12 @@
           ordered.delete(previous.id);
         }
         offers.push(...ordered.values());
-        detailGroup = { offers: offers.map((offer) => ({ ...offer, matches: !matchedOffers || matchedOffers.has(offer.id) })) };
+        detailGroup = { deal: r.data.deal, offers: offers.map((offer) => ({ ...offer, matches: !matchedOffers || matchedOffers.has(offer.id) })) };
       } else detailGroup = null;
       known.set(id, { ...(known.get(id) || {}), ...listing });
-      $("detailBody").innerHTML = detailHTML(r.data);
+      body.innerHTML = detailHTML(r.data);
       renderDetailOffers(r.data.deal);
-      drawDetailMap(r.data);
+      watchDetailMap(r.data);
       dlg.scrollTop = top;
       const fb = $("detailFav");
       if (!fb.innerHTML) fb.innerHTML = HEART;
@@ -2327,14 +2416,14 @@
       fb.classList.toggle("on", !!r.data.favorite);
       fb.setAttribute("aria-label", r.data.favorite ? "Убрать из избранного" : "В избранное");
     } else if (r.status === 404) {
-      $("detailBody").innerHTML = EMBED
+      body.innerHTML = EMBED
         ? `<p class="d-place">Этот объект уже сняли с продажи или удалили.</p>
           <button type="button" class="pill" data-close-dlg>Закрыть</button>`
         : `<p class="d-place">Этот объект уже сняли с продажи или обновили. Обновите список — он покажет актуальное.</p>
           <button type="button" class="pill" data-refresh-list>Обновить список</button>`;
       document.querySelectorAll(`.item[data-id="${id}"]`).forEach((el) => el.remove());
     } else {
-      $("detailBody").innerHTML = `<p class="d-place">Не получилось загрузить объект — похоже, пропала связь.</p>
+      body.innerHTML = `<p class="d-place">Не получилось загрузить объект — похоже, пропала связь.</p>
         <button type="button" class="pill" data-retry="${id}">Повторить</button>`;
     }
   }
@@ -3184,6 +3273,7 @@
     $("geoSkip").addEventListener("click", () => { closeDlg($("geoDlg")); nextInQueue(); });
     $("geoFind").addEventListener("submit", (e) => {
       e.preventDefault();
+      if ($("geoCoords").disabled) return;
       const ll = parseCoords($("geoCoords").value);
       if (!ll) { toast("Не понял координаты. Пример: 45.0355, 38.9753"); return; }
       geoMarker.setLatLng(ll);
@@ -3197,6 +3287,7 @@
       if (prev) openDetail(prev);
     });
     detail.addEventListener("close", () => {
+      clearDetailMap();
       $("detailBody").querySelector(".dv-videos")?.remove();
       detailRequest++; detailGroup = matchedOffers = null;
       detailStack = []; openedId = 0; setOpenParam(null); toParent("close");

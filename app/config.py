@@ -90,7 +90,6 @@ FEED_PHONE = os.getenv("FEED_PHONE", "+79618571772").strip()
 APPLET_CSV_URL = os.getenv("APPLET_CSV_URL", "").strip()
 APPLET_SLAVA_PHONES = os.getenv("APPLET_SLAVA_PHONES", "").strip()
 APPLET_ARTEM_PHONE = os.getenv("APPLET_ARTEM_PHONE", FEED_PHONE).strip()
-APPLET_SYNC_SECONDS = int(os.getenv("APPLET_SYNC_SECONDS", "60"))
 
 # Уведомления о сбоях в Telegram: бот от @BotFather и ник, кому писать (без @).
 # Ник должен сам написать боту /start — после этого бот запомнит, куда слать.
