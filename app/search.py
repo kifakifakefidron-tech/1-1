@@ -559,6 +559,8 @@ def mask_phone(p: str) -> str:
 
 def row_to_item(r: sqlite3.Row, with_contacts: bool) -> dict:
     d = {k: r[k] for k in PUBLIC_FIELDS}
+    if "ext_id" in r.keys() and (r["ext_id"] or "").startswith("appletv:"):
+        d["appletv"] = True
     from .parser import guard_phones, public_text
     d["description"] = guard_phones(d["description"])   # номеров в описании не отдаём никому — они в контакте
     if not with_contacts:   # списки и все без доступа: без имён агентов, комиссии и «номеров с опечатками» (152-ФЗ)
@@ -613,10 +615,12 @@ def search(conn: sqlite3.Connection, qr: Query, now: int, with_contacts: bool, *
 
 
 def _grouped_search(conn, qr, where, params, order, size, page):
-    from . import offers
+    from . import hooks, offers
 
     ids = [r[0] for r in conn.execute(f"SELECT l.id FROM listings l WHERE {where} ORDER BY {order}", params)]
-    groups = offers.groups(conn, qr.hide_user) if ids else {}
+    groups = offers.groups(conn) if ids else {}
+    hidden = offers.hidden_ids(conn, qr.hide_user)
+    matching = set(ids)
     seen = set()
     unique = []
     for lid in ids:
@@ -624,18 +628,23 @@ def _grouped_search(conn, qr, where, params, order, size, page):
         key = min(row["id"] for row in group) if group else lid
         if key not in seen:
             seen.add(key)
-            unique.append(lid)
+            site = next((r["id"] for r in group if offers.is_site(r) and r["id"] in matching), None) if group else None
+            unique.append(site or lid)
     chunk = unique[(page - 1) * size:page * size]
     items = []
     if chunk:
         rows = {r["id"]: r for r in conn.execute(f"SELECT l.*, {VERIFIED} AS verified FROM listings l "
                 f"WHERE l.is_active = 1 AND l.id IN ({','.join('?' * len(chunk))})", chunk)}
-        matching = set(ids)
         for lid in chunk:
             if lid in rows:
                 item = row_to_item(rows[lid], False)
                 if lid in groups:
-                    item["offer_group"] = offers.summary(groups[lid], matching)
+                    group = groups[lid]
+                    visible = [row for row in group if row["id"] not in hidden]
+                    summary = offers.summary(visible, matching)
+                    item["market"] = hooks.offer_market(conn, group, summary["min_price"])
+                    if len(visible) > 1:
+                        item["offer_group"] = summary
                 items.append(item)
     return {"total": len(unique), "page": page, "pages": (len(unique) + size - 1) // size, "items": items}
 

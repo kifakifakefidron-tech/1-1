@@ -10,13 +10,14 @@ import re
 import sqlite3
 import time
 import urllib.request
-from urllib.parse import urlsplit
 
 from . import config, db, geo, rules
 from .textnorm import norm, words
 
 PREFIX = "appletv:"
+STAYL = PREFIX + "stayl:"
 SYNCED = "appletv_synced"
+SPLIT = "appletv_separate_offers"
 REPLACED = "appletv_chat"
 REMOVED = "appletv_removed"
 MAX_BYTES = 8_000_000
@@ -55,6 +56,11 @@ def only_catalog_phones(phones, managed: set[str]) -> bool:
     return bool(actual) and actual <= managed
 
 
+def exclude_catalog_contacts(phones: list[str], roles: dict, managed: set[str]) -> tuple[list[str], dict]:
+    return ([p for p in phones if rules.normalize_phone(p) not in managed],
+            {p: role for p, role in roles.items() if rules.normalize_phone(p) not in managed})
+
+
 def drops_chat(text: str, sender: str | None, managed: set[str]) -> bool:
     if not managed:
         return False
@@ -82,7 +88,7 @@ def _listing_type(value: str) -> tuple[str, int | None, str | None]:
     raise ValueError("Неизвестный тип объекта в таблице «Яблоня»")
 
 
-def _sheet_row(r: list[str], phones: list[str]) -> dict:
+def _sheet_row(r: list[str]) -> dict:
     from . import parser
 
     code, room, area_text, price_text = r[2], r[3], r[10], r[11]
@@ -107,14 +113,21 @@ def _sheet_row(r: list[str], phones: list[str]) -> dict:
     floor, floors = rules.extract_floor(r[9])
     if floor is None and re.fullmatch(r"\d{1,2}", r[9]):
         floor = int(r[9])
-    # В исходном описании бывает код сейфа. Показываем только нормализованное состояние.
+    # Свободный текст может содержать коды и данные владельца. Описание собираем из открытых характеристик.
+    condition_text = norm(r[13])
     condition = rules.detect_repair(r[13])
-    if condition is None and norm(r[13]).startswith("рем"):
+    if condition is None and condition_text.startswith("рем"):
         condition = "yes"
-    description = "Без ремонта" if condition == "no" else "С ремонтом" if condition == "yes" else ""
-    url = r[29].splitlines()[0].strip() if r[29] else ""
-    parsed = urlsplit(url)
-    url = url if parsed.scheme == "https" and parsed.hostname == "arrowsrealty.ru" and "/tproduct/" in parsed.path else None
+    finish = ("Предчистовая отделка" if re.search(r"\bпчо\b|предчистов", condition_text)
+              else "Частичный ремонт" if "частичный ремонт" in condition_text
+              else {"no": "Без ремонта", "yes": "С ремонтом"}.get(condition))
+    description = [finish] if finish else []
+    if re.search(r"(?:^|/)меб(?:ель)?(?:/|$)", condition_text):
+        description.append("Есть мебель")
+    if re.search(r"(?:^|/)тех(?:ника)?(?:/|$)", condition_text):
+        description.append("Есть техника")
+    if norm(r[15]) == "нет":
+        description.append("Без обременений")
     if code:
         identifier = "article:" + code
     else:
@@ -123,8 +136,8 @@ def _sheet_row(r: list[str], phones: list[str]) -> dict:
     return {"ext_id": PREFIX + identifier, "article": code or None, "type": otype, "deal": "sale", "rooms": rooms,
             "room_kind": room_kind, "floor": floor, "floors": floors, "area": area, "land": None,
             "district": district, "complex": complex_name, "settlement": p["settlement"], "street": p["street"],
-            "house": p["house"], "description": description, "fragment": place, "repair": condition,
-            "price": price, "phones": phones, "url": url}
+            "house": p["house"], "description": "\n".join(description), "fragment": place, "repair": condition,
+            "price": price}
 
 
 def parse_csv(body: bytes) -> list[dict]:
@@ -147,13 +160,19 @@ def parse_csv(body: bytes) -> list[dict]:
         if not (s or a) or not r[3]:
             continue  # подписи-пустышки в незаполненных строках
         from_site = bool(r[2] or re.search(r"\b(?:артикул\w*|презентаци\w*|фото(?:графи\w*)?)\b", norm(r[31])))
-        phones = [*(slava if s else ()), *([artem] if a and not from_site else [])]
-        if not phones:
+        if not s and not (a and not from_site):
             continue
-        item = _sheet_row(r, phones)
-        old = result.setdefault(item["ext_id"], item)
-        if old != item:
-            raise ValueError("В «Яблоне» две разные строки имеют один ключ объекта")
+        row_data = _sheet_row(r)
+        row_id = row_data["ext_id"]
+        subscriptions = []
+        if s:
+            subscriptions.append((row_id, list(slava)))
+        if a and not from_site:
+            subscriptions.append((STAYL + row_id.removeprefix(PREFIX), [artem]))
+        for ext, phones in subscriptions:
+            item = {**row_data, "ext_id": ext, "phones": phones}
+            if result.setdefault(ext, item) != item:
+                raise ValueError("В «Яблоне» две разные строки имеют один ключ объекта")
     if not (slava_seen and artem_seen):
         raise ValueError("В CSV «Яблони» не найдены оба раздела агентов")
     return list(result.values())
@@ -165,7 +184,7 @@ def sync(conn: sqlite3.Connection, body: bytes, now: int | None = None) -> dict:
 
     now = int(now or time.time())
     slava, artem = numbers()
-    signature = hashlib.sha256(body + repr((slava, artem, db.get_state(conn, "feed_synced"))).encode()).hexdigest()
+    signature = hashlib.sha256(body + repr((SPLIT, slava, artem, db.get_state(conn, "feed_synced"))).encode()).hexdigest()
     if db.get_state(conn, "appletv_snapshot") == signature:
         return {"unchanged": True}
     items = parse_csv(body)  # сначала проверяем весь снимок, потом меняем базу
@@ -173,12 +192,14 @@ def sync(conn: sqlite3.Connection, body: bytes, now: int | None = None) -> dict:
     stats = dict(total=len(items), added=0, updated=0, hidden=0, chat_replaced=0)
     with conn:
         initial = not db.get_state(conn, SYNCED)
+        splitting = not db.get_state(conn, SPLIT)
         existing = {r["ext_id"]: r for r in conn.execute("SELECT * FROM listings WHERE ext_id LIKE 'appletv:%'")}
-        yml = {r["article"]: r for r in conn.execute("""SELECT id, article, photos, url FROM listings
+        yml = {r["article"]: r["id"] for r in conn.execute("""SELECT id, article FROM listings
              WHERE source='feed' AND ext_id LIKE 'feed:%' AND is_active=1 AND article IS NOT NULL
              GROUP BY article HAVING COUNT(*) = 1""")}
         banned = {r[0] for r in conn.execute("SELECT key FROM banned WHERE kind='feed'")}
         seen = set()
+        saved = {}
         for item in items:
             ext = item["ext_id"]
             seen.add(ext)
@@ -187,13 +208,12 @@ def sync(conn: sqlite3.Connection, body: bytes, now: int | None = None) -> dict:
             prev = existing.get(ext)
             if prev and prev["hidden_reason"] in ("admin", "phone"):
                 continue
-            site = yml.get(item["article"])
             if item["complex"]:
                 item["complex"] = None if geoaudit.is_junk_complex(item["complex"]) else cxnorm.canonical(conn, item["complex"])
-            item.update(title=make_title(item), photos=site["photos"] if site else "[]",
+            item.update(title=make_title(item), photos="[]", url=None,
                         price_m2=_price_m2(item["price"], item["area"]),
                         rooms_mask=rules.rooms_mask(item["room_kind"], item["rooms"]),
-                        url=site["url"] if site and site["url"] else item["url"], phones=json.dumps(item["phones"]))
+                        phones=json.dumps(item["phones"]))
             item["search_text"] = make_search_text(item)
             cols = tuple(item)
             if prev:
@@ -204,26 +224,42 @@ def sync(conn: sqlite3.Connection, body: bytes, now: int | None = None) -> dict:
                     _reindex(conn, prev["id"], item["search_text"])
                     stats["updated"] += 1
             else:
+                old_combined = splitting and ext.startswith(STAYL) and PREFIX + ext.removeprefix(STAYL) in existing
                 lid = conn.execute(f"INSERT INTO listings ({', '.join(cols)}, source,first_seen,last_seen,catalog_migrated) "
-                                   f"VALUES ({','.join('?' * len(cols))},'feed',?,?,?)", (*item.values(), now, now, initial)).lastrowid
+                                   f"VALUES ({','.join('?' * len(cols))},'feed',?,?,?)",
+                                   (*item.values(), now, now, initial or old_combined)).lastrowid
                 _reindex(conn, lid, item["search_text"])
                 stats["added"] += 1
-            if site:
+            saved[ext] = lid
+            if site := yml.get(item["article"]):
                 conn.execute("""INSERT OR IGNORE INTO dup_pairs(a,b,kind,status,created_at)
                                 VALUES (?,?,'applet_article','market',?)""",
-                             (min(lid, site["id"]), max(lid, site["id"]), now))
+                             (*sorted((lid, site)), now))
+        for ext, lid in saved.items():
+            if ext.startswith(STAYL) and (slava_id := saved.get(PREFIX + ext.removeprefix(STAYL))):
+                conn.execute("""INSERT OR IGNORE INTO dup_pairs(a,b,kind,status,created_at)
+                                VALUES (?,?,'applet_row','market',?)""", (*sorted((lid, slava_id)), now))
         for ext, old in existing.items():
             if ext not in seen and old["is_active"]:
                 conn.execute("UPDATE listings SET is_active=0,hidden_reason=? WHERE id=?", (REMOVED, old["id"]))
                 stats["hidden"] += 1
-        if initial:
-            for old in conn.execute("SELECT id, phones FROM listings WHERE source='chat' AND is_active=1").fetchall():
-                if only_catalog_phones(json.loads(old["phones"] or "[]"), managed):
+        if splitting:
+            for old in conn.execute("""SELECT id, phones, phone_roles FROM listings WHERE source='chat' AND is_active=1
+                AND ((json_valid(phones) AND EXISTS (SELECT 1 FROM json_each(phones) WHERE value IN (?, ?, ?)))
+                     OR (json_valid(phone_roles) AND EXISTS (SELECT 1 FROM json_each(phone_roles) WHERE key IN (?, ?, ?))))""",
+                                    (*slava, artem, *slava, artem)).fetchall():
+                phones = json.loads(old["phones"] or "[]")
+                cleaned, roles = exclude_catalog_contacts(phones, json.loads(old["phone_roles"] or "{}"), managed)
+                if phones and not cleaned:
                     conn.execute("UPDATE listings SET is_active=0,hidden_reason=? WHERE id=?", (REPLACED, old["id"]))
                     stats["chat_replaced"] += 1
+                else:
+                    conn.execute("UPDATE listings SET phones=?,phone_roles=? WHERE id=?",
+                                 (json.dumps(cleaned), json.dumps(roles), old["id"]))
+            conn.execute("INSERT OR REPLACE INTO state(key,value) VALUES (?, '1')", (SPLIT,))
         conn.execute("INSERT OR REPLACE INTO state(key,value) VALUES (?,?)", (SYNCED, str(now)))
         conn.execute("INSERT OR REPLACE INTO state(key,value) VALUES ('appletv_snapshot',?)", (signature,))
-        if any(stats[k] for k in ("added", "updated", "hidden", "chat_replaced")):
+        if splitting or any(stats[k] for k in ("added", "updated", "hidden", "chat_replaced")):
             conn.execute("INSERT OR REPLACE INTO state(key,value) VALUES ('cache_ver',?)", (str(time.time()),))
     return stats
 

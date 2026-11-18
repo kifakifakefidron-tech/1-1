@@ -1620,6 +1620,7 @@ html:has(#detailOffers):not(.map-mode, .embed) { scrollbar-gutter: stable; }
 .offer-price { flex: 0 0 auto; min-height: 34px; white-space: nowrap; }
 .offer-price[aria-pressed="true"] { background: var(--gold); border-color: var(--gold); color: #0f2f2e; }
 .offer-price.outside:not([aria-pressed="true"]) { border-style: dashed; }
+.offer-source { display: block; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
 .offer-outside { display: block; font-weight: 400; font-size: 11px; }
 .detail:has(.detail-offers:not([hidden])) .dv-head { touch-action: pan-y; }
 @media (pointer: coarse) {

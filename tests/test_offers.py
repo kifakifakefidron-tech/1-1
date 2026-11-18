@@ -1,7 +1,7 @@
 import json
 import time
 
-from app import offers, search
+from app import hooks, offers, search
 
 
 def listing(conn, phone, *, price=6800000, floor=16, house="59", media=("a", "b"), deal="sale"):
@@ -74,3 +74,30 @@ def test_groups_honor_hidden_offers_and_real_owner_confirmation(conn):
     assert [(r["id"], r["confirmed_at"]) for r in group["offers"]] == [(a, now), (b, None)]
     conn.execute("INSERT INTO hidden_listings(user_id,listing_id,ts) VALUES (1,?,?)", (b, now))
     assert not offers.groups(conn, hide_user=1)
+
+
+def test_strely_first_with_own_media_and_one_market_basis(conn, monkeypatch):
+    now = int(time.time())
+    site = listing(conn, "79000000001", price=5_400_000, media=("a", "b"))
+    other = listing(conn, "79000000002", price=5_400_000, media=("c", "d"))
+    conn.execute("UPDATE listings SET source='feed',ext_id='feed:1',price_m2=100000 WHERE id=?", (site,))
+    conn.execute("""UPDATE listings SET source='feed',ext_id='appletv:article:1',price_m2=80000,area=67.5,
+                    repair='no',last_seen=? WHERE id=?""", (now + 100, other))
+    decide(conn, site, other, "market")
+    for i in range(20):
+        lid = listing(conn, f"7900000001{i:02}", house=str(i + 100), price=5_400_000, media=())
+        conn.execute("UPDATE listings SET price_m2=100000,repair='no' WHERE id=?", (lid,))
+    monkeypatch.setattr(hooks, "_market", {"t": 0, "data": {}})
+    group = offers.groups(conn)[other]
+    assert [row["id"] for row in group] == [site, other]
+    main_market = hooks.offer_market(conn, group, 5_400_000)
+    assert main_market["diff"] == 0 and main_market["price"] == 5_400_000 and main_market["n"] == 21
+    assert hooks.offer_market(conn, group, 4_320_000)["diff"] == -20
+    conn.execute("UPDATE listings SET price=4320000,price_m2=64000 WHERE id=?", (other,))
+    result = search.search(conn, search.Query(price_max=5_000_000), now, False, group_offers=True)
+    item = result["items"][0]
+    assert item["id"] == other and item["photos"][0] == f"/photos/{other}/" + "c" * 16 + ".jpg"
+    assert item["market"]["diff"] == -20
+    assert [(o["id"], o["matches"]) for o in item["offer_group"]["offers"]] == [(site, False), (other, True)]
+    item = next(i for i in search.search(conn, search.Query(), now, False, group_offers=True)["items"] if i.get("offer_group"))
+    assert item["id"] == site and item["photos"][0] == f"/photos/{site}/" + "a" * 16 + ".jpg"

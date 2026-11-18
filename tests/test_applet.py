@@ -3,7 +3,7 @@ import io
 import json
 import time
 
-from app import applet, config, feed, ingest, parser, search, stats
+from app import applet, config, db, feed, ingest, parser, search, stats
 
 
 SLAVA = ("+79000000011", "+79000000012")
@@ -39,8 +39,9 @@ def test_catalog_scope_price_and_private_columns(monkeypatch):
                                      values(addr="Западный Обход 39/3", presentation=True)))
     assert items[0]["price"] == 6_000_000 and items[0]["house"] == "39/1 к6"
     assert items[0]["floor"] == 7 and items[0]["area"] == 38
-    assert items[0]["phones"] == list(SLAVA)
-    assert items[1]["phones"] == [*SLAVA, ARTEM] and items[2]["phones"] == list(SLAVA)
+    assert [item["phones"] for item in items] == [list(SLAVA), list(SLAVA), [ARTEM], list(SLAVA)]
+    assert items[2]["ext_id"].startswith(applet.STAYL)
+    assert items[0]["description"].splitlines() == ["С ремонтом", "Есть мебель", "Есть техника"]
     assert all("9999" not in json.dumps(item) and "79000000019" not in json.dumps(item) for item in items)
 
 
@@ -52,10 +53,13 @@ def test_refresh_keeps_yml_and_updates_or_removes_source_row(conn, monkeypatch):
     feed.sync(conn, yml)
     original = conn.execute("SELECT id FROM listings WHERE ext_id='feed:site733'").fetchone()[0]
     result = applet.sync(conn, snapshot(a, b))
-    assert result["added"] == 2
+    assert result["added"] == 3
     entry = conn.execute("SELECT id,photos FROM listings WHERE ext_id='appletv:article:733'").fetchone()
-    assert json.loads(entry["photos"]) == ["https://example.test/public.jpg"]
+    assert json.loads(entry["photos"]) == []
+    assert json.loads(conn.execute("SELECT photos FROM listings WHERE id=?", (original,)).fetchone()[0]) == [
+        "https://example.test/public.jpg"]
     assert conn.execute("SELECT status FROM dup_pairs WHERE a=? AND b=?", (original, entry["id"])).fetchone()[0] == "market"
+    assert conn.execute("SELECT COUNT(*) FROM dup_pairs WHERE kind='applet_row'").fetchone()[0] == 1
     feed.sync(conn, yml)
     assert conn.execute("SELECT is_active,phones FROM listings WHERE id=?", (entry["id"],)).fetchone()[0] == 1
     assert json.loads(conn.execute("SELECT phones FROM listings WHERE id=?", (entry["id"],)).fetchone()[0]) == list(SLAVA)
@@ -65,9 +69,9 @@ def test_refresh_keeps_yml_and_updates_or_removes_source_row(conn, monkeypatch):
         pass
     else:
         raise AssertionError("Усечённый CSV принят")
-    assert conn.execute("SELECT COUNT(*) FROM listings WHERE source='feed' AND is_active=1").fetchone()[0] == 3
+    assert conn.execute("SELECT COUNT(*) FROM listings WHERE source='feed' AND is_active=1").fetchone()[0] == 4
     a[11] = "р.6150"
-    assert applet.sync(conn, snapshot(a))["hidden"] == 1
+    assert applet.sync(conn, snapshot(a))["hidden"] == 2
     assert conn.execute("SELECT price FROM listings WHERE id=?", (entry["id"],)).fetchone()[0] == 6_150_000
     assert conn.execute("SELECT is_active FROM listings WHERE id=?", (original,)).fetchone()[0] == 1
     assert conn.execute("SELECT hidden_reason FROM listings WHERE ext_id LIKE 'appletv:row:%'").fetchone()[0] == applet.REMOVED
@@ -95,3 +99,29 @@ def test_initial_replace_is_not_activity_and_authors_skip_before_parsing(conn, m
         mid = ingest.add_message(conn, source=source, text=text, sender=sender, ts=now)
         assert ingest.process_message(conn, mid)["status"] == "appletv"
     assert not applet.drops_chat("Ищу 2к квартиру в ФМР для клиента", ARTEM, applet.active_numbers(conn))
+
+
+def test_upgrade_splits_existing_contacts_without_new_listing_stats(conn, monkeypatch):
+    configure(monkeypatch)
+    body = snapshot(values())
+    slava, *_ = applet.parse_csv(body)
+    now = int(time.time())
+    conn.execute("""INSERT INTO listings(type,deal,title,phones,first_seen,last_seen,source,ext_id,photos,catalog_migrated)
+                    VALUES ('flat','sale','Объект',?,?,?,'feed',?,'["old_photo"]',1)""",
+                 (json.dumps([*SLAVA, ARTEM]), now, now, slava["ext_id"]))
+    conn.execute("""INSERT INTO listings(type,deal,title,phones,phone_roles,first_seen,last_seen)
+                    VALUES ('flat','sale','Чужой объект',?,?,?,?)""",
+                 (json.dumps([ARTEM, "+79000000019"]), json.dumps({SLAVA[0]: "sender"}), now, now))
+    conn.commit()
+    before = stats.collect(conn, now)["listings"]["added"]
+    db.set_state(conn, applet.SYNCED, str(now - 60))
+    conn.execute("DELETE FROM state WHERE key='appletv_media_cleanup'")
+    db._migrate(conn)
+    old = conn.execute("SELECT photos,phones FROM listings WHERE ext_id=?", (slava["ext_id"],)).fetchone()
+    assert json.loads(old["photos"]) == [] and json.loads(old["phones"]) == list(SLAVA)
+    assert applet.sync(conn, body)["added"] == 1
+    entries = conn.execute("SELECT phones,photos FROM listings ORDER BY id").fetchall()
+    assert [json.loads(entry["phones"]) for entry in entries] == [list(SLAVA), ["+79000000019"], [ARTEM]]
+    assert all(json.loads(entry["photos"]) == [] for entry in entries)
+    assert stats.collect(conn, now)["listings"]["added"] == before
+    assert applet.sync(conn, body)["unchanged"]

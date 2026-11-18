@@ -337,8 +337,10 @@ def _price_m2(price, area) -> int | None:
 def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: int | None, ts: int) -> tuple[int, str]:
     """Создаёт новый объект или обновляет найденный дубль. Возвращает (id, как сопоставили)."""
     from . import applet
-    if message_id is not None and applet.only_catalog_phones(o.phones, applet.active_numbers(conn)):
-        return 0, "appletv"
+    if message_id is not None and (managed := applet.active_numbers(conn)):
+        if applet.only_catalog_phones(o.phones, managed):
+            return 0, "appletv"
+        o.phones, o.phone_roles = applet.exclude_catalog_contacts(o.phones, o.phone_roles, managed)
     # Правки админа (ЖК/район) — до поиска дублей: объявление совпадёт с уже исправленной карточкой
     osmaddr.apply(conn, o)      # опечатка в улице («Командоская») — до правил и дублей: одна улица, а не две
     from . import placehints

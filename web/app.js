@@ -412,19 +412,23 @@
 
   // ─── результаты ─────────────────────────────────────────────────────────
   // Отметки на карточке: новое за сутки, цена снизилась (за 2 недели), заметно ниже рынка
-  function badgesHTML(o) {
+  const marketLabel = (diff) => diff <= -3 ? `Ниже рынка на ${-diff}%` : diff >= 3 ? `Выше рынка на ${diff}%` : "По рынку";
+
+  function badgesHTML(o, inSearch = false) {
     const now = loadedAt || Date.now() / 1000;
     const b = [];
     const st = myStatus(o.id);
     if (st) b.push(`<span class="mark crm crm-${st}">${STATUSES[st]}</span>`);
-    if (o.source === "feed") b.push(`<span class="mark partner" title="Объект партнёра «СТРЕЛЫ»">${STRELY}СТРЕЛЫ</span>`);
+    if (o.appletv) b.push('<span class="mark">Яблоня</span>');
+    else if (o.source === "feed") b.push(`<span class="mark partner" title="Объект партнёра «СТРЕЛЫ»">${STRELY}СТРЕЛЫ</span>`);
     if (o.verified && o.source !== "feed") b.push(`<span class="mark verified" title="Агент подтвердил свой номер в 1+1">✓ ${innerWidth < 640 ? "Проверен" : "Проверенный агент"}</span>`);
     if (o.first_seen > now - 86400) b.push(`<span class="mark new">Новое</span>`);
     if (o.prev_price && o.price && o.prev_price > o.price && o.price_changed_at > now - 14 * 86400 && o.hot !== "drop") {   // у горячей — строка под ценой
       b.push(`<span class="mark down">Цена ↓ ${esc(fmtShortPrice(o.prev_price - o.price, o.deal))}</span>`);
     }
     // у горячей карточки «ниже рынка» показывает шкала под ценой — отметкой не дублируем
-    if (o.market_diff != null && !o.hot) b.push(`<span class="mark good" title="${o.market_n ? `сравнили с ${o.market_n} похожими объектами` : ""}">ниже рынка на ${Math.abs(o.market_diff)}%</span>`);
+    if (inSearch && o.market) b.push(`<span class="mark${o.market.diff <= -3 ? " good" : ""}" title="${esc(o.market.base)}">${marketLabel(o.market.diff)}</span>`);
+    else if (o.market_diff != null && !o.hot) b.push(`<span class="mark good" title="${o.market_n ? `сравнили с ${o.market_n} похожими объектами` : ""}">${marketLabel(o.market_diff)}</span>`);
     if (o.price_doubt) b.push(`<span class="mark doubt" title="Цена в объявлении записана неоднозначно — уточните у агента">цена под вопросом</span>`);
     return b.length ? `<div class="marks">${b.join("")}</div>` : "";
   }
@@ -548,9 +552,10 @@
   function itemHTML(o) {
     const group = favMode ? null : o.offer_group;
     const hit = hitSince && o.first_seen > hitSince;   // новое в этом поиске — выделяем один раз
-    const tag = (hit ? `<div class="marks"><span class="mark hit">Новое в вашем поиске</span></div>` : "") + badgesHTML(o);
     const price = group ? group.min_price : o.price;
     const ownPrice = price === o.price && !group?.price_range;
+    const tag = (hit ? `<div class="marks"><span class="mark hit">Новое в вашем поиске</span></div>` : "") +
+      badgesHTML(ownPrice ? o : { ...o, prev_price: null }, true);
     const m2 = ownPrice && o.price_m2 && o.deal !== "rent" ? `<div class="price-m2">${num(o.price_m2)} ₽/м²</div>` : "";
     const priceLabel = (group ? price == null && o.price_doubt : o.price_doubt) ? "Цена уточняется"
       : `${group?.price_range ? "от " : ""}${fmtPrice(price, o.deal)}`;
@@ -571,7 +576,7 @@
       <button type="button" class="fav-btn${fav ? " on" : ""}" data-fav="${o.id}" aria-label="${fav ? "Убрать из избранного" : "В избранное"}">${HEART}</button>
       ${headline(o) ? `<h3 class="item-head">${esc(headline(o))}</h3>` : ""}
       <div class="item-price"><div class="price">${esc(priceLabel)}</div>${o.price_doubt ? "" : m2}</div>
-      ${ownPrice ? hotHTML(o) : ""}
+      ${ownPrice && !o.market ? hotHTML(o) : ""}
       <div class="item-title">${esc(o.title)}</div>
       ${tag}
       ${addr ? `<div class="item-place">${esc(addr)}</div>` : ""}
@@ -1251,8 +1256,8 @@
     const chart = priceChartHTML(o, true);
     const priceBody = (days != null ? `<p class="dv-line">⏳ ${days < 1 ? "<b>Новое на 1+1</b> — появилось сегодня" : `На 1+1 — <b>${esc(daysText(days))}</b>`}
           <small>${o.appletv ? "считаем с первой загрузки объявления из базы «Яблоня»" : "считаем с первого появления объявления в чатах риелторов"}</small></p>` : "")
-      + (m ? `<p class="dv-line">${m.diff <= -3 ? `Дешевле рынка на <b>${-m.diff}%</b>` : m.diff >= 3 ? `Дороже рынка на <b>${m.diff}%</b>` : "<b>По рынку</b>"}
-          <small>средняя цена м² — ${esc(num(m.median))} ₽ · ${esc(m.base)}, ${m.n} ${plural(m.n, "объект", "объекта", "объектов")}</small></p>` : "")
+      + (m ? `<p class="dv-line"><b>${marketLabel(m.diff)}</b>
+          <small>медиана цены м² — ${esc(num(m.median))} ₽ · ${esc(m.base)}, ${m.n} ${plural(m.n, "объект", "объекта", "объектов")}</small></p>` : "")
       + chart;
     const priceHint = [days != null ? `${days < 1 ? "новое" : days + " дн."}` : "", chart ? "график" : ""].filter(Boolean).join(" · ");
     const pairs = o.pairs || [];
@@ -1984,7 +1989,7 @@
           ${m.whatsapp ? `<div class="dv-pass-acts one"><a class="gold" href="https://wa.me/${esc(p.replace(/\D/g, ""))}" target="_blank" rel="noopener">${ic("chat")}Написать в WhatsApp</a></div>`
             : `<div class="dv-pass-acts${m.no_max ? " one" : ""}"><a class="gold" href="tel:${esc(p)}">${ic("phone")}Позвонить</a>
             ${m.no_max ? "" : `<button type="button" class="line" data-max="${esc(p)}">${ic("chat")}Написать в MAX</button>`}</div>`}</div>`;
-      }).join("")}${o.url ? `<a class="dv-site${o.source === "feed" ? " strely" : ""}" href="${esc(o.url)}" target="_blank" rel="noopener">${o.source === "feed"
+      }).join("")}${o.url ? `<a class="dv-site${o.source === "feed" && !o.appletv ? " strely" : ""}" href="${esc(o.url)}" target="_blank" rel="noopener">${o.source === "feed" && !o.appletv
         ? `${STRELY}<span>Объект партнёра «СТРЕЛЫ» — смотреть на arrowsrealty.ru</span>${ic("external")}` : `${ic("link")}Объявление на сайте агентства`}</a>` : ""}</div>`;
     }
     if (o.phones_limit) {
@@ -2208,7 +2213,7 @@
   function openSearchCard(id) {
     const item = known.get(id);
     const group = favMode ? null : item?.offer_group;
-    const preferred = group?.offers.find((offer) => offer.matches);
+    const preferred = group?.offers.find((offer) => offer.site) || group?.offers.find((offer) => offer.matches);
     openDetail(preferred?.id || id, { group, deal: item?.deal, fromSearch: !favMode });
   }
 
@@ -2232,6 +2237,7 @@
       ${arrow(1, "Следующее предложение", "→")}</div>
       <div class="offer-nav-prices" role="group" aria-label="Выбрать предложение">${offers.map((offer) => `<button type="button"
         class="offer-price${offer.matches ? "" : " outside"}" data-offer-id="${offer.id}" aria-pressed="${offer.id === openedId}">
+        ${offer.source_label ? `<span class="offer-source">${esc(offer.source_label)}</span>` : ""}
         ${esc(offer.price == null ? "Цена уточняется" : fmtPrice(offer.price, deal))}${offer.matches ? "" : `<span class="offer-outside">Вне фильтров</span>`}</button>`).join("")}</div>`;
     const selected = nav.querySelector('[aria-pressed="true"]');
     selected?.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -2289,7 +2295,8 @@
     $("detailBody").innerHTML = `<div class="d-loading">${LOGO}<p>Открываем объект…</p></div>`;
     // Сразу показываем то, что уже знаем (фото, цена, описание), номер и история догрузятся
     const pre = known.get(id);
-    if (pre) $("detailBody").innerHTML = detailHTML({ ...pre, phones_masked: null, history: [], loading: true });
+    if (pre) $("detailBody").innerHTML = detailHTML({ ...pre, market: pre.offer_group ? null : pre.market,
+      phones_masked: null, history: [], loading: true });
     openDlg(dlg);
     renderDetailOffers(opts.deal || pre?.deal || state.deal);
     dlg.scrollTop = 0;

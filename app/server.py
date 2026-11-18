@@ -653,7 +653,7 @@ def _gone_reason(row) -> dict:
 
 
 def api_listing(request: Request, body: dict | None = None):
-    from . import applet
+    from . import applet, offers
     conn = db.get()
     lid = int(request.path_params["id"])
     user = current_user(request)
@@ -665,8 +665,6 @@ def api_listing(request: Request, body: dict | None = None):
     d = search.listing_detail(conn, lid, access and not retired, bool(user and user["is_admin"]))
     if not d:
         return _err("не найдено", 404)
-    if (row["ext_id"] or "").startswith(applet.PREFIX):
-        d["appletv"] = True
     if retired:
         d["phones_masked"] = []
         if row["hidden_reason"] == applet.REPLACED:
@@ -714,9 +712,9 @@ def api_listing(request: Request, body: dict | None = None):
         ver = {r[0] for r in conn.execute(f"SELECT phone FROM agent_phones WHERE phone IN ({','.join('?' * len(phones))})", phones)}
         d["phones_meta"] = {p: {"confirmed": p in ver or p in config.ALWAYS_VERIFIED or p in pf["published"],
                                 "no_max": p in pf["no_max"]} for p in phones}
-        if d.get("appletv"):
+        if d.get("appletv") or offers.is_site(row):
             for phone, (name, whatsapp) in applet.contact_labels().items():
-                if phone in d["phones_meta"]:
+                if phone in d["phones_meta"] and (d.get("appletv") or phone == config.APPLET_ARTEM_PHONE):
                     d["phones_meta"][phone].update(name="" if phone in pf["no_name"] else name, whatsapp=whatsapp)
         if any(p in pf["no_name"] for p in phones):
             d["description"] = parser.mask_names(d.get("description") or "")
@@ -734,15 +732,21 @@ def api_listing(request: Request, body: dict | None = None):
             d["text_price"] = {"price": tp, "ts": row["description_ts"] or row["last_seen"]}
     d["can_edit"] = bool(user) and agent.can_edit(conn, user, row)[0]
     # 31.10: «к рынку» и «почему горячее» — по тем же 15+ похожим, что фильтр; если их меньше — строка «к рынку» по 3+ (ЖК) / 5+ (район)
-    hot_mk = hooks.market_for(conn, d, hooks.HOT_MIN_N) if not row["price_doubt"] else None
-    d["market"] = hot_mk or (hooks.market_for(conn, d) if not row["price_doubt"] else None)
-    d["hot"] = hooks.is_hot({**d, "price_doubt": row["price_doubt"], "market_diff_raw": row["market_diff"]})
+    group = offers.for_listing(conn, row) if row["is_active"] else None
+    if group:
+        d["market"] = hooks.offer_market(conn, group, None if row["price_doubt"] else row["price"])
+        hidden = offers.hidden_ids(conn, user["id"] if user else None)
+        visible = [item for item in group if item["id"] not in hidden]
+        if len(visible) > 1:
+            d["offer_group"] = offers.summary(visible)
+        mk = d["market"]
+        diff = mk["diff"] if mk and mk["n"] >= hooks.HOT_MIN_N else None
+    else:
+        hot_mk = hooks.market_for(conn, d, hooks.HOT_MIN_N) if not row["price_doubt"] else None
+        d["market"] = hot_mk or (hooks.market_for(conn, d) if not row["price_doubt"] else None)
+        diff = row["market_diff"]
+    d["hot"] = hooks.is_hot({**d, "price_doubt": row["price_doubt"], "market_diff_raw": diff})
     d["same"] = hooks.same_elsewhere(conn, row)
-    if row["is_active"] and (row["type"] in ("flat", "new") or row["source"] == "feed"):
-        from . import offers
-        group = offers.for_listing(conn, row, user["id"] if user else None)
-        if group:
-            d["offer_group"] = offers.summary(group)
     tools_access = bool(user and access)
     d["tools_access"] = tools_access
     d["note"] = hooks.get_note(conn, user["id"], lid) if tools_access else None

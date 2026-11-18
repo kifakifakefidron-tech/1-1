@@ -575,6 +575,18 @@ def _migrate(conn: sqlite3.Connection) -> None:
                                                   WHEN source = 'chat' THEN 'stale' ELSE 'other' END
                         WHERE is_active = 0 AND removed_at IS NULL""", (config.STALE_DAYS * 86400,))
         conn.execute("INSERT OR REPLACE INTO state(key, value) VALUES ('removed_backfill', '1')")
+    if not conn.execute("SELECT 1 FROM state WHERE key = 'appletv_media_cleanup'").fetchone():
+        # В первом импорте карточки «Яблони» получали галерею из YML.
+        conn.execute("UPDATE listings SET photos = '[]', url = NULL WHERE ext_id LIKE 'appletv:%'")
+        from .rules import normalize_phone
+
+        artem = normalize_phone(config.APPLET_ARTEM_PHONE)
+        if artem:
+            conn.execute("""UPDATE listings SET phones = (
+                                SELECT json_group_array(value) FROM json_each(listings.phones) WHERE value != ?)
+                            WHERE ext_id LIKE 'appletv:row:%' AND json_valid(phones)
+                              AND json_array_length(phones) > 1""", (artem,))
+        conn.execute("INSERT OR IGNORE INTO state(key, value) VALUES ('appletv_media_cleanup', '1')")
     conn.commit()
 
 

@@ -43,12 +43,23 @@ def _compatible(a, b) -> bool:
     return not (a["complex"] and b["complex"] and geo.complex_key(a["complex"]) != geo.complex_key(b["complex"]))
 
 
+def is_site(row) -> bool:
+    return row["source"] == "feed" and (row["ext_id"] or "").startswith("feed:")
+
+
+def hidden_ids(conn: sqlite3.Connection, user_id: int | None) -> set[int]:
+    if not user_id:
+        return set()
+    return {row[0] for row in conn.execute("SELECT listing_id FROM hidden_listings WHERE user_id = ?", (user_id,))}
+
+
 def groups(conn: sqlite3.Connection, hide_user: int | None = None) -> dict:
     """Каждый участник группы должен совпадать с каждым. Решение «разные» отменяет автоматическую связь."""
     decisions = {(a, b): status for a, b, status in conn.execute(
         "SELECT a, b, status FROM dup_pairs WHERE status IN ('market', 'diff', 'split')")}
     rows = {r["id"]: r for r in conn.execute("""SELECT l.id, l.source, l.type, l.deal, l.settlement, l.street, l.house,
         l.complex, l.rooms, l.room_kind, l.floor, l.floors, l.area, l.photos, l.phones, l.price, l.price_doubt, l.last_seen,
+        l.ext_id, l.district, l.repair, l.price_m2,
         CASE WHEN l.source = 'own' THEN (SELECT MAX(e.ts) FROM listing_edits e
             WHERE e.listing_id = l.id AND e.field = 'confirm' AND e.new = '"yes"' AND e.reverted = 0) END AS confirmed_at
         FROM listings l WHERE l.is_active = 1 AND (
@@ -81,14 +92,13 @@ def groups(conn: sqlite3.Connection, hide_user: int | None = None) -> dict:
         if left != right and all((min(i, j), max(i, j)) in pairs for i in left for j in right):
             group = tuple(sorted(left + right))
             linked.update(dict.fromkeys(group, group))
-    hidden = {r[0] for r in conn.execute("SELECT listing_id FROM hidden_listings WHERE user_id = ?", (hide_user,))} \
-        if hide_user else set()
+    hidden = hidden_ids(conn, hide_user)
     result = {}
     for ids in set(linked.values()):
         active = [rows[lid] for lid in ids if lid not in hidden]
         if len(active) < 2:
             continue
-        group = tuple(sorted(active, key=lambda r: (not r["confirmed_at"], -r["last_seen"], -r["id"])))
+        group = tuple(sorted(active, key=lambda r: (not is_site(r), not r["confirmed_at"], -r["last_seen"], -r["id"])))
         result.update(dict.fromkeys((row["id"] for row in group), group))
     return result
 
@@ -103,8 +113,10 @@ def for_listing(conn: sqlite3.Connection, row: sqlite3.Row, hide_user: int | Non
 
 def summary(group, matching: set[int] | None = None) -> dict:
     offers = [{"id": r["id"], "price": None if r["price_doubt"] else r["price"], "last_seen": r["last_seen"],
+               "source_label": "СТРЕЛЫ" if is_site(r) else "Яблоня" if (r["ext_id"] or "").startswith("appletv:") else None,
+               "site": is_site(r),
                "confirmed_at": r["confirmed_at"], "matches": matching is None or r["id"] in matching} for r in group]
-    offers.sort(key=lambda offer: not offer["matches"])
+    offers.sort(key=lambda offer: (not offer["site"], not offer["matches"]))
     prices = [offer["price"] for offer in offers if offer["matches"] and offer["price"] is not None]
     return {"offers": offers, "matching": sum(offer["matches"] for offer in offers),
             "min_price": min(prices, default=None), "price_range": bool(prices and min(prices) != max(prices))}
