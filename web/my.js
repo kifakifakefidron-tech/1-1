@@ -310,7 +310,8 @@
     const maxMb = data.max_video_bytes / 1e6;
     return `${current ? `<video controls playsinline preload="none" src="${esc(o.video_url)}" aria-label="Загруженное видео"></video>` : ""}
       <div class="my-video-actions">
-        <label class="my-f"><span>Видеофайл</span><input type="file" id="myVideoFile" accept=".mp4,.webm,video/mp4,video/webm"></label>
+        <input type="file" id="myVideoFile" accept=".mp4,.webm,video/mp4,video/webm" hidden>
+        <button type="button" class="pill light" data-video-pick>${current || pendingVideo ? "Выбрать другой файл" : "Выбрать видеофайл"}</button>
         ${pendingVideo !== undefined ? `<button type="button" class="pill light" data-video-reset>Отменить</button>`
           : current ? `<button type="button" class="pill light" data-video-remove>Удалить видео</button>` : ""}
       </div>
@@ -544,6 +545,7 @@
     }
     if (t.hasAttribute("data-ai-close")) { $("myAiBox").hidden = true; return; }
     if (t.id === "myAddPhone") { const m = $("myMorePh"); m.hidden = !m.hidden; t.classList.toggle("on", !m.hidden); return; }
+    if (t.hasAttribute("data-video-pick")) { $("myVideoFile").click(); return; }
     if (t.hasAttribute("data-video-reset") || t.hasAttribute("data-video-remove")) {
       pendingVideo = t.hasAttribute("data-video-remove") ? null : undefined;
       refreshVideoControls();
