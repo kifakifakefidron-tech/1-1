@@ -585,9 +585,8 @@ def row_to_item(r: sqlite3.Row, with_contacts: bool) -> dict:
     return d
 
 
-def search(conn: sqlite3.Connection, qr: Query, now: int, with_contacts: bool) -> dict:
+def search(conn: sqlite3.Connection, qr: Query, now: int, with_contacts: bool, *, group_offers: bool = False) -> dict:
     where, params = _where(qr, now)
-    total = conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {where}", params).fetchone()[0]
     size = max(1, min(qr.size, 100))
     page = max(1, qr.page)
     # Объекты СТРЕЛ сортируются вместе со всеми, без вывода вперёд (решение 07.10)
@@ -596,6 +595,9 @@ def search(conn: sqlite3.Connection, qr: Query, now: int, with_contacts: bool) -
         order = f"l.price IS NULL, ABS(l.price - {int(qr.budget_near)}) ASC, l.id DESC"
     if qr.hl:   # новое в сохранённом поиске — наверх
         order = f"(l.first_seen > {int(qr.hl)}) DESC, " + order
+    if group_offers:
+        return _grouped_search(conn, qr, where, params, order, size, page)
+    total = conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {where}", params).fetchone()[0]
     rows = conn.execute(
         f"SELECT l.*, {VERIFIED} AS verified FROM listings l WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
         params + [size, (page - 1) * size],
@@ -606,6 +608,34 @@ def search(conn: sqlite3.Connection, qr: Query, now: int, with_contacts: bool) -
         "pages": (total + size - 1) // size,
         "items": [row_to_item(r, with_contacts) for r in rows],
     }
+
+
+def _grouped_search(conn, qr, where, params, order, size, page):
+    from . import offers
+
+    ids = [r[0] for r in conn.execute(f"SELECT l.id FROM listings l WHERE {where} ORDER BY {order}", params)]
+    groups = offers.groups(conn, qr.hide_user) if ids else {}
+    seen = set()
+    unique = []
+    for lid in ids:
+        group = groups.get(lid)
+        key = min(row["id"] for row in group) if group else lid
+        if key not in seen:
+            seen.add(key)
+            unique.append(lid)
+    chunk = unique[(page - 1) * size:page * size]
+    items = []
+    if chunk:
+        rows = {r["id"]: r for r in conn.execute(f"SELECT l.*, {VERIFIED} AS verified FROM listings l "
+                f"WHERE l.is_active = 1 AND l.id IN ({','.join('?' * len(chunk))})", chunk)}
+        matching = set(ids)
+        for lid in chunk:
+            if lid in rows:
+                item = row_to_item(rows[lid], False)
+                if lid in groups:
+                    item["offer_group"] = offers.summary(groups[lid], matching)
+                items.append(item)
+    return {"total": len(unique), "page": page, "pages": (len(unique) + size - 1) // size, "items": items}
 
 
 def map_points(conn: sqlite3.Connection, qr: Query, now: int) -> dict:

@@ -533,27 +533,36 @@
   }
 
   function itemHTML(o) {
+    const group = favMode ? null : o.offer_group;
+    const count = group?.offers.length;
+    const groupLabel = count ? (group.matching === count ? `${count} ${plural(count, "предложение", "предложения", "предложений")}`
+      : `Подходит ${group.matching} из ${count}`) : "";
     const hit = hitSince && o.first_seen > hitSince;   // новое в этом поиске — выделяем один раз
     const tag = (hit ? `<div class="marks"><span class="mark hit">Новое в вашем поиске</span></div>` : "") + badgesHTML(o);
-    const m2 = o.price_m2 && o.deal !== "rent" ? `<div class="price-m2">${num(o.price_m2)} ₽/м²</div>` : "";
+    const price = group ? group.min_price : o.price;
+    const ownPrice = price === o.price && !group?.price_range;
+    const m2 = ownPrice && o.price_m2 && o.deal !== "rent" ? `<div class="price-m2">${num(o.price_m2)} ₽/м²</div>` : "";
+    const priceLabel = (group ? price == null && o.price_doubt : o.price_doubt) ? "Цена уточняется"
+      : `${group?.price_range ? "от " : ""}${fmtPrice(price, o.deal)}`;
     const n = (o.photos || []).length;
     const photo = n
       ? `<div class="item-photo" data-ph="0"><img src="${esc(pic(o, 0))}" data-full="${esc(o.photos[0])}" alt="${esc(o.title)}" loading="lazy" decoding="async">${n > 1 ? `
           <button type="button" class="ph-nav prev" data-ph-step="-1" aria-label="Предыдущее фото">${ic("chevron-left")}</button>
           <button type="button" class="ph-nav next" data-ph-step="1" aria-label="Следующее фото">${ic("chevron")}</button>
           <span class="ph-count">1 / ${n}</span>` : ""}</div>`
-      : `<div class="item-photo none" aria-hidden="true">${LOGO}<span>Фото у агента</span></div>`;
+      : `<div class="item-photo none">${LOGO}<span>Фото у агента</span></div>`;
     const fav = me() && me().favorites.includes(o.id);
     const addr = address(o);
     // 31.10 (Артём): цену снизили — «Снижение» (стрелка вниз), заметно дешевле похожих — «Горячее» (огонёк)
     const hotRib = o.hot === "drop" ? `<span class="hot-ribbon drop" aria-label="Цена снижена">${ic("arrow-down")}Снижение</span>`
       : o.hot ? `<span class="hot-ribbon" aria-label="Горячее предложение">${FLAME}Горячее</span>` : "";
+    const groupBadge = groupLabel ? `<span class="item-offer-count">${esc(groupLabel)}</span>` : "";
     return `<li class="item has-photo${hit ? " hit" : ""}${o.hot ? " hot" : ""}" tabindex="0" data-id="${o.id}">
-      ${photo.replace('<div class="item-photo', `<div class="item-photo${o.hot ? " has-rib" : ""}`).replace(/(<div class="item-photo[^>]*>)/, `$1${hotRib}`)}
+      ${photo.replace('<div class="item-photo', `<div class="item-photo${o.hot ? " has-rib" : ""}`).replace(/(<div class="item-photo[^>]*>)/, `$1${hotRib}${groupBadge}`)}
       <button type="button" class="fav-btn${fav ? " on" : ""}" data-fav="${o.id}" aria-label="${fav ? "Убрать из избранного" : "В избранное"}">${HEART}</button>
       ${headline(o) ? `<h3 class="item-head">${esc(headline(o))}</h3>` : ""}
-      <div class="item-price"><div class="price">${o.price_doubt ? "Цена уточняется" : esc(fmtPrice(o.price, o.deal))}</div>${o.price_doubt ? "" : m2}</div>
-      ${hotHTML(o)}
+      <div class="item-price"><div class="price">${esc(priceLabel)}</div>${o.price_doubt ? "" : m2}</div>
+      ${ownPrice ? hotHTML(o) : ""}
       <div class="item-title">${esc(o.title)}</div>
       ${tag}
       ${addr ? `<div class="item-place">${esc(addr)}</div>` : ""}
@@ -564,6 +573,7 @@
         ${me()?.access ? `<button type="button" class="cmp-btn cli-btn" data-client-open="${o.id}" title="Клиенту: в подборку клиента" aria-label="Клиенту">${ic("users")}</button>` : ""}
         <button type="button" class="cmp-btn${cmp.includes(o.id) ? " on" : ""}" data-cmp="${o.id}" title="Сравнить" aria-label="Добавить к сравнению">⚖</button>
       </div>
+      ${favMode ? "" : `<button type="button" class="pill item-open" data-open-object aria-haspopup="dialog">Открыть объект</button>`}
     </li>`;
   }
 
@@ -639,7 +649,7 @@
         const items = favStatus ? favItems.filter((o) => (favStatus === "none" ? !o.status : o.status === favStatus)) : favItems;
         data = { total: items.length, page: 1, pages: 1, items };
       } else {
-        data = await getJSON(`/api/listings?${apiParams({ page, size: PAGE_SIZE })}`);
+        data = await getJSON(`/api/listings?${apiParams({ page, size: PAGE_SIZE, group_offers: 1 })}`);
       }
     } catch {
       if (seq === reqSeq) $("count").textContent = "Не получилось загрузить. Обновите страницу.";
@@ -1259,7 +1269,8 @@
     const plans = (o.plans || []);
     const plansBody = plans.length ? `<ul class="dv-list">${plans.map((p) => `<li><a href="/planner?event=${p.id}">${PLAN_KINDS[p.kind] || ""} · ${esc(when(p.ts))}</a>${p.done ? " ✓" : ""}
       <small>${esc(p.title)}</small></li>`).join("")}</ul>` : "";
-    const same = o.same || [];
+    const grouped = new Set((o.offer_group?.offers || []).map((offer) => offer.id));
+    const same = (o.same || []).filter((offer) => !grouped.has(offer.id));
     const sameBody = same.length ? `<p class="note">Тот же или очень похожий объект у других агентов — сверьте детали.</p>
       <ul class="dv-list">${same.map((s) => `<li><button type="button" class="link" data-open-id="${s.id}">${esc(fmtPrice(s.price, o.deal))}</button>
         <small>${esc(s.title)} · ${esc(fmtAgo(s.last_seen))}</small></li>`).join("")}</ul>` : "";
@@ -1444,6 +1455,7 @@
     if ($("detail").open) closeDlg($("detail"));
     document.querySelectorAll(`.item[data-id="${id}"]`).forEach((el) => { el.style.transition = "opacity .3s, transform .3s"; el.style.opacity = "0"; el.style.transform = "scale(.96)"; setTimeout(() => el.remove(), 300); });
     if (map) loadMap("keep");
+    if (!favMode && state.view === "list") loadList();
     toast("Скрыто для вас. Вернуть — «В работе» → «Скрытые»", 3500);
   }
 
@@ -2112,7 +2124,7 @@
   async function checkNew() {
     if (document.hidden || favMode || !loadedAt || Date.now() - lastNewCheck < 20000) return;
     lastNewCheck = Date.now();
-    const r = await call(`/api/listings?${apiParams({ size: 1, since: loadedAt })}`);
+    const r = await call(`/api/listings?${apiParams({ size: 1, since: loadedAt, group_offers: 1 })}`);
     if (r.ok && r.data.total > 0) {
       $("newCount").textContent = num(r.data.total);
       $("newPill").hidden = false;
@@ -2169,6 +2181,9 @@
 
   const known = new Map();  // объекты, которые уже пришли списком/картой — для мгновенного открытия
   let openedId = 0;
+  let detailRequest = 0;
+  let detailGroup = null;
+  let matchedOffers = null;
   // Переходы между объектами внутри окна («продают ещё N агентов») — со стрелкой «Назад»
   let detailStack = [];
   function setOpenParam(id) {
@@ -2178,10 +2193,84 @@
     history.replaceState(null, "", s ? `?${s}` : location.pathname);
   }
 
+  function openSearchCard(id) {
+    const item = known.get(id);
+    const group = favMode ? null : item?.offer_group;
+    const preferred = group?.offers.find((offer) => offer.matches);
+    openDetail(preferred?.id || id, { group, deal: item?.deal, fromSearch: !favMode });
+  }
+
+  function renderDetailOffers(deal) {
+    const nav = $("detailOffers");
+    const offers = detailGroup?.offers || [];
+    const at = offers.findIndex((offer) => offer.id === openedId);
+    nav.hidden = offers.length < 2 || at < 0;
+    if (nav.hidden) return;
+    const active = document.activeElement;
+    const focusStep = nav.contains(active) ? active.dataset.offerStep : null;
+    const focusPrice = nav.contains(active) && active.dataset.offerId;
+    const current = offers[at];
+    const arrow = (step, label, symbol) => `<button type="button" class="offer-arrow" data-offer-step="${step}"
+      ${offers[at + step] ? "" : "disabled"} aria-label="${label}">${symbol}</button>`;
+    const freshness = current.confirmed_at ? `Владелец подтвердил актуальность ${fmtAgo(current.confirmed_at)}`
+      : `Последнее обновление: ${fmtAgo(current.last_seen)}`;
+    nav.innerHTML = `<div class="offer-nav-head">${arrow(-1, "Предыдущее предложение", "←")}
+      <div class="offer-nav-current"><b aria-live="polite">Предложение ${at + 1} из ${offers.length}</b>
+        <small>${esc(freshness)}${current.matches ? "" : " · вне текущих фильтров"}</small></div>
+      ${arrow(1, "Следующее предложение", "→")}</div>
+      <div class="offer-nav-prices" role="group" aria-label="Выбрать предложение">${offers.map((offer) => `<button type="button"
+        class="offer-price${offer.matches ? "" : " outside"}" data-offer-id="${offer.id}" aria-pressed="${offer.id === openedId}">
+        ${esc(offer.price == null ? "Цена уточняется" : fmtPrice(offer.price, deal))}${offer.matches ? "" : `<span class="offer-outside">Вне фильтров</span>`}</button>`).join("")}</div>`;
+    const selected = nav.querySelector('[aria-pressed="true"]');
+    selected?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (focusStep) (nav.querySelector(`[data-offer-step="${focusStep}"]:not(:disabled)`) || selected)?.focus({ preventScroll: true });
+    else if (focusPrice) selected?.focus({ preventScroll: true });
+  }
+
+  function stepOffer(step) {
+    const offers = detailGroup?.offers;
+    const at = offers?.findIndex((offer) => offer.id === openedId) ?? -1;
+    if (at < 0 || !offers[at + step]) return false;
+    openDetail(offers[at + step].id);
+    return true;
+  }
+
+  function bindOfferNavigation(dialog) {
+    $("detailOffers").addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (button?.dataset.offerStep) stepOffer(Number(button.dataset.offerStep));
+      else if (button?.dataset.offerId && Number(button.dataset.offerId) !== openedId) openDetail(Number(button.dataset.offerId));
+    });
+    dialog.addEventListener("keydown", (event) => {
+      if (event.target.closest("dialog") !== dialog || event.target.closest("input, textarea, select, [contenteditable], .dv-gal-wrap, .leaflet-container")) return;
+      const step = { ArrowLeft: -1, ArrowRight: 1 }[event.key];
+      if (step && stepOffer(step)) event.preventDefault();
+    });
+    let start = null;
+    dialog.addEventListener("touchstart", (event) => {
+      const touch = event.touches[0];
+      start = event.touches.length === 1 && event.target.closest("#detailOffers, .dv-head")
+        ? [touch.clientX, touch.clientY] : null;
+    }, { passive: true });
+    dialog.addEventListener("touchend", (event) => {
+      if (!start) return;
+      const touch = event.changedTouches[0];
+      const dx = touch.clientX - start[0], dy = touch.clientY - start[1];
+      start = null;
+      if (Math.abs(dx) >= 46 && Math.abs(dx) > Math.abs(dy) * 1.5) stepOffer(dx < 0 ? 1 : -1);
+    }, { passive: true });
+    dialog.addEventListener("touchcancel", () => { start = null; });
+  }
+
   async function openDetail(id, opts = {}) {
     const dlg = $("detail");
+    const request = ++detailRequest;
     if (opts.push && openedId && dlg.open && openedId !== id) detailStack.push(openedId);
     if (!dlg.open) detailStack = [];
+    if (!dlg.open || opts.fromSearch || !detailGroup?.offers.some((offer) => offer.id === id)) {
+      detailGroup = opts.group || null;
+      matchedOffers = detailGroup ? new Set(detailGroup.offers.filter((offer) => offer.matches).map((offer) => offer.id)) : null;
+    }
     openedId = id;
     $("detailBack").hidden = !detailStack.length;
     setOpenParam(id);
@@ -2190,14 +2279,27 @@
     const pre = known.get(id);
     if (pre) $("detailBody").innerHTML = detailHTML({ ...pre, phones_masked: null, history: [], loading: true });
     openDlg(dlg);
+    renderDetailOffers(opts.deal || pre?.deal || state.deal);
     dlg.scrollTop = 0;
     const r = await call(`/api/listings/${id}`);  // тихие повторы — внутри call()
-    if (openedId !== id) return;  // пока грузилось, открыли другой объект
+    if (request !== detailRequest) return;  // пока грузилось, открыли другой объект или закрыли окно
     if (r.ok) {
       // Подменяем содержимое без прыжка: та же прокрутка, мягкое проявление догруженного
       const top = dlg.scrollTop;
-      known.set(id, { ...(known.get(id) || {}), ...r.data });
+      const { offer_group: group, ...listing } = r.data;
+      if (group) {
+        const ordered = new Map(group.offers.map((offer) => [offer.id, offer]));
+        const offers = [];
+        for (const previous of detailGroup?.offers || []) {
+          if (ordered.has(previous.id)) offers.push(ordered.get(previous.id));
+          ordered.delete(previous.id);
+        }
+        offers.push(...ordered.values());
+        detailGroup = { offers: offers.map((offer) => ({ ...offer, matches: !matchedOffers || matchedOffers.has(offer.id) })) };
+      } else detailGroup = null;
+      known.set(id, { ...(known.get(id) || {}), ...listing });
       $("detailBody").innerHTML = detailHTML(r.data);
+      renderDetailOffers(r.data.deal);
       drawDetailMap(r.data);
       dlg.scrollTop = top;
       const fb = $("detailFav");
@@ -3022,14 +3124,15 @@
       }
       if (e.target.closest("[data-fav], [data-cmp], .plan-btn")) return;
       const li = e.target.closest(".item");
-      if (li) openDetail(Number(li.dataset.id));
+      if (li) openSearchCard(Number(li.dataset.id));
     });
     $("results").addEventListener("keydown", (e) => {
       const li = e.target.closest(".item");
-      if (li && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openDetail(Number(li.dataset.id)); }
+      if (li && li === e.target && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openSearchCard(Number(li.dataset.id)); }
     });
 
     const detail = $("detail");
+    bindOfferNavigation(detail);
     $("closeDetail").addEventListener("click", () => closeDlg(detail));
     $("geoSave").addEventListener("click", () => {
       const ll = geoMarker.getLatLng();
@@ -3076,6 +3179,7 @@
     });
     detail.addEventListener("close", () => {
       $("detailBody").querySelector(".dv-videos")?.remove();
+      detailRequest++; detailGroup = matchedOffers = null;
       detailStack = []; openedId = 0; setOpenParam(null); toParent("close");
     });
 

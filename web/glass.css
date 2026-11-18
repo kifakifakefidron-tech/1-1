@@ -1565,6 +1565,43 @@ summary { transition: color .2s var(--m-out); }
 .hot-chip[aria-pressed="true"], .hot-chip.on { background: linear-gradient(160deg, var(--gold-200), var(--gold-300)); color: #0f2f2e; border-color: transparent; }
 .hot-chip[aria-pressed="true"] .hot-n, .hot-chip.on .hot-n { background: rgba(15, 47, 46, .15); }
 .item.hot { box-shadow: 0 0 0 1.5px var(--gold), 0 10px 30px rgba(227, 203, 143, .18); }
+
+/* Предложения агентов занимают одно место в выдаче. */
+html:has(#detailOffers):not(.map-mode, .embed) { scrollbar-gutter: stable; }
+.item-photo .item-offer-count {
+  position: absolute; z-index: 2; left: 8px; bottom: 8px;
+  padding: 4px 9px; border-radius: 999px; background: var(--gold); color: #0f2f2e;
+  font: 600 11px/1.3 var(--body); box-shadow: 0 2px 8px #012a2b55;
+}
+.item .item-open { width: 100%; margin-top: 9px; min-height: 38px; padding: 7px 8px; }
+.detail-offers[hidden] { display: none; }
+.detail:has(.detail-offers:not([hidden])) .d-tools {
+  width: max-content; height: auto; margin: 0 0 0 auto; padding: 12px;
+}
+.detail-offers {
+  clear: both; padding: 8px 16px 12px; border-bottom: 1px solid var(--line);
+  background: var(--chip); touch-action: pan-y;
+}
+.offer-nav-head { display: grid; grid-template-columns: 36px minmax(0, 1fr) 36px; gap: 8px; align-items: center; }
+.offer-nav-current { text-align: center; }
+.offer-nav-current b, .offer-nav-current small { display: block; }
+.offer-nav-current small { color: var(--ink-2); font-size: 12px; }
+.offer-arrow, .offer-price {
+  border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px;
+  color: var(--ink); background: var(--chip); font: 600 13px var(--body); cursor: pointer;
+}
+.offer-arrow { min-height: 36px; padding: 0; font-size: 20px; }
+.offer-arrow:disabled { opacity: .35; cursor: default; }
+.offer-nav-prices { display: flex; justify-content: safe center; gap: 6px; margin-top: 8px; overflow-x: auto; }
+.offer-price { flex: 0 0 auto; min-height: 34px; white-space: nowrap; }
+.offer-price[aria-pressed="true"] { background: var(--gold); border-color: var(--gold); color: #0f2f2e; }
+.offer-price.outside:not([aria-pressed="true"]) { border-style: dashed; }
+.offer-outside { display: block; font-weight: 400; font-size: 11px; }
+.detail:has(.detail-offers:not([hidden])) .dv-head { touch-action: pan-y; }
+@media (pointer: coarse) {
+  .item .item-open, .offer-arrow, .offer-price { min-height: 44px; }
+  .offer-nav-head { grid-template-columns: 44px minmax(0, 1fr) 44px; }
+}
 .item-photo.has-rib { overflow: hidden; }
 .hot-ribbon { position: absolute; left: -40px; top: 28px; z-index: 3; transform: rotate(-45deg); width: 160px; height: 24px; line-height: 24px;
   text-align: center; padding: 0 0 0 .12em; box-sizing: border-box; white-space: nowrap;   /* центр (40, 40) — на диагонали угла: слово посередине */

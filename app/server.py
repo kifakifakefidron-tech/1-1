@@ -576,7 +576,7 @@ def api_listings(request: Request, body: dict | None = None):
         now = int(time.time())
         qr = query_from(request)
         qr.hide_user = hider
-        res = search.search(db.get(), qr, now, False)
+        res = search.search(db.get(), qr, now, False, group_offers=request.query_params.get("group_offers") == "1")
         hooks.annotate(db.get(), res["items"])   # «ниже рынка на N %»
         if qr.q:   # как поняли фразу из строки поиска — чипами над выдачей
             ph = search.parse_phrase(qr.q, qr.deal)
@@ -721,6 +721,11 @@ def api_listing(request: Request, body: dict | None = None):
     d["market"] = hot_mk or (hooks.market_for(conn, d) if not row["price_doubt"] else None)
     d["hot"] = hooks.is_hot({**d, "price_doubt": row["price_doubt"], "market_diff_raw": row["market_diff"]})
     d["same"] = hooks.same_elsewhere(conn, row)
+    if row["is_active"] and row["type"] in ("flat", "new"):
+        from . import offers
+        group = offers.for_listing(conn, row, user["id"] if user else None)
+        if group:
+            d["offer_group"] = offers.summary(group)
     tools_access = bool(user and access)
     d["tools_access"] = tools_access
     d["note"] = hooks.get_note(conn, user["id"], lid) if tools_access else None
