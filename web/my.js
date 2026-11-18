@@ -32,7 +32,7 @@
   }
   const money = (p, deal) => (!p ? "цена не указана" : deal === "rent" ? `${Math.round(p).toLocaleString("ru-RU")} ₽/мес`
     : `${(p / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} млн ₽`);
-  const fmtDay = (ts) => new Date(ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+  const fmtDay = (ts) => new Date(ts * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long", timeZone: "Europe/Moscow" });
   const head = (o) => (o.complex ? `ЖК ${o.complex}` : o.district || (o.street ? `ул. ${o.street}` : o.title));
   const place = (o) => [o.district, o.street && `ул. ${o.street}${o.house ? ", " + o.house : ""}`].filter(Boolean).join(" · ");
 
@@ -60,20 +60,27 @@
     const it = (icon, n, t) => `<span title="${t} за 30 дней">${ic(icon)}<b>${n}</b><i>${t}</i></span>`;
     return `<div class="my4-stats">${it("eye", s.views, "просмотры")}${it("phone", s.phone, "номер")}${it("heart", s.fav, "избранное")}${it("stack", s.picks, "подборки")}</div>`;
   }
+  function lifetime(o) {
+    if (!o.is_active) return o.delete_at ? `В архиве · удаление с ${fmtDay(o.delete_at)}` : "Снято с сайта";
+    if (!o.live_until) return "На сайте";
+    const days = Math.max(0, Math.ceil((o.live_until * 1000 - Date.now()) / 86400000));
+    return days ? `На сайте до ${fmtDay(o.live_until)} · ${days} ${plural(days, "день", "дня", "дней")}` : "Срок размещения заканчивается";
+  }
   // 24.10c: карточка — та же, что в ленте главной (lcard.js), плюс источник, статистика и кнопки
   function itemCard(o) {
     const sold = !o.is_active, own = o.source === "own", site = o.source === "feed";
     return LCard.html(o, {
-      href: o.can_edit ? `/my/edit?id=${o.id}` : `/?open=${o.id}`,
+      href: o.can_edit || (!data.access && !site) ? `/my/edit?id=${o.id}` : `/?open=${o.id}`,
       noPhoto: o.can_edit ? "Добавить фото" : "Фото у агента",
       cls: "my4",
       top: `<span class="lc-tag${site ? " gold" : ""}">${own ? "Добавлен вами" : site ? "С сайта" : "Из чатов"}</span>`,
-      extra: statsHTML(o) + `<p class="lc-line">${ic("clock")}${sold ? "снят" : own && o.expires_at ? `на сайте до ${fmtDay(o.expires_at)}` : "на сайте"}</p>`,
+      extra: statsHTML(o) + `<p class="lc-line">${ic("clock")}${esc(lifetime(o))}</p>`,
       meta: "",
       foot: `<div class="lc-acts">${o.can_edit ? `<a class="lc-btn main" href="/my/edit?id=${o.id}">${ic("edit")}Изменить</a>
           <button type="button" class="lc-btn" data-status="${sold ? "active" : "sold"}" data-id="${o.id}" title="${sold ? "Снова показывать на сайте" : "Продано — снять с сайта"}">${sold ? "Вернуть" : "Продано"}</button>`
         : site ? `<span class="my-note">Цена, фото и описание меняются на сайте агентства</span>`
-        : `<span class="my-note">Этой карточкой управляет другой агент</span>`}
+        : !data.access ? `<a class="lc-btn main" href="/my/edit?id=${o.id}">${ic("lock")}О редактировании</a>`
+        : `<span class="my-note">${esc(o.edit_reason || "Редактирование недоступно")}</span>`}
         <a class="lc-btn eye" href="/?open=${o.id}" title="Как видят коллеги" aria-label="Как видят коллеги">${ic("eye")}</a></div>`,
     });
   }
@@ -122,7 +129,8 @@
           ${items.length ? `<p class="my3-nums">${nums.map(([k, t]) => `<span><b>${k}</b>${t}</span>`).join("")}</p>`
             : `<p>Объекты с вашего сайта, объявления из чатов и добавленные вами — в одном месте.</p>`}</div>
         ${data.phones.length ? (data.access ? `<a class="pill my-add" href="/my/edit">${ic("plus")}Добавить объект</a>`
-          : `<a class="pill light" href="/pay">Добавлять — с подпиской</a>`) : ""}</header>
+          : `<a class="pill light" href="/pay">Оформить подписку</a>`) : ""}</header>
+      ${!data.access && items.length ? `<p class="my-rules">Объявления остаются привязаны к вашему номеру. Для редактирования оформите подписку.</p>` : ""}
       ${verifyBlock()}
       ${data.phones.length || items.length ? `
         <div class="my5-bar">
@@ -133,7 +141,8 @@
         </div>
         <div id="myGrid"></div>` : ""}
       <p class="my-rules">${ic("help")}Менять можно только объявления с вашим подтверждённым номером. Свой объект висит ${data.own_days} дней — за 10, 5, 2 и 1 день
-        до конца спросим «ещё актуален?» (уведомление на сайте и письмо): «да» — продлим, «нет» — снимем сразу, без ответа — снимем по сроку. Все правки сохраняются в журнале.</p>`;
+        до конца спросим «ещё актуален?» (уведомление на сайте и письмо): «да» — продлим, «нет» — снимем сразу, без ответа — снимем по сроку.
+        После снятия объект хранится в архиве ${data.archive_days} дней. Все правки сохраняются в журнале.</p>`;
     renderGrid();
     const qi = $("myQ");
     if (qi) qi.addEventListener("input", () => { q = qi.value.trim(); renderGrid(); });
@@ -518,7 +527,24 @@
     pendingVideo = videoFile;
     o = isNew ? { type: "flat", deal: "sale", photos: [] } : data.items.find((x) => x.id === id);
     if (!o) { main.innerHTML = `<div class="wk-empty">${ic("alert")}<b>Объект не найден</b>Возможно, это не ваше объявление. <a class="pill" href="/my">К моим объектам</a></div>`; return; }
-    if (!isNew && !o.can_edit) { main.innerHTML = `<div class="wk-empty">${ic("ban")}<b>Этот объект менять нельзя</b>Им управляет другой агент. <a class="pill" href="/my">К моим объектам</a></div>`; return; }
+    if (!isNew && !o.can_edit) {
+      if (!data.access && o.source !== "feed") {
+        const expiry = o.is_active && o.live_until ? (o.source === "own"
+          ? `Подтвердите актуальность в уведомлении или письме, чтобы продлить размещение. Без подтверждения объявление уйдёт в архив на ${data.archive_days} дней, затем будет удалено.`
+          : `Если объявление не появится в чате снова, оно уйдёт в архив на ${data.archive_days} дней, затем будет удалено.`) : "";
+        main.innerHTML = `<section class="my-card my-access-card">
+          <div class="my-card-h"><span class="my-ic">${ic("shield")}</span><div>
+            <h2>Редактирование доступно с подпиской</h2><p>${esc(o.title)}</p></div></div>
+          <strong>${esc(lifetime(o))}</strong><p>Объявление остаётся привязано к вашему номеру.</p>
+          ${expiry ? `<p>${esc(expiry)}</p>` : ""}
+          <div class="my-access-actions"><a class="pill" href="/pay">Оформить подписку</a>
+            <a class="pill light" href="/my">К моим объектам</a></div></section>`;
+      } else {
+        main.innerHTML = `<div class="wk-empty">${ic("ban")}<b>Редактирование недоступно</b>${esc(o.edit_reason || "Проверьте доступ к объявлению.")}
+          <a class="pill" href="/my">К моим объектам</a></div>`;
+      }
+      return;
+    }
     own = isNew || o.source === "own";
     renderEdit();
   }

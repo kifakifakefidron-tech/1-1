@@ -182,6 +182,11 @@
   // и ниже список запланированного: сегодня, завтра и дальше
   const KCOL = { show: "gold", call: "sky", meet: "violet", task: "lime" };
   function day() {
+    if (!dash.access) {
+      put("wDay", `${head("calendar", "Мой день")}<p class="g-empty">Планер доступен с подпиской. Ваши события сохраняются.</p>
+        <a class="pill" href="/pay">Оформить подписку</a>`, 4);
+      return;
+    }
     const t0 = dash.today, ws = dash.week_start || t0, now = Date.now() / 1000;
     const key = (ts) => { const x = new Date(ts * 1000); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
     const byDay = {};
@@ -244,6 +249,11 @@
   // ─── 24.10c (Артём): вместо «Мои объекты» — «Мои клиенты»: этапы, следующие шаги ───
   const CL_C = { new: "#b8c8e4", search: "#8fd1cb", shows: "#e3cb8f", talks: "#d9b3e6", deposit: "#f0b77a", deal: "#a7d1b6", lost: "#e2a596" };
   function clientsW() {
+    if (!dash.access) {
+      put("wClients", `${head("users", "Мои клиенты")}<p class="g-empty">CRM доступна с подпиской. Карточки клиентов и история сохраняются.</p>
+        <a class="pill" href="/pay">Оформить подписку</a>`, 5);
+      return;
+    }
     const c = dash.clients || { stages: [], next: [], total: 0 };
     const max = Math.max(1, ...c.stages.map((s) => s.n));
     const nxt = c.next.map((x) => {
@@ -262,6 +272,11 @@
   // ─── объекты в работе (статусы) ──────────────────────────────────
   const ST_COLOR = { call: "#b8c8e4", show: "#e3cb8f", think: "#d9b3e6", deal: "#a7d1b6", refuse: "#e2a596" };
   function crm() {
+    if (!dash.access) {
+      put("wCrm", `${head("briefcase", "Избранное", `<a class="g-link" href="/work">Всё избранное →</a>`)}
+        <div class="wc-foot"><span>В избранном: <b>${dash.favorites}</b></span></div>`, 5);
+      return;
+    }
     const max = Math.max(1, ...dash.crm.map((s) => s.n));
     const total = dash.crm.reduce((a, s) => a + s.n, 0);
     put("wCrm", `${head("briefcase", "Избранное", `<a class="g-link" href="/work">Всё избранное →</a>`)}
@@ -386,11 +401,16 @@
   function quick() {
     const a = (href, icon, t) => `<a class="wa-a" href="${href}">${ic(icon)}<span>${t}</span></a>`;
     put("wQuick", `${head("sparkle", "Быстро")}<div class="wa-grid">
-      ${a("/", "search", "Найти объект")}${a("/planner?add=show", "calendar", "Запланировать показ")}
-      ${a("/picks", "folder", "Подборка клиенту")}${a("/?agent=1", "tag", "Моё объявление")}
-      ${a("/clients?new=1", "users", "Новый клиент")}${a("/market", "chart", "Цены по районам")}</div>`, 10);
+      ${a("/", "search", "Найти объект")}${a("/my", "tag", "Мои объекты")}${a("/market", "chart", "Цены по районам")}
+      ${me.access ? a("/planner?add=show", "calendar", "Запланировать показ") + a("/picks", "folder", "Подборка клиенту")
+        + a("/clients?new=1", "users", "Новый клиент") : ""}</div>`, 10);
   }
   async function saved() {
+    if (!me.access) {
+      put("wSaved", `${head("search", "Слежу за поисками")}<p class="g-empty">Уведомления по поискам доступны с подпиской.</p>
+        <a class="pill" href="/pay">Оформить подписку</a>`, 6);
+      return;
+    }
     const r = await call("/api/saved");
     const items = r.ok ? r.data.items || [] : [];
     put("wSaved", `${head("search", "Слежу за поисками", items.length ? `<span class="g-sub" style="margin:0">${items.length}</span>` : "")}

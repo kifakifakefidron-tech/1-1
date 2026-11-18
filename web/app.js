@@ -561,7 +561,7 @@
       <div class="item-foot">
         <div class="item-meta" title="Сколько дней объявление на 1+1 (с первого появления в чатах риелторов) и когда его присылали последний раз"><span class="on-sale">${esc(onSite(daysOnSale(o)))}</span> · ${esc(updated(o.last_seen))}</div>
         ${favMode ? `<a class="plan-btn" href="/planner?add=show&listing=${o.id}" title="Запланировать показ или звонок" aria-label="Запланировать">📅</a>` : ""}
-        ${me() ? `<button type="button" class="cmp-btn cli-btn" data-client-open="${o.id}" title="Клиенту: в подборку клиента" aria-label="Клиенту">${ic("users")}</button>` : ""}
+        ${me()?.access ? `<button type="button" class="cmp-btn cli-btn" data-client-open="${o.id}" title="Клиенту: в подборку клиента" aria-label="Клиенту">${ic("users")}</button>` : ""}
         <button type="button" class="cmp-btn${cmp.includes(o.id) ? " on" : ""}" data-cmp="${o.id}" title="Сравнить" aria-label="Добавить к сравнению">⚖</button>
       </div>
     </li>`;
@@ -1216,14 +1216,15 @@
     const marketTag = m && m.diff <= -3 ? `<span class="dv-tag good">−${-m.diff}% к рынку</span>` : m && m.diff >= 3 ? `<span class="dv-tag high">+${m.diff}% к рынку</span>` : "";
     const days = o.first_seen ? daysOnSale(o) : null;
     const u = me();
+    const toolsAccess = o.tools_access ?? !!u?.access;
     const admin = u && u.is_admin;
     const st = o.status || myStatus(o.id);
     const inCmp = cmp.includes(o.id);
     const actions = [   // 17.10 (Артём): «Клиенту» — первой и главной, «Сравнить» — на её прежнем месте
-      u ? `<a class="dv-act" href="/planner?add=show&listing=${o.id}"><i>${ic("calendar")}</i><span>Показ</span></a>` : "",
+      toolsAccess ? `<a class="dv-act" href="/planner?add=show&listing=${o.id}"><i>${ic("calendar")}</i><span>Показ</span></a>` : "",
       `<button type="button" class="dv-act${inCmp ? " on" : ""}" data-cmp="${o.id}"><i>${ic("scale")}</i><span data-s="${inCmp ? "В сравн." : "Сравнить"}">${inCmp ? "В сравнении" : "Сравнить"}</span></button>`,
       `<button type="button" class="dv-act" data-share="${o.id}"><i>${ic("share")}</i><span data-s="Ссылка">Поделиться</span></button>`,
-      `<button type="button" class="dv-act" data-watch-open="${o.id}"><i>${ic("bell")}</i><span>Следить</span></button>`,
+      !u || toolsAccess ? `<button type="button" class="dv-act" data-watch-open="${o.id}"><i>${ic("bell")}</i><span>Следить</span></button>` : "",
       u ? `<button type="button" class="dv-act" data-hide-open="${o.id}"><i>${ic("eye")}</i><span>Скрыть</span></button>` : "",
     ].join("");
 
@@ -1242,7 +1243,7 @@
       <div class="pr-list">${fit.map((c) => `<div class="pr-it fit"><a href="/clients?id=${c.id}" target="_top">${ic("user")}${esc(c.name)}</a>
         <small class="pr-st">${esc(c.stage_label)}</small>
         <button type="button" class="pill light pr-add" data-fit-add="${c.id}" data-fit-for="${o.id}">${ic("plus")}В подборку</button></div>`).join("")}</div>` : "";
-    const notesBody = u && !o.loading ? `<div class="wk-sec"><p class="wk-sh">Клиенты по объекту</p>
+    const notesBody = toolsAccess && !o.loading ? `<div class="wk-sec"><p class="wk-sh">Клиенты по объекту</p>
       ${pairs.length ? `<div class="pr-list">${pairs.map((p) => `<div class="pr-it"><a href="/clients?id=${p.id}" target="_top">${ic("user")}${esc(p.name)}</a>
         ${p.reaction ? `<span class="pr-re">ответ: ${esc({ like: "нравится", no: "не подходит", want_show: "хочет посмотреть", question: "вопрос" }[p.reaction] || "")}</span>` : ""}
         <select data-pair-set="${p.id}:${o.id}" aria-label="Статус для ${esc(p.name)}">${Object.entries(PAIR_L).map(([k, v]) =>
@@ -1337,7 +1338,7 @@
     const callBtn = firstPhone ? `<a class="dv-bar-b call" href="tel:${esc(firstPhone)}">${ic("phone")}Позвонить</a>`
       : o.phones_masked && o.phones_masked.length ? (u ? `<button type="button" class="dv-bar-b call" data-pay>${ic("phone")}Позвонить</button>`
         : `<button type="button" class="dv-bar-b call" data-login>${ic("phone")}Позвонить</button>`) : "";
-    const bar = gone || o.loading ? "" : (u || callBtn) ? `<div class="dv-bar">${u ? `<button type="button" class="dv-bar-b client" data-client-open="${o.id}">${ic("users")}Клиенту</button>` : ""}${callBtn}</div>` : "";
+    const bar = gone || o.loading ? "" : (toolsAccess || callBtn) ? `<div class="dv-bar">${toolsAccess ? `<button type="button" class="dv-bar-b client" data-client-open="${o.id}">${ic("users")}Клиенту</button>` : ""}${callBtn}</div>` : "";
     return `
       ${gone ? `<div class="dv-gone">${ic("alert")}<span><b>${esc((o.gone && o.gone.title) || "Объект снят с продажи")}</b>
         <small>${esc((o.gone && o.gone.text) || "")}${o.last_seen ? ` Последнее сообщение — ${esc(new Date(o.last_seen * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }))}.` : ""}</small></span>
@@ -1374,8 +1375,8 @@
           ${o.geo_approx ? `<p class="note dv-map-note">Место примерное — в объявлении нет точного адреса</p>` : ""}</div>` : ""}
         <div class="dv-accs">
           ${acc("📈", "Цена и рынок", priceHint, priceBody)}
-          ${acc(ic("users"), "Клиенты", [pairs.length ? `у клиентов: ${pairs.length}` : "", fit.length ? `подходит ${fit.length}` : "",
-            (o.work || []).length ? `записей: ${o.work.length}` : o.note ? "есть заметка" : ""].filter(Boolean).join(" · ") || "заметки и журнал", notesBody, { cls: fit.length ? "good" : "" })}
+          ${toolsAccess ? acc(ic("users"), "Клиенты", [pairs.length ? `у клиентов: ${pairs.length}` : "", fit.length ? `подходит ${fit.length}` : "",
+            (o.work || []).length ? `записей: ${o.work.length}` : o.note ? "есть заметка" : ""].filter(Boolean).join(" · ") || "заметки и журнал", notesBody, { cls: fit.length ? "good" : "" }) : ""}
           ${acc("📅", "В планере", plans.length ? `${plans.length}` : "", plansBody)}
           ${acc("👥", "Похожие", `у других агентов: ${same.length}`, sameBody)}
           ${acc("🕓", "История", hist ? `${o.history_total || H.length} ${plural(o.history_total || H.length, "сообщение", "сообщения", "сообщений")}` : "", histBody)}

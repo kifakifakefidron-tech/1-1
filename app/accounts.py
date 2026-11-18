@@ -256,6 +256,10 @@ def has_access(user: sqlite3.Row | None, now: int | None = None) -> bool:
     return bool(user["is_admin"]) or access_until(user) > (now or time.time())
 
 
+# Та же проверка для фоновых задач. В запросах таблица users обозначается как u.
+ACTIVE_ACCESS_SQL = "u.blocked = 0 AND (u.is_admin = 1 OR MAX(u.trial_until, u.paid_until) > ?)"
+
+
 def extend(conn: sqlite3.Connection, user_id: int, days: int) -> None:
     """Продлить оплаченный доступ на days дней (от сегодня или от конца текущего)."""
     now = int(time.time())
@@ -331,20 +335,22 @@ def ref_info(conn: sqlite3.Connection, user: sqlite3.Row) -> dict:
 def me(conn: sqlite3.Connection, user: sqlite3.Row | None) -> dict | None:
     if user is None:
         return None
-    now = int(time.time())
+    from . import notices
+
+    access = has_access(user)
     fav = [r[0] for r in conn.execute("SELECT listing_id FROM favorites WHERE user_id = ?", (user["id"],))]
     used_trial = bool(conn.execute("SELECT 1 FROM trials WHERE user_id = ?", (user["id"],)).fetchone())
     return {
         "id": user["id"], "name": user["name"], "tg_username": user["tg_username"], "email": user["email"],
         "phone_confirmed": bool(user["phone"]), "is_admin": bool(user["is_admin"]),
         "phones": [r[0] for r in conn.execute("SELECT phone FROM agent_phones WHERE user_id = ? ORDER BY verified_at", (user["id"],))],
-        "access": has_access(user, now), "access_until": access_until(user),
+        "access": access, "access_until": access_until(user),
         "trial_until": user["trial_until"], "paid_until": user["paid_until"], "trial_used": used_trial,
         "favorites": fav, "views_today": views_today(conn, user["id"]),
         "ref": ref_info(conn, user),
         "statuses": {r[0]: r[1] for r in conn.execute(
-            "SELECT listing_id, status FROM notes WHERE user_id = ? AND status IS NOT NULL", (user["id"],))},
-        "unread": conn.execute("SELECT COUNT(*) FROM notices WHERE user_id = ? AND read = 0", (user["id"],)).fetchone()[0],
+            "SELECT listing_id, status FROM notes WHERE user_id = ? AND status IS NOT NULL", (user["id"],))} if access else {},
+        "unread": notices.unread(conn, user["id"], access=access),
         "views_limit": None if user["is_admin"] or config.PHONE_VIEWS_PER_DAY <= 0 else config.PHONE_VIEWS_PER_DAY,
     }
 

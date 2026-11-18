@@ -87,6 +87,10 @@
 .my-video-controls video { display: block; width: 100%; max-height: 320px; border-radius: 14px; background: #000; }
 .my-video-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .my-video-controls .my-hint { overflow-wrap: anywhere; }
+.my-access-card { max-width: 610px; margin-inline: auto; display: grid; gap: 12px; }
+.my-access-card > strong { color: var(--gold); }
+.my-access-card > p { margin: 0; color: var(--ink-2); line-height: 1.5; }
+.my-access-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .my-side { position: sticky; top: 18px; display: grid; gap: 12px; }
 .my-prev { padding: 14px; border-radius: 22px; border: 1px solid var(--glass-line); background: rgba(255, 255, 255, .04); }

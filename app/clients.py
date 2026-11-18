@@ -494,10 +494,12 @@ def _plural(n: int, one: str, few: str, many: str) -> str:
 def new_matches(conn: sqlite3.Connection, now: int | None = None) -> int:
     """Раз в 15 минут (worker): у активных клиентов с пожеланиями — новые подходящие объекты → уведомление
     «Под Анну: 3 новых объекта» с кнопками «Посмотреть» и «Всё в подборку». Первый раз — только запоминаем момент."""
-    from . import notices, search
+    from . import accounts, notices, search
     now = int(now or time.time())
     sent = 0
-    for c in conn.execute("""SELECT * FROM clients WHERE archived = 0 AND stage NOT IN ('deal', 'lost')""").fetchall():
+    for c in conn.execute(f"""SELECT c.* FROM clients c JOIN users u ON u.id = c.user_id
+                               WHERE c.archived = 0 AND c.stage NOT IN ('deal', 'lost') AND {accounts.ACTIVE_ACCESS_SQL}""",
+                          (now,)).fetchall():
         c = dict(c)
         rooms = json.loads(c.get("rooms") or "[]")
         districts = json.loads(c.get("districts") or "[]")

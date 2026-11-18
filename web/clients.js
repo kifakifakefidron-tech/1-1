@@ -95,7 +95,19 @@
   async function load() {
     const q = $("cQ").value.trim();
     const r = await call(`/api/clients${q ? `?q=${encodeURIComponent(q)}` : ""}`);
-    if (r.status === 401) { $("cGuest").hidden = false; return false; }
+    if (!r.ok) {
+      const lock = $("cGuest");
+      const link = lock.querySelector("a");
+      const subscription = r.data.subscription_required;
+      lock.querySelector("p").textContent = r.status === 401 ? "Войдите, чтобы открыть CRM."
+        : subscription ? "Оформите подписку, чтобы открыть CRM. Ваши клиенты и история сохраняются." : "Не получилось загрузить клиентов.";
+      link.href = r.status === 401 ? "/?login=1" : subscription ? "/pay" : "/clients";
+      link.textContent = r.status === 401 ? "Войти" : subscription ? "Оформить подписку" : "Повторить";
+      $("cApp").hidden = true;
+      lock.hidden = false;
+      return false;
+    }
+    $("cGuest").hidden = true;
     $("cApp").hidden = false;
     data = r.data;
     render();

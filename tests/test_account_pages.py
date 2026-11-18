@@ -6,7 +6,7 @@ import time
 import pytest
 from starlette.testclient import TestClient
 
-from app import config, db, ingest, server
+from app import accounts, config, db, ingest, notices, planner, server
 
 PNG = "data:image/png;base64," + base64.b64encode(bytes([0x89]) + b"PNG" + bytes([13, 10, 26, 10]) + b"0" * 2000).decode()
 
@@ -27,6 +27,44 @@ def client(tmp_path, monkeypatch):
         yield c
     conn.close()
     db._local.conn = None
+
+
+def test_expired_subscription_locks_paid_tools_and_preserves_data(client, monkeypatch):
+    monkeypatch.setattr(config, "SUB_PLANS", [(7, 99), (30, 399)])
+    monkeypatch.setattr(config, "SUB_DAYS", 7)
+    monkeypatch.setattr(config, "SUB_PRICE", 99)
+    monkeypatch.setattr(config, "SUB_FIRST", (7, 49))
+    conn = db.get()
+    uid = client.get("/api/me").json()["me"]["id"]
+    now = int(time.time())
+    cid = client.post("/api/clients", json={"name": "Покупатель"}).json()["client"]["id"]
+    eid = client.post("/api/planner", json={"ts": now + 900, "title": "Показ"}).json()["event"]["id"]
+    feed = f"/planner/{uid}-{planner.feed_token(uid)}.ics"
+    assert client.get(feed).status_code == 200
+    assert client.get("/api/pay").json()["plans"][0]["price"] == 49
+    notices.add(conn, uid, "price", "Цена изменилась")
+    conn.execute("INSERT INTO payments(user_id, amount, days, status, created) VALUES (?,49,7,'succeeded',?)", (uid, now))
+    conn.execute("UPDATE users SET paid_until = ?, trial_until = 0 WHERE id = ?", (now - 1, uid))
+    conn.commit()
+
+    for endpoint in ("/api/clients", f"/api/clients/{cid}/match", "/api/planner", f"/api/planner/{eid}.ics", "/api/saved"):
+        res = client.get(endpoint)
+        assert res.status_code == 403 and res.json()["subscription_required"]
+    assert client.get(feed).status_code == 403
+    assert client.post("/api/clients", json={"name": "Недоступно"}).status_code == 403
+    assert client.post("/api/planner", json={"ts": now + 900}).status_code == 403
+    assert planner.remind(conn, now=now) == 0
+    assert notices.check_subscriptions(conn, lambda _: "сегодня") == 1
+    messages = client.get("/api/notices").json()["items"]
+    assert [message["kind"] for message in messages] == ["sub"]
+    assert "99 ₽" in messages[0]["body"]
+    assert client.get("/api/pay").json()["plans"][0]["price"] == 99
+
+    accounts.extend(conn, uid, 7)
+    assert client.get(f"/api/clients?id={cid}").json()["client"]["id"] == cid
+    assert client.get(f"/api/planner/{eid}.ics").status_code == 200
+    assert client.get(feed).status_code == 200
+    assert any(n["kind"] == "price" for n in client.get("/api/notices").json()["items"])
 
 
 def test_settings_save_and_validate(client):

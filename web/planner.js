@@ -85,7 +85,16 @@
   }
   async function load() {
     const r = await call("/api/planner");
-    if (r.status === 401) { $("plGuest").hidden = false; return false; }
+    if (!r.ok) {
+      const lock = $("plGuest");
+      lock.innerHTML = r.status === 401 ? `Планер доступен после входа. <a href="/?login=1">Войти</a>`
+        : r.data.subscription_required ? `Планер доступен с подпиской. Ваши события сохраняются. <a href="/pay">Оформить подписку</a>`
+        : `Не получилось загрузить планер. <a href="/planner">Повторить</a>`;
+      $("plApp").hidden = true;
+      lock.hidden = false;
+      return false;
+    }
+    $("plGuest").hidden = true;
     data = r.data;
     (data.favorites || []).forEach((l) => objects.set(l.id, l));
     $("plApp").hidden = false;

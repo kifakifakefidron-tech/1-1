@@ -432,12 +432,12 @@ def check_saved(conn: sqlite3.Connection, send, user_id: int | None = None) -> i
 
     На сайте — при каждой проверке (своя отметка notice_checked_at), письмом — не чаще раза в 3 часа
     (свои отметки checked_at/sent_at). Отметки раздельные, поэтому письмо не «съедает» уведомление на сайте."""
-    from . import notices
+    from . import accounts, notices
     now = int(time.time())
     made = 0
-    rows = conn.execute("""SELECT s.*, u.email FROM saved_searches s JOIN users u ON u.id = s.user_id
-                           WHERE s.active = 1 AND u.blocked = 0 AND (? IS NULL OR s.user_id = ?)""",
-                        (user_id, user_id)).fetchall()
+    rows = conn.execute(f"""SELECT s.*, u.email FROM saved_searches s JOIN users u ON u.id = s.user_id
+                            WHERE s.active = 1 AND {accounts.ACTIVE_ACCESS_SQL} AND (? IS NULL OR s.user_id = ?)""",
+                        (now, user_id, user_id)).fetchall()
     for s in rows:
         # 1) уведомление на сайте
         since = s["notice_checked_at"] or s["created"]
@@ -474,14 +474,15 @@ def check_saved(conn: sqlite3.Connection, send, user_id: int | None = None) -> i
 def check_favorites(conn: sqlite3.Connection, send, user_id: int | None = None) -> int:
     """Избранное: цена изменилась (вниз или вверх) или объект сняли с сайта → уведомление на сайте
     (своя отметка site_price). О снижении цены — ещё и письмо (своя отметка notified_price)."""
-    from . import notices
-    rows = conn.execute("""SELECT f.user_id, f.listing_id, f.price_at, f.notified_price, f.site_price, f.gone_notified,
-                                  l.price, l.title, l.deal, l.is_active, u.email
-                           FROM favorites f JOIN listings l ON l.id = f.listing_id JOIN users u ON u.id = f.user_id
-                           WHERE u.blocked = 0 AND (? IS NULL OR f.user_id = ?)""", (user_id, user_id)).fetchall()
+    from . import accounts, notices
+    now = int(time.time())
+    rows = conn.execute(f"""SELECT f.user_id, f.listing_id, f.price_at, f.notified_price, f.site_price, f.gone_notified,
+                                   l.price, l.title, l.deal, l.is_active, u.email
+                            FROM favorites f JOIN listings l ON l.id = f.listing_id JOIN users u ON u.id = f.user_id
+                            WHERE {accounts.ACTIVE_ACCESS_SQL} AND (? IS NULL OR f.user_id = ?)""",
+                        (now, user_id, user_id)).fetchall()
     drops: dict[int, list] = {}
     made = 0
-    now = int(time.time())
     for r in rows:
         uid, lid = r["user_id"], r["listing_id"]
         if not r["is_active"]:

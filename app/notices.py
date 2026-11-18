@@ -34,6 +34,8 @@ USER_KINDS = (
     ("own", "Мои объекты: ещё актуален?", "Без ответа объект снимется по сроку"),
 )
 OFF_KINDS = {k for k, _, _ in USER_KINDS}
+PAID_KINDS = ("search", "price", "gone", "client", "buyer", "plan")
+_SERVICE_ONLY = " AND kind NOT IN (" + ", ".join("?" for _ in PAID_KINDS) + ")"
 
 
 def clean_off(raw) -> list[str]:
@@ -59,6 +61,10 @@ def add(conn: sqlite3.Connection, user_id: int, kind: str, title: str, body: str
         url: str | None = None, listing_id: int | None = None, actions: list[dict] | None = None,
         dedup_s: int = DAY) -> bool:
     """Добавить уведомление. Такое же (тот же вид и объект/ссылка) за последние сутки не дублируем."""
+    if kind in PAID_KINDS:
+        from . import accounts
+        if not accounts.has_access(accounts.get_user(conn, user_id)):
+            return False
     if is_off(conn, user_id, kind):
         return False
     now = int(time.time())
@@ -74,15 +80,25 @@ def add(conn: sqlite3.Connection, user_id: int, kind: str, title: str, body: str
     return True
 
 
-def unread(conn: sqlite3.Connection, user_id: int) -> int:
-    return conn.execute("SELECT COUNT(*) FROM notices WHERE user_id = ? AND read = 0", (user_id,)).fetchone()[0]
+def unread(conn: sqlite3.Connection, user_id: int, *, access: bool = True) -> int:
+    sql = "SELECT COUNT(*) FROM notices WHERE user_id = ? AND read = 0"
+    return conn.execute(sql if access else sql + _SERVICE_ONLY, (user_id,) if access else (user_id, *PAID_KINDS)).fetchone()[0]
 
 
-def items(conn: sqlite3.Connection, user_id: int, limit: int = 100) -> list[dict]:
+def items(conn: sqlite3.Connection, user_id: int, limit: int = 100, *, access: bool = True,
+          unread_only: bool = False) -> list[dict]:
     out = []
-    for r in conn.execute("""SELECT n.*, l.photos, l.is_active FROM notices n LEFT JOIN listings l ON l.id = n.listing_id
-                             WHERE n.user_id = ? ORDER BY n.id DESC LIMIT ?""", (user_id, limit)):
+    sql = """SELECT n.*, l.photos, l.is_active FROM notices n LEFT JOIN listings l ON l.id = n.listing_id
+             WHERE n.user_id = ?"""
+    if unread_only:
+        sql += " AND n.read = 0"
+    if not access:
+        sql += _SERVICE_ONLY
+    args = (user_id, limit) if access else (user_id, *PAID_KINDS, limit)
+    for r in conn.execute(sql + " ORDER BY n.id DESC LIMIT ?", args):
         d = {k: r[k] for k in ("id", "ts", "kind", "title", "body", "url", "listing_id", "read", "is_active")}
+        if d["kind"] == "sub" and d["title"].startswith(("Подписка закончится", "Подписка закончилась")):
+            d["body"] = _renewal_text()
         d["actions"] = json.loads(r["actions"]) if r["actions"] else []
         photos = json.loads(r["photos"] or "[]") if r["photos"] else []
         d["photo"] = photos[0] if photos else None
@@ -91,11 +107,16 @@ def items(conn: sqlite3.Connection, user_id: int, limit: int = 100) -> list[dict
     return out
 
 
-def mark_read(conn: sqlite3.Connection, user_id: int, notice_id: int | None = None) -> None:
+def mark_read(conn: sqlite3.Connection, user_id: int, notice_id: int | None = None, *, access: bool = True) -> None:
+    sql = "UPDATE notices SET read = 1 WHERE user_id = ? AND read = 0"
+    args = (user_id,)
     if notice_id:
-        conn.execute("UPDATE notices SET read = 1 WHERE user_id = ? AND id = ?", (user_id, notice_id))
-    else:
-        conn.execute("UPDATE notices SET read = 1 WHERE user_id = ? AND read = 0", (user_id,))
+        sql += " AND id = ?"
+        args += (notice_id,)
+    if not access:
+        sql += _SERVICE_ONLY
+        args += PAID_KINDS
+    conn.execute(sql, args)
     conn.commit()
 
 
@@ -105,14 +126,22 @@ def cleanup(conn: sqlite3.Connection) -> int:
     return n
 
 
-def _price_hint(conn: sqlite3.Connection, user_id: int) -> str:
-    """«Неделя — 49 ₽» по тарифам этого человека (первая неделя со скидкой, если ещё не платил)."""
-    try:
-        from . import payments
-        p = payments.plans(conn, user_id)[0]
-        return f" Неделя — {p['price']} ₽." if p["days"] == 7 else f" {p['days']} дн. — {p['price']} ₽."
-    except Exception:  # noqa: BLE001
-        return ""
+def _renewal_text() -> str:
+    from . import config
+
+    days, price = config.SUB_DAYS, config.SUB_PRICE
+    period = "Неделя" if days == 7 else f"{days} дн."
+    return f"Продлите доступ к телефонам агентов, CRM, планеру, подборкам и уведомлениям. {period} — {price} ₽."
+
+
+def _trial_text(conn: sqlite3.Connection, user_id: int) -> str:
+    from . import config, payments
+
+    if payments.first_time(conn, user_id):
+        days, price = config.SUB_FIRST
+        period = "Первая платная неделя" if days == 7 else f"Первые {days} дн."
+        return f"Оформите подписку, чтобы пользоваться платными инструментами. {period} — {price} ₽."
+    return _renewal_text()
 
 
 def check_subscriptions(conn: sqlite3.Connection, fmt_day, send=None) -> int:
@@ -129,16 +158,13 @@ def check_subscriptions(conn: sqlite3.Connection, fmt_day, send=None) -> int:
         until = u["until"]
         trial = (u["paid_until"] or 0) < (u["trial_until"] or 0)      # доступ держится на пробном периоде
         what = "Бесплатный пробный период" if trial else "Подписка"
-        price = _price_hint(conn, u["id"])
+        body = _trial_text(conn, u["id"]) if trial else _renewal_text()
         if now < until <= now + 2 * DAY:
             tag = f"soon:{until}"
             title = f"{what} закончится {fmt_day(until)}"
-            body = ("Чтобы и дальше видеть телефоны агентов и пользоваться клиентами и подборками, оплатите доступ."
-                    if trial else "Продлите подписку, чтобы и дальше видеть телефоны агентов.") + price
         elif until <= now:
             tag = f"end:{until}"
             title = f"{what} закончился" if trial else "Подписка закончилась"
-            body = "Телефоны агентов снова скрыты. Оплатите доступ — всё вернётся сразу." + price
         else:
             continue
         if u["sub_notified"] == tag:

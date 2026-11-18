@@ -138,12 +138,18 @@
   function renderSide() {   // 24.10b: крупные цифры — что отслеживаю и сколько поисков
     const fav = data.favorites || 0;
     $("ntTrack").innerHTML = `<a class="nt2-num" href="/work"><b>${fav}</b><span>${plural(fav, "объект", "объекта", "объектов")}<br>в избранном</span></a>
-      <p class="nt2-hint">Сообщим, если цена изменится или объект снимут.</p>
+      ${data.access ? `<p class="nt2-hint">Сообщим, если цена изменится или объект снимут.</p>` : ""}
       ${data.own ? `<p class="nt2-num sm"><b>${data.own}</b><span>${plural(data.own, "ваш объект", "ваших объекта", "ваших объектов")}</span></p>
         <p class="nt2-hint">Спросим «ещё актуален?» до конца срока.</p>` : ""}
       ${!data.is_admin && data.access_until ? (() => { const left = Math.ceil((data.access_until * 1000 - Date.now()) / 864e5);
         return `<p class="nt2-num sm"><b>${Math.max(0, left)}</b><span>${plural(Math.max(0, left), "день", "дня", "дней")} доступа</span></p>
           <p class="nt2-hint">${left > 0 ? "Предупредим за 2 дня до конца." : "Доступ закончился — <a href=\"/pay\">продлите</a>."}</p>`; })() : ""}`;
+    if (!data.access) {
+      $("ntSavedNum").innerHTML = `<span>Уведомления по поискам и избранному приостановлены.</span>`;
+      $("ntMail").textContent = "";
+      $("ntSaved").innerHTML = `<li><a href="/pay">Оформить подписку</a></li>`;
+      return;
+    }
     const n = data.saved.length;
     $("ntSavedNum").innerHTML = `<b class="${n ? "" : "zero"}">${n}</b><span>${plural(n, "поиск", "поиска", "поисков")}<br>с уведомлениями</span>`;
     $("ntMail").textContent = data.email ? ` и на почту ${data.email}` : "";
@@ -156,7 +162,7 @@
     $("ntReadAll").hidden = !data.unread;
     const today = data.items.filter((n) => dayLabel(n.ts) === "Сегодня").length;
     $("ntSub").innerHTML = `<b>${data.items.length}</b> всего <b>${today}</b> сегодня${unreadAtOpen.size ? ` <b class="hot">${unreadAtOpen.size}</b> новых` : ""}
-      <span>поиски, избранное, ваши объекты, планер и клиенты — в одной ленте</span>`;
+      <span>${data.access ? "Поиски, избранное, ваши объекты, планер и клиенты" : "Подписка и актуальность ваших объявлений"}</span>`;
   }
 
   // 10.11: «Что присылать» — свёрнуто, пока не нажали кнопку

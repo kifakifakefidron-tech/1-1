@@ -259,12 +259,13 @@ def save_note(conn: sqlite3.Connection, user_id: int, body: dict) -> dict:
 # ─── напоминания ───────────────────────────────────────────────────────────
 def remind(conn: sqlite3.Connection, send=None, now: int | None = None) -> int:
     """Из worker: пора напомнить — уведомление на сайте и письмо. Каждое событие — один раз."""
-    from . import notices
+    from . import accounts, notices
     now = int(now or time.time())
     rows = conn.execute(f"""{_SELECT.replace('SELECT e.*', 'SELECT e.*, u.email AS u_email')}
                             JOIN users u ON u.id = e.user_id
                             WHERE e.done = 0 AND e.reminded = 0 AND e.remind_min > 0
-                              AND e.ts - e.remind_min * 60 <= ? AND e.ts > ? - 3600""", (now, now)).fetchall()
+                              AND {accounts.ACTIVE_ACCESS_SQL}
+                              AND e.ts - e.remind_min * 60 <= ? AND e.ts > ? - 3600""", (now, now, now)).fetchall()
     n = 0
     for r in rows:
         when = datetime.fromtimestamp(r["ts"], MSK)

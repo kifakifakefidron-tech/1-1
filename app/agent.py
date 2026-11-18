@@ -269,7 +269,7 @@ def can_edit(conn: sqlite3.Connection, user: sqlite3.Row, row: sqlite3.Row) -> t
     if row["source"] == "feed":
         return False, "Объекты партнёра правятся на его сайте."
     if not accounts.has_access(user):
-        return False, "Править объявления можно с активной подпиской."
+        return False, "Редактирование доступно с активной подпиской. Оформите доступ, чтобы внести изменения."
     if row["owner_user_id"] and row["owner_user_id"] != user["id"]:
         return False, "Этой карточкой уже управляет другой агент. Если это ошибка — напишите нам."
     if row["owner_user_id"] == user["id"]:
@@ -278,6 +278,19 @@ def can_edit(conn: sqlite3.Connection, user: sqlite3.Row, row: sqlite3.Row) -> t
     if phones & set(verified_phones(conn, user["id"])):
         return True, ""
     return False, "В этом объявлении нет вашего подтверждённого номера."
+
+
+def lifecycle(row: sqlite3.Row) -> tuple[int | None, int | None]:
+    """Срок публикации и срок удаления уже снятой карточки по правилам worker."""
+    origin = max(row["last_seen"], row["added_at"] or 0)
+    chat_deadline = origin + config.STALE_DAYS * DAY
+    if row["source"] == "feed":
+        return None, None
+    live_until = row["expires_at"] if row["source"] == "own" else chat_deadline
+    if row["is_active"] or row["hidden_reason"] in ("admin", "phone"):
+        return live_until, None
+    remove_at = row["removed_at"] or row["last_seen"] + config.STALE_DAYS * DAY
+    return live_until, max(remove_at, chat_deadline) + config.ARCHIVE_DAYS * DAY
 
 
 def _log(conn, listing_id: int, user_id: int, field: str, old, new) -> None:

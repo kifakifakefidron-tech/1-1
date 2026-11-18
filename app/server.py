@@ -51,10 +51,12 @@ def current_user(request: Request):
 
 def has_access(request: Request, user=None) -> bool:
     """Видны ли телефоны агентов: подписка/пробный период/админ — или промокод."""
+    user = user if user is not None else current_user(request)
+    if user is not None:
+        return accounts.has_access(user)
     if not config.ACCESS_CODE and not config.TELEGRAM_BOT_TOKEN and not mailer.available():
         return True  # кабинет не настроен (локальная разработка) — всё открыто
-    user = user if user is not None else current_user(request)
-    return has_code(request) or accounts.has_access(user)
+    return has_code(request)
 
 
 def tg_alive() -> bool:
@@ -337,10 +339,10 @@ def index(request: Request, body: dict | None = None):
     return Response(html_text, media_type="text/html; charset=utf-8", headers=headers)
 
 
-def _prices_text() -> str:
+def _prices_text(*, first_offer: bool = True) -> str:
     """«первая неделя — 49 ₽, дальше 99 ₽ за 7 дней или 399 ₽ за 30 дней» — для текстов на страницах."""
     plans = " или ".join(f"{p} ₽ за {d} дней" for d, p in sorted(config.SUB_PLANS))
-    first = f"первая неделя — {config.SUB_FIRST[1]} ₽, дальше " if config.SUB_FIRST else ""
+    first = f"первая неделя — {config.SUB_FIRST[1]} ₽, дальше " if first_offer and config.SUB_FIRST else ""
     return f"{first}{plans}"
 
 
@@ -420,7 +422,9 @@ def admin_page(request: Request, body: dict | None = None):
 
 def api_meta(request: Request, body: dict | None = None):
     user = current_user(request)
-    learning.rules(db.get())   # подтянуть районы, добавленные админом (раз в минуту)
+    conn = db.get()
+    first_offer = payments.first_time(conn, user["id"] if user else None)
+    learning.rules(conn)   # подтянуть районы, добавленные админом (раз в минуту)
     return JSONResponse({
         "title": config.SITE_TITLE, "support_phone": config.SUPPORT_PHONE, "support_pretty": _pretty_phone(config.SUPPORT_PHONE),
         "types": TYPE_LABELS,
@@ -433,7 +437,7 @@ def api_meta(request: Request, body: dict | None = None):
         "phone_login": callcheck.enabled(),   # 18.10: вход по номеру звонком (SMS.ru)
         "payments": payments.available(),
         "price": config.SUB_PRICE, "period_days": config.SUB_DAYS, "trial_days": config.TRIAL_DAYS,
-        "prices": _prices_text(), "price_first": config.SUB_FIRST[1] if config.SUB_FIRST else None,
+        "prices": _prices_text(first_offer=first_offer), "price_first": config.SUB_FIRST[1] if first_offer else None,
         "bot": bot_username(),
         "me": accounts.me(db.get(), user),
     })
@@ -717,15 +721,17 @@ def api_listing(request: Request, body: dict | None = None):
     d["market"] = hot_mk or (hooks.market_for(conn, d) if not row["price_doubt"] else None)
     d["hot"] = hooks.is_hot({**d, "price_doubt": row["price_doubt"], "market_diff_raw": row["market_diff"]})
     d["same"] = hooks.same_elsewhere(conn, row)
-    d["note"] = hooks.get_note(conn, user["id"], lid) if user else None
-    d["status"] = hooks.get_status(conn, user["id"], lid) if user else None
-    d["plans"] = planner.for_listing(conn, user["id"], lid) if user else []
-    d["work"] = worklog.for_listing(conn, user["id"], lid) if user else []
-    d["pairs"] = clients.for_listing(conn, user["id"], lid) if user else []
-    d["work_ctx"] = worklog.context(conn, user["id"], lid) if user else None
+    tools_access = bool(user and access)
+    d["tools_access"] = tools_access
+    d["note"] = hooks.get_note(conn, user["id"], lid) if tools_access else None
+    d["status"] = hooks.get_status(conn, user["id"], lid) if tools_access else None
+    d["plans"] = planner.for_listing(conn, user["id"], lid) if tools_access else []
+    d["work"] = worklog.for_listing(conn, user["id"], lid) if tools_access else []
+    d["pairs"] = clients.for_listing(conn, user["id"], lid) if tools_access else []
+    d["work_ctx"] = worklog.context(conn, user["id"], lid) if tools_access else None
     # «Покупатели под объект» — только админу (решение Артёма 11.10)
     # акт 14.10, Б4: «покупатели из чатов» подходили ко всему (реклама, чужие продажи) — теперь ваши клиенты из CRM
-    d["fit_clients"] = clients.fits_listing(conn, user["id"], lid) if user else []
+    d["fit_clients"] = clients.fits_listing(conn, user["id"], lid) if tools_access else []
     d["favorite"] = bool(user and conn.execute(
         "SELECT 1 FROM favorites WHERE user_id = ? AND listing_id = ?", (user["id"], lid)).fetchone())
     if user and user["is_admin"]:   # 02.11: жалобы на объект — прямо в блоке «Админ» окна объекта
@@ -1045,7 +1051,7 @@ def api_me(request: Request, body: dict | None = None):
     user = current_user(request)
     me = accounts.me(conn, user)
     if me:
-        me["counts"] = _counts(conn, user["id"])   # для меню слева и кабинета: что ждёт внимания
+        me["counts"] = _counts(conn, user["id"]) if me["access"] else {"favorites": len(me["favorites"])}
         me["photo"] = settings.get(conn, user["id"]).get("pick_photo") or ""   # 17.10: фото из настроек — и фото аккаунта
     resp = JSONResponse({"me": me})
     tok = request.cookies.get(SESSION)
@@ -1076,19 +1082,20 @@ def api_favorites(request: Request, body: dict | None = None):
     user, err = _need_user(request)
     if err:
         return err
-    # Избранное и объекты «в работе» (со статусом) — вместе: это рабочий список агента
+    access = accounts.has_access(user)
+    # Избранное работает без подписки. Объекты и статусы из CRM — с доступом.
     rows = db.get().execute(f"""
         SELECT l.*, n.status AS crm_status, n.text AS crm_note, COALESCE(n.ts, f.created) AS crm_ts,
                f.created AS fav_at, f.price_at AS fav_price, {search.VERIFIED} AS verified
         FROM listings l
         LEFT JOIN favorites f ON f.listing_id = l.id AND f.user_id = ?
-        LEFT JOIN notes n ON n.listing_id = l.id AND n.user_id = ?
+        LEFT JOIN notes n ON l.id = n.listing_id AND n.user_id = ? AND ?
         WHERE f.user_id IS NOT NULL OR n.status IS NOT NULL
-        ORDER BY crm_ts DESC""", (user["id"], user["id"])).fetchall()
+        ORDER BY crm_ts DESC""", (user["id"], user["id"], access)).fetchall()
     items = []
     pairs: dict[int, list] = {}
     for p in db.get().execute("""SELECT i.listing_id, c.id, c.name, i.status, i.reaction FROM client_items i
-                                 JOIN clients c ON c.id = i.client_id WHERE c.user_id = ?""", (user["id"],)):
+                                 JOIN clients c ON c.id = i.client_id WHERE c.user_id = ? AND ?""", (user["id"], access)):
         pairs.setdefault(p["listing_id"], []).append({"id": p["id"], "name": p["name"], "status": p["status"],
                                                        "label": clients.PAIR.get(p["status"], ""), "reaction": p["reaction"]})
     for r in rows:
@@ -1096,7 +1103,7 @@ def api_favorites(request: Request, body: dict | None = None):
         it.update(status=r["crm_status"], note=r["crm_note"] or "", favorite=r["fav_at"] is not None,
                   touched=r["crm_ts"], fav_price=r["fav_price"], clients=pairs.get(r["id"], []))
         items.append(it)
-    return JSONResponse({"items": items})
+    return JSONResponse({"items": items, "tools_access": access})
 
 
 def api_favorite_toggle(request: Request, body: dict | None = None):
@@ -1637,7 +1644,7 @@ def complaints_list(conn, where: str = "1", args=(), limit: int = 300) -> list[d
 
 # ─── заметки и подписки на поиск ───────────────────────────────────────────
 def api_note(request: Request, body: dict | None = None):
-    user, err = _need_user(request)
+    user, err = _need_access(request, "CRM")
     if err:
         return err
     body = body or {}
@@ -1649,7 +1656,7 @@ def api_note(request: Request, body: dict | None = None):
 
 def api_worklog(request: Request, body: dict | None = None):
     """Журнал работы по объекту: POST {listing_id, text, kind, client_id?, pick_id?}; DELETE {id}; GET ?listing=."""
-    user, err = _need_user(request)
+    user, err = _need_access(request, "Журнал работы")
     if err:
         return err
     conn = db.get()
@@ -1669,7 +1676,7 @@ def api_worklog(request: Request, body: dict | None = None):
 
 
 def api_saved(request: Request, body: dict | None = None):
-    user, err = _need_user(request)
+    user, err = _need_access(request, "Сохранённые поиски")
     if err:
         return err
     conn = db.get()
@@ -1696,19 +1703,23 @@ def api_notices(request: Request, body: dict | None = None):
     if err:
         return err
     conn = db.get()
+    access = accounts.has_access(user)
     if request.method == "POST":
-        notices.mark_read(conn, user["id"], _num((body or {}).get("id"), int))
-        return JSONResponse({"ok": True, "unread": notices.unread(conn, user["id"])})
-    try:
-        hooks.check_user(conn, user["id"])   # не ждём фоновой проверки
-    except sqlite3.OperationalError:
-        log.warning("уведомления: база занята, покажу то, что есть")
+        notices.mark_read(conn, user["id"], _num((body or {}).get("id"), int), access=access)
+        return JSONResponse({"ok": True, "unread": notices.unread(conn, user["id"], access=access)})
+    if access:
+        try:
+            hooks.check_user(conn, user["id"])   # не ждём фоновой проверки
+        except sqlite3.OperationalError:
+            log.warning("уведомления: база занята, покажу то, что есть")
     favs = conn.execute("""SELECT COUNT(*), SUM(l.is_active) FROM favorites f JOIN listings l ON l.id = f.listing_id
                            WHERE f.user_id = ?""", (user["id"],)).fetchone()
     own = conn.execute("SELECT COUNT(*) FROM listings WHERE owner_user_id = ? AND is_active = 1", (user["id"],)).fetchone()[0]
     st = settings.get(conn, user["id"])
-    return JSONResponse({"items": notices.items(conn, user["id"]), "unread": notices.unread(conn, user["id"]),
-                         "saved": hooks.list_saved(conn, user["id"]), "favorites": favs[0], "favorites_active": favs[1] or 0,
+    return JSONResponse({"items": notices.items(conn, user["id"], access=access),
+                         "unread": notices.unread(conn, user["id"], access=access), "access": access,
+                         "saved": hooks.list_saved(conn, user["id"]) if access else [],
+                         "favorites": favs[0], "favorites_active": favs[1] or 0,
                          "own": own, "email": user["email"], "access_until": accounts.access_until(user),
                          "is_admin": bool(user["is_admin"]), "notify_kinds": _notify_kinds(),
                          "notify_off": st["notify_off"], "mail_off": bool(st["mail_off"])})
@@ -1720,23 +1731,23 @@ def api_notices_peek(request: Request, body: dict | None = None):
     if user is None:   # гость: ответ «не вошёл» без ошибки — колокольчик перестаёт спрашивать
         return JSONResponse({"guest": True, "unread": 0, "latest": []})
     conn = db.get()
-    rows = conn.execute("""SELECT id, ts, kind, title, body, url FROM notices WHERE user_id = ? AND read = 0
-                           ORDER BY id DESC LIMIT 3""", (user["id"],)).fetchall()
-    return JSONResponse({"unread": notices.unread(conn, user["id"]),
-                         "latest": [{**dict(r), "icon": notices.ICONS.get(r["kind"], "🔔")} for r in rows]})
+    access = accounts.has_access(user)
+    return JSONResponse({"unread": notices.unread(conn, user["id"], access=access),
+                         "latest": notices.items(conn, user["id"], 3, access=access, unread_only=True)})
 
 
 def notices_page(request: Request, body: dict | None = None):
     return _page("notify.html")
 
 
-def _need_access(request: Request):
+def _need_access(request: Request, feature: str = "Подборки для клиентов"):
     """Вошёл и есть доступ (подписка / пробный период / админ)."""
     user, err = _need_user(request)
     if err:
         return None, err
-    if not has_access(request, user):
-        return None, _err("Подборки для клиентов — по подписке. Оформите доступ в кабинете.", 403)
+    if not accounts.has_access(user):
+        return None, JSONResponse({"detail": f"{feature} — по подписке. Оформите доступ.",
+                                   "subscription_required": True}, status_code=403)
     return user, None
 
 
@@ -2013,7 +2024,7 @@ def planner_page(request: Request, body: dict | None = None):
 
 def api_planner(request: Request, body: dict | None = None):
     """Планер: GET — всё для страницы; POST — сохранить событие {…} / отметить {id, done}; DELETE {id}."""
-    user, err = _need_user(request)
+    user, err = _need_access(request, "Планер")
     if err:
         return err
     conn = db.get()
@@ -2041,7 +2052,7 @@ def api_planner(request: Request, body: dict | None = None):
 
 
 def api_planner_note(request: Request, body: dict | None = None):
-    user, err = _need_user(request)
+    user, err = _need_access(request, "Планер")
     if err:
         return err
     if _too_often(request, "pnote", 600, 3600):
@@ -2052,7 +2063,7 @@ def api_planner_note(request: Request, body: dict | None = None):
 
 def api_planner_ics(request: Request, body: dict | None = None):
     """Одно событие .ics (кнопка «В календарь телефона»)."""
-    user, err = _need_user(request)
+    user, err = _need_access(request, "Планер")
     if err:
         return err
     text = planner.ics(db.get(), user["id"], int(request.path_params["id"]))
@@ -2065,7 +2076,10 @@ def planner_feed(request: Request, body: dict | None = None):
     uid, token = int(request.path_params["uid"]), request.path_params["token"]
     if not planner.check_feed(uid, token):
         return Response("not found", status_code=404)
-    return Response(planner.ics(db.get(), uid), media_type="text/calendar; charset=utf-8")
+    conn = db.get()
+    if not accounts.has_access(accounts.get_user(conn, uid)):
+        return Response("Планер доступен с подпиской.", status_code=403)
+    return Response(planner.ics(conn, uid), media_type="text/calendar; charset=utf-8")
 
 
 def market_page(request: Request, body: dict | None = None):
@@ -2102,11 +2116,13 @@ def _agent_items(conn, user) -> list[dict]:
     from . import listingstats
     rows = agent.my_listings(conn, user["id"])
     stats = listingstats.for_listings(conn, [r for r in rows if r["is_active"]][:300])   # 19.10: просмотры, номер, подборки
+    access = accounts.has_access(user)
     out = []
     for r in rows:
-        it = search.row_to_item(r, True)
+        it = search.row_to_item(r, access)
         it.update(listing_video.fields(r))
-        it["can_edit"] = agent.can_edit(conn, user, r)[0]
+        it["can_edit"], it["edit_reason"] = agent.can_edit(conn, user, r)
+        it["live_until"], it["delete_at"] = agent.lifecycle(r)
         it["stats"] = stats.get(r["id"])
         it["geo_mine"] = r["geo_src"] == "agent"   # точку поставил сам агент — её можно убрать
         out.append(it)
@@ -2129,6 +2145,7 @@ def api_agent(request: Request, body: dict | None = None):
         # способы подтверждения номера: звонок — основной (если подключён SMS.ru), код в MAX — запасной
         "verify_methods": [m for m, on in (("call", callcheck.enabled()), ("max", bool(config.VERIFY_NUMBER))) if on],
         "own_days": config.OWN_LISTING_DAYS, "max_photos": config.MAX_PHOTOS, "items": _agent_items(conn, user),
+        "archive_days": config.ARCHIVE_DAYS,
         "max_video_bytes": listing_video.MAX_BYTES,
         "signup_consent": _signup_choice(conn, user["id"]),
     })
@@ -2226,7 +2243,7 @@ def api_agent_edit(request: Request, body: dict | None = None):
 
 def api_agent_describe(request: Request, body: dict | None = None):
     """«Написать красиво»: продающее описание объекта нейросетью (только с доступом; не чаще 30 раз в час)."""
-    user, err = _need_access(request)
+    user, err = _need_access(request, "Подготовка описаний")
     if err:
         return err
     if _too_often(request, "describe", 30, 3600):
@@ -3074,7 +3091,7 @@ def api_admin_geo_queue(request: Request, body: dict | None = None):
 
 def api_clients(request: Request, body: dict | None = None):
     """CRM: GET — доска клиентов (?q=), ?id= — карточка; POST — сохранить клиента / {id, stage}; DELETE {id}."""
-    user, err = _need_user(request)
+    user, err = _need_access(request, "CRM")
     if err:
         return err
     conn = db.get()
@@ -3089,7 +3106,7 @@ def api_clients(request: Request, body: dict | None = None):
             res = clients.set_stage(conn, user["id"], _num(body["id"], int) or 0, str(body["stage"]))
         else:
             # у нового клиента сразу своя подборка (подборки — с доступом)
-            res = clients.save(conn, user["id"], body, user if has_access(request, user) else None)
+            res = clients.save(conn, user["id"], body, user)
         return _err(res["error"]) if "error" in res else JSONResponse(res)
     q = request.query_params
     if q.get("id"):
@@ -3104,7 +3121,7 @@ def api_clients(request: Request, body: dict | None = None):
 
 def api_client_action(request: Request, body: dict | None = None):
     """POST /api/clients/{id}/items {listing_id, status|null} — объект клиенту; /note {text} — заметка; GET /match — подбор."""
-    user, err = _need_user(request)
+    user, err = _need_access(request, "CRM")
     if err:
         return err
     conn = db.get()
@@ -3123,7 +3140,7 @@ def api_client_action(request: Request, body: dict | None = None):
         qr = clients.query_for(c, user["id"], size=60, page=page, sort=sort, since=_num(qp.get("since"), int),
                                with_photo=qp.get("photo") == "1", budget_near=target,
                                **({"not_first": True} if qp.get("not_first") == "1" else {}))
-        res = search.search(conn, qr, int(time.time()), has_access(request, user))
+        res = search.search(conn, qr, int(time.time()), True)
         # уже связанные с клиентом и «не подходит» в подбор не попадают — счётчик честный
         return JSONResponse({"items": res["items"], "total": res.get("total"), "linked": len(d["items"]),
                              "hidden": d["hidden"], "more": page * 60 < (res.get("total") or 0), "page": page})
@@ -3135,8 +3152,6 @@ def api_client_action(request: Request, body: dict | None = None):
             return JSONResponse({"published": buyers.published(conn, user["id"], cid)})
         if body.get("off"):
             return JSONResponse({"ok": buyers.unpublish(conn, user["id"], cid), "published": None})
-        if not has_access(request, user):
-            return _err("Публиковать запросы можно с подпиской.", 403)
         if not buyers.publish_state(conn, user["id"])["consent"] and buyers.publish_state(conn, user["id"])["verified"]:
             return JSONResponse({"detail": "Дайте согласие на показ вашего номера коллегам — страница «Ваш номер на 1+1».",
                                  "need_consent": True}, status_code=400)
@@ -3153,13 +3168,9 @@ def api_client_action(request: Request, body: dict | None = None):
         res = clients.hide(conn, user["id"], cid, [int(x) for x in (body.get("ids") or []) if str(x).isdigit()], what == "hide")
         return _err(res["error"]) if "error" in res else JSONResponse(res)
     if what == "add":   # «Клиенту ▾»: объект — в активную подборку клиента
-        if not has_access(request, user):
-            return _err("Подборки — по подписке.", 403)
         res = clients.add_to_client(conn, user, cid, _num(body.get("listing_id"), int) or 0)
         return _err(res["error"]) if "error" in res else JSONResponse(res)
     if what == "topick":   # «Всё в подборку» — новые под клиента одной кнопкой
-        if not has_access(request, user):
-            return _err("Подборки — по подписке.", 403)
         res = clients.to_pick(conn, user, cid, [int(x) for x in (body.get("ids") or []) if str(x).isdigit()])
     elif what == "items":
         res = clients.set_item(conn, user["id"], cid, _num(body.get("listing_id"), int) or 0, body.get("status"))
