@@ -13,8 +13,13 @@
 		-Server
 	}
 
-	# Больше 15 МБ запросов сайту не нужно (самое большое — фото агента) — огромные отбрасываем сразу
-	request_body {
+	# Загрузка видео имеет отдельный лимит, остальные запросы — до 15 МБ.
+	@videoUpload path_regexp videoUpload ^/api/agent/listings/[0-9]+/video$
+	request_body @videoUpload {
+		max_size 50000000
+	}
+	@otherRequests not path_regexp standardUpload ^/api/agent/listings/[0-9]+/video$
+	request_body @otherRequests {
 		max_size 15MB
 	}
 

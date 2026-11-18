@@ -10,6 +10,7 @@ import logging
 import re
 import secrets
 import sqlite3
+import tempfile
 import threading
 import time
 from collections import defaultdict, deque
@@ -17,13 +18,13 @@ from pathlib import Path
 
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
-from starlette.requests import Request
+from starlette.requests import ClientDisconnect, Request
 from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import (accounts, agent, autolearn, callcheck, bankrates, brain, buyers, clients, dashboard, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
-               dupreview, market, notify, payments, picks, planner, region, reqexport, search, settings, stats, tg, wappi, widgets, worklog)
+               dupreview, listing_video, market, notify, payments, picks, planner, region, reqexport, search, settings, stats, tg, wappi, widgets, worklog)
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -663,6 +664,7 @@ def api_listing(request: Request, body: dict | None = None):
         if d.get("fragment"):
             d["fragment"] = parser.strip_phones(d["fragment"])
     row = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
+    d.update(listing_video.fields(row))
     if not row["is_active"]:   # 24.10l: почему снят — честно (раньше любая причина выглядела как «продан»)
         d["gone"] = _gone_reason(row)
         mid = row["merged_into"] if "merged_into" in row.keys() else None
@@ -2103,6 +2105,7 @@ def _agent_items(conn, user) -> list[dict]:
     out = []
     for r in rows:
         it = search.row_to_item(r, True)
+        it.update(listing_video.fields(r))
         it["can_edit"] = agent.can_edit(conn, user, r)[0]
         it["stats"] = stats.get(r["id"])
         it["geo_mine"] = r["geo_src"] == "agent"   # точку поставил сам агент — её можно убрать
@@ -2126,6 +2129,7 @@ def api_agent(request: Request, body: dict | None = None):
         # способы подтверждения номера: звонок — основной (если подключён SMS.ru), код в MAX — запасной
         "verify_methods": [m for m, on in (("call", callcheck.enabled()), ("max", bool(config.VERIFY_NUMBER))) if on],
         "own_days": config.OWN_LISTING_DAYS, "max_photos": config.MAX_PHOTOS, "items": _agent_items(conn, user),
+        "max_video_bytes": listing_video.MAX_BYTES,
         "signup_consent": _signup_choice(conn, user["id"]),
     })
 
@@ -2246,6 +2250,73 @@ def api_agent_photo(request: Request, body: dict | None = None):
             return _err("Слишком много фото за час.", 429)
         photos, why = agent.add_photo(conn, user, lid, str(body.get("data", "")))
     return JSONResponse({"photos": photos, "text": why}) if photos is not None else _err(why)
+
+
+async def api_agent_video_upload(request: Request):
+    """Принимаем двоичный файл отдельно от JSON формы и сразу пишем на диск."""
+    lid = int(request.path_params["id"])
+
+    def authorize():
+        user, err = _need_user(request)
+        if err:
+            return None, err
+        conn = db.get()
+        row = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
+        ok, why = agent.can_edit(conn, user, row)
+        if not ok:
+            return None, _err(why, 403)
+        if _too_often(request, "agent_video", 20, 3600, who=str(user["id"])):
+            return None, _err("Слишком много загрузок видео за час.", 429)
+        return user, None
+
+    user, err = await run_in_threadpool(authorize)
+    if err:
+        return err
+    if (_num(request.headers.get("content-length"), int) or 0) > listing_video.MAX_BYTES:
+        return _err("Видео должно быть не больше 50 МБ.", 413)
+    root = listing_video.root()
+    root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=root) as temp:
+        upload = Path(temp) / "upload"
+        size = 0
+        prefix = bytearray()
+        try:
+            with upload.open("wb") as out:
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > listing_video.MAX_BYTES:
+                        return _err("Видео должно быть не больше 50 МБ.", 413)
+                    prefix.extend(chunk[:max(0, 1024 - len(prefix))])
+                    if chunk:
+                        await run_in_threadpool(out.write, chunk)
+        except ClientDisconnect:
+            return _err("Загрузка прервалась. Попробуйте снова.")
+        extension = listing_video.identify(bytes(prefix))
+        if not extension:
+            return _err("Выберите видео в формате MP4 или WebM.", 415)
+        values, why = await run_in_threadpool(lambda: agent.set_video(db.get(), user, lid, upload, extension))
+    return JSONResponse(values) if values is not None else _err(why, 403)
+
+
+def api_agent_video_remove(request: Request, body: dict | None = None):
+    user, err = _need_user(request)
+    if err:
+        return err
+    values, why = agent.set_video(db.get(), user, int(request.path_params["id"]))
+    return JSONResponse(values) if values is not None else _err(why, 403)
+
+
+def listing_video_file(request: Request, body: dict | None = None):
+    lid, name = int(request.path_params["id"]), request.path_params["name"]
+    if not listing_video.FILE_NAME.fullmatch(name):
+        return _err("Не найдено.", 404)
+    if not db.get().execute("SELECT 1 FROM listings WHERE id = ? AND video_file = ?", (lid, name)).fetchone():
+        return _err("Не найдено.", 404)
+    path = listing_video.root() / str(lid) / name
+    if not path.is_file():
+        return _err("Не найдено.", 404)
+    return FileResponse(path, media_type=listing_video.FILE_TYPES[path.suffix[1:]],
+                        headers={"Cache-Control": "private, no-cache", "X-Content-Type-Options": "nosniff"})
 
 
 def agent_confirm_page(request: Request, body: dict | None = None):
@@ -3451,6 +3522,8 @@ routes = [
     Route("/api/agent/listings", threaded(api_agent_create), methods=["POST"]),
     Route("/api/agent/listings/{id:int}", threaded(api_agent_edit), methods=["POST"]),
     Route("/api/agent/listings/{id:int}/photos", threaded(api_agent_photo), methods=["POST", "DELETE"]),
+    Route("/api/agent/listings/{id:int}/video", api_agent_video_upload, methods=["POST"]),
+    Route("/api/agent/listings/{id:int}/video", threaded(api_agent_video_remove), methods=["DELETE"]),
     Route("/api/agent/describe", threaded(api_agent_describe), methods=["POST"]),
     Route("/agent/confirm", threaded(agent_confirm_page)),
     Route("/agent", threaded(agent_num_page)),
@@ -3483,6 +3556,7 @@ routes = [
     Route("/favicon.ico", threaded(favicon_ico)),
     Mount("/static", StaticFiles(directory=WEB), name="static"),
     Route("/photos/{folder}/{name}", threaded(photo_file)),
+    Route("/listing-videos/{id:int}/{name}", threaded(listing_video_file)),
 ]
 
 async def _server_error(request: Request, exc: Exception):
@@ -3502,7 +3576,8 @@ CSP = ("default-src 'self'; "
        "style-src 'self' 'unsafe-inline'; "
        "font-src 'self' data:; "
        "img-src 'self' data: blob: https:; "
-       "connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; worker-src 'self'; manifest-src 'self'; "
+       "connect-src 'self'; media-src 'self'; frame-src 'self' https://kinescope.io/embed/; "
+       "frame-ancestors 'self'; worker-src 'self'; manifest-src 'self'; "
        "object-src 'none'; base-uri 'self'; form-action 'self'")
 
 

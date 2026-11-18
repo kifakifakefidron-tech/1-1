@@ -11,6 +11,7 @@
   const TYPES = { flat: "Квартира", room: "Комната", house: "Дом", land: "Участок", commercial: "Коммерция" };
   const ROOMS = [[0, "Студия"], [1, "1"], [2, "2"], [3, "3"], [4, "4+"]];
   let data = null, meta = {}, complexes = [], tab = "all", waitTimer = 0, q = "";
+  let pendingVideo, saving = false;  // undefined — без изменений, null — удалить, File — загрузить
   const plural = (n, a, b, c) => { const m = Math.abs(n) % 100, d = m % 10; return m > 10 && m < 20 ? c : d === 1 ? a : d > 1 && d < 5 ? b : c; };
 
   async function call(url, body, method) {
@@ -154,7 +155,7 @@
     main.innerHTML = `
       <header class="my-head"><div><a class="my-back" href="/my">${ic("chevron-left")}Мои объекты</a>
         <h1>${isNew ? "Новый объект" : "Изменить объявление"}</h1>
-        <p>${isNew ? "Заполните по шагам — справа видно, как объект увидят коллеги в поиске." : own ? esc(o.title) : "Объявление из чатов: можно поменять цену, описание, фото, адрес и район — остальное берётся из сообщения."}</p></div></header>
+        <p>${isNew ? "Заполните по шагам — справа видно, как объект увидят коллеги в поиске." : own ? esc(o.title) : "Объявление из чатов: можно поменять цену, описание, фото, видео, адрес и район — остальное берётся из сообщения."}</p></div></header>
       <div class="my-edit">
         <form id="myForm" class="my-form" autocomplete="off">
           ${own ? `
@@ -208,6 +209,10 @@
             </div>
             <a class="my-ya" data-ya href="https://yandex.ru/maps/35/krasnodar/" target="_blank" rel="noopener">${ic("search")}Проверить адрес в Яндекс Картах ↗</a>
             ${geoHTML()}</section>`}
+          <section class="my-sec"><h3><b>${own ? 7 : 5}</b>Видео</h3>
+            <div class="my-video-controls" id="myVideoControls">${videoControlsHTML()}</div>
+            ${fieldHTML("kinescope_url", "Ссылка Kinescope", o.kinescope_url, 'type="url" maxlength="500" placeholder="https://kinescope.io/…"')}
+          </section>
           <p class="err" id="myErr" hidden></p>
         </form>
         <aside class="my-side">
@@ -300,6 +305,21 @@
         <label class="my-ph add"><input type="file" accept="image/*" multiple hidden id="myFiles">${ic("plus")}<span>Добавить</span></label></div>
       <p class="my-hint">${(o.photos || []).length} из ${data.max_photos} · можно перетащить фото сюда с компьютера. Первое — обложка.</p></div>`;
   }
+  function videoControlsHTML() {
+    const current = o.video_url && pendingVideo !== null;
+    const maxMb = data.max_video_bytes / 1e6;
+    return `${current ? `<video controls playsinline preload="none" src="${esc(o.video_url)}" aria-label="Загруженное видео"></video>` : ""}
+      <div class="my-video-actions">
+        <label class="my-f"><span>Видеофайл</span><input type="file" id="myVideoFile" accept=".mp4,.webm,video/mp4,video/webm"></label>
+        ${pendingVideo !== undefined ? `<button type="button" class="pill light" data-video-reset>Отменить</button>`
+          : current ? `<button type="button" class="pill light" data-video-remove>Удалить видео</button>` : ""}
+      </div>
+      <p class="my-hint" aria-live="polite">${pendingVideo === null ? "Файл будет удалён при сохранении."
+        : pendingVideo ? `Выбран файл: ${esc(pendingVideo.name)}` : `MP4 или WebM, до ${maxMb} МБ.`}</p>`;
+  }
+  function refreshVideoControls() {
+    $("myVideoControls").innerHTML = videoControlsHTML();
+  }
   function formVals() {
     const f = $("myForm");
     return Object.fromEntries(new FormData(f).entries());
@@ -340,6 +360,22 @@
     }
     f.addEventListener("input", updatePreview);
     f.addEventListener("submit", (e) => { e.preventDefault(); save(); });
+    f.addEventListener("change", (e) => {
+      if (e.target.id !== "myVideoFile") return;
+      const file = e.target.files[0];
+      if (!file) return;
+      if (!/\.(mp4|webm)$/i.test(file.name) || !file.size || file.size > data.max_video_bytes) {
+        toast(`Выберите MP4 или WebM до ${data.max_video_bytes / 1e6} МБ.`, 4500);
+        e.target.value = "";
+        return;
+      }
+      pendingVideo = file;
+      refreshVideoControls();
+    });
+    bindPhotos();
+    updatePreview();
+  }
+  function bindPhotos() {
     const drop = $("myDrop");
     if (drop) {
       ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
@@ -347,7 +383,6 @@
       drop.addEventListener("drop", (e) => addPhotos([...e.dataTransfer.files].filter((x) => x.type.startsWith("image/"))));
       $("myFiles").addEventListener("change", (e) => { addPhotos([...e.target.files]); e.target.value = ""; });
     }
-    updatePreview();
   }
   async function writeNice() {   // «Написать красиво»: нейросеть пишет продающий текст по параметрам
     const btn = $("myAi"), box = $("myAiBox");
@@ -367,33 +402,72 @@
         <button type="button" class="chip" data-ai-close>Закрыть</button></div>`;
     box.dataset.text = r.data.text;
   }
-  async function save() {
+  function saveError(text) {
     const err = $("myErr");
-    err.hidden = true;
+    err.textContent = text;
+    err.hidden = false;
+    err.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+  function savingState(text = "") {
+    const btn = document.querySelector(".my-save");
+    btn.disabled = !!text;
+    btn.textContent = text || (isNew ? "Опубликовать" : "Сохранить");
+    document.querySelectorAll("#myVideoControls input, #myVideoControls button, [name=kinescope_url], .my-status")
+      .forEach((el) => { el.disabled = !!text; });
+  }
+  async function save() {
+    if (saving) return;
+    $("myErr").hidden = true;
     const fd = formVals();
-    // объявление из чата: цена, описание и — только если меняли — адрес и район (16.11)
+    // Для объявления из чатов отправляем только редактируемые поля.
     if (!own) for (const k of Object.keys(fd)) {
       const place = ["district", "complex", "street", "house"].includes(k);
-      if (!["price", "description"].includes(k) && !(place && String(fd[k] ?? "").trim() !== String(o[k] ?? "").trim())) delete fd[k];
+      if (!["price", "description", "kinescope_url"].includes(k) && !(place && String(fd[k] ?? "").trim() !== String(o[k] ?? "").trim())) delete fd[k];
     }
     if (ptDirty) { fd.lat = pt ? pt.lat : ""; fd.lon = pt ? pt.lon : ""; }
-    const btn = document.querySelector(".my-save");
-    btn.disabled = true; btn.textContent = "Сохраняем…";
-    const r = await call(isNew ? "/api/agent/listings" : `/api/agent/listings/${o.id}`, fd);
-    btn.disabled = false; btn.textContent = isNew ? "Опубликовать" : "Сохранить";
-    if (!r.ok) { err.textContent = r.data.detail || "Не получилось сохранить."; err.hidden = false; err.scrollIntoView({ block: "center", behavior: "smooth" }); return; }
-    data.items = r.data.items;
-    if (isNew) {   // сразу к фото
-      toast("Объект опубликован — добавьте фото");
-      history.replaceState(null, "", `/my/edit?id=${r.data.id}`);
-      openEdit(r.data.id);
-    } else {
-      toast("Сохранено");
-      o = data.items.find((x) => x.id === o.id) || o;
-      ptDirty = false;
-      pt = o.lat && o.lon ? { lat: o.lat, lon: o.lon } : null;
-      geoState();
-      updatePreview();
+    const creating = isNew;
+    let saved = false;
+    saving = true;
+    savingState("Сохраняем…");
+    try {
+      const r = await call(creating ? "/api/agent/listings" : `/api/agent/listings/${o.id}`, fd);
+      if (!r.ok) { saveError(r.data.detail || "Не получилось сохранить."); return; }
+      saved = true;
+      data.items = r.data.items;
+      if (creating) {
+        history.replaceState(null, "", `/my/edit?id=${r.data.id}`);
+        openEdit(r.data.id, pendingVideo);
+      } else {
+        o = data.items.find((x) => x.id === o.id) || o;
+        $("myForm").elements.kinescope_url.value = o.kinescope_url || "";
+        ptDirty = false;
+        pt = o.lat && o.lon ? { lat: o.lat, lon: o.lon } : null;
+        geoState();
+        updatePreview();
+      }
+      if (pendingVideo !== undefined) {
+        savingState(pendingVideo ? "Загружаем видео…" : "Удаляем видео…");
+        const url = `/api/agent/listings/${o.id}/video`;
+        const video = pendingVideo ? await fetch(url, { method: "POST", credentials: "same-origin", body: pendingVideo })
+          : await fetch(url, { method: "DELETE", credentials: "same-origin" });
+        const result = await video.json().catch(() => ({}));
+        if (!video.ok) {
+          const message = video.status === 413 ? "Видео превышает допустимый размер."
+            : result.detail || "Не удалось сохранить изменение видео. Попробуйте ещё раз.";
+          saveError(`Объявление сохранено. ${message}`);
+          return;
+        }
+        o.video_url = result.video_url;
+        pendingVideo = undefined;
+        refreshVideoControls();
+      }
+      toast(creating ? "Объект опубликован — можно добавить фото" : "Сохранено");
+    } catch {
+      saveError(saved ? "Объявление сохранено. Изменение видео не подтверждено. Попробуйте ещё раз."
+        : "Не получилось сохранить. Проверьте соединение и попробуйте ещё раз.");
+    } finally {
+      saving = false;
+      savingState();
     }
   }
   function shrink(file) {
@@ -426,7 +500,8 @@
   function refreshPhotos() {
     const sec = $("myDrop").parentElement;
     sec.innerHTML = `<h3><b>${own ? 6 : 3}</b>Фото</h3>${photosHTML()}`;
-    bindEdit();
+    bindPhotos();
+    updatePreview();
   }
 
   async function setStatus(id, status) {
@@ -437,8 +512,9 @@
     toast(status === "sold" ? "Объект снят с сайта" : "Объект снова на сайте");
     if (location.pathname === "/my") renderList(); else openEdit(id);
   }
-  function openEdit(id) {
+  function openEdit(id, videoFile) {
     isNew = !id;
+    pendingVideo = videoFile;
     o = isNew ? { type: "flat", deal: "sale", photos: [] } : data.items.find((x) => x.id === id);
     if (!o) { main.innerHTML = `<div class="wk-empty">${ic("alert")}<b>Объект не найден</b>Возможно, это не ваше объявление. <a class="pill" href="/my">К моим объектам</a></div>`; return; }
     if (!isNew && !o.can_edit) { main.innerHTML = `<div class="wk-empty">${ic("ban")}<b>Этот объект менять нельзя</b>Им управляет другой агент. <a class="pill" href="/my">К моим объектам</a></div>`; return; }
@@ -468,6 +544,11 @@
     }
     if (t.hasAttribute("data-ai-close")) { $("myAiBox").hidden = true; return; }
     if (t.id === "myAddPhone") { const m = $("myMorePh"); m.hidden = !m.hidden; t.classList.toggle("on", !m.hidden); return; }
+    if (t.hasAttribute("data-video-reset") || t.hasAttribute("data-video-remove")) {
+      pendingVideo = t.hasAttribute("data-video-remove") ? null : undefined;
+      refreshVideoControls();
+      return;
+    }
     if (t.dataset.tab) { tab = t.dataset.tab; renderGrid(); return; }
     if (t.hasAttribute("data-q-clear")) { q = ""; const qi = $("myQ"); if (qi) { qi.value = ""; qi.focus(); } renderGrid(); return; }
     if (t.dataset.status) { setStatus(Number(t.dataset.id), t.dataset.status); return; }

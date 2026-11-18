@@ -50,6 +50,51 @@ def _verify(c, conn, phone="+7 918 111-22-33", sender="79181112233"):
     return res
 
 
+def test_my_object_video_lifecycle(env):
+    c, conn, _ = env
+    owner = _login(c, conn)
+    phone = "79181112233"
+    conn.execute("INSERT INTO agent_phones (user_id, phone, verified_at) VALUES (?,?,?)",
+                 (owner["id"], phone, int(time.time())))
+    conn.commit()
+    direct = "https://kinescope.io/8d3936d9-3703-4b93-994e-6210ac9922ed?t=5"
+    params = {"type": "flat", "deal": "sale", "price": "6,5", "district": "ФМР", "kinescope_url": direct}
+    res = c.post("/api/agent/listings", json=params)
+    assert res.status_code == 200, res.text
+    lid = res.json()["id"]
+    endpoint = f"/api/agent/listings/{lid}"
+    detail = f"/api/listings/{lid}"
+    assert c.get(detail).json()["kinescope_url"] == direct.replace(".io/", ".io/embed/").split("?")[0]
+
+    mp4 = b"\x00\x00\x00\x18ftypisom" + b"\x00" * 12
+    assert c.post(endpoint + "/video", content=JPEG).status_code == 415
+    res = c.post(endpoint + "/video", content=mp4)
+    assert res.status_code == 200, res.text
+    first_url = res.json()["video_url"]
+    assert c.get(detail).json()["video_url"] == first_url
+    assert c.get(first_url).content == mp4
+    part = c.get(first_url, headers={"Range": "bytes=0-7"})
+    assert part.status_code == 206 and part.content == mp4[:8]
+    items = c.get("/api/agent").json()["items"]
+    assert next(item for item in items if item["id"] == lid)["video_url"] == first_url
+
+    _login(c, conn, "another@example.ru")
+    assert c.post(endpoint + "/video", content=mp4).status_code == 403
+    assert c.delete(endpoint + "/video").status_code == 403
+    assert c.post(endpoint, json={"kinescope_url": ""}).status_code == 403
+
+    _login(c, conn)
+    assert c.post(endpoint, json={"kinescope_url": "https://kinescope.io.example.ru/202589431"}).status_code == 400
+    second_url = c.post(endpoint + "/video", content=mp4).json()["video_url"]
+    assert first_url != second_url
+    assert c.get(first_url).status_code == 404
+    assert c.delete(endpoint + "/video").json()["video_url"] is None
+    assert c.get(second_url).status_code == 404
+    assert c.post(endpoint, json={"kinescope_url": ""}).status_code == 200
+    item = c.get(detail).json()
+    assert item["kinescope_url"] is None and item["video_url"] is None
+
+
 def test_verify_phone_by_code_from_own_number(env):
     c, conn, lid = env
     _login(c, conn)

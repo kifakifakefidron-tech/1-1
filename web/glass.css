@@ -1240,6 +1240,10 @@ summary { transition: color .2s var(--m-out); }
 /* описание — всегда целиком */
 .dv-sec { margin: 18px 0 0; padding-top: 16px; border-top: 1px solid rgba(243, 232, 188, .1); }
 .dv-sec-h { margin: 0 0 8px; font: 600 12px var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--gold); }
+.dv-videos video, .dv-videos iframe { display: block; width: 100%; border: 0; border-radius: 14px; background: #000; }
+.dv-videos video { max-height: 460px; }
+.dv-videos iframe { aspect-ratio: 16 / 9; height: auto; }
+.dv-videos video + iframe { margin-top: 12px; }
 .dv3 .dv-desc, .dv3 .dv-desc.clamp { max-height: none !important; -webkit-line-clamp: unset !important; overflow: visible !important; mask: none !important; }
 .dv3 .dv-desc p { margin: 0; white-space: pre-wrap; font-size: 15px; line-height: 1.6; color: var(--ink); }
 .dv3 .dv-desc-more { display: none !important; }

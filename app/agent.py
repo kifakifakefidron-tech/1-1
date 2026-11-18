@@ -21,15 +21,15 @@ import sqlite3
 import time
 from pathlib import Path
 
-from . import accounts, config, geo, notices, rules
+from . import accounts, config, geo, listing_video, notices, rules
 
 DAY = 86400
 CODE_TTL = 30 * 60
 EDIT_FIELDS = ("price", "description", "status",      # что агент может менять в объявлении из чата
-               "district", "complex", "street", "house")   # 16.11: и адрес/район (правку видит админ — очередь «Поправил агент»)
+               "district", "complex", "street", "house", "kinescope_url")   # 16.11: и адрес/район (очередь «Поправил агент»)
 PLACE_FIELDS = ("district", "complex", "street", "house")
 OWN_FIELDS = ("type", "deal", "rooms", "room_kind", "area", "land", "floor", "floors", "price", "district",
-              "complex", "street", "house", "description")
+              "complex", "street", "house", "description", "kinescope_url")
 
 
 # ─── подтверждение номера ──────────────────────────────────────────────────
@@ -327,6 +327,11 @@ def edit_listing(conn: sqlite3.Connection, user: sqlite3.Row, listing_id: int, d
             v = (str(v).strip()[:3000]) or None
             if v and rules.extract_phones(v):
                 v = rules.remove_phones(v)  # телефоны в описании не публикуем — они берутся из подтверждения
+        elif k == "kinescope_url":
+            try:
+                v = listing_video.kinescope_url(str(v) if v is not None else "")
+            except ValueError as exc:
+                return False, str(exc)
         elif k == "district":
             v = str(v).strip()[:80]
             if v and row["source"] != "own" and not geo.canonical_district(v):
@@ -609,6 +614,34 @@ def remove_photo(conn: sqlite3.Connection, user: sqlite3.Row, listing_id: int, u
         f = Path(config.PHOTOS_DIR) / str(listing_id) / url.rsplit("/", 1)[-1]
         f.unlink(missing_ok=True)
     return photos, "Фото удалено."
+
+
+def set_video(conn: sqlite3.Connection, user: sqlite3.Row, lid: int,
+              upload: Path | None = None, extension: str | None = None) -> tuple[dict | None, str]:
+    """Заменить или удалить файл. Пока запись в базе не сохранена, старый файл остаётся на месте."""
+    new_name = None
+    try:
+        with conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
+            ok, why = can_edit(conn, user, row)
+            if not ok:
+                return None, why
+            old_name = row["video_file"]
+            if upload is not None:
+                new_name = f"{secrets.token_hex(16)}.{extension}"
+                folder = listing_video.root() / str(lid)
+                folder.mkdir(parents=True, exist_ok=True)
+                upload.replace(folder / new_name)
+            if old_name != new_name:
+                conn.execute("UPDATE listings SET video_file = ?, owner_user_id = ?, owner_edited_at = ? WHERE id = ?",
+                             (new_name, user["id"], int(time.time()), lid))
+                _log(conn, lid, user["id"], "video_file", old_name, new_name)
+    except Exception:
+        listing_video.discard(lid, new_name)
+        raise
+    listing_video.discard(lid, old_name)
+    return {"video_url": listing_video.file_url(lid, new_name)}, "Видео сохранено." if new_name else "Видео удалено."
 
 
 # 02.11 (Артём: «правки агентов — время, когда совершена; меню удобнее»): кто правил — агенты / админ / сервис

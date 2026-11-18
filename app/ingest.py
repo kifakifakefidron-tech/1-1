@@ -1065,6 +1065,8 @@ def archive_stale(conn: sqlite3.Connection, now: int | None = None) -> int:
 def cleanup_old(conn: sqlite3.Connection, now: int | None = None) -> dict:
     """Раз в сутки: объекты, пролежавшие в архиве ARCHIVE_DAYS (сняли/устарели и не появились снова), — удалить;
     сообщения старше KEEP_DAYS — тоже."""
+    from . import listing_video
+
     now = int(now or time.time())
     edge = now - config.KEEP_DAYS * 86400
     arch = now - config.ARCHIVE_DAYS * 86400
@@ -1086,6 +1088,8 @@ def cleanup_old(conn: sqlite3.Connection, now: int | None = None) -> dict:
         from . import db
         db.set_state(conn, "deleted_listings", str(int(db.get_state(conn, "deleted_listings") or 0) + len(ids)))
     conn.commit()
+    for i in ids:
+        shutil.rmtree(listing_video.root() / str(i), ignore_errors=True)
     return {"listings": len(ids), "messages": cur.rowcount}
 
 

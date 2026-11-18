@@ -377,6 +377,8 @@ MIGRATIONS = [
     ("listings", "source", "TEXT NOT NULL DEFAULT 'chat'"),   # chat | feed
     ("listings", "ext_id", "TEXT"),                           # id объекта в фиде
     ("listings", "photos", "TEXT NOT NULL DEFAULT '[]'"),
+    ("listings", "video_file", "TEXT"),
+    ("listings", "kinescope_url", "TEXT"),
     ("listings", "url", "TEXT"),
     ("listings", "article", "TEXT"),                          # артикул СТРЕЛ («Артикул: 337»)
     ("listings", "room_kind", "TEXT"),                        # studio | classic | euro | mini

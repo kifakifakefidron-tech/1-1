@@ -1359,6 +1359,12 @@
         <section class="dv-sec"><p class="dv-sec-h">Описание</p>
           ${o.description ? `<div class="dv-desc"><p>${esc(o.description)}</p></div>`
             : `<p class="dv-desc-none">Описание — у агента: в объявлении только параметры и цена.</p>`}</section>
+        ${o.video_url || o.kinescope_url ? `<section class="dv-sec dv-videos" data-no-swipe>
+          <p class="dv-sec-h">Видео</p>
+          ${o.video_url ? `<video controls playsinline preload="none" src="${esc(o.video_url)}" aria-label="Видео объекта"></video>` : ""}
+          ${o.kinescope_url ? `<iframe title="Видео объекта в Kinescope" src="${esc(o.kinescope_url)}" loading="lazy"
+            allow="fullscreen; picture-in-picture; encrypted-media" allowfullscreen></iframe>` : ""}
+        </section>` : ""}
         ${contactHTML(o)}
         ${gone ? "" : `<div class="dv-acts">${actions}</div>`}
         ${o.lat && o.lon && !o.loading && ["street", "district"].includes(o.geo_level)
@@ -3067,7 +3073,10 @@
       const prev = detailStack.pop();
       if (prev) openDetail(prev);
     });
-    detail.addEventListener("close", () => { detailStack = []; openedId = 0; setOpenParam(null); toParent("close"); });
+    detail.addEventListener("close", () => {
+      $("detailBody").querySelector(".dv-videos")?.remove();
+      detailStack = []; openedId = 0; setOpenParam(null); toParent("close");
+    });
 
     $("accountBtn").addEventListener("click", () => (me() ? (location.href = "/cabinet") : openLogin()));
 
