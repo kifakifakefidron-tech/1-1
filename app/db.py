@@ -361,6 +361,7 @@ CREATE TABLE IF NOT EXISTS notes (
 
 # Новые поля в уже существующих таблицах (база на сервере обновится сама при запуске)
 MIGRATIONS = [
+    ("listings", "catalog_migrated", "INTEGER NOT NULL DEFAULT 0"),  # первоначальный перенос из «Яблони»
     # 27.10: сессии и просмотры в посещениях по дням (сессия — перерыв > 30 мин; просмотр — открытие страницы, не сигнал раз в минуту)
     ("visits_daily", "sessions", "INTEGER NOT NULL DEFAULT 1"),
     ("visits_daily", "last_ts", "INTEGER"),

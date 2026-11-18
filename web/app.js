@@ -1250,7 +1250,7 @@
     // раскрывающиеся строки
     const chart = priceChartHTML(o, true);
     const priceBody = (days != null ? `<p class="dv-line">⏳ ${days < 1 ? "<b>Новое на 1+1</b> — появилось сегодня" : `На 1+1 — <b>${esc(daysText(days))}</b>`}
-          <small>считаем с первого появления объявления в чатах риелторов</small></p>` : "")
+          <small>${o.appletv ? "считаем с первой загрузки объявления из базы «Яблоня»" : "считаем с первого появления объявления в чатах риелторов"}</small></p>` : "")
       + (m ? `<p class="dv-line">${m.diff <= -3 ? `Дешевле рынка на <b>${-m.diff}%</b>` : m.diff >= 3 ? `Дороже рынка на <b>${m.diff}%</b>` : "<b>По рынку</b>"}
           <small>средняя цена м² — ${esc(num(m.median))} ₽ · ${esc(m.base)}, ${m.n} ${plural(m.n, "объект", "объекта", "объектов")}</small></p>` : "")
       + chart;
@@ -1361,7 +1361,7 @@
     const bar = gone || o.loading ? "" : (toolsAccess || callBtn) ? `<div class="dv-bar">${toolsAccess ? `<button type="button" class="dv-bar-b client" data-client-open="${o.id}">${ic("users")}Клиенту</button>` : ""}${callBtn}</div>` : "";
     return `
       ${gone ? `<div class="dv-gone">${ic("alert")}<span><b>${esc((o.gone && o.gone.title) || "Объект снят с продажи")}</b>
-        <small>${esc((o.gone && o.gone.text) || "")}${o.last_seen ? ` Последнее сообщение — ${esc(new Date(o.last_seen * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }))}.` : ""}</small></span>
+        <small>${esc((o.gone && o.gone.text) || "")}${o.last_seen && !o.appletv ? ` Последнее сообщение — ${esc(new Date(o.last_seen * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }))}.` : ""}</small></span>
         ${o.merged_into ? `<a class="pill" href="/?open=${o.merged_into}" target="_top">Открыть основную карточку</a>`
           : `<a class="pill" href="/?${similarQ}" target="_top">Похожие объекты</a>`}</div>` : ""}
       <div class="dv-hero${gone ? " dv-gone-gal" : ""}">${gallery}${photos.length > 1 ? `<span class="dv-count">${photos.length} фото</span>` : ""}</div>
@@ -1405,7 +1405,8 @@
             : "правка, точка, фото, история", adminBody, { cls: "admin" + (cmNew.length ? " has-cm" : "") })}
           ${reportHTML(o)}
         </div>
-        <p class="dv-foot">Появилось на 1+1: ${esc(fmtAgo(o.first_seen))} · последний раз присылали: ${esc(fmtAgo(o.last_seen))}</p>
+        <p class="dv-foot">${o.appletv ? `Источник — «Яблоня» · обновлено ${esc(fmtAgo(o.last_seen))}`
+          : `Появилось на 1+1: ${esc(fmtAgo(o.first_seen))} · последний раз присылали: ${esc(fmtAgo(o.last_seen))}`}</p>
         ${brandLine("поиск объектов Краснодара из риелторских чатов")}
       </div>
       ${bar}`;
@@ -1976,11 +1977,13 @@
         const sub = [known && !m.confirmed ? `Номер из объявления · <a href="/agent" target="_top">это мой номер</a>` : "",
           i === 0 && o.sender_phone ? `прислал в чат <a href="tel:${esc(o.sender_phone)}">${esc(pretty(o.sender_phone))}</a>` : ""].filter(Boolean).join(" · ");
         return `<div class="dv-phone dv-pass">
+          ${m.name ? `<p class="dv-pass-sub">${esc(m.name)}</p>` : ""}
           <div class="dv-pass-top"><div class="dv-pass-num"><a class="dv-phone-num" href="tel:${esc(p)}">${esc(pretty(p))}</a>
             <button type="button" class="dv-pass-copy" data-copy-phone="${esc(pretty(p))}" aria-label="Скопировать номер" title="Скопировать номер">${ic("copy")}</button></div>${st}</div>
           ${sub ? `<p class="dv-pass-sub">${sub}</p>` : ""}
-          <div class="dv-pass-acts${m.no_max ? " one" : ""}"><a class="gold" href="tel:${esc(p)}">${ic("phone")}Позвонить</a>
-            ${m.no_max ? "" : `<button type="button" class="line" data-max="${esc(p)}">${ic("chat")}Написать в MAX</button>`}</div></div>`;
+          ${m.whatsapp ? `<div class="dv-pass-acts one"><a class="gold" href="https://wa.me/${esc(p.replace(/\D/g, ""))}" target="_blank" rel="noopener">${ic("chat")}Написать в WhatsApp</a></div>`
+            : `<div class="dv-pass-acts${m.no_max ? " one" : ""}"><a class="gold" href="tel:${esc(p)}">${ic("phone")}Позвонить</a>
+            ${m.no_max ? "" : `<button type="button" class="line" data-max="${esc(p)}">${ic("chat")}Написать в MAX</button>`}</div>`}</div>`;
       }).join("")}${o.url ? `<a class="dv-site${o.source === "feed" ? " strely" : ""}" href="${esc(o.url)}" target="_blank" rel="noopener">${o.source === "feed"
         ? `${STRELY}<span>Объект партнёра «СТРЕЛЫ» — смотреть на arrowsrealty.ru</span>${ic("external")}` : `${ic("link")}Объявление на сайте агентства`}</a>` : ""}</div>`;
     }

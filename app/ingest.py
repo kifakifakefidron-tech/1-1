@@ -336,6 +336,9 @@ def _price_m2(price, area) -> int | None:
 
 def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: int | None, ts: int) -> tuple[int, str]:
     """Создаёт новый объект или обновляет найденный дубль. Возвращает (id, как сопоставили)."""
+    from . import applet
+    if message_id is not None and applet.only_catalog_phones(o.phones, applet.active_numbers(conn)):
+        return 0, "appletv"
     # Правки админа (ЖК/район) — до поиска дублей: объявление совпадёт с уже исправленной карточкой
     osmaddr.apply(conn, o)      # опечатка в улице («Командоская») — до правил и дублей: одна улица, а не две
     from . import placehints
@@ -361,7 +364,7 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         return 0, "banned"
     learned_fix(conn, fh, d)   # этот же текст админ уже поправлял (цена, продажа/аренда) — сразу правильно
     if d.get("article"):
-        own = conn.execute("SELECT id FROM listings WHERE source = 'feed' AND article = ? AND is_active = 1",
+        own = conn.execute("SELECT id FROM listings WHERE source = 'feed' AND ext_id LIKE 'feed:%' AND article = ? AND is_active = 1",
                            (d["article"],)).fetchone()
         if own is not None:
             conn.execute(
@@ -582,6 +585,11 @@ def process_message(conn: sqlite3.Connection, message_id: int, use_llm: bool | N
         return {"status": "banned"}
     if m is None:
         return {"status": "missing"}
+    from . import applet
+    if applet.drops_chat(m["text"], m["sender"], applet.active_numbers(conn)):
+        conn.execute("UPDATE messages SET status='skipped', kind='appletv', objects=0 WHERE id=?", (m["id"],))
+        conn.commit()
+        return {"status": "appletv"}
 
     # Тот же текст уже разбирали (его разослали по десяткам чатов) — не тратим
     # нейросеть второй раз, просто отмечаем, что объект снова присылали.
@@ -594,7 +602,7 @@ def process_message(conn: sqlite3.Connection, message_id: int, use_llm: bool | N
         # только объекты, которые ещё есть в базе (удалённые по сроку — пропали вместе с карточкой)
         listing_ids = [r["listing_id"] for r in conn.execute(
             """SELECT DISTINCT e.listing_id FROM listing_events e JOIN listings l ON l.id = e.listing_id
-               WHERE e.message_id = ?""", (prev["id"],))]
+               WHERE e.message_id = ? AND COALESCE(l.hidden_reason, '') != 'appletv_chat'""", (prev["id"],))]
         # 24.10j: текст уже разбирали, но его объект(ы) удалили по сроку — разбираем заново, а не теряем объявление
         # (удалённое админом сюда не доходит: его текст в banned и отсекается выше)
         if not listing_ids and (prev["objects"] or 0) > 0 and prev["kind"] != "request":

@@ -165,10 +165,10 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
         _reindex(conn, lid, d["search_text"])
     # Телефон партнёра — как у любого агента: виден только с подпиской
     if config.FEED_PHONE:
-        conn.execute("UPDATE listings SET phones = ? WHERE source = 'feed'", (json.dumps([config.FEED_PHONE]),))
+        conn.execute("UPDATE listings SET phones = ? WHERE source = 'feed' AND ext_id LIKE 'feed:%'", (json.dumps([config.FEED_PHONE]),))
     # Нет в фиде — продано/снято: скрываем
     gone = 0
-    for r in conn.execute("SELECT id, ext_id FROM listings WHERE source='feed' AND is_active=1").fetchall():
+    for r in conn.execute("SELECT id, ext_id FROM listings WHERE source='feed' AND ext_id LIKE 'feed:%' AND is_active=1").fetchall():
         if r["ext_id"] not in seen:
             conn.execute("UPDATE listings SET is_active=0 WHERE id=?", (r["id"],))
             gone += 1
@@ -176,9 +176,10 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
     # 24.10l: с причиной и ссылкой на карточку сайта — окно копии открывает её, а не пишет «снят, скорее всего продан»
     dupes = conn.execute(
         """UPDATE listings SET is_active = 0, hidden_reason = 'strely',
-                  merged_into = (SELECT f.id FROM listings f WHERE f.source = 'feed' AND f.is_active = 1 AND f.article = listings.article LIMIT 1)
+                  merged_into = (SELECT f.id FROM listings f WHERE f.source = 'feed' AND f.ext_id LIKE 'feed:%'
+                                 AND f.is_active = 1 AND f.article = listings.article LIMIT 1)
            WHERE source = 'chat' AND is_active = 1 AND article IN
-               (SELECT article FROM listings WHERE source = 'feed' AND is_active = 1 AND article IS NOT NULL)""").rowcount
+               (SELECT article FROM listings WHERE source = 'feed' AND ext_id LIKE 'feed:%' AND is_active = 1 AND article IS NOT NULL)""").rowcount
     conn.commit()
     db.set_state(conn, "feed_synced", str(now))
     return {"offers": len(offers), "added": added, "updated": updated, "hidden": gone, "chat_copies_hidden": dupes}

@@ -629,6 +629,8 @@ _GONE = {
     "foreign": ("Объект не в Краснодаре", "В тексте объявления — другой город или побережье (Адлер, Сочи, Москва, «вид на море»)."),
     "strely": ("Это копия объекта агентства", "Основная карточка — на сайте агентства."),
     "strely_photo": ("Это копия объекта агентства", "Пост агентства с фото: основная карточка — на сайте агентства."),
+    "appletv_chat": ("Предложение перенесено в каталог", "Актуальные объявления агентства поступают из базы «Яблоня»."),
+    "appletv_removed": ("Предложение снято", "Объект больше не числится в базе «Яблоня»."),
     "own_dup": ("Это повтор", "Этот объект уже есть в другой карточке."),
     "dup_text": ("Это повтор", "Тот же текст и номер с другой ценой — объект есть в другой карточке."),
     "dup_same": ("Это повтор", "Тот же объект уже есть в другой карточке — избранное и клиенты перенесены туда."),
@@ -651,23 +653,34 @@ def _gone_reason(row) -> dict:
 
 
 def api_listing(request: Request, body: dict | None = None):
+    from . import applet
     conn = db.get()
     lid = int(request.path_params["id"])
     user = current_user(request)
     access = has_access(request, user)
-    d = search.listing_detail(conn, lid, access, bool(user and user["is_admin"]))
+    row = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
+    if not row:
+        return _err("не найдено", 404)
+    retired = not row["is_active"] and row["hidden_reason"] in (applet.REPLACED, applet.REMOVED)
+    d = search.listing_detail(conn, lid, access and not retired, bool(user and user["is_admin"]))
     if not d:
         return _err("не найдено", 404)
+    if (row["ext_id"] or "").startswith(applet.PREFIX):
+        d["appletv"] = True
+    if retired:
+        d["phones_masked"] = []
+        if row["hidden_reason"] == applet.REPLACED:
+            d["description"] = ""
     optout = accounts.optout_set(conn)
     if "phones_masked" in d:
         d["phones_masked"] = [m for m, p in zip(d["phones_masked"], _raw_phones(conn, lid)) if p not in optout]
-    if access:
+    phones = []
+    if access and not retired:
         phones, why = accounts.open_phones(conn, user, lid, d.get("phones") or [], limited=d.get("source") != "feed")
         d["phones"] = phones or []
         d["phones_limit"] = why == "limit"
         if d.get("fragment"):
             d["fragment"] = parser.strip_phones(d["fragment"])
-    row = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
     d.update(listing_video.fields(row))
     if not row["is_active"]:   # 24.10l: почему снят — честно (раньше любая причина выглядела как «продан»)
         d["gone"] = _gone_reason(row)
@@ -701,6 +714,10 @@ def api_listing(request: Request, body: dict | None = None):
         ver = {r[0] for r in conn.execute(f"SELECT phone FROM agent_phones WHERE phone IN ({','.join('?' * len(phones))})", phones)}
         d["phones_meta"] = {p: {"confirmed": p in ver or p in config.ALWAYS_VERIFIED or p in pf["published"],
                                 "no_max": p in pf["no_max"]} for p in phones}
+        if d.get("appletv"):
+            for phone, (name, whatsapp) in applet.contact_labels().items():
+                if phone in d["phones_meta"]:
+                    d["phones_meta"][phone].update(name="" if phone in pf["no_name"] else name, whatsapp=whatsapp)
         if any(p in pf["no_name"] for p in phones):
             d["description"] = parser.mask_names(d.get("description") or "")
             if d.get("fragment"):
@@ -710,7 +727,7 @@ def api_listing(request: Request, body: dict | None = None):
         d["sender_phone"] = next((p for p, role in roles.items() if role == "sender" and p not in d["phones"]), None)
     # текст объявления старее цены (цена обновилась позже текста) — честно говорим об этом в карточке
     # акт 14.10, Б2: в тексте другая цена — плашка всегда (не только когда цена обновилась позже текста)
-    if not row["price_fixed"]:
+    if not retired and not row["price_fixed"]:
         from .p0fix import price_gap
         tp = price_gap(row["price"], row["description"], row["deal"])
         if tp:
@@ -721,7 +738,7 @@ def api_listing(request: Request, body: dict | None = None):
     d["market"] = hot_mk or (hooks.market_for(conn, d) if not row["price_doubt"] else None)
     d["hot"] = hooks.is_hot({**d, "price_doubt": row["price_doubt"], "market_diff_raw": row["market_diff"]})
     d["same"] = hooks.same_elsewhere(conn, row)
-    if row["is_active"] and row["type"] in ("flat", "new"):
+    if row["is_active"] and (row["type"] in ("flat", "new") or row["source"] == "feed"):
         from . import offers
         group = offers.for_listing(conn, row, user["id"] if user else None)
         if group:
@@ -846,7 +863,7 @@ def _stats() -> dict:
     })
 
 
-_NOT_REMOVED = ("dup_same", "dup_text", "own_dup", "strely", "strely_photo", "chat", "rent_rule", "foreign")
+_NOT_REMOVED = ("dup_same", "dup_text", "own_dup", "strely", "strely_photo", "appletv_chat", "chat", "rent_rule", "foreign")
 
 
 # ─── промокод для коллег (временный) ───────────────────────────────────────

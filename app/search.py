@@ -470,8 +470,10 @@ def _where(qr: Query, now: int) -> tuple[str, list]:
     if qr.fresh_days:
         w.append("l.last_seen >= ?"); p.append(now - qr.fresh_days * 86400)
     if qr.new_days:
+        w.append("l.catalog_migrated = 0")
         w.append("l.first_seen >= ?"); p.append(now - qr.new_days * 86400)
     if qr.since:
+        w.append("l.catalog_migrated = 0")
         w.append("l.first_seen > ?"); p.append(qr.since)
     if qr.hot:
         # акт 14.10, С6: «Горячее» — 5–8 % базы: цена снизилась за неделю, заметно ниже рынка или «срочно» и дешевле рынка

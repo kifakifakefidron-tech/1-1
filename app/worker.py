@@ -8,7 +8,7 @@ import logging
 import json
 import time
 
-from . import agent, config, db, feed, geocode, hooks, ingest, llm, mailer, notify, region, wappi
+from . import agent, applet, config, db, feed, geocode, hooks, ingest, llm, mailer, notify, region, wappi
 
 log = logging.getLogger("worker")
 
@@ -52,6 +52,9 @@ def tick(conn) -> dict:
     if purged["chats"]:
         stats["purged"] = purged
     llm.failures = 0
+    catalog = applet.maybe_sync(conn)
+    if catalog:
+        stats["appletv"] = catalog
     stats["processed"] = ingest.process_pending(conn, limit=300, budget_s=60)
     lap("разбор")
     from . import media

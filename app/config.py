@@ -86,6 +86,11 @@ FEED_URL = os.getenv("FEED_URL", "https://arrowsrealty.ru/tstore/yml/a950e007bd5
 FEED_HOURS = int(os.getenv("FEED_HOURS", "6"))
 # Телефон партнёра для объектов фида (виден только подписчикам, как телефоны агентов)
 FEED_PHONE = os.getenv("FEED_PHONE", "+79618571772").strip()
+# «Яблоня»: прямой CSV-экспорт листа с разделом «Все объекты». Все три номера — из настроек сервера.
+APPLET_CSV_URL = os.getenv("APPLET_CSV_URL", "").strip()
+APPLET_SLAVA_PHONES = os.getenv("APPLET_SLAVA_PHONES", "").strip()
+APPLET_ARTEM_PHONE = os.getenv("APPLET_ARTEM_PHONE", FEED_PHONE).strip()
+APPLET_SYNC_SECONDS = int(os.getenv("APPLET_SYNC_SECONDS", "60"))
 
 # Уведомления о сбоях в Telegram: бот от @BotFather и ник, кому писать (без @).
 # Ник должен сам написать боту /start — после этого бот запомнит, куда слать.

@@ -166,7 +166,7 @@ def feed_match(conn: sqlite3.Connection, d: dict, with_photo: bool = False) -> i
     with_photo — сообщение само с картинкой (фото с подписью): строго не нашли — ищем мягче."""
     if not is_own(d.get("phones"), d.get("phone_roles")):
         return None
-    cands = conn.execute("SELECT * FROM listings WHERE source = 'feed' AND is_active = 1").fetchall()
+    cands = conn.execute("SELECT * FROM listings WHERE source = 'feed' AND ext_id LIKE 'feed:%' AND is_active = 1").fetchall()
     return best(cands, d) or (best(cands, d, loose) if with_photo else None)
 
 
@@ -214,7 +214,7 @@ def run(conn: sqlite3.Connection, now: int | None = None) -> dict:
     now = int(now or time.time())
     own = [r for r in conn.execute("""SELECT * FROM listings WHERE source = 'chat' AND is_active = 1
                                       AND COALESCE(owner_user_id, 0) = 0""").fetchall() if is_own(r["phones"], r["phone_roles"])]
-    feed = conn.execute("SELECT * FROM listings WHERE source = 'feed' AND is_active = 1").fetchall()
+    feed = conn.execute("SELECT * FROM listings WHERE source = 'feed' AND ext_id LIKE 'feed:%' AND is_active = 1").fetchall()
     to_feed, merged, nopair, ex = 0, 0, 0, []
     # 18.10: и старые копии, уже ушедшие в архив (были «Снятые» в «Мои объекты»), — привязать к карточке с сайта
     # (в архиве и останутся, но с пометкой 'strely': не показываются как отдельный объект и не вернутся дублем)

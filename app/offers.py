@@ -27,6 +27,8 @@ def _photo_keys(raw: str) -> set[str]:
 
 
 def _address_key(row):
+    if row["type"] not in ("flat", "new"):
+        return None
     house = re.sub(r"\s+", "", (row["house"] or "").lower())
     street = words(row["street"])
     if not (street and house and row["area"] and row["rooms"] is not None and row["floor"] is not None):
@@ -45,12 +47,12 @@ def groups(conn: sqlite3.Connection, hide_user: int | None = None) -> dict:
     """Каждый участник группы должен совпадать с каждым. Решение «разные» отменяет автоматическую связь."""
     decisions = {(a, b): status for a, b, status in conn.execute(
         "SELECT a, b, status FROM dup_pairs WHERE status IN ('market', 'diff', 'split')")}
-    rows = {r["id"]: r for r in conn.execute("""SELECT l.id, l.source, l.deal, l.settlement, l.street, l.house,
+    rows = {r["id"]: r for r in conn.execute("""SELECT l.id, l.source, l.type, l.deal, l.settlement, l.street, l.house,
         l.complex, l.rooms, l.room_kind, l.floor, l.floors, l.area, l.photos, l.phones, l.price, l.price_doubt, l.last_seen,
         CASE WHEN l.source = 'own' THEN (SELECT MAX(e.ts) FROM listing_edits e
             WHERE e.listing_id = l.id AND e.field = 'confirm' AND e.new = '"yes"' AND e.reverted = 0) END AS confirmed_at
-        FROM listings l WHERE l.is_active = 1 AND l.type IN ('flat', 'new') AND (
-            (l.street IS NOT NULL AND l.house IS NOT NULL
+        FROM listings l WHERE l.is_active = 1 AND (
+            (l.type IN ('flat', 'new') AND l.street IS NOT NULL AND l.house IS NOT NULL
              AND CASE WHEN json_valid(l.photos) THEN json_array_length(l.photos) >= 2 ELSE 0 END)
             OR l.id IN (SELECT a FROM dup_pairs WHERE status = 'market' UNION SELECT b FROM dup_pairs WHERE status = 'market'))""")}
     approved = sorted((a, b) for a, b in decisions if decisions[a, b] == "market" and a in rows and b in rows
@@ -93,7 +95,7 @@ def groups(conn: sqlite3.Connection, hide_user: int | None = None) -> dict:
 
 def for_listing(conn: sqlite3.Connection, row: sqlite3.Row, hide_user: int | None = None):
     lid = row["id"]
-    can_match = _address_key(row) is not None and len(_photo_keys(row["photos"])) >= 2
+    can_match = row["type"] in ("flat", "new") and _address_key(row) is not None and len(_photo_keys(row["photos"])) >= 2
     if not can_match and not conn.execute("SELECT 1 FROM dup_pairs WHERE status = 'market' AND (a = ? OR b = ?)", (lid, lid)).fetchone():
         return None
     return groups(conn, hide_user).get(lid)

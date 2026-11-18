@@ -44,7 +44,7 @@ def build(conn, user) -> dict:
         mine = len(agent.my_listings(conn, uid))
     except Exception:  # noqa: BLE001 — номер ещё не подтверждён
         mine = 0
-    new_today = conn.execute("SELECT COUNT(*) FROM listings WHERE is_active = 1 AND first_seen >= ?", (t0,)).fetchone()[0]
+    new_today = conn.execute("SELECT COUNT(*) FROM listings WHERE is_active = 1 AND catalog_migrated = 0 AND first_seen >= ?", (t0,)).fetchone()[0]
     return {
         "now": now, "today": t0, "week_start": monday, "access": access,
         "agenda": agenda, "overdue": overdue,

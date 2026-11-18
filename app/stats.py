@@ -13,6 +13,7 @@ REASONS = {"stale": "не присылали 20 дней", "sold": "агент �
            "chat": "чат отключён", "deposit": "под задатком / забронирован", "expired": "кончился срок своего объявления", "other": "другое (жалоба, копия СТРЕЛ, чужой город)"}
 TYPES = {"flat": "Квартиры", "new": "Квартиры", "room": "Комнаты", "house": "Дома", "land": "Участки", "commercial": "Коммерция"}
 VISIBLE = "is_active = 1 AND (district IS NOT NULL OR complex IS NOT NULL OR street IS NOT NULL OR settlement IS NOT NULL)"
+REMOVED_ACTIVITY = "is_active = 0 AND COALESCE(hidden_reason, '') != 'appletv_chat'"
 
 
 def _recheck(conn) -> dict | None:
@@ -48,8 +49,8 @@ def collect(conn: sqlite3.Connection, now: int | None = None) -> dict:
     listings = {
         "visible": one(f"SELECT COUNT(*) FROM listings WHERE {VISIBLE}"),
         "active": one("SELECT COUNT(*) FROM listings WHERE is_active = 1"),
-        "added": counts("first_seen"),
-        "removed": counts("removed_at", "is_active = 0"),
+        "added": counts("first_seen", "catalog_migrated = 0"),
+        "removed": counts("removed_at", REMOVED_ACTIVITY),
         # повторные публикации уже известных объектов (репосты, тот же объект снова) — объекты «живые»
         "reposted": {k: one("SELECT COUNT(DISTINCT listing_id) FROM listing_events WHERE match != 'new' AND ts >= ?"
                             + (" AND ts < ?" if k == "yesterday" else ""), *((v, today) if k == "yesterday" else (v,)))
@@ -59,16 +60,16 @@ def collect(conn: sqlite3.Connection, now: int | None = None) -> dict:
         "price_up_d7": one("""SELECT COUNT(*) FROM listings WHERE is_active = 1 AND prev_price < price
                               AND price_changed_at >= ?""", d7),
         "removed_reasons": [{"reason": REASONS.get(r[0] or "other", r[0]), "today": r[1], "d7": r[2]} for r in conn.execute(
-            """SELECT removed_reason, SUM(removed_at >= ?), COUNT(*) FROM listings
-               WHERE is_active = 0 AND removed_at >= ? GROUP BY 1 ORDER BY 3 DESC""", (today, d7))],
+            f"""SELECT removed_reason, SUM(removed_at >= ?), COUNT(*) FROM listings
+               WHERE {REMOVED_ACTIVITY} AND removed_at >= ? GROUP BY 1 ORDER BY 3 DESC""", (today, d7))],
         "by_source": {r[0]: r[1] for r in conn.execute(f"SELECT source, COUNT(*) FROM listings WHERE {VISIBLE} GROUP BY 1")},
     }
     # по дням за 14 дней: добавлено / снято / сообщений
     days = []
     for i in range(13, -1, -1):
         a, b = today - i * 86400, today - (i - 1) * 86400
-        days.append({"day": a, "added": one("SELECT COUNT(*) FROM listings WHERE first_seen >= ? AND first_seen < ?", a, b),
-                     "removed": one("SELECT COUNT(*) FROM listings WHERE is_active = 0 AND removed_at >= ? AND removed_at < ?", a, b),
+        days.append({"day": a, "added": one("SELECT COUNT(*) FROM listings WHERE catalog_migrated = 0 AND first_seen >= ? AND first_seen < ?", a, b),
+                     "removed": one(f"SELECT COUNT(*) FROM listings WHERE {REMOVED_ACTIVITY} AND removed_at >= ? AND removed_at < ?", a, b),
                      "messages": one("SELECT COUNT(*) FROM messages WHERE ts >= ? AND ts < ?", a, b)})
     # что лежит на сайте: тип × сделка
     mix: dict[str, dict] = {}

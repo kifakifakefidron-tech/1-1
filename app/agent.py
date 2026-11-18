@@ -251,13 +251,15 @@ def _phone_like(phones: list[str]) -> tuple[str, list]:
 def my_listings(conn: sqlite3.Connection, user_id: int) -> list[sqlite3.Row]:
     phones = verified_phones(conn, user_id)
     if not phones:
-        return conn.execute("SELECT * FROM listings l WHERE owner_user_id = ? ORDER BY last_seen DESC", (user_id,)).fetchall()
+        return conn.execute("""SELECT * FROM listings l WHERE owner_user_id = ?
+                               AND COALESCE(hidden_reason, '') != 'appletv_chat'
+                               ORDER BY last_seen DESC""", (user_id,)).fetchall()
     cond, params = _phone_like(phones)
     # 18.10: и объекты с сайта (фид) с этим номером — чтобы было видно всё своё (править их — на сайте); без потолка 300;
     # скрытые копии своих объектов (приклеены к карточке с сайта — ownmatch) не показываем
     return conn.execute(f"""SELECT * FROM listings l WHERE (l.owner_user_id = ? OR (({cond})
                             AND (l.owner_user_id IS NULL OR l.owner_user_id = ?)))
-                            AND COALESCE(l.hidden_reason, '') NOT IN ('strely', 'own_dup', 'strely_photo')
+                            AND COALESCE(l.hidden_reason, '') NOT IN ('strely', 'own_dup', 'strely_photo', 'appletv_chat')
                             ORDER BY l.is_active DESC, l.last_seen DESC LIMIT 3000""",
                         [user_id, *params, user_id]).fetchall()
 
@@ -266,6 +268,8 @@ def can_edit(conn: sqlite3.Connection, user: sqlite3.Row, row: sqlite3.Row) -> t
     """Править можно только своё: объявление с моим подтверждённым номером, у которого нет другого владельца."""
     if row is None:
         return False, "Объект не найден."
+    if row["hidden_reason"] == "appletv_chat" or (row["ext_id"] or "").startswith("appletv:"):
+        return False, "Эти объявления обновляются из базы «Яблоня». Внесите изменения в базе."
     if row["source"] == "feed":
         return False, "Объекты партнёра правятся на его сайте."
     if not accounts.has_access(user):
