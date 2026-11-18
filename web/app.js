@@ -532,11 +532,21 @@
     return parts.join("");
   }
 
+  function openObjectButton(group) {
+    const count = group?.offers.length;
+    if (!count) return `<button type="button" class="pill item-open" data-open-object aria-haspopup="dialog">Открыть объект</button>`;
+    const partial = group.matching < count;
+    const number = partial ? `${group.matching} из ${count}` : count;
+    const word = partial ? "подходит" : plural(count, "предложение", "предложения", "предложений");
+    const label = partial ? `Открыть объект, подходит ${number} предложений` : `Открыть объект, ${number} ${word}`;
+    return `<button type="button" class="pill item-open item-open-split" data-open-object aria-haspopup="dialog" aria-label="${esc(label)}">
+      <span class="item-open-label">Открыть объект</span>
+      <span class="item-open-count" aria-hidden="true"><b>${esc(number)}</b><small>${esc(word)}</small></span>
+    </button>`;
+  }
+
   function itemHTML(o) {
     const group = favMode ? null : o.offer_group;
-    const count = group?.offers.length;
-    const groupLabel = count ? (group.matching === count ? `${count} ${plural(count, "предложение", "предложения", "предложений")}`
-      : `Подходит ${group.matching} из ${count}`) : "";
     const hit = hitSince && o.first_seen > hitSince;   // новое в этом поиске — выделяем один раз
     const tag = (hit ? `<div class="marks"><span class="mark hit">Новое в вашем поиске</span></div>` : "") + badgesHTML(o);
     const price = group ? group.min_price : o.price;
@@ -556,9 +566,8 @@
     // 31.10 (Артём): цену снизили — «Снижение» (стрелка вниз), заметно дешевле похожих — «Горячее» (огонёк)
     const hotRib = o.hot === "drop" ? `<span class="hot-ribbon drop" aria-label="Цена снижена">${ic("arrow-down")}Снижение</span>`
       : o.hot ? `<span class="hot-ribbon" aria-label="Горячее предложение">${FLAME}Горячее</span>` : "";
-    const groupBadge = groupLabel ? `<span class="item-offer-count">${esc(groupLabel)}</span>` : "";
     return `<li class="item has-photo${hit ? " hit" : ""}${o.hot ? " hot" : ""}" tabindex="0" data-id="${o.id}">
-      ${photo.replace('<div class="item-photo', `<div class="item-photo${o.hot ? " has-rib" : ""}`).replace(/(<div class="item-photo[^>]*>)/, `$1${hotRib}${groupBadge}`)}
+      ${photo.replace('<div class="item-photo', `<div class="item-photo${o.hot ? " has-rib" : ""}`).replace(/(<div class="item-photo[^>]*>)/, `$1${hotRib}`)}
       <button type="button" class="fav-btn${fav ? " on" : ""}" data-fav="${o.id}" aria-label="${fav ? "Убрать из избранного" : "В избранное"}">${HEART}</button>
       ${headline(o) ? `<h3 class="item-head">${esc(headline(o))}</h3>` : ""}
       <div class="item-price"><div class="price">${esc(priceLabel)}</div>${o.price_doubt ? "" : m2}</div>
@@ -573,7 +582,7 @@
         ${me()?.access ? `<button type="button" class="cmp-btn cli-btn" data-client-open="${o.id}" title="Клиенту: в подборку клиента" aria-label="Клиенту">${ic("users")}</button>` : ""}
         <button type="button" class="cmp-btn${cmp.includes(o.id) ? " on" : ""}" data-cmp="${o.id}" title="Сравнить" aria-label="Добавить к сравнению">⚖</button>
       </div>
-      ${favMode ? "" : `<button type="button" class="pill item-open" data-open-object aria-haspopup="dialog">Открыть объект</button>`}
+      ${favMode ? "" : openObjectButton(group)}
     </li>`;
   }
 
