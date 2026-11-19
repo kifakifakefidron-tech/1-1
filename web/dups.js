@@ -1,4 +1,4 @@
-/* 1+1 · «Возможно, повтор» (/dups): две карточки рядом — один объект или разные; ответы запоминаются (app/dupreview.py). */
+/* 1+1 · «Возможно, повтор» (/dups): сравнение кандидатов и решения по выбранным парам. */
 (() => {
   "use strict";
   const $ = (id) => document.getElementById(id);
@@ -12,19 +12,31 @@
   const TYPES = { flat: "Квартира", new: "Квартира", room: "Комната", house: "Дом", land: "Участок", commercial: "Коммерция" };
   const KIND_ROOM = { studio: "студия", euro: "евро", mini: "мини" };
 
-  let tab = "open", data = null, pairs = [], idx = 0, busy = false;
+  let tab = "open", data = null, pairs = [], group = null, focused = 0, keepId = 0, busy = false, loading = false;
+  let selected = new Set();
+  const skipped = new Set();
+  const KEYS = { "1": "same", "2": "diff", "3": "market", ArrowRight: "skip" };
+  const current = () => group?.candidates.find((p) => p.card.id === focused);
+  const chosenKeep = () => {
+    if (keepId === group.anchor.id || selected.has(keepId)) return keepId;
+    if (selected.size === 1) return group.candidates.find((p) => selected.has(p.card.id)).keep;
+    return group.anchor.id;
+  };
 
   async function call(url, body) {
     const opts = { credentials: "same-origin", method: body ? "POST" : "GET" };
     if (body) { opts.headers = { "Content-Type": "application/json" }; opts.body = JSON.stringify(body); }
-    let r = await fetch(url, opts);
-    for (let i = 0; i < 4 && r.status === 503; i++) {   // база на секунду занята — повторяем
-      await new Promise((res) => setTimeout(res, 1500 * (i + 1)));
-      r = await fetch(url, opts);
+    try {
+      let r = await fetch(url, opts);
+      for (let i = 0; i < 4 && r.status === 503; i++) {
+        await new Promise((res) => setTimeout(res, 1500 * (i + 1)));
+        r = await fetch(url, opts);
+      }
+      const d = await r.json().catch(() => ({}));
+      return { ok: r.ok, status: r.status, data: d };
+    } catch {
+      return { ok: false, status: 0, data: {} };
     }
-    let d = {};
-    try { d = await r.json(); } catch { /* */ }
-    return { ok: r.ok, status: r.status, data: d };
   }
 
   function toast(text) {
@@ -79,7 +91,7 @@
     }).filter(Boolean);
   }
 
-  function side(c, other, isKeep, marked) {
+  function side(c, isKeep, marked) {
     const ph = (c.photos || []).slice(0, 4);
     const used = [c.favorites && `в избранном у ${c.favorites}`, c.clients && `у клиентов: ${c.clients}`,
       c.picks && `в подборках: ${c.picks}`].filter(Boolean);
@@ -101,34 +113,60 @@
     </article>`;
   }
 
-  function pairHTML(p) {
+  function candidatesHTML() {
+    const tile = (c, anchor) => {
+      const details = [c.rooms == null ? "" : `${c.rooms} комн.`, c.area ? `${c.area} м²` : "",
+        c.floor == null ? "" : `${c.floor} этаж`].filter(Boolean).join(" · ");
+      const summary = `${c.photos?.[0] ? `<img src="${esc(c.photos[0])}" alt="" loading="lazy">` : ""}
+        <span><strong>${esc(mln(c.price, c.deal))}</strong><small>${esc(c.title || `Объект №${c.id}`)}</small>
+        <small>${esc(details || `№ ${c.id}`)}</small></span>`;
+      return `<div class="dp-candidate${anchor ? " base" : ""}" data-card="${c.id}">
+        ${anchor ? `<div class="dp-tile-check">Опорная карточка</div><div class="dp-tile-open">${summary}</div>`
+          : `<label class="dp-tile-check"><input type="checkbox" name="dpMark" value="${c.id}"
+            ${selected.has(c.id) ? " checked" : ""} aria-label="Выбрать карточку № ${c.id}"> № ${c.id}</label>
+            <button type="button" class="dp-tile-open" data-focus="${c.id}" aria-pressed="${focused === c.id}"
+              aria-label="Сравнить карточку № ${c.id}">${summary}</button>`}
+        </div>`;
+    };
+    return `<div class="dp-candidates-head"><span>Отметьте кандидатов для общего решения</span>
+      <button type="button" class="pill light" data-all>Выбрать все</button></div>
+      <div class="dp-candidates" aria-label="Карточки для сравнения">
+        ${tile(group.anchor, true)}${group.candidates.map((p) => tile(p.card, false)).join("")}</div>`;
+  }
+
+  function pairHTML(choice) {
+    const p = { ...choice, a: group.anchor, b: choice.card };
+    const keep = chosenKeep();
     const [ma, mb] = diffMarks(p.a.text || "", p.b.text || "");
     const R = rows(p.a, p.b);
     const ai = p.ai ? `<div class="dp-ai ${p.ai.same === true ? "same" : p.ai.same === false ? "diff" : ""}">${ic("sparkle")}
         <span><b>Нейросеть: ${p.ai.same === true ? "похоже, один объект" : p.ai.same === false ? "похоже, разные" : "не уверена"}</b>
         ${p.ai.confidence != null ? ` · уверенность ${Math.round(p.ai.confidence * 100)} %` : ""}<small>${esc(p.ai.why)}</small></span></div>`
       : data.ai_enabled ? `<button type="button" class="pill light dp-askai" data-ai="${p.id}">${ic("sparkle")} Спросить нейросеть</button>` : "";
-    return `<section class="dp-pair" data-pid="${p.id}">
+    const nums = otherNums(p);
+    return `<section class="dp-pair" data-anchor="${p.a.id}" data-pid="${p.id}">
       <header class="dp-head">
         <div><span class="mark">${esc(p.kind_label)}</span>
           ${p.kind === "similar" ? "" : `<span class="dp-sim">текст похож на ${Math.round((p.sim || 0) * 100)} %</span>`}</div>
-        <span class="dp-count">${idx + 1} из ${n0(data.counts.open)}</span>
+        <span class="dp-count">Карточек для сравнения: ${n0(group.candidates.length + 1)}</span>
       </header>
+      ${group.candidates.length > 1 ? candidatesHTML() : ""}
       <div class="chips dp-why">${(p.why || []).map((w) => `<span class="chip">${esc(w)}</span>`).join("")}</div>
       ${ai}
-      <div class="dp-table"><div class="dp-tr dp-th"><span></span><span>Раньше · ${esc(day(p.a.last_seen))}</span><span>Новее · ${esc(day(p.b.last_seen))}</span></div>
+      <div class="dp-table"><div class="dp-tr dp-th"><span></span><span>Опорная № ${p.a.id}</span><span>Кандидат № ${p.b.id}</span></div>
         ${R.map((r) => `<div class="dp-tr ${r.cls}"><span>${esc(r.label)}</span><b>${esc(r.va ?? "не указано")}</b><b>${esc(r.vb ?? "не указано")}</b></div>`).join("")}
       </div>
       <p class="note dp-legend"><i class="eq"></i> совпало <i class="ne"></i> различается <i class="miss"></i> указано не у обоих
         · в тексте подсвечены слова, которых нет в другой карточке</p>
-      <div class="dp-sides">${side(p.a, p.b, p.keep === p.a.id, ma)}${side(p.b, p.a, p.keep === p.b.id, mb)}</div>
-      ${otherNums(p) ? `<div class="dp-same-agent"><span>Номера разные: ${esc(otherNums(p).pretty)}. Если это один агент или агентство —</span>
-        <button type="button" class="pill light" data-group="${esc(otherNums(p).raw.join(","))}">Это один агент — объединить номера</button></div>` : ""}
+      <div class="dp-sides">${side(p.a, keep === p.a.id, ma)}${side(p.b, keep === p.b.id, mb)}</div>
+      ${nums ? `<div class="dp-same-agent"><span>Номера разные: ${esc(nums.pretty)}. Если это один агент или агентство —</span>
+        <button type="button" class="pill light" data-group="${esc(nums.raw.join(","))}">Это один агент — объединить номера</button></div>` : ""}
       <div class="dp-acts">
-        <button type="button" class="pill dp-same" data-v="same">${ic("check")} Один объект <kbd>1</kbd></button>
-        <button type="button" class="pill light dp-mkt" data-v="market">Один объект — разные агенты <kbd>3</kbd></button>
-        <button type="button" class="pill light dp-diff" data-v="diff">Разные объекты <kbd>2</kbd></button>
-        <button type="button" class="pill light dp-skip" data-v="skip">Пропустить <kbd>→</kbd></button>
+        <div class="dp-selection" id="dpSelection" aria-live="polite"></div>
+        <button type="button" class="pill dp-same" data-v="same"><kbd>1</kbd> Склеить карточки</button>
+        <button type="button" class="pill light dp-diff" data-v="diff"><kbd>2</kbd> Разные объекты</button>
+        <button type="button" class="pill light dp-mkt" data-v="market" title="Один объект у разных агентов"><kbd>3</kbd> Связать предложения</button>
+        <button type="button" class="pill light dp-skip" data-v="skip"><kbd>→</kbd> Пропустить</button>
       </div>
     </section>`;
   }
@@ -200,44 +238,131 @@
       ["done", "Ваши решения", data.counts.done]].map(([k, l, n]) =>
       `<button type="button" class="chip${tab === k ? " on" : ""}" data-tab="${k}">${l} <b>${n0(n)}</b></button>`).join("");
     if (tab === "open") {
-      $("dpBody").innerHTML = pairs[idx] ? pairHTML(pairs[idx])
-        : `<p class="dp-empty">${ic("check")} Всё разобрано. Новые пары появятся сами, когда в чатах придут похожие объявления.</p>`;
+      renderComparison();
     } else $("dpBody").innerHTML = listHTML();
     $("dpStats").innerHTML = statsHTML(data.stats || []);
     if (!document.activeElement || document.activeElement.id !== "dpGIn") $("dpGroups").innerHTML = groupsHTML(data.phone_groups || []);
   }
 
-  async function load(keepIdx) {
-    const r = await call(`/api/admin/dups?status=${tab}`);
+  function renderComparison() {
+    const p = current();
+    const old = $("dpBody").querySelector(".dp-pair");
+    const scroll = Number(old?.dataset.anchor) === group?.anchor.id ? old.querySelector(".dp-candidates")?.scrollLeft : 0;
+    $("dpBody").innerHTML = p ? pairHTML(p) : data.counts.open
+      ? `<div class="dp-empty"><p>Остались пропущенные карточки.</p><button type="button" class="pill" data-reset>Вернуться к пропущенным</button></div>`
+      : `<p class="dp-empty">${ic("check")} Всё разобрано. Новые пары появятся сами, когда в чатах придут похожие объявления.</p>`;
+    const strip = $("dpBody").querySelector(".dp-candidates");
+    if (strip && scroll) strip.scrollLeft = scroll;
+    updateSelection();
+  }
+
+  const mergeBlocked = () => group.candidates.some((p) => p.market_only && selected.has(p.card.id));
+
+  function updateSelection() {
+    if (tab !== "open" || !group) return;
+    const unavailable = busy || loading;
+    const blocked = mergeBlocked();
+    const root = $("dpBody");
+    $("dpSelection").textContent = `Выбрано ${selected.size} из ${group.candidates.length}${blocked ? " · разные агенты" : ""}`;
+    for (const button of root.querySelectorAll("[data-v]")) {
+      const v = button.dataset.v;
+      button.disabled = unavailable || (v !== "skip" && (!selected.size || (v === "same" && blocked)));
+    }
+    const selectAll = root.querySelector("[data-all]");
+    if (selectAll) {
+      selectAll.textContent = selected.size === group.candidates.length ? "Снять выбор" : "Выбрать все";
+      selectAll.disabled = unavailable;
+    }
+    for (const input of root.querySelectorAll('input[name="dpMark"]')) {
+      input.checked = selected.has(Number(input.value));
+      input.disabled = unavailable;
+      input.closest(".dp-candidate").classList.toggle("selected", input.checked);
+    }
+    for (const input of root.querySelectorAll('input[name="dpKeep"]')) {
+      const id = Number(input.value);
+      input.checked = id === chosenKeep();
+      input.disabled = unavailable || blocked || !selected.size || (id !== group.anchor.id && !selected.has(id));
+      input.closest(".dp-side").classList.toggle("keep", input.checked && !input.disabled);
+    }
+  }
+
+  async function load(retain = false) {
+    loading = true;
+    updateSelection();
+    const query = new URLSearchParams({ status: tab });
+    if (tab === "open") {
+      query.set("view", "group");
+      if (skipped.size) query.set("skip", [...skipped].slice(-150).join(","));
+      if (retain && group) query.set("anchor", group.anchor.id);
+    }
+    const r = await call(`/api/admin/dups?${query}`);
+    loading = false;
     if (r.status === 401 || r.status === 403) { $("dpDenied").hidden = false; return; }
+    if (!r.ok || !r.data.counts) {
+      toast(r.data.error || "Очередь не загрузилась. Попробуйте ещё раз.");
+      updateSelection();
+      return;
+    }
     $("dpApp").hidden = false;
     data = r.data;
     pairs = data.pairs || [];
-    idx = keepIdx ? Math.min(idx, Math.max(0, pairs.length - 1)) : 0;
+    const oldAnchor = group?.anchor.id;
+    group = data.group || null;
+    if (group) {
+      if (!retain || group.anchor.id !== oldAnchor) {
+        selected.clear();
+        focused = keepId = 0;
+      }
+      const ids = group.candidates.map((p) => p.card.id);
+      selected = new Set(ids.filter((id) => selected.has(id)));
+      if (!ids.includes(focused)) focused = ids[0];
+      if (!selected.size) selected.add(focused);
+    }
     render();
   }
 
   async function decide(v) {
-    const p = pairs[idx];
-    if (!p || busy) return;
-    if (v === "skip") { idx = (idx + 1) % Math.max(1, pairs.length); render(); return; }
+    if (!group || busy || loading) return;
+    if (v === "skip") {
+      skipped.add(group.anchor.id);
+      return load();
+    }
+    if (!selected.size) return;
+    if (v === "same" && mergeBlocked()) {
+      toast("Для разных агентов используйте клавишу 3.");
+      return;
+    }
     busy = true;
-    const keep = Number((document.querySelector('input[name="dpKeep"]:checked') || {}).value || 0) || undefined;
-    const r = await call("/api/admin/dups", { id: p.id, verdict: v, keep });
+    updateSelection();
+    const r = await call("/api/admin/dups", { anchor: group.anchor.id, candidates: [...selected], verdict: v, keep: chosenKeep() });
     busy = false;
-    if (!r.ok || r.data.ok === false) { toast(r.data.error || "Не получилось — попробуйте ещё раз"); }
-    else toast(v === "same" ? "Склеено: осталась одна карточка"
-      : v === "market" ? "Запомнил: один объект у разных агентов — карточки связаны" : "Запомнил: разные объекты");
-    pairs.splice(idx, 1);
-    data.counts.open = Math.max(0, data.counts.open - 1);
-    if (!pairs.length) return load();
-    if (idx >= pairs.length) idx = 0;
-    render();
+    if (!r.ok || !r.data.ok) {
+      toast(r.data.error || "Не получилось. Попробуйте ещё раз.");
+      if (r.data.stale) return load(true);
+      updateSelection();
+      return;
+    }
+    toast(v === "same" ? "Карточки склеены" : v === "market" ? "Предложения связаны" : "Различия сохранены");
+    return load(true);
   }
 
   document.addEventListener("click", async (e) => {
-    const t = e.target.closest("[data-tab], [data-v], [data-ai], [data-split], [data-reopen], [data-trust], [data-group], [data-gdel], .dp-side");
-    if (!t) return;
+    const t = e.target.closest("[data-tab], [data-v], [data-ai], [data-split], [data-reopen], [data-trust], [data-group], [data-gdel], [data-all], [data-reset], [data-focus], .dp-side");
+    if (!t || busy || loading) return;
+    if (t.hasAttribute("data-reset")) { skipped.clear(); return load(); }
+    if (t.hasAttribute("data-all")) {
+      selected = selected.size === group.candidates.length ? new Set() : new Set(group.candidates.map((p) => p.card.id));
+      updateSelection();
+      return;
+    }
+    if (t.dataset.focus) {
+      const follow = selected.size === 1 && selected.has(focused);
+      focused = Number(t.dataset.focus);
+      if (follow) selected = new Set([focused]);
+      renderComparison();
+      $("dpBody").querySelector(`[data-focus="${focused}"]`)?.focus({ preventScroll: true });
+      return;
+    }
     if (t.dataset.group) {
       t.disabled = true;
       return saveGroups({ phone_group_add: t.dataset.group.split(",") }, "Номера объединены: теперь это один агент");
@@ -252,7 +377,9 @@
     if (t.dataset.ai) {
       t.disabled = true; t.textContent = "Спрашиваю…";
       const r = await call("/api/admin/dups", { id: Number(t.dataset.ai), ai: true });
-      if (r.data.ai) { pairs[idx].ai = r.data.ai; render(); } else { toast(r.data.error || "Нейросеть не ответила"); t.disabled = false; }
+      const choice = group?.candidates.find((p) => p.id === Number(t.dataset.ai));
+      if (r.data.ai && choice) { choice.ai = r.data.ai; renderComparison(); }
+      else if (!r.data.ai) { toast(r.data.error || "Нейросеть не ответила"); t.disabled = false; }
       return;
     }
     if (t.dataset.split) {
@@ -273,7 +400,7 @@
     }
     if (t.classList.contains("dp-side") && !e.target.closest("a, input, label")) {   // клик по карточке — оставить её
       const inp = t.querySelector('input[name="dpKeep"]');
-      if (inp) { inp.checked = true; document.querySelectorAll(".dp-side").forEach((s) => s.classList.toggle("keep", s === t)); }
+      if (inp && !inp.disabled) { keepId = Number(inp.value); updateSelection(); }
     }
   });
   document.addEventListener("submit", (e) => {
@@ -287,15 +414,22 @@
     saveGroups({ phone_groups: (G ? G + "\n" : "") + v }, "Группа добавлена");
   });
   document.addEventListener("change", (e) => {
-    if (e.target.name === "dpKeep") document.querySelectorAll(".dp-side").forEach((s) =>
-      s.classList.toggle("keep", s.dataset.id === e.target.value));
+    if (e.target.name === "dpKeep") {
+      keepId = Number(e.target.value);
+      updateSelection();
+    }
+    if (e.target.name === "dpMark") {
+      const id = Number(e.target.value);
+      if (e.target.checked) selected.add(id); else selected.delete(id);
+      updateSelection();
+    }
   });
   document.addEventListener("keydown", (e) => {
-    if (tab !== "open" || e.target.closest("input, textarea, select") || e.ctrlKey || e.metaKey || e.altKey) return;
-    if (e.key === "1") decide("same");
-    else if (e.key === "2") decide("diff");
-    else if (e.key === "3") decide("market");
-    else if (e.key === "ArrowRight") decide("skip");
+    const v = KEYS[e.key];
+    if (!v || e.repeat || tab !== "open" || e.target.closest("input:not([type=checkbox]):not([type=radio]), textarea, select, [contenteditable=true]")
+        || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+    e.preventDefault();
+    decide(v);
   });
   load();
 })();

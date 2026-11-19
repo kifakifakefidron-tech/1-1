@@ -20,6 +20,7 @@ import json
 import sqlite3
 import time
 from collections import defaultdict
+from itertools import combinations
 
 from . import config, db, geo, offers
 from .dedupe import _close, _house_eq, text_twin
@@ -626,12 +627,111 @@ def _has_col(conn: sqlite3.Connection, table: str, col: str) -> bool:
     return _COLS_CACHE[key]
 
 
+_ACTIVE_PAIR = """AND EXISTS (SELECT 1 FROM listings WHERE id = p.a AND is_active = 1)
+                  AND EXISTS (SELECT 1 FROM listings WHERE id = p.b AND is_active = 1)"""
+
+
+def _queue_data(conn: sqlite3.Connection) -> dict:
+    from . import phonegroups
+    counts = dict(conn.execute("SELECT status, COUNT(*) FROM dup_pairs GROUP BY status"))
+    return {"phone_groups": phonegroups.listing(conn), "counts": {"open": open_count(conn),
+            "auto": counts.get("auto", 0), "done": sum(counts.get(k, 0) for k in ("same", "diff", "split", "market"))},
+            "stats": stats(conn), "ai_enabled": bool(config.DEEPSEEK_API_KEY)}
+
+
+def _pair_details(p, a, b):
+    return {"id": p["id"], "kind": p["kind"], "kind_label": KINDS.get(p["kind"], p["kind"]),
+            "why": json.loads(p["why"] or "[]"), "status": p["status"], "score": p["score"],
+            "ai": json.loads(p["ai"]) if p["ai"] else None, "decided_at": p["decided_at"],
+            "sim": round(similarity(a["text"], b["text"]), 3)}
+
+
+def _separate_offers(kind, phones_a, phones_b) -> bool:
+    if phones_a and phones_b:
+        return not bool(phones_a & phones_b)
+    return kind in ("offer_review", "offer_photo")
+
+
+def comparison(conn: sqlite3.Connection, skip: list[int], anchor: int = 0) -> dict:
+    """Одна карточка и все её прямые открытые пары, включая пары за пределами первой страницы."""
+    from . import phonegroups
+    phonegroups.refresh(conn)
+    source = "dup_pairs p JOIN listings a ON a.id=p.a JOIN listings b ON b.id=p.b"
+    scope = "p.status = 'open' AND a.is_active=1 AND b.is_active=1"
+    if skip:
+        marks = ",".join("?" for _ in skip)
+        scope += f" AND p.a NOT IN ({marks}) AND p.b NOT IN ({marks})"
+    params = (*skip, *skip)
+    seed = conn.execute(f"""SELECT p.a, p.b FROM {source} WHERE {scope}
+        ORDER BY MAX(a.first_seen, b.first_seen) DESC, p.score DESC, p.id LIMIT 1""", params).fetchone()
+    if seed is None:
+        return {**_queue_data(conn), "group": None}
+
+    def related(ids):
+        marks = ",".join("?" for _ in ids)
+        return conn.execute(f"""SELECT p.*, a.first_seen AS first_a, b.first_seen AS first_b FROM {source}
+            WHERE {scope} AND (p.a IN ({marks}) OR p.b IN ({marks}))""", (*params, *ids, *ids)).fetchall()
+
+    rows = related((anchor,)) if anchor else []
+    if not rows:
+        rows = related(tuple(seed))
+        anchor = max(seed, key=lambda lid: sum(lid in (p["a"], p["b"]) for p in rows))
+        rows = [p for p in rows if anchor in (p["a"], p["b"])]
+    rows.sort(key=lambda p: (-(p["first_b"] if p["a"] == anchor else p["first_a"]), -(p["score"] or 0), p["id"]))
+    main = _card(conn, anchor)
+    choices = []
+    if main:
+        phones = phonegroups.canon_set(main["phones"])
+        for p in rows:
+            card = _card(conn, p["b"] if p["a"] == anchor else p["a"])
+            if card:
+                choices.append({**_pair_details(p, main, card), "card": card,
+                                "keep": choose_keep(conn, anchor, card["id"])[0],
+                                "market_only": _separate_offers(p["kind"], phones, phonegroups.canon_set(card["phones"]))})
+    return {**_queue_data(conn), "group": {"anchor": main, "candidates": choices} if choices else None}
+
+
+def decide_comparison(conn: sqlite3.Connection, anchor: int, candidates: list[int], verdict: str,
+                      user_id: int, keep: int = 0) -> dict:
+    """Сохраняет решения только для выбранных активных пар в одной транзакции."""
+    from . import phonegroups
+    ids = [anchor, *candidates]
+    if verdict not in ("same", "diff", "market") or len(set(ids)) != len(ids) or not candidates:
+        return {"ok": False, "error": "Выберите карточки и решение."}
+    with conn:
+        conn.execute("BEGIN IMMEDIATE")
+        phonegroups.refresh(conn)
+        marks = ",".join("?" for _ in ids)
+        active = {r["id"]: _phones(r["phones"]) for r in conn.execute(
+            f"SELECT id, phones FROM listings WHERE is_active = 1 AND id IN ({marks})", ids)}
+        related = conn.execute(f"SELECT * FROM dup_pairs WHERE a IN ({marks}) AND b IN ({marks})", (*ids, *ids)).fetchall()
+        direct = {p["b"] if p["a"] == anchor else p["a"]: p for p in related if anchor in (p["a"], p["b"])}
+        if len(active) != len(ids) or any(lid not in direct or direct[lid]["status"] != "open" for lid in candidates):
+            return {"ok": False, "stale": True, "error": "Очередь изменилась. Обновили карточки для сравнения."}
+        if verdict != "diff" and any(p["status"] in ("diff", "split") for p in related):
+            return {"ok": False, "error": "Среди выбранных карточек есть пара, уже отмеченная как разные объекты."}
+        if verdict == "same":
+            if any(p["status"] == "market" or _separate_offers(p["kind"], active[p["a"]], active[p["b"]])
+                   for p in related) or any(a and b and not a & b for a, b in combinations(active.values(), 2)):
+                return {"ok": False, "error": "Карточки разных агентов можно связать кнопкой 3."}
+            keep = keep if keep in ids else anchor
+            for lid in ids:
+                if lid == keep:
+                    continue
+                p = direct[lid] if lid != anchor else direct[keep]
+                merge(conn, keep, lid, p["kind"], status="same", user_id=user_id,
+                      why=json.loads(p["why"] or "[]"), score=p["score"])
+        else:
+            conn.executemany("UPDATE dup_pairs SET status=?, decided_at=?, user_id=? WHERE id=?",
+                             ((verdict, int(time.time()), user_id, direct[lid]["id"]) for lid in candidates))
+    return {"ok": True, "status": verdict, "count": len(candidates)}
+
+
 def pairs(conn: sqlite3.Connection, status: str = "open", limit: int = 30, offset: int = 0) -> dict:
     # 26.10 («database is locked»): только чтение — раньше здесь была запись (tidy), и база ждала, пока посчитаются карточки
     st = {"open": ("open",), "auto": ("auto",), "done": ("same", "diff", "split", "market")}.get(status, ("open",))
     order = "p.score DESC, p.id" if status == "open" else "p.decided_at DESC, p.id DESC"
-    alive = ("""AND EXISTS (SELECT 1 FROM listings WHERE id = p.a AND is_active = 1)
-                AND EXISTS (SELECT 1 FROM listings WHERE id = p.b AND is_active = 1)""" if status == "open" else "")
+    alive = _ACTIVE_PAIR if status == "open" else ""
     rows = conn.execute(f"""SELECT p.* FROM dup_pairs p WHERE p.status IN ({','.join('?' * len(st))}) {alive}
                             ORDER BY {order} LIMIT ? OFFSET ?""", (*st, limit, offset)).fetchall()
     out = []
@@ -642,15 +742,8 @@ def pairs(conn: sqlite3.Connection, status: str = "open", limit: int = 30, offse
         if (a["last_seen"] or 0, a["id"]) > (b["last_seen"] or 0, b["id"]):   # 25.10 (Артём): справа — присланное позже
             a, b = b, a
         keep = p["keep_id"] or choose_keep(conn, p["a"], p["b"])[0]
-        out.append({"id": p["id"], "kind": p["kind"], "kind_label": KINDS.get(p["kind"], p["kind"]), "score": p["score"],
-                    "why": json.loads(p["why"] or "[]"), "status": p["status"], "a": a, "b": b, "keep": keep,
-                    "ai": json.loads(p["ai"]) if p["ai"] else None, "decided_at": p["decided_at"],
-                    "sim": round(similarity(a["text"], b["text"]), 3)})
-    counts = dict(conn.execute("SELECT status, COUNT(*) FROM dup_pairs GROUP BY status").fetchall())
-    from . import phonegroups
-    return {"phone_groups": phonegroups.listing(conn), "pairs": out, "counts": {"open": open_count(conn), "auto": counts.get("auto", 0),
-                                     "done": sum(counts.get(k, 0) for k in ("same", "diff", "split", "market"))},
-            "stats": stats(conn), "ai_enabled": bool(config.DEEPSEEK_API_KEY)}
+        out.append({**_pair_details(p, a, b), "a": a, "b": b, "keep": keep})
+    return {**_queue_data(conn), "pairs": out}
 
 
 _AI_SYSTEM = ("Ты помогаешь риелтору Краснодара понять, описывают ли два объявления ОДИН И ТОТ ЖЕ объект недвижимости "

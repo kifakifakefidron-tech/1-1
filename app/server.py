@@ -3289,6 +3289,19 @@ def api_admin_dups(request: Request, body: dict | None = None):
     conn = db.get()
     if request.method == "POST":
         b = body or {}
+        if "candidates" in b:
+            try:
+                anchor = int(b.get("anchor") or 0)
+                if not isinstance(b["candidates"], list):
+                    return _err("Выберите карточки для сравнения.")
+                candidates = [int(value) for value in b["candidates"]]
+                keep = int(b.get("keep") or 0)
+            except (TypeError, ValueError, OverflowError):
+                return _err("Выберите карточки для сравнения.")
+            res = dupreview.decide_comparison(conn, anchor, candidates, str(b.get("verdict") or ""), user["id"], keep)
+            if res["ok"]:
+                _bump_cache()
+            return JSONResponse(res, status_code=200 if res["ok"] else 409 if res.get("stale") else 400)
         if b.get("trust"):
             return JSONResponse({"ok": True, "trusted": dupreview.set_trust(conn, str(b["trust"]), bool(b.get("on")))})
         if "phone_groups" in b or "phone_group_add" in b:   # 25.10: «Один агент — несколько номеров»
@@ -3319,6 +3332,13 @@ def api_admin_dups(request: Request, body: dict | None = None):
         _bump_cache()
         return JSONResponse({"ok": ok})
     q = request.query_params
+    if q.get("status", "open") == "open" and q.get("view") == "group":
+        try:
+            skip = [int(value) for value in q.get("skip", "").split(",")[:150] if value]
+            anchor = int(q.get("anchor") or 0)
+        except (ValueError, OverflowError):
+            return _err("Неверный номер карточки.")
+        return JSONResponse(dupreview.comparison(conn, skip, anchor))
     try:
         off = max(0, int(q.get("offset") or 0))
     except ValueError:
