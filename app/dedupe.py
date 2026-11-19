@@ -51,10 +51,9 @@ def _house_eq(a: str | None, b: str | None) -> bool | None:
     return na == nb
 
 
-# 24.10j (Артём: «текст 1 в 1 с другого номера, но цена другая — создаётся новое объявление»): тот же текст, где поменялись
-# только числа (цена) — это переслали то же объявление, а не «рынок» от другого агента. Склеиваем, даже если номера разные.
 _PRICE_WORDS = {"млн", "тыс", "т", "р", "руб", "рублей", "тр", "миллиона", "миллионов", "миллион", "тысяч"}
 _PRICE_BEFORE = {"цена", "цены", "стоимость", "за"}
+_GROUPED_NUMBER = re.compile(r"(?<!\d)\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?!\d)")
 
 
 @functools.lru_cache(maxsize=8192)
@@ -86,7 +85,7 @@ def text_twin(a: str | None, b: str | None, short_ok: bool = False) -> bool:
     def cut(t, spans):   # номера уже сравнили — из слов их убираем (другой номер того же агента — не «другие цифры»)
         for s0, e0, _ in sorted(spans, reverse=True):
             t = t[:s0] + " " + t[e0:]
-        return t
+        return _GROUPED_NUMBER.sub(lambda m: "".join(m[0].split()), t)
     ta, tb = words(cut(a or "", pa)).split(), words(cut(b or "", pb)).split()
     if min(len(ta), len(tb)) < (4 if short_ok else 12):   # короткий текст — слишком легко совпасть случайно
         return False
@@ -121,71 +120,25 @@ def same_object(o: ParsedObject, row: sqlite3.Row) -> tuple[bool, str]:
     settlement = _eq(o.settlement, row["settlement"])
     from .phonegroups import canon_set
     phones_row = canon_set(json.loads(row["phones"] or "[]"))
-    phone = bool(phones_row & canon_set(o.phones)) if o.phones and phones_row else None
-    if phone is False:
+    phones_new = canon_set(o.phones)
+    if phones_row != phones_new:
         return False, "другой агент"
-    price = _close(o.price, row["price"], 0.15, 0)
 
-    # Тот же текст (поменялась разве что цена) — повтор при совпадающих или неизвестных контактах.
-    # 24.10m (пример Артёма 10678/10564): ПРОВЕРЯЕМ ДО «явных различий» — один и тот же текст «Гондаря Беличенко 86» разобрался
-    # то улицей Гондаря, то Беличенко, и правило «разные улицы» делало две карточки. Площадь/этаж в тексте разные — это не близнецы.
+    for field, result in (("комнаты", rooms), ("этаж", floor), ("площадь", area), ("участок", land),
+                          ("ЖК", cx), ("район", district), ("улица", street),
+                          ("дом", house if street else None), ("населённый пункт", settlement)):
+        if result is False:
+            return False, f"разные: {field}"
+
+    if o.article and o.article == row["article"] and phones_row:
+        return True, "тот же артикул и контакт"
     if text_twin(o.fragment, row["fragment"]):
         return True, "тот же текст, другая цена"
-
-    # Явные различия — это разные объекты (две квартиры в одном доме).
-    for k, v in (("комнаты", rooms), ("этаж", floor), ("площадь", area), ("участок", land),
-                 ("ЖК", cx), ("район", district), ("улица", street), ("дом", house if street else None)):
-        if v is False:
-            return False, f"разные: {k}"
-    # короткий текст («ЖК Абрикосово, ЕВРО 2 квартира, 6 млн») — только если место совпало и цена почти та же (до 10 %)
-    if (cx or street) and _close(o.price, row["price"], 0.10, 0) and text_twin(o.fragment, row["fragment"], short_ok=True):
-        return True, "тот же короткий текст, цена почти та же"
-    # Один и тот же объект от разных агентов — это рынок: показываем отдельно.
-    # Склеиваем только повторы одного агента (тот же номер телефона).
-    if not phone:
-        return False, "другой агент"
-
-    addr = bool(street and house)
-    sizes = [v for v in (area, land) if v is not None]
-    size_ok = bool(sizes) and all(sizes)
-    details = [v for v in (rooms, floor) if v is not None]
-    details_ok = bool(details) and all(details)
-
-    if o.type in ("flat", "new", "room"):
-        # 24.10 (уровень 1, решение Артёма): тот же агент, то же место, те же комнаты и этаж (у обоих указаны), площадь не спорит —
-        # один объект, даже если текст и цена другие. Всё, что «почти совпадает», — в очередь «Возможно, повтор» (dupreview)
-        if (cx or street) and rooms and floor:
-            return True, "тот же агент + место + комнаты + этаж"
-        if addr and (size_ok or details_ok):
-            return True, "адрес + параметры"
-        if cx and size_ok and details_ok:
-            return True, "ЖК + площадь + этаж/комнаты"
-        if (district or street) and size_ok and rooms and floor:
-            return True, "район/улица + площадь + комнаты + этаж"
-        if phone and size_ok and details_ok and price is not False:
-            return True, "телефон + площадь + этаж/комнаты"
-        return False, "мало совпадений"
-
-    if o.type == "house":
-        loc = addr or street or settlement or district or cx
-        if loc and area and (land is not False) and (price is not False or phone):
-            return True, "место + площадь дома"
-        return False, "мало совпадений"
-
-    if o.type == "land":
-        loc = addr or (street and house is not False) or settlement or cx
-        if loc and land and (price is not False or phone):
-            return True, "место + сотки"
-        if district and land and phone:
-            return True, "район + сотки + телефон"
-        return False, "мало совпадений"
-
-    # коммерция
-    if (addr or cx or street) and area and (price is not False or phone):
-        return True, "адрес + площадь"
-    if phone and area and price:
-        return True, "телефон + площадь + цена"
-    return False, "мало совпадений"
+    detailed = (street and house) or (rooms and floor and area)
+    if detailed and (cx or street) and _close(o.price, row["price"], 0.10, 0) and text_twin(
+            o.fragment, row["fragment"], short_ok=True):
+        return True, "тот же короткий текст и характеристики"
+    return False, "отдельное объявление"
 
 
 def find_match(conn: sqlite3.Connection, o: ParsedObject, frag_hash: str, now: int) -> tuple[sqlite3.Row | None, str]:
@@ -194,14 +147,13 @@ def find_match(conn: sqlite3.Connection, o: ParsedObject, frag_hash: str, now: i
     # 1) Дословный репост того же текста
     rows = conn.execute(
         """SELECT l.* FROM listing_events e JOIN listings l ON l.id = e.listing_id
-           WHERE e.fragment_hash = ? GROUP BY l.id ORDER BY MAX(e.ts) DESC""",
+           WHERE e.fragment_hash = ? AND l.source != 'feed' GROUP BY l.id ORDER BY MAX(e.ts) DESC""",
         (frag_hash,),
     )
     phones = phonegroups.canon_set(o.phones)
     for row in rows:
         previous = phonegroups.canon_set(json.loads(row["phones"] or "[]"))
-        if row["type"] in TYPE_GROUPS.get(o.type or "", ()) and row["deal"] == o.deal \
-                and (not (phones and previous) or bool(phones & previous)):
+        if row["type"] in TYPE_GROUPS.get(o.type or "", ()) and row["deal"] == o.deal and phones == previous:
             return row, "repost"
 
     # 2) Тот же объект по характеристикам — по всей базе

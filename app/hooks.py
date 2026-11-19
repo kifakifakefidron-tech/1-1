@@ -1,7 +1,6 @@
 """Фишки, ради которых возвращаются на сайт:
   * подписка на поиск — письмо, когда появились новые подходящие объекты;
   * снижение цены в избранном — письмо и отметка на карточке;
-  * «этот объект продают ещё N агентов» — похожие карточки других агентов;
   * средняя цена за м² по ЖК/району и «дешевле/дороже рынка на N %»;
   * личные заметки к объекту.
 """
@@ -218,52 +217,6 @@ def annotate(conn: sqlite3.Connection, items: list[dict]) -> list[dict]:
     return items
 
 
-# ─── «продают ещё N агентов» ───────────────────────────────────────────────
-def same_elsewhere(conn: sqlite3.Connection, row: sqlite3.Row, limit: int = 10,
-                   exclude: set[int] | None = None) -> list[dict]:
-    """Похожие предложения вне подтверждённой группы."""
-    from . import offers, phonegroups
-    excluded = {row["id"], *(exclude or ())}
-    linked = []
-    for a, b, status in conn.execute("""SELECT a, b, status FROM dup_pairs
-        WHERE (a = ? OR b = ?) AND (status IN ('diff', 'split') OR
-              (status = 'market' AND (kind != 'offer_photo' OR COALESCE(user_id, 0) != 0)))""",
-        (row["id"], row["id"])):
-        other = b if a == row["id"] else a
-        if status == "market" and other not in excluded:
-            linked.append(other)
-        excluded.add(other)
-
-    def public(r):
-        return {"id": r["id"], "price": offers.known_price(r), "title": r["title"], "last_seen": r["last_seen"]}
-
-    pinned = [public(r) for r in conn.execute(
-        f"""SELECT id, price, price_doubt, title, last_seen FROM listings
-            WHERE is_active = 1 AND deal = ? AND id IN ({','.join('?' * len(linked))}) ORDER BY last_seen DESC""",
-        (row["deal"], *linked))] if linked else []
-    place = offers.place_keys(row)
-    kind = offers.property_type(row["type"])
-    if len(pinned) >= limit or not any(place) or (kind == "flat" and row["rooms"] is None):
-        return pinned[:limit]
-
-    phonegroups.refresh(conn)
-    phones = offers.contact_keys(row)
-    conn.create_function("offer_street", 1, offers.street_key, deterministic=True)
-    types = ("flat", "new") if kind == "flat" else (kind, kind)
-    possible = []
-    for r in conn.execute(f"""SELECT {offers.MATCH_FIELDS} FROM listings
-           WHERE is_active = 1 AND deal = ? AND type IN (?, ?) AND rooms IS ?
-             AND ((? IS NOT NULL AND cxkey(complex) = ?) OR (? != '' AND offer_street(street) = ?))""",
-        (row["deal"], *types, row["rooms"], place[0], place[0], place[1], place[1])):
-        if r["id"] not in excluded and not phones & offers.contact_keys(r) \
-                and offers.similar_signals(row, r, place, offers.place_keys(r)):
-            possible.append(public(r))
-    possible.sort(key=lambda x: (x["price"] is None, x["price"] or 0, -x["last_seen"]))
-    return (pinned + possible)[:limit]
-
-
-# ─── заметки ───────────────────────────────────────────────────────────────
-# Статусы по объекту — простая CRM агента (видит только он сам)
 NOTE_STATUSES = ("call", "show", "think", "refuse")   # «Сделка» убрана (решение Артёма 13.10): сделки — в CRM клиентов
 
 

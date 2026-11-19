@@ -755,7 +755,6 @@ def api_listing(request: Request, body: dict | None = None):
         d["market"] = hot_mk or (hooks.market_for(conn, d) if not row["price_doubt"] else None)
         diff = row["market_diff"]
     d["hot"] = hooks.is_hot({**d, "price_doubt": row["price_doubt"], "market_diff_raw": diff})
-    d["same"] = hooks.same_elsewhere(conn, row, exclude=hidden | {item["id"] for item in group or ()})
     tools_access = bool(user and access)
     d["tools_access"] = tools_access
     d["note"] = hooks.get_note(conn, user["id"], lid) if tools_access else None
@@ -3280,8 +3279,8 @@ def dups_page(request: Request, body: dict | None = None):
 
 
 def api_admin_dups(request: Request, body: dict | None = None):
-    """24.10 «Возможно, повтор»: GET ?status=open|auto|done&offset= — пары; POST {id, verdict: same|diff|reopen, keep}
-    — решение; {id, split} — разделить склейку; {id, ai} — подсказка нейросети; {trust: вид, on} — доверить склейку;
+    """Очередь пар; POST {id, verdict: market|diff|reopen} сохраняет решение.
+    {id, split} — разделить старую склейку; {id, ai} — подсказка нейросети.
     {phone_groups: текст} — номера одного агента (строка — группа), {phone_group_add: [номера]} — добавить группу."""
     user, err = _need_admin(request)
     if err:
@@ -3289,21 +3288,8 @@ def api_admin_dups(request: Request, body: dict | None = None):
     conn = db.get()
     if request.method == "POST":
         b = body or {}
-        if "candidates" in b:
-            try:
-                anchor = int(b.get("anchor") or 0)
-                if not isinstance(b["candidates"], list):
-                    return _err("Выберите карточки для сравнения.")
-                candidates = [int(value) for value in b["candidates"]]
-                keep = int(b.get("keep") or 0)
-            except (TypeError, ValueError, OverflowError):
-                return _err("Выберите карточки для сравнения.")
-            res = dupreview.decide_comparison(conn, anchor, candidates, str(b.get("verdict") or ""), user["id"], keep)
-            if res["ok"]:
-                _bump_cache()
-            return JSONResponse(res, status_code=200 if res["ok"] else 409 if res.get("stale") else 400)
-        if b.get("trust"):
-            return JSONResponse({"ok": True, "trusted": dupreview.set_trust(conn, str(b["trust"]), bool(b.get("on")))})
+        if "candidates" in b or b.get("trust"):
+            return _err("Обновите страницу. Решение сохраняется по одной паре.", 409)
         if "phone_groups" in b or "phone_group_add" in b:   # 25.10: «Один агент — несколько номеров»
             from . import phonegroups
             if "phone_groups" in b:
@@ -3322,28 +3308,24 @@ def api_admin_dups(request: Request, body: dict | None = None):
         if b.get("split"):
             ok = dupreview.split(conn, pid, user["id"])
         else:
-            keep = b.get("keep")
-            res = dupreview.decide(conn, pid, str(b.get("verdict") or ""), user["id"],
-                                   int(keep) if str(keep or "").isdigit() else None)
+            res = dupreview.decide(conn, pid, str(b.get("verdict") or ""), user["id"])
             conn.commit()
-            _bump_cache()
+            if not res["ok"]:
+                return JSONResponse(res, status_code=409 if res.get("stale") else 400)
             return JSONResponse(res)
         conn.commit()
         _bump_cache()
         return JSONResponse({"ok": ok})
     q = request.query_params
-    if q.get("status", "open") == "open" and q.get("view") == "group":
-        try:
-            skip = [int(value) for value in q.get("skip", "").split(",")[:150] if value]
-            anchor = int(q.get("anchor") or 0)
-        except (ValueError, OverflowError):
-            return _err("Неверный номер карточки.")
-        return JSONResponse(dupreview.comparison(conn, skip, anchor))
+    status = q.get("status", "open")
+    if status not in ("open", "auto", "done"):
+        return _err("Неизвестная очередь.")
     try:
         off = max(0, int(q.get("offset") or 0))
     except ValueError:
         off = 0
-    return JSONResponse(dupreview.pairs(conn, q.get("status", "open"), 30, off))
+    skip = [int(value) for value in q.get("skip", "").split(",")[:150] if value.isascii() and value.isdigit() and len(value) <= 18]
+    return JSONResponse(dupreview.pairs(conn, status, 1 if q.get("view") == "pair" and status == "open" else 30, off, skip))
 
 
 def api_admin_recheck(request: Request, body: dict | None = None):

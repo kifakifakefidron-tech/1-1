@@ -1,17 +1,4 @@
-"""24.10 (Артём: «одна квартира — одна карточка; если сервис сомневается — в спорные, разберу сам и обучу»).
-
-Фоновая проверка пар карточек из чатов, которые МОГУТ быть одним объектом (worker, каждый цикл, по новым карточкам):
-  * сервис склеивает сам только наверняка:
-      text  — тот же текст, поменялась только цена (dedupe.text_twin);
-      agent — тот же агент (номер), то же место, те же комнаты И этаж (указаны у обоих), площадь не спорит;
-  * «почти совпадает» — в очередь «Возможно, повтор» (/dups): админ смотрит две карточки рядом и решает
-      similar  — текст похож на 80 %+ (числа не считаем), номера в тексте те же;
-      nodetail — тот же агент и место, но этаж/площадь указаны не у обоих — различить нечем.
-Решения запоминаются: «Разные» — эту пару больше не спрашиваем и сами не склеиваем; «Один объект — разные агенты»
-(market) — карточки остаются отдельными (рынок), но связаны: в окне объекта «Этот объект у других агентов» (hooks.same_elsewhere); по каждому виду пары считается,
-как часто вы говорите «один объект», — виду с надёжной статистикой можно доверить склейку (state dup_trust).
-Склейка — ownmatch._move: избранное, клиенты, подборки, планер и история переезжают на оставшуюся карточку
-(с фото, иначе самую раннюю), цена и текст — из самого свежего сообщения; «Разделить» возвращает копию."""
+"""Попарный разбор объявлений и откат прежних склеек."""
 from __future__ import annotations
 
 import difflib
@@ -20,11 +7,9 @@ import json
 import sqlite3
 import time
 from collections import defaultdict
-from itertools import combinations
 
 from . import applet, config, db, geo, offers
 from .dedupe import _close, _house_eq, text_twin
-from .ownmatch import _move
 from .textnorm import words
 
 KINDS = {
@@ -35,12 +20,12 @@ KINDS = {
     "offer_review": "Возможно, один объект у разных агентов",
     "offer_photo": "Один объект по фото и характеристикам",
     "applet_unit": "Один объект по исходной записи каталога",
+    "feed_article": "Совпали артикул и контакт партнёра",
+    "offer_peer": "Оба объявления связаны с третьим",
 }
-AUTO = ("text", "agent")          # склеиваются сами всегда
-DOUBT = ("similar", "nodetail")   # в очередь; сами — только если админ доверил (state dup_trust)
 SIM_MIN = 0.8
-PER_ROW = 3                       # не больше 3 сомнительных пар на карточку (агент с десятком однушек в одном ЖК)
-TRUST_MIN_N, TRUST_MIN_SHARE = 20, 0.95
+PER_ROW = 3
+
 _FLATLIKE = ("flat", "new", "room", "commercial")
 _COLS = ("id, type, deal, rooms, room_kind, floor, floors, area, land, complex, street, house, district, settlement, "
          "price, price_m2, phones, fragment, description, title, photos, first_seen, last_seen, seen_count, is_active, "
@@ -127,14 +112,13 @@ def classify(a, b, info: dict | None = None) -> tuple[str, float, list[str]] | N
     """Вид пары, сила (для порядка в очереди) и почему; None — разные или различить нечем."""
     info = info or {}
     fa, fb = a["fragment"], b["fragment"]
+    if _contra(a, b):
+        return None
     same_place = bool(_places(a) & _places(b))
     price_close = _close(a["price"], b["price"], 0.10, 0)
     if text_twin(fa, fb) or (same_place and price_close and text_twin(fa, fb, short_ok=True)):
         return "text", 1.0, ["тот же текст, поменялась только цена", f"цена: {_mln(a['price'])} и {_mln(b['price'])}"]
     if not same_place:
-        return None
-    c = _contra(a, b)
-    if c:
         return None
     agent = bool(_phones(a["phones"]) & _phones(b["phones"]))
     same_num = bool(set(json.loads(a["phones"] or "[]")) & set(json.loads(b["phones"] or "[]")))
@@ -176,63 +160,8 @@ def classify(a, b, info: dict | None = None) -> tuple[str, float, list[str]] | N
 
 # ---------------------------------------------------------------- склейка и откат
 
-def trusted(conn: sqlite3.Connection) -> set[str]:
-    try:
-        return set(json.loads(db.get_state(conn, "dup_trust") or "[]"))
-    except ValueError:
-        return set()
-
-
-def choose_keep(conn: sqlite3.Connection, a: int, b: int) -> tuple[int, int]:
-    """Какая карточка остаётся: с фото, потом с бóльшим числом избранного/клиентов, потом самая ранняя."""
-    def rank(lid):
-        r = conn.execute("SELECT photos, first_seen FROM listings WHERE id = ?", (lid,)).fetchone()
-        n = len(json.loads(r["photos"] or "[]")) if r else 0
-        used = sum(conn.execute(f"SELECT COUNT(*) FROM {t} WHERE listing_id = ?", (lid,)).fetchone()[0]
-                   for t in ("favorites", "client_items", "collection_items"))
-        return (-min(n, 1), -used, (r["first_seen"] if r else 0) or 0, lid)
-    k, d = sorted((a, b), key=rank)
-    return k, d
-
-
 def _pair_key(a: int, b: int) -> tuple[int, int]:
     return (a, b) if a < b else (b, a)
-
-
-def merge(conn: sqlite3.Connection, keep: int, drop: int, kind: str, status: str = "auto", user_id: int = 0,
-          why: list | None = None, score: float | None = None) -> int | None:
-    """Склеить drop в keep (всё переезжает); вернуть id пары (для «Разделить»)."""
-    k = conn.execute(f"SELECT {_COLS}, price_fixed FROM listings WHERE id = ?", (keep,)).fetchone()
-    d = conn.execute(f"SELECT {_COLS} FROM listings WHERE id = ?", (drop,)).fetchone()
-    if k is None or d is None or keep == drop:
-        return None
-    now = int(time.time())
-    undo = {"events": [r[0] for r in conn.execute("SELECT id FROM listing_events WHERE listing_id = ?", (drop,))],
-            "drop_active": d["is_active"], "drop_reason": d["hidden_reason"], "drop_seen": d["seen_count"] or 0,
-            "keep": {f: k[f] for f in ("price", "price_m2", "fragment", "description", "phones", "last_seen")}}
-    _move(conn, drop, keep)
-    conn.execute("UPDATE listings SET is_active = 0, hidden_reason = 'dup_same' WHERE id = ?", (drop,))
-    if (d["last_seen"] or 0) > (k["last_seen"] or 0) and not k["price_fixed"]:   # свежее сообщение — его цена и текст
-        phones = sorted(set(json.loads(k["phones"] or "[]")) | set(json.loads(d["phones"] or "[]")))
-        conn.execute("UPDATE listings SET price = ?, price_m2 = ?, fragment = ?, description = ?, phones = ? WHERE id = ?",
-                     (d["price"], d["price_m2"], d["fragment"], d["description"], json.dumps(phones, ensure_ascii=False), keep))
-    a, b = _pair_key(keep, drop)
-    conn.execute("""INSERT INTO dup_pairs (a, b, kind, score, why, status, keep_id, drop_id, undo, created_at, decided_at, user_id)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-                    ON CONFLICT (a, b) DO UPDATE SET status = excluded.status, keep_id = excluded.keep_id,
-                      drop_id = excluded.drop_id, undo = excluded.undo, decided_at = excluded.decided_at,
-                      user_id = excluded.user_id""",
-                 (a, b, kind, score, json.dumps(why or [], ensure_ascii=False), status, keep, drop,
-                  json.dumps(undo, ensure_ascii=False), now, now, user_id))
-    # открытые пары со склеенной копией — теперь про оставшуюся карточку
-    for p in conn.execute("SELECT id, a, b FROM dup_pairs WHERE status = 'open' AND (a = ? OR b = ?)", (drop, drop)).fetchall():
-        other = p["b"] if p["a"] == drop else p["a"]
-        na, nb = _pair_key(other, keep)
-        if other == keep or conn.execute("SELECT 1 FROM dup_pairs WHERE a = ? AND b = ?", (na, nb)).fetchone():
-            conn.execute("UPDATE dup_pairs SET status = 'gone' WHERE id = ?", (p["id"],))
-        else:
-            conn.execute("UPDATE dup_pairs SET a = ?, b = ? WHERE id = ?", (na, nb, p["id"]))
-    return conn.execute("SELECT id FROM dup_pairs WHERE a = ? AND b = ?", (a, b)).fetchone()[0]
 
 
 def split(conn: sqlite3.Connection, pid: int, user_id: int = 0) -> bool:
@@ -264,44 +193,44 @@ def split(conn: sqlite3.Connection, pid: int, user_id: int = 0) -> bool:
     return True
 
 
-def decide(conn: sqlite3.Connection, pid: int, verdict: str, user_id: int = 0, keep: int | None = None) -> dict:
-    """Решение админа по паре из очереди: same — склеить (keep — какую оставить), diff — разные, запомнить."""
-    p = conn.execute("SELECT * FROM dup_pairs WHERE id = ?", (pid,)).fetchone()
-    if p is None:
-        return {"ok": False, "error": "Пара не найдена"}
-    if verdict == "same" and p["kind"] in ("offer_review", "offer_photo"):
-        verdict = "market"
-    now = int(time.time())
-    if verdict == "diff":
-        if p["status"] in ("same", "auto"):
-            split(conn, pid, user_id)
-        conn.execute("UPDATE dup_pairs SET status = 'diff', decided_at = ?, user_id = ? WHERE id = ?", (now, user_id, pid))
-        return {"ok": True, "status": "diff"}
-    if verdict == "market":   # 26.10 (Артём): одна квартира, продают разные агенты — карточки отдельно, но связаны
-        if p["status"] in ("same", "auto"):
-            split(conn, pid, user_id)
-        conn.execute("UPDATE dup_pairs SET status = 'market', decided_at = ?, user_id = ? WHERE id = ?", (now, user_id, pid))
-        return {"ok": True, "status": "market"}
-    if verdict == "reopen":   # передумал «разные» / «разные агенты» — вернуть в очередь
-        conn.execute("UPDATE dup_pairs SET status = 'open', decided_at = NULL WHERE id = ? AND status IN ('diff', 'market')", (pid,))
-        return {"ok": True, "status": "open"}
-    if verdict != "same":
-        return {"ok": False, "error": "Не понял решение"}
-    if p["status"] in ("same", "auto"):
-        return {"ok": True, "status": p["status"], "keep": p["keep_id"]}
-    act = {r[0] for r in conn.execute("SELECT id FROM listings WHERE id IN (?, ?) AND is_active = 1", (p["a"], p["b"]))}
-    if len(act) < 2:
-        conn.execute("UPDATE dup_pairs SET status = 'gone' WHERE id = ?", (pid,))
-        return {"ok": False, "error": "Одной из карточек уже нет на сайте"}
-    if keep in (p["a"], p["b"]):
-        k, d = keep, (p["b"] if keep == p["a"] else p["a"])
+def decide(conn: sqlite3.Connection, pid: int, verdict: str, user_id: int = 0) -> dict:
+    """Решение по одной активной паре хранится отдельно от объявлений."""
+    verdict = "market" if verdict == "same" else verdict
+    if verdict == "reopen":
+        saved = conn.execute("""UPDATE dup_pairs SET status='open', decided_at=NULL, user_id=?
+                              WHERE id=? AND status IN ('diff','market')""", (user_id, pid))
+        if saved.rowcount:
+            return {"ok": True, "status": "open"}
+    elif verdict in ("market", "diff"):
+        saved = conn.execute(f"""UPDATE dup_pairs AS p SET status=?, decided_at=?, user_id=?
+                                WHERE p.id=? AND p.status='open' {_ACTIVE_PAIR}""",
+                             (verdict, int(time.time()), user_id, pid))
+        if saved.rowcount:
+            if verdict == "market":
+                _queue_peer_pairs(conn, pid)
+            return {"ok": True, "status": verdict}
     else:
-        k, d = choose_keep(conn, p["a"], p["b"])
-    merge(conn, k, d, p["kind"], status="same", user_id=user_id, why=json.loads(p["why"] or "[]"), score=p["score"])
-    return {"ok": True, "status": "same", "keep": k, "drop": d}
+        return {"ok": False, "error": "Неизвестное решение."}
+    return {"ok": False, "stale": True}
 
 
-# ---------------------------------------------------------------- фоновая проверка
+def _queue_peer_pairs(conn: sqlite3.Connection, pid: int) -> None:
+    a, b = conn.execute("SELECT a,b FROM dup_pairs WHERE id=?", (pid,)).fetchone()
+    for pivot, target in ((a, b), (b, a)):
+        current = conn.execute(f"SELECT {offers.MATCH_FIELDS} FROM listings WHERE id=?", (target,)).fetchone()
+        peers = conn.execute(f"""SELECT {offers.MATCH_FIELDS} FROM listings WHERE is_active=1 AND id!=?
+            AND id IN (SELECT b FROM dup_pairs WHERE a=? AND status='market'
+                       UNION SELECT a FROM dup_pairs WHERE b=? AND status='market')""", (target, pivot, pivot))
+        for peer in peers:
+            if current["deal"] != peer["deal"] or offers.property_type(current["type"]) != offers.property_type(peer["type"]):
+                continue
+            if offers._conflicts(current, peer, offers.place_keys(current), offers.place_keys(peer)):
+                continue
+            if offers.same_unit_details(current, peer):
+                continue  # полные совпадающие характеристики уже проверяются при построении группы
+            conn.execute("""INSERT OR IGNORE INTO dup_pairs(a,b,kind,score,why,status,created_at)
+                VALUES (?,?,'offer_peer',0.85,?,'open',?)""", (*_pair_key(target, peer["id"]),
+                json.dumps([f"Обе карточки связаны с объявлением № {pivot}"], ensure_ascii=False), int(time.time())))
 
 def _candidates(conn: sqlite3.Connection):
     return conn.execute(f"""SELECT {_COLS} FROM listings WHERE source = 'chat' AND is_active = 1 AND hidden_reason IS NULL
@@ -309,7 +238,7 @@ def _candidates(conn: sqlite3.Connection):
 
 
 def scan(conn: sqlite3.Connection, budget_s: float = 8.0, full: bool = False) -> dict:
-    """Новые карточки (id больше курсора dup_scan_id) — против всех на сайте: наверняка — склеить, сомнительно — в очередь."""
+    """Search for independently reviewable pairs among chat listings."""
     t0 = time.time()
     from . import phonegroups
     phonegroups.refresh(conn, force=True)
@@ -318,7 +247,6 @@ def scan(conn: sqlite3.Connection, budget_s: float = 8.0, full: bool = False) ->
     if not rows or rows[-1]["id"] <= cur:
         return {}
     decided = {(r[0], r[1]) for r in conn.execute("SELECT a, b FROM dup_pairs")}
-    trust = trusted(conn)
     groups: dict[tuple, list] = defaultdict(list)
     info: dict[int, tuple] = {}
     for r in rows:
@@ -328,18 +256,15 @@ def scan(conn: sqlite3.Connection, budget_s: float = 8.0, full: bool = False) ->
         tk = _text_key(r["fragment"])
         if len(tk) >= 10:
             groups[(*g, "tx:" + tk)].append(r)
-    gone: set[int] = set()
     res = {"auto": 0, "queued": 0, "rows": 0}
     last = cur
     for r in rows:
         if r["id"] <= cur:
             continue
-        if time.time() - t0 > budget_s:
+        if last != cur and time.time() - t0 > budget_s:
             break
         last = r["id"]
         res["rows"] += 1
-        if r["id"] in gone:
-            continue
         g = (_group(r["type"]), r["deal"])
         seen: set[int] = set()
         doubts: list = []
@@ -349,7 +274,7 @@ def scan(conn: sqlite3.Connection, budget_s: float = 8.0, full: bool = False) ->
             keys.append((*g, "tx:" + tk))
         for key in keys:
             for o in groups.get(key, ()):
-                if o["id"] >= r["id"] or o["id"] in seen or o["id"] in gone:
+                if o["id"] >= r["id"] or o["id"] in seen:
                     continue
                 seen.add(o["id"])
                 if _pair_key(r["id"], o["id"]) in decided:
@@ -367,25 +292,7 @@ def scan(conn: sqlite3.Connection, budget_s: float = 8.0, full: bool = False) ->
                 if not c:
                     continue
                 kind, score, why = c
-                pa, pb = _phones(o["phones"]), _phones(r["phones"])
-                if pa and pb and not pa & pb:
-                    doubts.append((score, o["id"], "offer_review", why))
-                    continue
-                if kind in AUTO or kind in trust:
-                    k, d = choose_keep(conn, o["id"], r["id"])
-                    merge(conn, k, d, kind, status="auto", why=why, score=score)
-                    conn.commit()   # 26.10 («database is locked»): запись короткая — базу не держим весь проход
-                    decided.add(_pair_key(k, d))
-                    gone.add(d)
-                    res["auto"] += 1
-                    if d == r["id"]:
-                        break
-                else:
-                    doubts.append((score, o["id"], kind, why))
-            if r["id"] in gone:
-                break
-        if r["id"] in gone:
-            continue
+                doubts.append((score, o["id"], kind, why))
         now = int(time.time())
         for score, oid, kind, why in sorted(doubts, reverse=True)[:PER_ROW]:
             a, b = _pair_key(r["id"], oid)
@@ -403,7 +310,7 @@ def scan(conn: sqlite3.Connection, budget_s: float = 8.0, full: bool = False) ->
 def recheck_offers(conn: sqlite3.Connection, batch: int = 250, budget_s: float = 3.0) -> dict:
     """Возвращаемся к старым карточкам с места и затем проверяем новые, не меняя их содержимое."""
     start = time.monotonic()
-    cursor = int(db.get_state(conn, "offer_check_id", "0"))
+    cursor = int(db.get_state(conn, "offer_pair_check_id", "0"))
     if not conn.execute("""SELECT 1 FROM listings WHERE id > ? AND is_active = 1
                            AND (street IS NOT NULL OR complex IS NOT NULL) LIMIT 1""", (cursor,)).fetchone():
         return {}
@@ -462,7 +369,12 @@ def recheck_offers(conn: sqlite3.Connection, batch: int = 250, budget_s: float =
                 candidates[oid] = offers.similar_signals(row, other, places[lid], places[oid])
         ranked = sorted(((oid, why) for oid, why in candidates.items() if why),
                         key=lambda pair: (len(pair[1]), pair[0]), reverse=True)
-        for oid, why in ranked[:PER_ROW]:
+        weak = 0
+        for oid, why in ranked:
+            if "Тот же адрес" not in why:
+                if weak == PER_ROW:
+                    continue
+                weak += 1
             reviews.append((oid, lid, len(why) / 5, json.dumps(why, ensure_ascii=False)))
 
     now = int(time.time())
@@ -483,7 +395,7 @@ def recheck_offers(conn: sqlite3.Connection, batch: int = 250, budget_s: float =
     if res["linked"]:
         conn.execute("""INSERT INTO state(key, value) VALUES ('cache_ver', ?)
                         ON CONFLICT(key) DO UPDATE SET value=excluded.value""", (str(time.time()),))
-    db.set_state(conn, "offer_check_id", str(cursor))
+    db.set_state(conn, "offer_pair_check_id", str(cursor))
     return res
 
 
@@ -531,24 +443,9 @@ def stats(conn: sqlite3.Connection) -> list[dict]:
             d["auto"] += n
         elif st == "open":
             d["open"] += n
-    trust = trusted(conn)
-    out = []
-    for k, d in by.items():
-        n = d["same"] + d["diff"]
-        share = round(d["same"] / n, 3) if n else None
-        out.append({"kind": k, "label": KINDS.get(k, k), **d, "decided": n, "share": share, "auto_kind": k in AUTO,
-                    "trusted": k in trust,
-                    "can_trust": k in DOUBT and n >= TRUST_MIN_N and (share or 0) >= TRUST_MIN_SHARE})
-    return out
-
-
-def set_trust(conn: sqlite3.Connection, kind: str, on: bool) -> list[str]:
-    t = trusted(conn)
-    if kind in DOUBT:
-        (t.add if on else t.discard)(kind)
-    db.set_state(conn, "dup_trust", json.dumps(sorted(t)))
-    conn.commit()
-    return sorted(t)
+    return [{"kind": k, "label": KINDS.get(k, k), **d,
+             "decided": d["market"] + d["same"] + d["diff"]}
+            for k, d in by.items() if any(d.values())]
 
 
 def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
@@ -646,97 +543,27 @@ def _pair_details(p, a, b):
     return {"id": p["id"], "kind": p["kind"], "kind_label": KINDS.get(p["kind"], p["kind"]),
             "why": json.loads(p["why"] or "[]"), "status": p["status"], "score": p["score"],
             "ai": json.loads(p["ai"]) if p["ai"] else None, "decided_at": p["decided_at"],
-            "sim": round(similarity(a["text"], b["text"]), 3)}
+            "shared_photos": len(offers._photo_keys(json.dumps(a["photos"])) &
+                                 offers._photo_keys(json.dumps(b["photos"])))}
 
 
-def _separate_offers(kind, phones_a, phones_b) -> bool:
-    if phones_a and phones_b:
-        return not bool(phones_a & phones_b)
-    return kind in ("offer_review", "offer_photo")
-
-
-def comparison(conn: sqlite3.Connection, skip: list[int], anchor: int = 0) -> dict:
-    """Одна карточка и все её прямые открытые пары, включая пары за пределами первой страницы."""
-    from . import phonegroups
-    phonegroups.refresh(conn)
-    source = "dup_pairs p JOIN listings a ON a.id=p.a JOIN listings b ON b.id=p.b"
-    scope = "p.status = 'open' AND a.is_active=1 AND b.is_active=1"
-    if skip:
-        marks = ",".join("?" for _ in skip)
-        scope += f" AND p.a NOT IN ({marks}) AND p.b NOT IN ({marks})"
-    params = (*skip, *skip)
-    seed = conn.execute(f"""SELECT p.a, p.b FROM {source} WHERE {scope}
-        ORDER BY MAX(a.first_seen, b.first_seen) DESC, p.score DESC, p.id LIMIT 1""", params).fetchone()
-    if seed is None:
-        return {**_queue_data(conn), "group": None}
-
-    def related(ids):
-        marks = ",".join("?" for _ in ids)
-        return conn.execute(f"""SELECT p.*, a.first_seen AS first_a, b.first_seen AS first_b FROM {source}
-            WHERE {scope} AND (p.a IN ({marks}) OR p.b IN ({marks}))""", (*params, *ids, *ids)).fetchall()
-
-    rows = related((anchor,)) if anchor else []
-    if not rows:
-        rows = related(tuple(seed))
-        anchor = max(seed, key=lambda lid: sum(lid in (p["a"], p["b"]) for p in rows))
-        rows = [p for p in rows if anchor in (p["a"], p["b"])]
-    rows.sort(key=lambda p: (-(p["first_b"] if p["a"] == anchor else p["first_a"]), -(p["score"] or 0), p["id"]))
-    main = _card(conn, anchor)
-    choices = []
-    if main:
-        phones = phonegroups.canon_set(main["phones"])
-        for p in rows:
-            card = _card(conn, p["b"] if p["a"] == anchor else p["a"])
-            if card:
-                choices.append({**_pair_details(p, main, card), "card": card,
-                                "keep": choose_keep(conn, anchor, card["id"])[0],
-                                "market_only": _separate_offers(p["kind"], phones, phonegroups.canon_set(card["phones"]))})
-    return {**_queue_data(conn), "group": {"anchor": main, "candidates": choices} if choices else None}
-
-
-def decide_comparison(conn: sqlite3.Connection, anchor: int, candidates: list[int], verdict: str,
-                      user_id: int, keep: int = 0) -> dict:
-    """Сохраняет решения только для выбранных активных пар в одной транзакции."""
-    from . import phonegroups
-    ids = [anchor, *candidates]
-    if verdict not in ("same", "diff", "market") or len(set(ids)) != len(ids) or not candidates:
-        return {"ok": False, "error": "Выберите карточки и решение."}
-    with conn:
-        conn.execute("BEGIN IMMEDIATE")
-        phonegroups.refresh(conn)
-        marks = ",".join("?" for _ in ids)
-        active = {r["id"]: _phones(r["phones"]) for r in conn.execute(
-            f"SELECT id, phones FROM listings WHERE is_active = 1 AND id IN ({marks})", ids)}
-        related = conn.execute(f"SELECT * FROM dup_pairs WHERE a IN ({marks}) AND b IN ({marks})", (*ids, *ids)).fetchall()
-        direct = {p["b"] if p["a"] == anchor else p["a"]: p for p in related if anchor in (p["a"], p["b"])}
-        if len(active) != len(ids) or any(lid not in direct or direct[lid]["status"] != "open" for lid in candidates):
-            return {"ok": False, "stale": True, "error": "Очередь изменилась. Обновили карточки для сравнения."}
-        if verdict != "diff" and any(p["status"] in ("diff", "split") for p in related):
-            return {"ok": False, "error": "Среди выбранных карточек есть пара, уже отмеченная как разные объекты."}
-        if verdict == "same":
-            if any(p["status"] == "market" or _separate_offers(p["kind"], active[p["a"]], active[p["b"]])
-                   for p in related) or any(a and b and not a & b for a, b in combinations(active.values(), 2)):
-                return {"ok": False, "error": "Карточки разных агентов можно связать кнопкой 3."}
-            keep = keep if keep in ids else anchor
-            for lid in ids:
-                if lid == keep:
-                    continue
-                p = direct[lid] if lid != anchor else direct[keep]
-                merge(conn, keep, lid, p["kind"], status="same", user_id=user_id,
-                      why=json.loads(p["why"] or "[]"), score=p["score"])
-        else:
-            conn.executemany("UPDATE dup_pairs SET status=?, decided_at=?, user_id=? WHERE id=?",
-                             ((verdict, int(time.time()), user_id, direct[lid]["id"]) for lid in candidates))
-    return {"ok": True, "status": verdict, "count": len(candidates)}
-
-
-def pairs(conn: sqlite3.Connection, status: str = "open", limit: int = 30, offset: int = 0) -> dict:
+def pairs(conn: sqlite3.Connection, status: str = "open", limit: int = 30, offset: int = 0,
+          skip: list[int] | None = None) -> dict:
     # 26.10 («database is locked»): только чтение — раньше здесь была запись (tidy), и база ждала, пока посчитаются карточки
     st = {"open": ("open",), "auto": ("auto",), "done": ("same", "diff", "split", "market")}.get(status, ("open",))
-    order = "p.score DESC, p.id" if status == "open" else "p.decided_at DESC, p.id DESC"
-    alive = _ACTIVE_PAIR if status == "open" else ""
-    rows = conn.execute(f"""SELECT p.* FROM dup_pairs p WHERE p.status IN ({','.join('?' * len(st))}) {alive}
-                            ORDER BY {order} LIMIT ? OFFSET ?""", (*st, limit, offset)).fetchall()
+    source = "dup_pairs p"
+    scope = f"p.status IN ({','.join('?' * len(st))})"
+    params = list(st)
+    order = "p.decided_at DESC, p.id DESC"
+    if status == "open":
+        source += " JOIN listings a ON a.id=p.a JOIN listings b ON b.id=p.b"
+        scope += " AND a.is_active=1 AND b.is_active=1"
+        order = "MAX(a.first_seen, b.first_seen) DESC, p.score DESC, p.id"
+        if skip:
+            scope += f" AND p.id NOT IN ({','.join('?' for _ in skip)})"
+            params.extend(skip)
+    rows = conn.execute(f"SELECT p.* FROM {source} WHERE {scope} ORDER BY {order} LIMIT ? OFFSET ?",
+                        (*params, limit, offset)).fetchall()
     out = []
     for p in rows:
         a, b = _card(conn, p["a"]), _card(conn, p["b"])
@@ -744,7 +571,7 @@ def pairs(conn: sqlite3.Connection, status: str = "open", limit: int = 30, offse
             continue
         if (a["last_seen"] or 0, a["id"]) > (b["last_seen"] or 0, b["id"]):   # 25.10 (Артём): справа — присланное позже
             a, b = b, a
-        keep = p["keep_id"] or choose_keep(conn, p["a"], p["b"])[0]
+        keep = p["keep_id"]
         out.append({**_pair_details(p, a, b), "a": a, "b": b, "keep": keep})
     return {**_queue_data(conn), "pairs": out}
 

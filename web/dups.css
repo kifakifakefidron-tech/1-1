@@ -1,4 +1,4 @@
-/* «Возможно, повтор» (/dups): кандидаты и сравнение с опорной карточкой */
+/* «Возможно, повтор» (/dups): сравнение двух объявлений */
 .dp { max-width: 1280px; margin: 0 auto; padding: 20px 16px 72px; }
 .dp-hero { display: flex; gap: 20px; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; margin: 8px 0 18px; }
 .dp-hero h1 { font: 600 34px/1.1 var(--head); margin: 0 0 8px; color: var(--ink); }
@@ -7,33 +7,11 @@
 .dp-tabs .chip b { margin-left: 4px; }
 .dp-empty { padding: 40px 16px; text-align: center; color: var(--ink-3); font-size: 16px; }
 
-.dp-pair { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px 20px; box-shadow: var(--sh-1); }
+.dp-pair { scroll-margin-top: 70px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px 20px; box-shadow: var(--sh-1); }
 .dp-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .dp-head > div { min-width: 0; }
 .dp-head .mark { font-size: 13px; display: inline-block; max-width: 100%; white-space: normal; }
-.dp-sim { margin-left: 10px; color: var(--ink-3); font-size: 13px; }
 .dp-count { color: var(--ink-3); font-size: 13px; }
-.dp-candidates-head { display: flex; flex-wrap: wrap; gap: 8px 14px; justify-content: space-between; align-items: center;
-  margin: 14px 0 8px; color: var(--ink-2); font-size: 13px; }
-.dp-candidates-head .pill { padding: 7px 12px; font-size: 13px; }
-.dp-candidates { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(180px, 1fr); gap: 8px; max-width: 100%;
-  padding: 2px 2px 8px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-color: var(--gold) transparent; }
-.dp-candidate { min-width: 0; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden;
-  background: color-mix(in srgb, var(--ink) 4%, var(--paper)); }
-.dp-candidate.selected, .dp-candidate.base { border-color: color-mix(in srgb, var(--gold) 62%, var(--line)); }
-.dp-candidate.base { background: color-mix(in srgb, var(--gold) 9%, var(--paper)); }
-.dp-tile-check { display: flex; min-height: 34px; gap: 7px; align-items: center; padding: 4px 9px;
-  border-bottom: 1px solid var(--line); color: var(--ink-2); font-size: 13px; }
-label.dp-tile-check { cursor: pointer; }
-.dp-tile-check input { width: 16px; height: 16px; flex: none; accent-color: var(--gold); }
-.dp-tile-open { display: flex; width: 100%; min-height: 75px; gap: 9px; align-items: center; text-align: left; padding: 9px;
-  outline-offset: -3px; border: 0; background: transparent; color: var(--ink); font: inherit; }
-button.dp-tile-open { cursor: pointer; }
-.dp-tile-open[aria-pressed="true"] { background: color-mix(in srgb, var(--gold) 17%, var(--paper)); }
-.dp-tile-open strong { font-family: var(--head); font-size: 16px; white-space: nowrap; }
-.dp-tile-open > span { display: grid; min-width: 0; gap: 2px; }
-.dp-tile-open small { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
-.dp-tile-open img { width: 46px; height: 46px; object-fit: cover; border-radius: 6px; flex: none; background: var(--line); }
 .dp-why { margin: 10px 0 4px; }
 .dp-askai { margin: 8px 0 0; display: inline-flex; gap: 6px; align-items: center; }
 .dp-askai svg, .dp-ai svg { width: 16px; height: 16px; flex: none; }
@@ -63,11 +41,7 @@ button.dp-tile-open { cursor: pointer; }
 .dp-legend i.miss { background: var(--line); }
 
 .dp-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px; }
-.dp-side { min-width: 0; border: 1.5px solid var(--line); border-radius: var(--r-lg); padding: 14px; cursor: pointer;
-  transition: border-color var(--dur-2) var(--ease), background var(--dur-2) var(--ease); }
-.dp-side.keep { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 6%, transparent); }
-.dp-keep { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-2); margin-bottom: 10px; cursor: pointer; }
-.dp-side.keep .dp-keep { color: var(--gold); font-weight: 600; }
+.dp-side { min-width: 0; border: 1.5px solid var(--line); border-radius: var(--r-lg); padding: 14px; }
 .dp-ph { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 10px; }
 .dp-ph img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; background: var(--line); }
 .dp-ph.none { display: flex; align-items: center; justify-content: center; height: 64px; border-radius: 8px;
@@ -96,7 +70,6 @@ button.dp-tile-open { cursor: pointer; }
   border-radius: var(--r-lg); background: color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px); border: 1px solid var(--line); }
 .dp-acts .pill { display: inline-flex; gap: 8px; align-items: center; padding: 12px 20px; font-size: 15px; }
-.dp-selection { flex-basis: 100%; font-size: 13px; color: var(--ink-2); padding-inline: 4px; }
 .dp-acts .pill:disabled { opacity: .48; cursor: default; }
 .dp-acts .pill svg { width: 16px; height: 16px; }
 .dp-acts kbd { font: 600 11px/1 var(--body, inherit); padding: 3px 6px; border-radius: 5px; border: 1px solid currentColor; opacity: .85; }
@@ -111,12 +84,8 @@ button.dp-tile-open { cursor: pointer; }
 .dp-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
 .dp-stat { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; background: var(--paper); border: 1px solid var(--line);
   border-radius: var(--r-lg); box-shadow: var(--sh-1); }
-.dp-stat.on { border-color: var(--gold); }
-.dp-stat b { font: 600 28px/1.05 var(--head); color: var(--ink); }
 .dp-stat strong { color: var(--ink); font-size: 15px; }
 .dp-stat span, .dp-stat small { color: var(--ink-3); font-size: 13px; line-height: 1.4; }
-.dp-stat .pill { align-self: flex-start; margin-top: 8px; }
-.dp-wait { font-style: italic; }
 
 @media (max-width: 760px) {
   .dp-hero h1 { font-size: 26px; }
@@ -126,14 +95,11 @@ button.dp-tile-open { cursor: pointer; }
   .dp-sides { grid-template-columns: 1fr; }
   .dp-tr { grid-template-columns: 86px minmax(0, 1fr) minmax(0, 1fr); font-size: 13px; padding: 7px 8px; }
   .dp-acts { bottom: calc(84px + env(safe-area-inset-bottom)); }   /* над нижней панелью меню */
-  .dp-candidates { grid-auto-columns: minmax(148px, 43%); }
   .dp-acts .pill { flex: 1 1 44%; text-align: left; padding: 8px; font-size: 12px; line-height: 1.2; }
   .dp-row { flex-wrap: wrap; }
 }
 
 /* 25.10: «Один агент — несколько номеров» */
-.dp-same-agent { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 14px; padding: 10px 14px;
-  border-radius: var(--r-md); border: 1px dashed var(--line-2, var(--line)); font-size: 13px; color: var(--ink-2); }
 .dp-groups { display: flex; flex-direction: column; gap: 10px; }
 .dp-group { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 12px 14px;
   background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-md); }

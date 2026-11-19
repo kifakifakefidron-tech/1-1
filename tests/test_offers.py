@@ -23,7 +23,7 @@ def decide(conn, a, b, status):
 def test_groups_paginate_and_only_show_prices_that_match(conn):
     a = listing(conn, "79000000001")
     b = listing(conn, "79000000002", price=7100000)
-    c = listing(conn, "79000000003", house="61", price=6750000)
+    c = listing(conn, "79000000003", house="61", price=6750000, media=("d", "e"))
     qr = search.Query(price_max=6900000, size=1, sort="price_asc")
     result = search.search(conn, qr, int(time.time()), False, group_offers=True)
     assert result["total"] == result["pages"] == 2
@@ -167,7 +167,7 @@ def test_recheck_links_one_photo_with_property_text_and_queues_weak_matches(conn
     assert offers.archived_publications(conn, b)[b][0] == 1
 
 
-def test_similar_finds_older_properties_and_omits_doubtful_prices_and_excluded_ids(conn):
+def test_pair_scan_finds_older_properties_and_ignores_doubtful_price(conn):
     a = listing(conn, "79000000001", media=())
     b = listing(conn, "79000000002", media=())
     conn.execute("UPDATE listings SET type='new', street='ул. Домбайская' WHERE id=?", (a,))
@@ -175,9 +175,9 @@ def test_similar_finds_older_properties_and_omits_doubtful_prices_and_excluded_i
     conn.executemany("""INSERT INTO listings(type, deal, rooms, area, floor, floors, street, house, price,
         title, first_seen, last_seen) VALUES ('flat','sale',2,54,16,24,'Красная',?,6800000,'Другая квартира',1,2)""",
         ((str(i),) for i in range(630)))
-    row = conn.execute("SELECT * FROM listings WHERE id=?", (a,)).fetchone()
-    assert [(item["id"], item["price"]) for item in hooks.same_elsewhere(conn, row)] == [(b, None)]
-    assert hooks.same_elsewhere(conn, row, exclude={b}) == []
+    assert dupreview.recheck_offers(conn, batch=2)["queued"] == 1
+    pair = conn.execute("SELECT a,b,why FROM dup_pairs WHERE status='open'").fetchone()
+    assert (pair["a"], pair["b"]) == (a, b) and "Близкая цена" not in pair["why"]
 
 
 def test_reposted_text_with_separate_agent_phones_cannot_merge_original_data(conn):
@@ -222,3 +222,25 @@ def test_confirmed_group_shows_each_agent_once_and_counts_one_property(conn, mon
     assert filtered["items"][0]["id"] == agent
     assert search.catalog_counts(conn, now) == {"sale": 1, "rent": 1, "new_24h": 1}
     assert conn.execute("SELECT COUNT(*) FROM listings WHERE is_active=1").fetchone()[0] == 6
+
+
+def test_reused_photos_across_different_addresses_are_not_proof(conn):
+    for i, house in enumerate(("59", "59", "61"), 1):
+        listing(conn, f"+7900000000{i}", house=house)
+    assert not offers.groups(conn)
+    assert dupreview.recheck_offers(conn)["queued"] == 1
+
+
+def test_ingest_does_not_union_partly_overlapping_contact_lists(conn):
+    from app import parser
+
+    now = int(time.time())
+    text = "Продам 2-к квартиру 54 м², 16/24 этаж, ЖК Губернский, ул. Домбайская 59. " + DETAIL + " Цена 6 800 000 руб."
+    _, (a,) = parser.parse(text, use_llm=False)
+    _, (b,) = parser.parse(text, use_llm=False)
+    a.phones = ["+79000000001", "+79000000002"]
+    b.phones = ["+79000000001", "+79000000003"]
+    first, _ = ingest.save_object(conn, a, None, now)
+    second, _ = ingest.save_object(conn, b, None, now + 1)
+    assert first != second
+    assert [json.loads(row[0]) for row in conn.execute("SELECT phones FROM listings ORDER BY id")] == [a.phones, b.phones]

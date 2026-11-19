@@ -13,7 +13,6 @@ from .textnorm import words
 
 
 CHAT_PHOTO = re.compile(r"/photos/\d+/([a-f0-9]{16})\.[a-z0-9]+$")
-GROUPED_NUMBER = re.compile(r"(?<!\d)\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?!\d)")
 MATCH_FIELDS = ("id, type, deal, rooms, room_kind, area, land, floor, floors, complex, street, house, "
                 "settlement, price, price_doubt, phones, title, last_seen")
 
@@ -46,7 +45,10 @@ def street_key(value):
 
 @lru_cache(maxsize=4096)
 def house_key(value):
-    return re.sub(r"\s+", "", (value or "").casefold())
+    house = (value or "").casefold()
+    house = re.sub(r"(?<=\d)\s*(?:корпус|корп\.?|к\.)\s*(?=\d)", "к", house)
+    house = re.sub(r"(?<=\d)\s*(?:строение|стр\.?)\s*(?=\d)", "стр", house)
+    return re.sub(r"\s+", "", house)
 
 
 def place_keys(row):
@@ -85,9 +87,15 @@ def similar_signals(a, b, place_a, place_b):
         labels.append("Тот же этаж")
     if a["floors"] is not None and a["floors"] == b["floors"]:
         labels.append("Та же этажность")
-    if (area or floor) and dedupe._close(known_price(a), known_price(b), 0.07, 0):
+    if len(labels) < 2:
+        return []
+    if place_a[1] and place_a[1] == place_b[1] and house_key(a["house"]) and house_key(a["house"]) == house_key(b["house"]):
+        labels.insert(0, "Тот же адрес")
+    elif place_a[0] and place_a[0] == place_b[0]:
+        labels.insert(0, "Тот же ЖК")
+    if dedupe._close(known_price(a), known_price(b), 0.07, 0):
         labels.append("Близкая цена")
-    return labels if len(labels) >= 2 else []
+    return labels
 
 
 def _address_key(row):
@@ -100,16 +108,21 @@ def _address_key(row):
     return row["deal"], words(row["settlement"]), street, house, row["rooms"], row["floor"], row["area"]
 
 
+def same_unit_details(a, b):
+    key = _address_key(a)
+    return key is not None and key == _address_key(b) and not _conflicts(a, b, place_keys(a), place_keys(b))
+
+
 @lru_cache(maxsize=2048)
 def _property_text(raw):
-    plain = rules.remove_phones(raw or "")
-    return GROUPED_NUMBER.sub(lambda m: "".join(m[0].split()), plain)
+    return rules.remove_phones(raw or "")
 
 
 def _matching_photos(a, b, shared, single_photo):
-    if len(shared) >= 2:
+    trusted = shared & single_photo
+    if len(trusted) >= 2:
         return True
-    if not shared & single_photo:
+    if not trusted:
         return False
     ta = _property_text(a["fragment"] or a["description"])
     tb = _property_text(b["fragment"] or b["description"])
@@ -218,9 +231,7 @@ def _build_groups(conn: sqlite3.Connection):
 
     def consistent(a, b, confirmed):
         pair = min(a, b), max(a, b)
-        return pair in pairs or (confirmed and pair not in decisions
-                                and property_type(rows[a]["type"]) == property_type(rows[b]["type"])
-                                and not _conflicts(rows[a], rows[b], places[a], places[b]))
+        return pair in pairs or (confirmed and pair not in decisions and same_unit_details(rows[a], rows[b]))
 
     linked = {}
     manual_groups = set()

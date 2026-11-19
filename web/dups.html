@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/static/style.css?v=26">
 <link rel="stylesheet" href="/static/motion.css?v=36">
 <link rel="stylesheet" href="/static/learn.css?v=7">
-<link rel="stylesheet" href="/static/dups.css?v=8">
+<link rel="stylesheet" href="/static/dups.css?v=9">
 <link rel="stylesheet" href="/static/theme.css?v=16">
 <link rel="stylesheet" href="/static/glass.css?v=129">
 </head>
@@ -33,18 +33,16 @@
   <div id="dpApp" hidden>
     <section class="dp-hero">
       <div><h1>Возможно, повтор</h1>
-        <p class="dp-lead">Сравните кандидатов с опорной карточкой. Если решение для нескольких совпадает, отметьте их и
-          нажмите нужную кнопку или клавишу. Для одного объекта от разных агентов кнопка 3 свяжет отдельные предложения в поиске.</p></div>
+        <p class="dp-lead">Сравните два объявления. Если это один объект, свяжите предложения для поиска.
+          У каждого объявления сохранятся свои цена, фото и контакты.</p></div>
       <a class="pill light" href="/learn">← Обучение и разбор</a>
     </section>
     <div class="chips dp-tabs" id="dpTabs"></div>
     <div id="dpBody"></div>
-    <h2 class="ln-h">Чему сервис научился</h2>
+    <h2 class="ln-h">Статистика решений</h2>
     <div class="dp-stats" id="dpStats"></div>
     <h2 class="ln-h">Один агент — несколько номеров</h2>
-    <p class="note">Агент или агентство присылает одни и те же объекты с разных номеров — впишите эти номера одной группой.
-      Сервис будет считать их одним номером: тот же текст с другим номером и тот же объект (место, комнаты, этаж) — одна карточка.
-      Уже созданные карточки перепроверяются сразу.</p>
+    <p class="note">Объединяйте здесь только подтверждённые номера одного агента. Сервис учтёт их при проверке повторных публикаций.</p>
     <div class="dp-groups" id="dpGroups"></div>
   </div>
 </main>
@@ -52,7 +50,7 @@
 <script src="/static/pickers.js?v=19"></script>
 <script src="/static/max.js?v=3"></script>
 <script src="/static/rail.js?v=38"></script>
-<script src="/static/dups.js?v=10"></script>
+<script src="/static/dups.js?v=11"></script>
 <script src="/static/objview.js?v=3"></script>
 </body>
 </html>

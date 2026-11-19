@@ -157,22 +157,16 @@ def tick(conn) -> dict:
         stats["media_strict"] = _ms and _ms["removed"]
         from . import billing
         stats["billing"] = billing.remind(conn) or None       # напоминания об оплате сервисов (раз в сутки)
-        from . import ownmatch   # 18.10: свои объекты (наш номер) — одна карточка: копии из чатов к карточке с сайта
-        stats["own"] = ownmatch.maybe_run(conn) or None   # состояние «с ремонтом / без» — один раз после обновления правил
     except Exception:  # noqa: BLE001
         log.exception("ежедневная уборка гео не прошла")
     lap("уборка/свои объекты")
     gc = geoaudit.auto_cleanup(conn)   # один раз (акт 14.10): уборка правил и справочников, отчёт — в «Обзоре»
     if gc:
         stats["geo_cleanup"] = gc.get("listings", 0)
-    from . import dupfix   # один раз (24.10j): склеить уже созданные дубли «тот же текст и номер, другая цена»
-    dx = dupfix.maybe_run(conn)
-    if dx:
-        stats["dup_text"] = dx["merged"]
-    from . import dupreview   # 24.10: новые карточки — наверняка тот же объект склеить, сомнительные пары — в «Возможно, повтор»
+    from . import dupreview
     try:
         dr = dupreview.run(conn)
-        if dr.get("auto") or dr.get("queued"):
+        if dr.get("queued") or dr.get("gone"):
             stats["dups"] = dr
     except Exception:  # noqa: BLE001
         log.exception("проверка повторов не прошла")

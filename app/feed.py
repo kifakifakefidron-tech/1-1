@@ -184,17 +184,20 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
         if r["ext_id"] not in seen:
             conn.execute("UPDATE listings SET is_active=0 WHERE id=?", (r["id"],))
             gone += 1
-    # Объявления из чатов с артикулом, который есть в фиде, — это объекты СТРЕЛ: копии скрываем
-    # 24.10l: с причиной и ссылкой на карточку сайта — окно копии открывает её, а не пишет «снят, скорее всего продан»
-    dupes = conn.execute(
-        """UPDATE listings SET is_active = 0, hidden_reason = 'strely',
-                  merged_into = (SELECT f.id FROM listings f WHERE f.source = 'feed' AND f.ext_id LIKE 'feed:%'
-                                 AND f.is_active = 1 AND f.article = listings.article LIMIT 1)
-           WHERE source = 'chat' AND is_active = 1 AND article IN
-               (SELECT article FROM listings WHERE source = 'feed' AND ext_id LIKE 'feed:%' AND is_active = 1 AND article IS NOT NULL)""").rowcount
+    # Уникальный артикул и контакт партнёра подтверждают связь. Записи и их история сохраняются.
+    linked = 0
+    if config.FEED_PHONE:
+        linked = conn.execute("""INSERT OR IGNORE INTO dup_pairs(a,b,kind,status,created_at)
+            SELECT MIN(l.id,f.id), MAX(l.id,f.id), 'feed_article', 'market', ?
+            FROM listings l JOIN listings f ON f.article=l.article AND f.deal=l.deal
+            WHERE l.source='chat' AND l.is_active=1 AND l.phones=?
+              AND f.source='feed' AND f.ext_id LIKE 'feed:%' AND f.is_active=1
+              AND f.article IN (SELECT article FROM listings WHERE source='feed' AND ext_id LIKE 'feed:%'
+                                AND is_active=1 GROUP BY article HAVING COUNT(*)=1)""",
+                              (now, json.dumps([config.FEED_PHONE]))).rowcount
     conn.commit()
     db.set_state(conn, "feed_synced", str(now))
-    return {"offers": len(offers), "added": added, "updated": updated, "hidden": gone, "chat_copies_hidden": dupes}
+    return {"offers": len(offers), "added": added, "updated": updated, "hidden": gone, "chat_offers_linked": linked}
 
 
 def maybe_sync(conn: sqlite3.Connection) -> dict | None:

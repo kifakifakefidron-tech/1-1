@@ -1,7 +1,7 @@
 """24.10 (Артём: «сомневается — в спорные, разберу сам и обучу»): очередь «Возможно, повтор» (app/dupreview.py)."""
 import time
 
-from app import accounts, db, dupreview, ingest
+from app import accounts, db, dupreview, ingest, offers
 
 A = "Продаётся 2-к квартира 58 м², 7/16 эт., ЖК Мозаика. Евроремонт, кухня-гостиная, вид на парк. 7,5 млн. 89181112233"
 B = "Срочно! Двушка в ЖК Мозаика, 7 этаж из 16, 58 кв.м. Хозяин снизил цену. Документы готовы. 7,3 млн. 89181112233"
@@ -21,12 +21,13 @@ def _active(conn):
     return [r[0] for r in conn.execute("SELECT id FROM listings WHERE is_active = 1 ORDER BY id")]
 
 
-def test_same_agent_place_rooms_floor_is_one_card_even_with_other_text():
+def test_same_agent_place_rooms_floor_with_other_text_requires_review():
     conn = db.connect(":memory:")
     a = _lid(_send(conn, A))
     b = _lid(_send(conn, B, "c2"))
-    assert a == b
-    assert len(_active(conn)) == 1
+    assert a != b and _active(conn) == [a, b]
+    assert dupreview.run(conn)["queued"] == 1
+    assert dupreview.pairs(conn)["pairs"][0]["kind"] == "agent"
 
 
 def test_floor_missing_goes_to_queue_not_merged():
@@ -41,7 +42,7 @@ def test_floor_missing_goes_to_queue_not_merged():
     assert p["kind"] == "nodetail" and {p["a"]["id"], p["b"]["id"]} == {a, c}
 
 
-def test_admin_same_merges_and_moves_favorites_split_restores():
+def test_legacy_same_verdict_only_links_and_keeps_favorites_on_their_listing():
     conn = db.connect(":memory:")
     a = _lid(_send(conn, A))
     c = _lid(_send(conn, NO_FLOOR, "c2"))
@@ -49,15 +50,12 @@ def test_admin_same_merges_and_moves_favorites_split_restores():
     conn.execute("INSERT INTO favorites (user_id, listing_id, created) VALUES (?, ?, ?)", (uid, c, int(time.time())))
     dupreview.run(conn)
     pid = dupreview.pairs(conn)["pairs"][0]["id"]
-    res = dupreview.decide(conn, pid, "same", keep=a)
-    assert res["ok"] and res["keep"] == a
-    assert _active(conn) == [a]
-    assert conn.execute("SELECT merged_into, hidden_reason FROM listings WHERE id = ?", (c,)).fetchone()[:] == (a, "dup_same")
-    assert conn.execute("SELECT listing_id FROM favorites WHERE user_id = ?", (uid,)).fetchone()[0] == a
-    assert dupreview.split(conn, pid)
+    assert dupreview.decide(conn, pid, "same")["status"] == "market"
     assert _active(conn) == [a, c]
-    assert conn.execute("SELECT status FROM dup_pairs WHERE id = ?", (pid,)).fetchone()[0] == "split"
-    dupreview.scan(conn, full=True)          # разделили — больше не спрашиваем и сами не склеиваем
+    assert conn.execute("SELECT merged_into, hidden_reason FROM listings WHERE id = ?", (c,)).fetchone()[:] == (None, None)
+    assert conn.execute("SELECT listing_id FROM favorites WHERE user_id = ?", (uid,)).fetchone()[0] == c
+    assert set(offers.groups(conn)) == {a, c}
+    dupreview.scan(conn, full=True)
     assert dupreview.open_count(conn) == 0 and len(_active(conn)) == 2
 
 
@@ -84,14 +82,13 @@ def test_different_floor_or_other_agent_is_not_asked():
     assert len(_active(conn)) == 3
 
 
-def test_trusted_kind_merges_by_itself():
+def test_previously_trusted_kind_now_stays_in_review():
     conn = db.connect(":memory:")
     _send(conn, A)
     _send(conn, NO_FLOOR, "c2")
-    dupreview.set_trust(conn, "nodetail", True)
+    db.set_state(conn, "dup_trust", '["nodetail"]')
     res = dupreview.run(conn)
-    assert res["auto"] == 1 and len(_active(conn)) == 1
-    assert dupreview.set_trust(conn, "agent", True) == ["nodetail"]   # «наверняка» — и так сами; доверять можно только сомнительным
+    assert res["queued"] == 1 and len(_active(conn)) == 2
 
 
 def test_classify_similar_text_needs_same_text_phones():
@@ -130,8 +127,7 @@ def test_card_shows_sender_number_next_to_text_number():
 
 
 def test_market_verdict_links_cards_diff_hides_them():
-    """26.10: «Один объект — разные агенты» — карточки отдельно, но в «Этот объект у других агентов»; «Разные» — оттуда убирает."""
-    from app import hooks
+    """Повторная проверка может снять связь, сохраняя объявления."""
     conn = db.connect(":memory:")
     a = _lid(_send(conn, A))
     c = _lid(_send(conn, NO_FLOOR, "c2"))
@@ -139,11 +135,10 @@ def test_market_verdict_links_cards_diff_hides_them():
     pid = dupreview.pairs(conn)["pairs"][0]["id"]
     assert dupreview.decide(conn, pid, "market")["status"] == "market"
     assert len(_active(conn)) == 2                       # не склеили
-    row = conn.execute("SELECT * FROM listings WHERE id = ?", (a,)).fetchone()
-    assert [x["id"] for x in hooks.same_elsewhere(conn, row)] == [c]
+    assert set(offers.groups(conn)) == {a, c}
     st = {s["kind"]: s for s in dupreview.stats(conn)}
-    assert st["nodetail"]["market"] == 1 and st["nodetail"]["decided"] == 0
+    assert st["nodetail"]["market"] == st["nodetail"]["decided"] == 1
     dupreview.decide(conn, pid, "reopen")
     dupreview.decide(conn, pid, "diff")
-    assert hooks.same_elsewhere(conn, row) == []
+    assert offers.groups(conn) == {}
     assert dupreview.pairs(conn, "done")["counts"]["done"] == 1

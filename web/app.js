@@ -1323,11 +1323,6 @@
     const plans = (o.plans || []);
     const plansBody = plans.length ? `<ul class="dv-list">${plans.map((p) => `<li><a href="/planner?event=${p.id}">${PLAN_KINDS[p.kind] || ""} · ${esc(when(p.ts))}</a>${p.done ? " ✓" : ""}
       <small>${esc(p.title)}</small></li>`).join("")}</ul>` : "";
-    const grouped = new Set((o.offer_group?.offers || []).map((offer) => offer.id));
-    const same = (o.same || []).filter((offer) => !grouped.has(offer.id));
-    const sameBody = same.length ? `<p class="note">Возможно, это тот же объект. Сверьте адрес и характеристики.</p>
-      <ul class="dv-list">${same.map((s) => `<li><button type="button" class="link" data-open-id="${s.id}">${esc(fmtPrice(s.price, o.deal))}</button>
-        <small>${esc(s.title)} · ${esc(fmtAgo(s.last_seen))}</small></li>`).join("")}</ul>` : "";
     const H = o.history || [];
     const hist = H.map((h, i) => {
       const who = meta.access ? [h.chat, h.sender].filter(Boolean).join(" · ") : "";
@@ -1443,7 +1438,6 @@
           ${toolsAccess ? acc(ic("users"), "Клиенты", [pairs.length ? `у клиентов: ${pairs.length}` : "", fit.length ? `подходит ${fit.length}` : "",
             (o.work || []).length ? `записей: ${o.work.length}` : o.note ? "есть заметка" : ""].filter(Boolean).join(" · ") || "заметки и журнал", notesBody, { cls: fit.length ? "good" : "" }) : ""}
           ${acc("📅", "В планере", plans.length ? `${plans.length}` : "", plansBody)}
-          ${acc("👥", "Похожие", `у других агентов: ${same.length}`, sameBody)}
           ${acc("🕓", "История", hist ? `${o.history_total || H.length} ${plural(o.history_total || H.length, "сообщение", "сообщения", "сообщений")}` : "", histBody)}
           ${o.can_edit ? `<a class="dv-acc-btn" href="/my/edit?id=${o.id}" target="_top"><span class="dv-acc-ic">✎</span>Изменить моё объявление</a>` : ""}
           ${acc("⚙", "Админ", cmNew.length ? `<b class="adm-warn">${cmNew.length} ${plural(cmNew.length, "жалоба", "жалобы", "жалоб")}</b> · правка, точка, история`

@@ -368,26 +368,18 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         d["price"], d["price_doubt"] = checked, False
         d["disputes"].pop("price", None)
     learned_fix(conn, fh, d)   # точное исправление этого объявления важнее правила записи
-    if d.get("article"):
-        own = conn.execute("SELECT id FROM listings WHERE source = 'feed' AND ext_id LIKE 'feed:%' AND article = ? AND is_active = 1",
-                           (d["article"],)).fetchone()
-        if own is not None:
+    partner = rules.normalize_phone(config.FEED_PHONE)
+    partner_offer = bool(partner and {rules.normalize_phone(phone) for phone in d["phones"]} == {partner})
+    if partner_offer and d.get("article"):
+        matches = conn.execute("""SELECT id FROM listings WHERE source='feed' AND ext_id LIKE 'feed:%'
+                                AND article=? AND deal=? AND is_active=1 LIMIT 2""",
+                               (d["article"], d["deal"])).fetchall()
+        if len(matches) == 1:
+            own = matches[0]
             conn.execute(
                 "INSERT INTO listing_events (listing_id, message_id, ts, price, phones, fragment_hash, match) "
                 "VALUES (?,?,?,?,?,?,'strely')", (own["id"], message_id, ts, d["price"], json.dumps(d["phones"]), fh))
             return own["id"], "strely"
-    else:   # 18.10: наш номер без артикула (портянка, пост без «Артикул») — тот же объект с сайта? → к его карточке
-        from . import ownmatch
-        m_ = conn.execute("SELECT source, msg_id FROM messages WHERE id = ?", (message_id,)).fetchone()
-        with_photo = bool(m_ and m_["msg_id"] and conn.execute(   # фото с подписью: сообщение само — картинка
-            "SELECT 1 FROM chat_media WHERE source = ? AND msg_id = ?", (m_["source"], m_["msg_id"])).fetchone())
-        fid = ownmatch.feed_match(conn, d, with_photo)
-        if fid:
-            conn.execute(
-                "INSERT INTO listing_events (listing_id, message_id, ts, price, phones, fragment_hash, match) "
-                "VALUES (?,?,?,?,?,?,'strely')", (fid, message_id, ts, d["price"], json.dumps(d["phones"]), fh))
-            conn.execute("UPDATE listings SET last_seen = MAX(last_seen, ?), seen_count = seen_count + 1 WHERE id = ?", (ts, fid))
-            return fid, "strely"
     match, why = dedupe.find_match(conn, o, fh, ts)
     if match is not None and match["hidden_reason"] == "admin":   # тот же объект, удалённый админом
         return match["id"], "banned"
@@ -458,11 +450,6 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         for p, role in (d.get("phone_roles") or {}).items():
             if roles.get(p) != "text":   # «в тексте» важнее «прислал»
                 roles[p] = role
-        phones = json.loads(cur_d["phones"] or "[]")
-        for p in d["phones"]:
-            if p not in phones:
-                phones.append(p)
-        merged["phones"] = json.dumps(phones, ensure_ascii=False)
         merged["title"] = make_title(merged)
         merged["search_text"] = make_search_text(merged)
         geo_reset = (merged["street"] != cur_d["street"] or merged["house"] != cur_d["house"]

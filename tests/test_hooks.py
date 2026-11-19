@@ -5,7 +5,7 @@ import time
 import pytest
 from starlette.testclient import TestClient
 
-from app import accounts, config, db, hooks, ingest, search, server
+from app import accounts, config, db, dupreview, hooks, ingest, search, server
 
 NOW = int(time.time())
 
@@ -74,7 +74,8 @@ def test_same_object_other_agents_and_market(env):
     _add(conn, "2-к квартира 50,5 м², 3/9 эт., ЖК Мозаика. 6,2 млн руб. 89180000002")
     _add(conn, "2-к квартира 50 м², 7/9 эт., ЖК Мозаика. 7 млн руб. 89180000003")   # другой этаж
     d = c.get(f"/api/listings/{a}").json()
-    assert [s["price"] for s in d["same"]] == [6_200_000]
+    assert "same" not in d and "offer_group" not in d
+    assert dupreview.recheck_offers(conn)["queued"] == 1
     assert d["market"]["base"] == "2-к в ЖК Мозаика" and d["market"]["n"] == 3
 
 
@@ -103,7 +104,8 @@ def test_share_link_preview_and_strict_same(env):
     _add(conn, "Продаю двушку 50 кв.м на 3 этаже из 9, ЖК Мозаика, ул. Тургенева 10, хороший ремонт. 6,1 млн руб. 89180000002")
     _add(conn, "Срочно 2к 50м 3/9 ЖК Мозаика ул. Красная 5, без вложений. 6,2 млн руб. 89180000003")   # другая улица
     _add(conn, "Двухкомнатная 50 м² ЖК Мозаика ул. Тургенева 10, этаж 5 из 9. 6,05 млн руб. 89180000004")   # другой этаж
-    assert [s["price"] for s in c.get(f"/api/listings/{a}").json()["same"]] == [6_100_000]
+    assert "same" not in c.get(f"/api/listings/{a}").json()
+    assert dupreview.recheck_offers(conn)["queued"] == 1
     page = c.get(f"/?open={a}").text
     assert 'og:title' in page and "6 млн ₽" in page and "8918" not in page
 

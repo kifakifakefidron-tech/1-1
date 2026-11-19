@@ -69,6 +69,21 @@ def test_catalog_review_reads_full_ad_and_links_only_same_private_unit(conn, mon
     assert conn.execute("SELECT is_active FROM listings WHERE id=?", (source["id"],)).fetchone()[0] == 1
 
 
+def test_feed_article_links_only_the_partner_contact_and_preserves_chat_rows(conn, monkeypatch):
+    configure(monkeypatch)
+    now = int(time.time())
+    for phone in (ARTEM, SLAVA[0]):
+        conn.execute("""INSERT INTO listings(type,deal,title,phones,first_seen,last_seen,article)
+                        VALUES ('flat','sale','Предложение из чата',?,?,?,'733')""",
+                     (json.dumps([phone]), now, now))
+    yml = b'<yml_catalog><shop><offers><offer id="site733"><price>6000000</price><vendorCode>733</vendorCode><description>2 flat</description></offer></offers></shop></yml_catalog>'
+    stats = feed.sync(conn, yml)
+    assert stats["chat_offers_linked"] == 1
+    assert conn.execute("SELECT COUNT(*) FROM listings WHERE is_active=1").fetchone()[0] == 3
+    pair = conn.execute("SELECT a,b,status FROM dup_pairs WHERE kind='feed_article'").fetchone()
+    assert tuple(pair) == (1, 3, "market")
+
+
 def test_refresh_keeps_yml_and_updates_or_removes_source_row(conn, monkeypatch):
     configure(monkeypatch)
     a, b = values("733"), values(addr="Западный Обход 39/2")
