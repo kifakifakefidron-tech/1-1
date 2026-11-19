@@ -22,7 +22,7 @@ import time
 from collections import defaultdict
 from itertools import combinations
 
-from . import config, db, geo, offers
+from . import applet, config, db, geo, offers
 from .dedupe import _close, _house_eq, text_twin
 from .ownmatch import _move
 from .textnorm import words
@@ -34,6 +34,7 @@ KINDS = {
     "nodetail": "Тот же агент и место, этаж или площадь не указаны",
     "offer_review": "Возможно, один объект у разных агентов",
     "offer_photo": "Один объект по фото и характеристикам",
+    "applet_unit": "Один объект по исходной записи каталога",
 }
 AUTO = ("text", "agent")          # склеиваются сами всегда
 DOUBT = ("similar", "nodetail")   # в очередь; сами — только если админ доверил (state dup_trust)
@@ -559,9 +560,11 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
     chat = conn.execute("""SELECT m.chat_name FROM listing_events e JOIN messages m ON m.id = e.message_id
                            WHERE e.listing_id = ? AND COALESCE(m.chat_name, '') != '' ORDER BY e.ts DESC LIMIT 1""",
                         (lid,)).fetchone() if _has_col(conn, "listing_events", "message_id") else None
-    # 25.10 (Артём): внизу карточки — номер ИЗ ТЕКСТА объявления; нет в тексте — кто прислал в чат
+    catalog = (r["ext_id"] or "").startswith(applet.PREFIX)
+    text = (r["description"] or r["fragment"] or "") if catalog else (r["fragment"] or r["description"] or "")
+    # Для каталога берём текст объявления, служебный фрагмент нужен для географии.
     from .rules import find_phones
-    text_ph = list(dict.fromkeys(p[2] for p in find_phones(r["fragment"] or r["description"] or "")))
+    text_ph = list(dict.fromkeys(p[2] for p in find_phones(text)))
     try:
         roles = json.loads(r["phone_roles"] or "{}") if "phone_roles" in r.keys() else {}
     except (TypeError, ValueError):
@@ -585,7 +588,7 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
     text_from = "text"
     if not text_ph:
         text_ph = [p for p in card_ph if roles.get(p) != "sender" and p not in sender]
-        text_from = "card" if text_ph else None
+        text_from = ("catalog" if catalog else "card") if text_ph else None
     if not text_ph and not sender and card_ph:
         sender, text_from = list(card_ph), None
     who = None
@@ -605,7 +608,7 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
             "land": r["land"], "floor": r["floor"], "floors": r["floors"], "complex": r["complex"],
             "district": r["district"], "street": r["street"], "house": r["house"], "settlement": r["settlement"],
             "phones": json.loads(r["phones"] or "[]"), "photos": json.loads(r["photos"] or "[]")[:8],
-            "text": r["fragment"] or r["description"] or "", "first_seen": r["first_seen"], "last_seen": r["last_seen"],
+            "text": text, "first_seen": r["first_seen"], "last_seen": r["last_seen"],
             "seen_count": r["seen_count"], "is_active": r["is_active"], "hidden_reason": r["hidden_reason"],
             "favorites": used["favorites"], "clients": used["client_items"], "picks": used["collection_items"],
             "chat": chat[0] if chat else None}

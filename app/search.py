@@ -616,6 +616,48 @@ def search(conn: sqlite3.Connection, qr: Query, now: int, with_contacts: bool, *
     }
 
 
+def _catalog_entries(candidates, groups, archived, hidden, matching):
+    from . import offers
+    seen = set()
+    visible_groups = {}
+    unique = []
+    for row in candidates:
+        lid = row["id"]
+        group = groups.get(lid)
+        key = group[0]["id"] if group else lid
+        if key in seen:
+            continue
+        visible = ()
+        if group:
+            if key not in visible_groups:
+                reps = offers.representatives(group, hidden)
+                visible_groups[key] = {rid: rep for rid, rep in reps.items() if rid == rep["id"]}
+            reps = visible_groups[key]
+            if lid not in reps:
+                continue
+            visible = tuple(reps.values())
+        seen.add(key)
+        published = offers.first_publication(group or (row,), archived)
+        site = next((r["id"] for r in visible if offers.is_site(r) and r["id"] in matching), None)
+        unique.append((site or lid, published, visible))
+    return unique
+
+
+def catalog_counts(conn, now: int) -> dict:
+    """Те же объекты, что в выдаче без фильтров, и их первая публикация."""
+    from . import offers
+    groups = offers.groups(conn)
+    archived = offers.archived_publications(conn)
+    out = {"new_24h": 0}
+    for deal in ("sale", "rent"):
+        where, params = _where(Query(deal=deal), now)
+        candidates = conn.execute(f"SELECT l.id,l.first_seen,l.catalog_migrated FROM listings l WHERE {where}", params).fetchall()
+        unique = _catalog_entries(candidates, groups, archived, set(), {r["id"] for r in candidates})
+        out[deal] = len(unique)
+        out["new_24h"] += sum(not moved and ts >= now - 86400 for _, (ts, moved, _), _ in unique)
+    return out
+
+
 def _grouped_search(conn, qr, where, params, order, size, page, now):
     from . import hooks, offers
 
@@ -624,22 +666,11 @@ def _grouped_search(conn, qr, where, params, order, size, page, now):
     archived = offers.archived_publications(conn) if candidates else {}
     hidden = offers.hidden_ids(conn, qr.hide_user)
     matching = {r["id"] for r in candidates}
-    seen = set()
-    unique = []
-    for row in candidates:
-        lid = row["id"]
-        group = groups.get(lid)
-        key = min(row["id"] for row in group) if group else lid
-        if key not in seen:
-            seen.add(key)
-            published = offers.first_publication(group or (row,), archived)
-            first_seen, migrated, _ = published
-            if qr.since and (migrated or first_seen <= qr.since):
-                continue
-            if qr.new_days and (migrated or first_seen < now - qr.new_days * 86400):
-                continue
-            site = next((r["id"] for r in group if offers.is_site(r) and r["id"] in matching), None) if group else None
-            unique.append((site or lid, published))
+    unique = _catalog_entries(candidates, groups, archived, hidden, matching)
+    if qr.since:
+        unique = [e for e in unique if not e[1][1] and e[1][0] > qr.since]
+    if qr.new_days:
+        unique = [e for e in unique if not e[1][1] and e[1][0] >= now - qr.new_days * 86400]
     if order == NEWEST_FIRST:
         unique.sort(key=lambda entry: (entry[1][1], -entry[1][0], -entry[1][2]))
     if qr.hl:
@@ -647,18 +678,16 @@ def _grouped_search(conn, qr, where, params, order, size, page, now):
     chunk = unique[(page - 1) * size:page * size]
     items = []
     if chunk:
-        ids = [lid for lid, _ in chunk]
+        ids = [lid for lid, _, _ in chunk]
         rows = {r["id"]: r for r in conn.execute(f"SELECT l.*, {VERIFIED} AS verified FROM listings l "
                 f"WHERE l.is_active = 1 AND l.id IN ({','.join('?' * len(ids))})", ids)}
-        for lid, (first_seen, migrated, _) in chunk:
+        for lid, (first_seen, migrated, _), visible in chunk:
             if lid in rows:
                 item = row_to_item(rows[lid], False)
                 item.update(first_seen=first_seen, catalog_migrated=bool(migrated))
-                if lid in groups:
-                    group = groups[lid]
-                    visible = [row for row in group if row["id"] not in hidden]
+                if visible:
                     summary = offers.summary(visible, matching)
-                    item["market"] = hooks.offer_market(conn, group, summary["min_price"])
+                    item["market"] = hooks.offer_market(conn, groups[lid], summary["min_price"])
                     if len(visible) > 1:
                         item["offer_group"] = summary
                 items.append(item)

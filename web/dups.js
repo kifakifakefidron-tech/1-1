@@ -107,7 +107,7 @@
       ${used.length ? `<p class="dp-used">${used.map(esc).join(" · ")}</p>` : ""}
       <div class="dp-text">${marked}</div>
       <div class="dp-phones">
-        <div class="dp-phone"><span>Номер в объявлении</span><b>${(c.text_phones || []).map(esc).join(", ") || "в тексте нет"}</b>${c.text_from === "card" ? `<small>в общей части сообщения</small>` : c.text_from === "feed" ? `<small>номер партнёра</small>` : ""}</div>
+        <div class="dp-phone"><span>Номер в объявлении</span><b>${(c.text_phones || []).map(esc).join(", ") || "в тексте нет"}</b>${c.text_from === "card" ? `<small>в общей части сообщения</small>` : c.text_from === "catalog" || c.text_from === "feed" ? `<small>контакт из каталога</small>` : ""}</div>
         <div class="dp-phone snd"><span>Прислал в чат</span><b>${(c.sender_phones || []).slice(0, 2).map(esc).join(", ") || (c.sender_name ? esc(c.sender_name) : "не виден")}</b>${!(c.sender_phones || []).length && c.sender_name ? `<small>номер в чате скрыт</small>` : ""}</div>
       </div>
     </article>`;

@@ -10,6 +10,8 @@ import re
 import sqlite3
 import time
 import urllib.request
+from collections import defaultdict
+from itertools import combinations
 
 from . import config, db, geo, rules
 from .stats import day_start
@@ -19,7 +21,7 @@ PREFIX = "appletv:"
 STAYL = PREFIX + "stayl:"
 SYNCED = "appletv_synced"
 SPLIT = "appletv_separate_offers"
-FORMAT = "2"
+FORMAT = "3"
 IMPORTED_FORMAT = "appletv_import_format"
 REPLACED = "appletv_chat"
 REMOVED = "appletv_removed"
@@ -118,6 +120,7 @@ def _ad_description(text: str) -> str:
 
 def _sheet_row(r: list[str]) -> dict:
     from . import parser
+    from .offers import house_key, street_key
 
     code, room, area_text, price_text = r[2], r[3], r[10], r[11]
     otype, rooms, room_kind = _listing_type(room)
@@ -161,11 +164,17 @@ def _sheet_row(r: list[str]) -> dict:
     else:
         identity = [words(x) for x in (r[4], r[5], r[6], r[8], r[9], area_text, room, r[13] if not r[8] else "")]
         identifier = "row:" + hashlib.sha256("\0".join(identity).encode()).hexdigest()[:24]
+    unit = re.fullmatch(r"(?:кв\s*)?(\d+[а-яa-z]?)", words(r[8]))
+    street, house = street_key(p["street"]), house_key(p["house"])
+    unit_key = None
+    if unit and street and house:
+        parts = (words(p["settlement"]), street, house, otype, unit[1])
+        unit_key = hashlib.sha256("\0".join(parts).encode()).hexdigest()
     return {"ext_id": PREFIX + identifier, "article": code or None, "type": otype, "deal": "sale", "rooms": rooms,
             "room_kind": room_kind, "floor": floor, "floors": floors, "area": area, "land": None,
             "district": district, "complex": complex_name, "settlement": p["settlement"], "street": p["street"],
             "house": p["house"], "fragment": place, "repair": condition,
-            "price": price, "repair_context": "\n".join(repair_context)}
+            "price": price, "repair_context": "\n".join(repair_context), "_unit_key": unit_key}
 
 
 def parse_csv(body: bytes) -> list[dict]:
@@ -228,6 +237,7 @@ def sync(conn: sqlite3.Connection, body: bytes, now: int | None = None) -> dict:
         banned = {r[0] for r in conn.execute("SELECT key FROM banned WHERE kind='feed'")}
         seen = set()
         saved = {}
+        units = defaultdict(set)
         for item in items:
             ext = item["ext_id"]
             seen.add(ext)
@@ -236,6 +246,7 @@ def sync(conn: sqlite3.Connection, body: bytes, now: int | None = None) -> dict:
             prev = existing.get(ext)
             if prev and prev["hidden_reason"] in ("admin", "phone"):
                 continue
+            unit_key = item.pop("_unit_key")
             if prev and prev["price_fixed"] and item["price"] == prev["price_wrong"]:
                 item["price"] = prev["price"]
             if item["complex"]:
@@ -263,6 +274,8 @@ def sync(conn: sqlite3.Connection, body: bytes, now: int | None = None) -> dict:
                 _reindex(conn, lid, item["search_text"], repair_text=repair_text)
                 stats["added"] += 1
             saved[ext] = lid
+            if unit_key and (town := item["settlement"] or item["complex"] or item["district"]):
+                units[(unit_key, words(town))].add(lid)
             if site := yml.get(item["article"]):
                 conn.execute("""INSERT OR IGNORE INTO dup_pairs(a,b,kind,status,created_at)
                                 VALUES (?,?,'applet_article','market',?)""",
@@ -271,6 +284,18 @@ def sync(conn: sqlite3.Connection, body: bytes, now: int | None = None) -> dict:
             if ext.startswith(STAYL) and (slava_id := saved.get(PREFIX + ext.removeprefix(STAYL))):
                 conn.execute("""INSERT OR IGNORE INTO dup_pairs(a,b,kind,status,created_at)
                                 VALUES (?,?,'applet_row','market',?)""", (*sorted((lid, slava_id)), now))
+        unit_pairs = {pair for ids in units.values() for pair in combinations(sorted(ids), 2)}
+        conn.executemany("""INSERT INTO dup_pairs(a,b,kind,status,created_at) VALUES (?,?,'applet_unit','market',?)
+                            ON CONFLICT(a,b) DO UPDATE SET kind=excluded.kind,status='market'
+                            WHERE COALESCE(dup_pairs.user_id,0)=0 AND (dup_pairs.status='open'
+                                OR (dup_pairs.kind='applet_unit' AND dup_pairs.status='gone'))""",
+                         ((a, b, now) for a, b in sorted(unit_pairs)))
+        refresh_groups = bool(unit_pairs)
+        saved_ids = set(saved.values())
+        for aid, bid in conn.execute("SELECT a,b FROM dup_pairs WHERE kind='applet_unit' AND status='market' AND user_id IS NULL").fetchall():
+            if aid in saved_ids and bid in saved_ids and (aid, bid) not in unit_pairs:
+                conn.execute("UPDATE dup_pairs SET status='gone' WHERE a=? AND b=?", (aid, bid))
+                refresh_groups = True
         for ext, old in existing.items():
             if ext not in seen and old["is_active"]:
                 conn.execute("UPDATE listings SET is_active=0,hidden_reason=? WHERE id=?", (REMOVED, old["id"]))
@@ -292,7 +317,7 @@ def sync(conn: sqlite3.Connection, body: bytes, now: int | None = None) -> dict:
         conn.execute("INSERT OR REPLACE INTO state(key,value) VALUES (?,?)", (SYNCED, str(now)))
         conn.execute("INSERT OR REPLACE INTO state(key,value) VALUES (?,?)", (IMPORTED_FORMAT, FORMAT))
         conn.execute("INSERT OR REPLACE INTO state(key,value) VALUES ('appletv_snapshot',?)", (signature,))
-        if splitting or any(stats[k] for k in ("added", "updated", "hidden", "chat_replaced")):
+        if splitting or refresh_groups or any(stats[k] for k in ("added", "updated", "hidden", "chat_replaced")):
             conn.execute("INSERT OR REPLACE INTO state(key,value) VALUES ('cache_ver',?)", (str(time.time()),))
     return stats
 

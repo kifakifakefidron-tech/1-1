@@ -1,7 +1,7 @@
 import json
 import time
 
-from app import dupfix, dupreview, hooks, ingest, offers, search
+from app import config, dupfix, dupreview, hooks, ingest, offers, search
 
 
 def listing(conn, phone, *, price=6800000, floor=16, house="59", media=("a", "b"), deal="sale"):
@@ -194,3 +194,31 @@ def test_reposted_text_with_separate_agent_phones_cannot_merge_original_data(con
     assert dupfix.run(conn)["merged"] == 0
     assert dupreview.scan(conn)["auto"] == 0
     assert conn.execute("SELECT COUNT(*) FROM listings WHERE is_active=1").fetchone()[0] == 2
+
+
+def test_confirmed_group_shows_each_agent_once_and_counts_one_property(conn, monkeypatch):
+    monkeypatch.setattr(config, "APPLET_SLAVA_PHONES", "+79000000011,+79000000012")
+    monkeypatch.setattr(config, "APPLET_ARTEM_PHONE", "+79000000013")
+    site = listing(conn, "+79000000013", price=7250000)
+    stayl = listing(conn, "+79000000013", price=7250000, media=())
+    slava = listing(conn, "+79000000011", price=7250000, media=())
+    slava_again = listing(conn, "+79000000012", price=7250000, media=())
+    agent = listing(conn, "+79000000014", price=7200000, media=("c", "d"))
+    for lid, ext in ((site, "feed:original"), (stayl, "appletv:stayl:row:x"), (slava, "appletv:article:x"),
+                     (slava_again, "appletv:row:x")):
+        conn.execute("UPDATE listings SET source='feed', ext_id=? WHERE id=?", (ext, lid))
+    now = int(time.time())
+    conn.execute("UPDATE listings SET first_seen=?, last_seen=? WHERE id=?", (now - 172800, now, site))
+    for lid in (stayl, slava, slava_again, agent):
+        decide(conn, site, lid, "market")
+    listing(conn, "+79000000015", deal="rent")
+    group = offers.groups(conn)[site]
+    mapped = offers.representatives(group, set())
+    assert mapped[stayl]["id"] == site and mapped[slava]["id"] == mapped[slava_again]["id"]
+    unfiltered = search.search(conn, search.Query(), now, False, group_offers=True)
+    assert unfiltered["total"] == 1 and unfiltered["items"][0]["id"] == site
+    assert [p["id"] for p in unfiltered["items"][0]["offer_group"]["offers"]] == [site, agent, slava_again]
+    filtered = search.search(conn, search.Query(price_max=7220000), now, False, group_offers=True)
+    assert filtered["items"][0]["id"] == agent
+    assert search.catalog_counts(conn, now) == {"sale": 1, "rent": 1, "new_24h": 1}
+    assert conn.execute("SELECT COUNT(*) FROM listings WHERE is_active=1").fetchone()[0] == 6

@@ -661,6 +661,14 @@ def api_listing(request: Request, body: dict | None = None):
     row = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
     if not row:
         return _err("не найдено", 404)
+    group = offers.for_listing(conn, row) if row["is_active"] else None
+    hidden = offers.hidden_ids(conn, user["id"] if user else None)
+    reps = offers.representatives(group, hidden) if group else {}
+    if lid in reps and reps[lid]["id"] != lid:
+        lid = reps[lid]["id"]
+        row = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
+        if row is None:
+            return _err("не найдено", 404)
     retired = not row["is_active"] and row["hidden_reason"] in (applet.REPLACED, applet.REMOVED)
     d = search.listing_detail(conn, lid, access and not retired, bool(user and user["is_admin"]))
     if not d:
@@ -732,14 +740,12 @@ def api_listing(request: Request, body: dict | None = None):
             d["text_price"] = {"price": tp, "ts": row["description_ts"] or row["last_seen"]}
     d["can_edit"] = bool(user) and agent.can_edit(conn, user, row)[0]
     # 31.10: «к рынку» и «почему горячее» — по тем же 15+ похожим, что фильтр; если их меньше — строка «к рынку» по 3+ (ЖК) / 5+ (район)
-    group = offers.for_listing(conn, row) if row["is_active"] else None
     archived = offers.archived_publications(conn, None if group else lid) if row["is_active"] else {}
     first_seen, migrated, _ = offers.first_publication(group or (row,), archived)
     d.update(first_seen=first_seen, catalog_migrated=bool(migrated))
-    hidden = offers.hidden_ids(conn, user["id"] if user else None)
     if group:
         d["market"] = hooks.offer_market(conn, group, None if row["price_doubt"] else row["price"])
-        visible = [item for item in group if item["id"] not in hidden]
+        visible = [item for alias, item in reps.items() if alias == item["id"]]
         if len(visible) > 1:
             d["offer_group"] = offers.summary(visible)
         mk = d["market"]
@@ -847,17 +853,11 @@ def api_stats(request: Request, body: dict | None = None):
 def _stats() -> dict:
     conn = db.get()
     one = lambda sql, *p: conn.execute(sql, p).fetchone()[0]  # noqa: E731
-    day = int(time.time()) - 86400
     now = int(time.time())
-
-    def visible(deal: str, **kw) -> int:   # считаем ровно так же, как список на главной (те же правила показа)
-        where, params = search._where(search.Query(deal=deal, **kw), now)
-        return conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {where}", params).fetchone()[0]
-
-    sale, rent = visible("sale"), visible("rent")
+    day = now - 86400
+    catalog = search.catalog_counts(conn, now)
     return ({
-        "active": sale + rent, "sale": sale, "rent": rent,
-        "new_24h": visible("sale", new_days=1) + visible("rent", new_days=1),
+        "active": catalog["sale"] + catalog["rent"], **catalog,
         "messages_24h": one("SELECT COUNT(*) FROM messages WHERE ts >= ?", day),
         "duplicates_merged": one("SELECT COUNT(*) FROM listing_events WHERE match != 'new'"),
         "districts": one("SELECT COUNT(DISTINCT district) FROM listings WHERE is_active=1 AND district IS NOT NULL"),

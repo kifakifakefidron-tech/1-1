@@ -2394,6 +2394,10 @@
     if (request !== detailRequest) return;  // пока грузилось, открыли другой объект или закрыли окно
     body.removeAttribute("aria-busy");
     if (r.ok) {
+      if (r.data.id && r.data.id !== id) {
+        id = openedId = r.data.id;
+        setOpenParam(id);
+      }
       // Подменяем содержимое без прыжка: та же прокрутка, мягкое проявление догруженного
       const top = dlg.scrollTop;
       const { offer_group: group, ...listing } = r.data;

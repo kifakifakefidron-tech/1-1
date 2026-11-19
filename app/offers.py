@@ -120,6 +120,30 @@ def is_site(row) -> bool:
     return row["source"] == "feed" and (row["ext_id"] or "").startswith("feed:")
 
 
+def representatives(group, hidden: set[int]) -> dict:
+    """Выбираем по одному объявлению агента только внутри уже установленной группы."""
+    from . import applet
+    slava, artem = applet.numbers()
+    by_agent = {}
+    result = {}
+    for row in group:  # СТРЕЛЫ, подтверждённые предложения, затем самые свежие
+        lid = row["id"]
+        if lid in hidden:
+            continue
+        ext = row["ext_id"] or ""
+        phones = {rules.normalize_phone(p) or p for p in _tokens(row["phones"])}
+        if ext.startswith(applet.STAYL) or (artem and phones == {artem}):
+            key = ("stayl",)
+        elif ext.startswith(applet.PREFIX) or (phones and slava and phones <= set(slava)):
+            key = ("slava",)
+        elif phones:
+            key = ("phones", frozenset(phonegroups.canon_set(phones)))
+        else:
+            key = ("listing", lid)
+        result[lid] = by_agent.setdefault(key, row)
+    return result
+
+
 def hidden_ids(conn: sqlite3.Connection, user_id: int | None) -> set[int]:
     if not user_id:
         return set()

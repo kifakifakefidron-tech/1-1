@@ -4,7 +4,7 @@ import json
 import time
 from datetime import datetime, timedelta, timezone
 
-from app import agent, applet, config, db, feed, ingest, parser, search, stats
+from app import agent, applet, config, db, dupreview, feed, ingest, parser, search, stats
 
 
 SLAVA = ("+79000000011", "+79000000012")
@@ -48,6 +48,25 @@ def test_catalog_scope_price_and_private_columns(monkeypatch):
     assert items[2]["description"] == "♟Е2 КВ♟\n▪️ Техника остаётся при продаже"
     assert all("177" not in item["description"] and "4600" not in item["description"] for item in items)
     assert all("9999" not in json.dumps(item) and "79000000019" not in json.dumps(item) for item in items)
+
+
+def test_catalog_review_reads_full_ad_and_links_only_same_private_unit(conn, monkeypatch):
+    configure(monkeypatch)
+    a, b, different = values("733"), values(), values("735")
+    different[8] = "178"
+    applet.sync(conn, snapshot(a, b, different))
+    source = conn.execute("SELECT id, fragment, description FROM listings WHERE ext_id='appletv:article:733'").fetchone()
+    assert "Показ по договорённости" not in source["fragment"]
+    card = dupreview._card(conn, source["id"])
+    assert card["text"] == source["description"]
+    assert "Показ по договорённости" in card["text"] and "9999" not in card["text"]
+    assert card["text_from"] == "catalog"
+    other = conn.execute("SELECT id FROM listings WHERE ext_id='appletv:article:735'").fetchone()[0]
+    assert conn.execute("SELECT COUNT(*) FROM dup_pairs WHERE kind='applet_unit' AND status='market'").fetchone()[0] >= 1
+    assert not conn.execute("SELECT 1 FROM dup_pairs WHERE a=? OR b=?", (other, other)).fetchone()
+    b[8] = "179"
+    applet.sync(conn, snapshot(a, b, different))
+    assert conn.execute("SELECT is_active FROM listings WHERE id=?", (source["id"],)).fetchone()[0] == 1
 
 
 def test_refresh_keeps_yml_and_updates_or_removes_source_row(conn, monkeypatch):
