@@ -14,7 +14,7 @@
 
   let tab = "open", data = null, pairs = [], busy = false, loading = false;
   const skipped = new Set();
-  const KEYS = { "1": "market", "2": "diff", "3": "market", ArrowRight: "skip" };
+  const KEYS = { "1": "repeat", "2": "diff", "3": "market", ArrowRight: "skip" };
 
   async function call(url, body) {
     const opts = { credentials: "same-origin", method: body ? "POST" : "GET" };
@@ -126,8 +126,9 @@
         · в тексте подсвечены слова, которых нет в другой карточке</p>
       <div class="dp-sides">${side(p.a, ma)}${side(p.b, mb)}</div>
       <div class="dp-acts">
-        <button type="button" class="pill dp-mkt" data-v="market"><kbd>1</kbd> Один объект</button>
+        <button type="button" class="pill" data-v="repeat" title="Версии одного объявления одного агента"><kbd>1</kbd> Один объект</button>
         <button type="button" class="pill light dp-diff" data-v="diff"><kbd>2</kbd> Разные объекты</button>
+        <button type="button" class="pill light dp-mkt" data-v="market"><kbd>3</kbd> Один объект · разные агенты</button>
         <button type="button" class="pill light dp-skip" data-v="skip"><kbd>→</kbd> Пропустить</button>
       </div>
     </section>`;
@@ -156,7 +157,7 @@
   }
 
   const STATUS = { auto: "Старые автосклейки", same: "Вы: один объект", diff: "Вы: разные", split: "Разделено",
-    market: "Один объект · предложения связаны" };
+    repeat: "Версии одного объявления", market: "Один объект · разные агенты" };
   function listHTML() {
     if (!pairs.length) return `<p class="dp-empty">${tab === "auto" ? "Сервис пока ничего не склеивал сам." : "Решений пока нет."}</p>`;
     return `<div class="dp-list">${pairs.map((p) => `<div class="dp-row" data-pid="${p.id}">
@@ -165,13 +166,13 @@
         <small>${esc(p.kind_label)} · ${esc((p.why || []).slice(0, 3).join(", "))} · ${esc(day(p.decided_at))}</small>
         <small>№ ${p.a.id} ${esc(mln(p.a.price, p.a.deal))} · № ${p.b.id} ${esc(mln(p.b.price, p.b.deal))}</small></div>
       ${["auto", "same"].includes(p.status) ? `<button type="button" class="pill light" data-split="${p.id}">Разделить</button>`
-        : ["diff", "market"].includes(p.status) ? `<button type="button" class="pill light" data-reopen="${p.id}">Вернуть в очередь</button>` : ""}
+        : ["diff", "market", "repeat"].includes(p.status) ? `<button type="button" class="pill light" data-reopen="${p.id}">Вернуть в очередь</button>` : ""}
     </div>`).join("")}</div>`;
   }
 
   function statsHTML(stats) {
     return stats.map((s) => `<div class="dp-stat"><strong>${esc(s.label)}</strong>
-      <small>Связано ${n0(s.market)} · разные ${n0(s.diff)} · ждут решения ${n0(s.open)}</small></div>`).join("");
+      <small>Версии ${n0(s.repeat)} · разные агенты ${n0(s.market)} · разные объекты ${n0(s.diff)} · ждут решения ${n0(s.open)}</small></div>`).join("");
   }
 
   function render() {
@@ -236,7 +237,7 @@
       updateActions();
       return;
     }
-    toast(v === "market" ? "Предложения связаны" : "Решение сохранено");
+    toast(v === "repeat" ? "Версии объявления связаны" : v === "market" ? "Предложения агентов связаны" : "Решение сохранено");
     return load(true);
   }
 

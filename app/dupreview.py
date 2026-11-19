@@ -195,13 +195,30 @@ def split(conn: sqlite3.Connection, pid: int, user_id: int = 0) -> bool:
 
 def decide(conn: sqlite3.Connection, pid: int, verdict: str, user_id: int = 0) -> dict:
     """Решение по одной активной паре хранится отдельно от объявлений."""
-    verdict = "market" if verdict == "same" else verdict
+    verdict = "repeat" if verdict == "same" else verdict
     if verdict == "reopen":
         saved = conn.execute("""UPDATE dup_pairs SET status='open', decided_at=NULL, user_id=?
-                              WHERE id=? AND status IN ('diff','market')""", (user_id, pid))
+                              WHERE id=? AND status IN ('diff','market','repeat')""", (user_id, pid))
         if saved.rowcount:
             return {"ok": True, "status": "open"}
-    elif verdict in ("market", "diff"):
+    elif verdict in ("repeat", "market", "diff"):
+        if verdict in ("repeat", "market"):
+            from . import phonegroups
+            rows = conn.execute(f"""SELECT l.id, l.phones, l.ext_id, l.owner_user_id, l.deal
+                FROM dup_pairs p JOIN listings l ON l.id IN (p.a,p.b)
+                WHERE p.id=? AND p.status='open' {_ACTIVE_PAIR}""", (pid,)).fetchall()
+            if len(rows) != 2:
+                return {"ok": False, "stale": True}
+            a, b = rows
+            if a["deal"] != b["deal"]:
+                return {"ok": False, "error": "У объявлений разные типы сделки. Проверьте продажу и аренду."}
+            phonegroups.refresh(conn)
+            ka, kb = offers.agent_key(a), offers.agent_key(b)
+            if verdict == "market" and ka == kb:
+                return {"ok": False, "error": "У обеих карточек один агент. Для версий объявления используйте кнопку 1."}
+            if verdict == "repeat" and ((ka[0] == kb[0] == "account" and ka != kb)
+                                        or {ka[0], kb[0]} == {"slava", "stayl"}):
+                return {"ok": False, "error": "У карточек разные агенты. Если объект один, используйте кнопку 3."}
         saved = conn.execute(f"""UPDATE dup_pairs AS p SET status=?, decided_at=?, user_id=?
                                 WHERE p.id=? AND p.status='open' {_ACTIVE_PAIR}""",
                              (verdict, int(time.time()), user_id, pid))
@@ -430,21 +447,14 @@ def open_count(conn: sqlite3.Connection) -> int:
 def stats(conn: sqlite3.Connection) -> list[dict]:
     """По видам пар: сколько раз вы сказали «один объект» / «разные» (и разделили склейку сервиса)."""
     rows = conn.execute("SELECT kind, status, COUNT(*) FROM dup_pairs GROUP BY kind, status").fetchall()
-    by: dict[str, dict] = {k: {"same": 0, "diff": 0, "auto": 0, "open": 0, "market": 0} for k in KINDS}
+    by: dict[str, dict] = {k: dict.fromkeys(("same", "diff", "auto", "open", "market", "repeat"), 0) for k in KINDS}
     for kind, st, n in rows:
-        d = by.setdefault(kind, {"same": 0, "diff": 0, "auto": 0, "open": 0, "market": 0})
-        if st == "market":   # тот же объект, но разные агенты — не склейка, в долю «один объект» не входит
-            d["market"] += n
-        if st == "same":
-            d["same"] += n
-        elif st in ("diff", "split"):
-            d["diff"] += n
-        elif st == "auto":
-            d["auto"] += n
-        elif st == "open":
-            d["open"] += n
+        d = by.setdefault(kind, dict.fromkeys(("same", "diff", "auto", "open", "market", "repeat"), 0))
+        key = "diff" if st == "split" else st
+        if key in d:
+            d[key] += n
     return [{"kind": k, "label": KINDS.get(k, k), **d,
-             "decided": d["market"] + d["same"] + d["diff"]}
+             "decided": d["market"] + d["repeat"] + d["same"] + d["diff"]}
             for k, d in by.items() if any(d.values())]
 
 
@@ -535,7 +545,7 @@ def _queue_data(conn: sqlite3.Connection) -> dict:
     from . import phonegroups
     counts = dict(conn.execute("SELECT status, COUNT(*) FROM dup_pairs GROUP BY status"))
     return {"phone_groups": phonegroups.listing(conn), "counts": {"open": open_count(conn),
-            "auto": counts.get("auto", 0), "done": sum(counts.get(k, 0) for k in ("same", "diff", "split", "market"))},
+            "auto": counts.get("auto", 0), "done": sum(counts.get(k, 0) for k in ("same", "diff", "split", "market", "repeat"))},
             "stats": stats(conn), "ai_enabled": bool(config.DEEPSEEK_API_KEY)}
 
 
@@ -550,7 +560,7 @@ def _pair_details(p, a, b):
 def pairs(conn: sqlite3.Connection, status: str = "open", limit: int = 30, offset: int = 0,
           skip: list[int] | None = None) -> dict:
     # 26.10 («database is locked»): только чтение — раньше здесь была запись (tidy), и база ждала, пока посчитаются карточки
-    st = {"open": ("open",), "auto": ("auto",), "done": ("same", "diff", "split", "market")}.get(status, ("open",))
+    st = {"open": ("open",), "auto": ("auto",), "done": ("same", "diff", "split", "market", "repeat")}.get(status, ("open",))
     source = "dup_pairs p"
     scope = f"p.status IN ({','.join('?' * len(st))})"
     params = list(st)

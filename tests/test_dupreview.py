@@ -50,7 +50,7 @@ def test_legacy_same_verdict_only_links_and_keeps_favorites_on_their_listing():
     conn.execute("INSERT INTO favorites (user_id, listing_id, created) VALUES (?, ?, ?)", (uid, c, int(time.time())))
     dupreview.run(conn)
     pid = dupreview.pairs(conn)["pairs"][0]["id"]
-    assert dupreview.decide(conn, pid, "same")["status"] == "market"
+    assert dupreview.decide(conn, pid, "same")["status"] == "repeat"
     assert _active(conn) == [a, c]
     assert conn.execute("SELECT merged_into, hidden_reason FROM listings WHERE id = ?", (c,)).fetchone()[:] == (None, None)
     assert conn.execute("SELECT listing_id FROM favorites WHERE user_id = ?", (uid,)).fetchone()[0] == c
@@ -133,6 +133,8 @@ def test_market_verdict_links_cards_diff_hides_them():
     c = _lid(_send(conn, NO_FLOOR, "c2"))
     dupreview.run(conn)
     pid = dupreview.pairs(conn)["pairs"][0]["id"]
+    assert not dupreview.decide(conn, pid, "market")["ok"]
+    conn.execute("""UPDATE listings SET phones='["+79184445566"]' WHERE id=?""", (c,))
     assert dupreview.decide(conn, pid, "market")["status"] == "market"
     assert len(_active(conn)) == 2                       # не склеили
     assert set(offers.groups(conn)) == {a, c}

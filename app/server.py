@@ -3279,7 +3279,7 @@ def dups_page(request: Request, body: dict | None = None):
 
 
 def api_admin_dups(request: Request, body: dict | None = None):
-    """Очередь пар; POST {id, verdict: market|diff|reopen} сохраняет решение.
+    """Очередь пар; POST {id, verdict: repeat|diff|market|reopen} сохраняет решение.
     {id, split} — разделить старую склейку; {id, ai} — подсказка нейросети.
     {phone_groups: текст} — номера одного агента (строка — группа), {phone_group_add: [номера]} — добавить группу."""
     user, err = _need_admin(request)

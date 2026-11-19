@@ -13,6 +13,7 @@ from .textnorm import words
 
 
 CHAT_PHOTO = re.compile(r"/photos/\d+/([a-f0-9]{16})\.[a-z0-9]+$")
+LINK_TYPES = "('market','repeat')"
 MATCH_FIELDS = ("id, type, deal, rooms, room_kind, area, land, floor, floors, complex, street, house, "
                 "settlement, price, price_doubt, phones, title, last_seen")
 
@@ -133,28 +134,56 @@ def is_site(row) -> bool:
     return row["source"] == "feed" and (row["ext_id"] or "").startswith("feed:")
 
 
-def representatives(group, hidden: set[int]) -> dict:
-    """Выбираем по одному объявлению агента только внутри уже установленной группы."""
+def agent_key(row):
     from . import applet
     slava, artem = applet.numbers()
+    ext = row["ext_id"] or ""
+    phones = {rules.normalize_phone(p) or p for p in _tokens(row["phones"])}
+    if ext.startswith(applet.STAYL) or (artem and phones == {artem}):
+        return ("stayl",)
+    if ext.startswith(applet.PREFIX) or (phones and slava and phones <= set(slava)):
+        return ("slava",)
+    if row["owner_user_id"]:
+        return ("account", row["owner_user_id"])
+    if phones:
+        return ("phones", frozenset(phonegroups.canon_set(phones)))
+    return ("listing", row["id"])
+
+
+def representatives(group, hidden: set[int]) -> dict:
+    """Выбираем отдельное предложение каждого агента и свежую версию повтора."""
+    versions = {}
+    family_keys = defaultdict(set)
     by_agent = {}
-    result = {}
-    for row in group:  # СТРЕЛЫ, подтверждённые предложения, затем самые свежие
-        lid = row["id"]
-        if lid in hidden:
-            continue
-        ext = row["ext_id"] or ""
-        phones = {rules.normalize_phone(p) or p for p in _tokens(row["phones"])}
-        if ext.startswith(applet.STAYL) or (artem and phones == {artem}):
-            key = ("stayl",)
-        elif ext.startswith(applet.PREFIX) or (phones and slava and phones <= set(slava)):
-            key = ("slava",)
-        elif phones:
-            key = ("phones", frozenset(phonegroups.canon_set(phones)))
-        else:
-            key = ("listing", lid)
-        result[lid] = by_agent.setdefault(key, row)
-    return result
+    shown = [row for row in group if row["id"] not in hidden]
+    keys = {row["id"]: agent_key(row) for row in shown}
+    for row in sorted(shown, key=lambda r: (not is_site(r), -r["last_seen"], -r["first_seen"], -r["id"])):
+        if row.get("repeat_id") is not None:
+            versions.setdefault(row["repeat_id"], row)
+            family_keys[row["repeat_id"]].add(keys[row["id"]])
+    aliases = {}
+    for row in shown:
+        repeat_id = row.get("repeat_id")
+        version = versions.get(repeat_id, row)
+        aliases[row["id"]] = ("repeat", repeat_id) if len(family_keys.get(repeat_id, ())) > 1 else keys[version["id"]]
+        by_agent.setdefault(aliases[row["id"]], version)
+    return {lid: by_agent[key] for lid, key in aliases.items()}
+
+
+def _repeat_ids(decisions):
+    parents = {}
+
+    def root(lid):
+        while lid in parents:
+            lid = parents[lid]
+        return lid
+
+    for (a, b), status in decisions.items():
+        if status == "repeat":
+            left, right = sorted((root(a), root(b)))
+            if left != right:
+                parents[right] = left
+    return {lid: root(lid) for pair, status in decisions.items() if status == "repeat" for lid in pair}
 
 
 def hidden_ids(conn: sqlite3.Connection, user_id: int | None) -> set[int]:
@@ -177,7 +206,7 @@ def archived_publications(conn: sqlite3.Connection, lid: int | None = None) -> d
         CASE WHEN a.is_active THEN b.catalog_migrated ELSE a.catalog_migrated END,
         CASE WHEN a.is_active THEN b.id ELSE a.id END
         FROM dup_pairs p JOIN listings a ON a.id = p.a JOIN listings b ON b.id = p.b
-        WHERE p.status = 'market' AND a.deal = b.deal AND a.is_active != b.is_active{endpoint}""",
+        WHERE p.status IN {LINK_TYPES} AND a.deal = b.deal AND a.is_active != b.is_active{endpoint}""",
         (lid, lid) if lid is not None else ()):
         published = first_seen, migrated, old_id
         by_id[active_id] = min(published, by_id.get(active_id, published))
@@ -192,19 +221,22 @@ def first_publication(rows, archived: dict) -> tuple[int, int, int]:
 def _build_groups(conn: sqlite3.Connection):
     """Автоматические группы требуют попарного совпадения. Для подтверждённых пар допустима связь через общее предложение."""
     decisions = {(a, b): status for a, b, status in conn.execute("""
-        SELECT a, b, status FROM dup_pairs WHERE status IN ('market', 'diff', 'split')
+        SELECT a, b, status FROM dup_pairs WHERE status IN ('market', 'repeat', 'diff', 'split')
         AND NOT (status = 'market' AND kind = 'offer_photo' AND COALESCE(user_id, 0) = 0)""")}
-    rows = {r["id"]: r for r in conn.execute("""SELECT l.id, l.source, l.type, l.deal, l.settlement, l.street, l.house,
+    repeats = _repeat_ids(decisions)
+    rows = {r["id"]: r for r in conn.execute(f"""SELECT l.id, l.source, l.type, l.deal, l.settlement, l.street, l.house,
         l.complex, l.rooms, l.room_kind, l.floor, l.floors, l.area, l.land, l.photos, l.phones, l.price, l.price_doubt, l.last_seen,
-        l.ext_id, l.district, l.repair, l.price_m2, l.first_seen, l.catalog_migrated, l.fragment, l.description,
+        l.ext_id, l.owner_user_id, l.district, l.repair, l.price_m2, l.first_seen, l.catalog_migrated, l.fragment, l.description,
         CASE WHEN l.source = 'own' THEN (SELECT MAX(e.ts) FROM listing_edits e
             WHERE e.listing_id = l.id AND e.field = 'confirm' AND e.new = '"yes"' AND e.reverted = 0) END AS confirmed_at
         FROM listings l WHERE l.is_active = 1 AND (
             (l.type IN ('flat', 'new') AND l.street IS NOT NULL AND l.house IS NOT NULL
              AND CASE WHEN json_valid(l.photos) THEN json_array_length(l.photos) >= 1 ELSE 0 END)
-            OR l.id IN (SELECT a FROM dup_pairs WHERE status = 'market' UNION SELECT b FROM dup_pairs WHERE status = 'market'))""")}
-    approved = sorted((a, b) for a, b in decisions if decisions[a, b] == "market" and a in rows and b in rows
-                      and rows[a]["deal"] == rows[b]["deal"])
+            OR l.id IN (SELECT a FROM dup_pairs WHERE status IN {LINK_TYPES}
+                        UNION SELECT b FROM dup_pairs WHERE status IN {LINK_TYPES}))""")}
+    approved = sorted(((a, b) for (a, b), status in decisions.items() if status in ("repeat", "market")
+                       and a in rows and b in rows and rows[a]["deal"] == rows[b]["deal"]),
+                      key=lambda pair: (decisions[pair] != "repeat", pair))
     pairs = set(approved)
     buckets = defaultdict(list)
     photo_addresses = defaultdict(set)
@@ -229,22 +261,36 @@ def _build_groups(conn: sqlite3.Connection):
                     and _matching_photos(rows[a], rows[b], photos_a & photos_b, single_photo):
                 pairs.add(pair)
 
+    def family(lid):
+        return repeats.get(lid, lid)
+
+    market_families = {tuple(sorted((family(a), family(b)))) for a, b in approved if decisions[a, b] == "market"}
+
     def consistent(a, b, confirmed):
         pair = min(a, b), max(a, b)
-        return pair in pairs or (confirmed and pair not in decisions and same_unit_details(rows[a], rows[b]))
+        if pair in pairs:
+            return True
+        if not confirmed or pair in decisions:
+            return False
+        if same_unit_details(rows[a], rows[b]):
+            return True
+        families = tuple(sorted((family(a), family(b))))
+        return (a in repeats or b in repeats) and (families[0] == families[1] or families in market_families) \
+            and property_type(rows[a]["type"]) == property_type(rows[b]["type"]) \
+            and not _conflicts(rows[a], rows[b], places[a], places[b])
 
     linked = {}
     manual_groups = set()
     for a, b in approved + sorted(pairs.difference(approved)):
         left, right = linked.get(a, (a,)), linked.get(b, (b,))
-        confirmed = decisions.get((a, b)) == "market" or left in manual_groups or right in manual_groups
+        confirmed = decisions.get((a, b)) in ("repeat", "market") or left in manual_groups or right in manual_groups
         if left != right and all(consistent(i, j, confirmed) for i in left for j in right):
             group = tuple(sorted(left + right))
             linked.update(dict.fromkeys(group, group))
             if confirmed:
                 manual_groups.add(group)
     auto = {(a, b) for a, b in pairs.difference(approved) if a in linked and linked[a] == linked.get(b)}
-    return rows, set(linked.values()), auto
+    return rows, set(linked.values()), auto, repeats
 
 
 def photo_matches(conn: sqlite3.Connection) -> set[tuple[int, int]]:
@@ -253,11 +299,11 @@ def photo_matches(conn: sqlite3.Connection) -> set[tuple[int, int]]:
 
 
 def groups(conn: sqlite3.Connection, hide_user: int | None = None) -> dict:
-    rows, groups, _ = _build_groups(conn)
+    rows, groups, _, repeats = _build_groups(conn)
     hidden = hidden_ids(conn, hide_user)
     result = {}
     for ids in groups:
-        active = [rows[lid] for lid in ids if lid not in hidden]
+        active = [dict(rows[lid], repeat_id=repeats.get(lid)) for lid in ids if lid not in hidden]
         if len(active) < 2:
             continue
         group = tuple(sorted(active, key=lambda r: (not is_site(r), not r["confirmed_at"], -r["last_seen"], -r["id"])))
@@ -267,7 +313,7 @@ def groups(conn: sqlite3.Connection, hide_user: int | None = None) -> dict:
 
 def for_listing(conn: sqlite3.Connection, row: sqlite3.Row, hide_user: int | None = None):
     lid = row["id"]
-    if conn.execute("SELECT 1 FROM dup_pairs WHERE status = 'market' AND (a = ? OR b = ?)", (lid, lid)).fetchone():
+    if conn.execute(f"SELECT 1 FROM dup_pairs WHERE status IN {LINK_TYPES} AND (a = ? OR b = ?)", (lid, lid)).fetchone():
         return groups(conn, hide_user).get(lid)
     photos = _photo_keys(row["photos"])
     if photos and _address_key(row) is not None:

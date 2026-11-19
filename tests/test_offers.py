@@ -160,7 +160,7 @@ def test_recheck_links_one_photo_with_property_text_and_queues_weak_matches(conn
     assert conn.execute("SELECT status FROM dup_pairs WHERE a=? AND b=?", (a, rejected)).fetchone()[0] == "diff"
 
     review = conn.execute("SELECT id FROM dup_pairs WHERE a=? AND b=? AND status='open'", (a, c)).fetchone()
-    assert dupreview.decide(conn, review["id"], "same", user_id=1) == {"ok": True, "status": "market"}
+    assert dupreview.decide(conn, review["id"], "market", user_id=1) == {"ok": True, "status": "market"}
     assert {row["id"] for row in offers.groups(conn)[a]} == {a, b, c}
     assert list(map(tuple, conn.execute(evidence))) == before
     conn.execute("UPDATE listings SET is_active=0 WHERE id=?", (a,))

@@ -29,7 +29,7 @@ def test_queue_starts_from_first_publication_even_if_old_listing_was_refreshed(c
 
 
 def test_rejected_pairs_leave_the_other_candidates_for_review(conn):
-    a, b, c = [listing(conn) for _ in range(3)]
+    a, b, c = [listing(conn, f"+7900000000{i}") for i in range(1, 4)]
     p1 = pair(conn, a, b)
     p2 = pair(conn, a, c)
     p3 = pair(conn, b, c)
@@ -70,3 +70,42 @@ def test_historical_merge_can_still_be_split(conn):
     assert dupreview.split(conn, p, 1)
     assert conn.execute("SELECT is_active, merged_into FROM listings WHERE id=?", (b,)).fetchone()[:] == (1, None)
     assert conn.execute("SELECT status FROM dup_pairs WHERE id=?", (p,)).fetchone()[0] == "split"
+
+
+def test_review_separates_listing_versions_from_other_agents(conn):
+    from app import search
+
+    old = listing(conn)
+    new = listing(conn)
+    other = listing(conn, "+79000000002")
+    conn.execute("UPDATE listings SET last_seen=3, first_seen=3, price=7100000, floor=NULL WHERE id=?", (new,))
+    repeat = pair(conn, old, new)
+    market = pair(conn, old, other)
+    before = list(map(tuple, conn.execute("SELECT * FROM listings")))
+    assert not dupreview.decide(conn, repeat, "market", 1)["ok"]
+    assert dupreview.decide(conn, repeat, "repeat", 1)["status"] == "repeat"
+
+    def result():
+        return search.search(conn, search.Query(), 4, False, group_offers=True)
+
+    items = result()["items"]
+    updated = next(row for row in items if row["id"] == new)
+    assert result()["total"] == 2
+    assert updated["price"] == 7100000 and updated["first_seen"] == 1 and "offer_group" not in updated
+    assert dupreview.decide(conn, market, "market", 1)["status"] == "market"
+    linked = result()
+    assert linked["total"] == 1
+    assert {item["id"] for item in linked["items"][0]["offer_group"]["offers"]} == {new, other}
+    assert list(map(tuple, conn.execute("SELECT * FROM listings"))) == before
+    assert dupreview.pairs(conn, "done")["counts"]["done"] == 2
+    assert dupreview.decide(conn, repeat, "reopen", 1)["status"] == "open"
+    assert result()["total"] == 2
+
+
+def test_explicit_repeat_uses_one_version_when_contacts_are_missing(conn):
+    a, b = [listing(conn) for _ in range(2)]
+    conn.execute("UPDATE listings SET phones='[]' WHERE id IN (?,?)", (a, b))
+    assert dupreview.decide(conn, pair(conn, a, b), "repeat", 1)["ok"]
+    group = offers.groups(conn)[a]
+    reps = offers.representatives(group, set())
+    assert reps[a]["id"] == reps[b]["id"] == b
