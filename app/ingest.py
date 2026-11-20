@@ -10,7 +10,7 @@ import shutil
 import time
 from pathlib import Path
 
-from . import config, dedupe, learning, osmaddr, parser, rules, textnorm
+from . import config, dedupe, learning, llm, osmaddr, parser, rules, textnorm
 from .rules import TYPE_LABELS, rooms_mask
 from .textnorm import norm, words
 
@@ -650,6 +650,16 @@ def process_message(conn: sqlite3.Connection, message_id: int, use_llm: bool | N
         buyers.save(conn, m)
     conn.commit()
     return {"status": "done", "kind": kind, "results": results}
+
+
+def requeue_failed_llm_import(conn: sqlite3.Connection, now: int | None = None) -> int:
+    """Возвращает в очередь актуальные сообщения, которые упали до вызова модели."""
+    now = int(now or time.time())
+    return conn.execute(
+        """UPDATE messages SET status='new', error=NULL
+           WHERE status='error' AND error=? AND ts >= ?""",
+        ("name 'llm' is not defined", now - config.STALE_DAYS * 86400),
+    ).rowcount
 
 
 def process_pending(conn: sqlite3.Connection, limit: int = 200, use_llm: bool | None = None,

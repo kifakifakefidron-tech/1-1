@@ -30,8 +30,13 @@ DB_PATH = os.getenv("DB_PATH", str(Path(__file__).resolve().parent.parent / "dat
 
 # DeepSeek
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-DEEPSEEK_URL = os.getenv("DEEPSEEK_URL", "https://api.deepseek.com/chat/completions")
+DEEPSEEK_URL = os.getenv("DEEPSEEK_URL", "https://api.deepseek.com/chat/completions").strip()
+_DEEPSEEK_OFFICIAL = DEEPSEEK_URL.startswith("https://api.deepseek.com/")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "").strip() or ("deepseek-flash" if _DEEPSEEK_OFFICIAL else "deepseek-chat")
+DEEPSEEK_THINKING = None
+if _DEEPSEEK_OFFICIAL and DEEPSEEK_MODEL in ("deepseek-chat", "deepseek-reasoner", "deepseek-flash"):
+    DEEPSEEK_THINKING = "enabled" if DEEPSEEK_MODEL == "deepseek-reasoner" else "disabled"
+    DEEPSEEK_MODEL = "deepseek-flash"
 
 # Wappi: токен и список профилей «тип:id» через запятую, например
 #   WAPPI_PROFILES=wa:a1b2c3d4-...,tg:e5f6...,max:0a1b...

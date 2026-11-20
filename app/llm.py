@@ -63,6 +63,18 @@ def available() -> bool:
     return bool(config.DEEPSEEK_API_KEY)
 
 
+def _request(body: dict) -> urllib.request.Request:
+    body["model"] = config.DEEPSEEK_MODEL
+    if config.DEEPSEEK_THINKING is not None:
+        body["thinking"] = {"type": config.DEEPSEEK_THINKING}
+    return urllib.request.Request(
+        config.DEEPSEEK_URL,
+        data=json.dumps(body).encode(),
+        headers={"Authorization": f"Bearer {config.DEEPSEEK_API_KEY}", "Content-Type": "application/json"},
+        method="POST",
+    )
+
+
 def numbered(text: str, limit: int = 8000) -> str:
     """Текст с номерами строк: нейросеть отвечает «объект — строки 3–9» вместо
     переписывания текста (так ответ короткий и не обрезается на длинных подборках)."""
@@ -79,7 +91,6 @@ def numbered(text: str, limit: int = 8000) -> str:
 def parse_message(text: str, retries: int = 2, *, price_hints: tuple[str, ...] = ()) -> dict:
     """Возвращает словарь по схеме из SYSTEM_PROMPT. Бросает LLMError."""
     body = {
-        "model": config.DEEPSEEK_MODEL,
         "temperature": 0,
         "max_tokens": 4000,
         "response_format": {"type": "json_object"},
@@ -89,12 +100,7 @@ def parse_message(text: str, retries: int = 2, *, price_hints: tuple[str, ...] =
             {"role": "user", "content": numbered(text)},
         ],
     }
-    req = urllib.request.Request(
-        config.DEEPSEEK_URL,
-        data=json.dumps(body).encode(),
-        headers={"Authorization": f"Bearer {config.DEEPSEEK_API_KEY}", "Content-Type": "application/json"},
-        method="POST",
-    )
+    req = _request(body)
     last: Exception | None = None
     for attempt in range(retries + 1):
         try:
@@ -109,6 +115,10 @@ def parse_message(text: str, retries: int = 2, *, price_hints: tuple[str, ...] =
         except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError, LLMError) as e:
             last = e
             log.warning("DeepSeek: попытка %s не удалась: %s", attempt + 1, e)
+            if isinstance(e, urllib.error.HTTPError) and 400 <= e.code < 500 and e.code not in (408, 429):
+                break
+            if attempt == retries:
+                break
             time.sleep(2 * (attempt + 1))
     global failures
     failures += 1
@@ -117,11 +127,10 @@ def parse_message(text: str, retries: int = 2, *, price_hints: tuple[str, ...] =
 
 def ask_json(system: str, user: str, max_tokens: int = 3000) -> dict:
     """Один запрос с ответом-JSON (для вспомогательных задач: разобрать вставленный текст и т. п.). Бросает LLMError."""
-    body = {"model": config.DEEPSEEK_MODEL, "temperature": 0, "max_tokens": max_tokens,
+    body = {"temperature": 0, "max_tokens": max_tokens,
             "response_format": {"type": "json_object"},
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user[:20000]}]}
-    req = urllib.request.Request(config.DEEPSEEK_URL, data=json.dumps(body).encode(), method="POST",
-                                 headers={"Authorization": f"Bearer {config.DEEPSEEK_API_KEY}", "Content-Type": "application/json"})
+    req = _request(body)
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
             data = json.loads(resp.read())
@@ -135,10 +144,9 @@ def ask_json(system: str, user: str, max_tokens: int = 3000) -> dict:
 
 def ask_text(system: str, user: str, max_tokens: int = 1200, temperature: float = 0.7) -> str:
     """Один запрос с ответом-текстом (например, продающее описание объявления). Бросает LLMError."""
-    body = {"model": config.DEEPSEEK_MODEL, "temperature": temperature, "max_tokens": max_tokens,
+    body = {"temperature": temperature, "max_tokens": max_tokens,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user[:8000]}]}
-    req = urllib.request.Request(config.DEEPSEEK_URL, data=json.dumps(body).encode(), method="POST",
-                                 headers={"Authorization": f"Bearer {config.DEEPSEEK_API_KEY}", "Content-Type": "application/json"})
+    req = _request(body)
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
             data = json.loads(resp.read())

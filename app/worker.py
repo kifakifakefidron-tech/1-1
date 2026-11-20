@@ -55,6 +55,12 @@ def tick(conn) -> dict:
     catalog = applet.maybe_sync(conn)
     if catalog:
         stats["appletv"] = catalog
+    if not db.get_state(conn, "recovered_llm_import_errors"):
+        recovered = ingest.requeue_failed_llm_import(conn)
+        db.set_state(conn, "recovered_llm_import_errors", "1")
+        if recovered:
+            stats["requeued_llm_errors"] = recovered
+            log.info("Возвращено в очередь после ошибки разбора: %s", recovered)
     stats["processed"] = ingest.process_pending(conn, limit=300, budget_s=60)
     lap("разбор")
     from . import media
@@ -279,6 +285,8 @@ def main() -> None:
         log.warning("WAPPI_TOKEN / WAPPI_PROFILES не заданы — новые сообщения забираться не будут")
     if not llm.available():
         log.warning("DEEPSEEK_API_KEY не задан — разбор только правилами (хуже для сложных постов)")
+    else:
+        log.info("DeepSeek: модель %s", config.DEEPSEEK_MODEL)
     # Один раз после обновления: исправить в базе то, что раньше терялось при фильтрах (см. app/audit.py)
     if db.get_state(conn, "audit_fix") != "4":
         try:
