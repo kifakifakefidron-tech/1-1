@@ -11,7 +11,7 @@ import secrets
 import sqlite3
 import time
 
-from . import config, parser, rules, search, settings, worklog
+from . import config, listing_video, parser, rules, search, settings, worklog
 
 MAX_COLLECTIONS = 200
 PROMO_NAME = "Коллега (по коду)"   # служебное имя аккаунта по промокоду — клиенту его не показываем никогда
@@ -262,6 +262,13 @@ def _no_license(conn: sqlite3.Connection, phones_json: str | None) -> bool:
     from . import consent
     nl = consent.prefs(conn)["no_license"]
     return bool(nl) and any(p in nl for p in json.loads(phones_json or "[]"))
+
+
+def video_allowed(conn: sqlite3.Connection, token: str, listing_id: int, filename: str) -> bool:
+    row = conn.execute("""SELECT l.phones FROM collections c JOIN collection_items i ON i.collection_id = c.id
+        JOIN listings l ON l.id = i.listing_id WHERE c.token = ? AND l.id = ?
+            AND l.is_active = 1 AND l.video_file = ?""", (token, listing_id, filename)).fetchone()
+    return row is not None and not _no_license(conn, row["phones"])
 
 
 def ordered_photos(mine: list[str], listing: list[str], po: str | None) -> tuple[list[str], list[str]]:
@@ -541,6 +548,7 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
     for r in conn.execute("""SELECT l.*, i.note AS item_note, i.text AS item_text, i.price AS my_price, i.hide_price, i.photos AS my_photos,
                                     i.photo_order, i.map_lat, i.map_lon, i.map_off FROM collection_items i JOIN listings l ON l.id = i.listing_id
                              WHERE i.collection_id = ? ORDER BY i.pos, i.added""", (c["id"],)):
+        no_license = _no_license(conn, r["phones"])
         items.append({
             "id": r["id"], "title": r["title"], "type": r["type"], "deal": r["deal"],
             # цена: своя цена агента для клиента, иначе из объявления; «скрыть цену» — клиент видит «цена по запросу»
@@ -554,11 +562,12 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
             "approx": hide,
             # фото в порядке агента (перетаскиванием в /picks), скрытые — не показываем; свои агента — первыми.
             # 19.10: автор объявления не разрешил тексты и фото (/agent) — клиенту только свои фото агента подборки, без текста
-            "photos": ordered_photos(json.loads(r["my_photos"] or "[]"), [] if _no_license(conn, r["phones"]) else json.loads(r["photos"] or "[]"),
+            "photos": ordered_photos(json.loads(r["my_photos"] or "[]"), [] if no_license else json.loads(r["photos"] or "[]"),
                                      r["photo_order"])[0],
-            "description": "" if not r["is_active"] or (not r["item_text"] and _no_license(conn, r["phones"])) else
+            "description": "" if not r["is_active"] or (not r["item_text"] and no_license) else
                            parser.guard_phones(r["item_text"] or parser.client_text(r["description"]))[:5000],
             "note": r["item_note"] or "", "is_active": r["is_active"],
+            **(listing_video.fields(r, prefix=f"/api/c/{token}/video") if r["is_active"] and not no_license else {}),
             "reaction": mine_r.get(r["id"])})
     from . import settings
     # название подборки — для агента («Ирине — 2к ФМР»); клиент видит только свой заголовок (или нейтральный)

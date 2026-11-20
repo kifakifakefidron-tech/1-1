@@ -2357,6 +2357,17 @@ def listing_video_file(request: Request, body: dict | None = None):
         return _err("Не найдено.", 404)
     if not db.get().execute("SELECT 1 FROM listings WHERE id = ? AND video_file = ?", (lid, name)).fetchone():
         return _err("Не найдено.", 404)
+    return _video_file_response(lid, name)
+
+
+def pick_video_file(request: Request, body: dict | None = None):
+    token, lid, name = (request.path_params[key] for key in ("token", "id", "name"))
+    if not listing_video.FILE_NAME.fullmatch(name) or not picks.video_allowed(db.get(), token, lid, name):
+        return _err("Не найдено.", 404)
+    return _video_file_response(lid, name)
+
+
+def _video_file_response(lid: int, name: str):
     path = listing_video.root() / str(lid) / name
     if not path.is_file():
         return _err("Не найдено.", 404)
@@ -3560,6 +3571,7 @@ routes = [
     Route("/api/picks/{id:int}/similar", threaded(api_pick_similar)),
     Route("/api/c/consent", threaded(api_cookie_consent), methods=["POST"]),
     Route("/api/c/{token}", threaded(api_pick_public)),
+    Route("/api/c/{token}/video/{id:int}/{name}", threaded(pick_video_file)),
     Route("/api/c/{token}/react", threaded(api_pick_react), methods=["POST"]),
     Route("/planner/{uid:int}-{token}.ics", threaded(planner_feed)),
     Route("/api/planner", threaded(api_planner), methods=["GET", "POST", "DELETE"]),

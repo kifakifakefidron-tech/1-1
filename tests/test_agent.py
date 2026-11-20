@@ -50,7 +50,7 @@ def _verify(c, conn, phone="+7 918 111-22-33", sender="79181112233"):
     return res
 
 
-def test_my_object_video_lifecycle(env):
+def test_my_object_video_lifecycle(env, monkeypatch):
     c, conn, _ = env
     owner = _login(c, conn)
     phone = "79181112233"
@@ -78,6 +78,24 @@ def test_my_object_video_lifecycle(env):
     items = c.get("/api/agent").json()["items"]
     assert next(item for item in items if item["id"] == lid)["video_url"] == first_url
 
+    pick = c.post("/api/picks", json={"listing_id": lid}).json()["pick"]
+    collection_path = f"/api/c/{pick['token']}"
+    with TestClient(server.app, base_url="https://podborka.example") as guest:
+        view = guest.get(collection_path).json()["items"][0]
+        pick_video = view["video_url"]
+        assert pick_video == f"{collection_path}/video/{lid}/{first_url.rsplit('/', 1)[-1]}"
+        assert view["kinescope_url"] == "https://kinescope.io/embed/8d3936d9-3703-4b93-994e-6210ac9922ed"
+        part = guest.get(pick_video, headers={"Range": "bytes=0-7"})
+        assert part.status_code == 206 and part.content == mp4[:8]
+        assert guest.get(pick_video.replace(pick["token"], "unknown")).status_code == 404
+        with monkeypatch.context() as restricted:
+            from app import consent
+            phones = {str(p) for p in c.get(detail).json()["phones"]}
+            assert phones
+            restricted.setattr(consent, "prefs", lambda conn: {"no_license": phones})
+            assert not guest.get(collection_path).json()["items"][0].get("kinescope_url")
+            assert guest.get(pick_video).status_code == 404
+
     _login(c, conn, "another@example.ru")
     assert c.post(endpoint + "/video", content=mp4).status_code == 403
     assert c.delete(endpoint + "/video").status_code == 403
@@ -88,11 +106,15 @@ def test_my_object_video_lifecycle(env):
     second_url = c.post(endpoint + "/video", content=mp4).json()["video_url"]
     assert first_url != second_url
     assert c.get(first_url).status_code == 404
+    assert c.get(pick_video).status_code == 404
+    assert c.get(collection_path).json()["items"][0]["video_url"].endswith(second_url.rsplit("/", 1)[-1])
     assert c.delete(endpoint + "/video").json()["video_url"] is None
     assert c.get(second_url).status_code == 404
     assert c.post(endpoint, json={"kinescope_url": ""}).status_code == 200
     item = c.get(detail).json()
     assert item["kinescope_url"] is None and item["video_url"] is None
+    public = c.get(collection_path).json()["items"][0]
+    assert not public["kinescope_url"] and not public["video_url"]
 
 
 def test_verify_phone_by_code_from_own_number(env):

@@ -137,6 +137,20 @@
       <p class="pv-react-ok"${o.reaction ? "" : " hidden"}>${ic("check-circle")}<span>${o.reaction ? RE_OK[o.reaction] : ""}</span></p></div>`;
   }
 
+  function videoHTML(o) {
+    if (!o.video_url && !o.kinescope_url) return "";
+    const poster = o.photos?.[0];
+    return `<details class="pv-video">
+      <summary><span class="pv-video-play" aria-hidden="true"></span>Смотреть видео</summary>
+      <div class="pv-video-players"></div>
+      <template>
+        ${o.video_url ? `<video controls playsinline preload="none" src="${esc(o.video_url)}"
+          ${poster ? `poster="${esc(poster)}"` : ""} aria-label="Видео объекта"></video>` : ""}
+        ${o.kinescope_url ? `<iframe title="Видео объекта в Kinescope" src="${esc(o.kinescope_url)}"
+          referrerpolicy="origin" allow="fullscreen; picture-in-picture; encrypted-media" allowfullscreen></iframe>` : ""}
+      </template></details>`;
+  }
+
   function cardHTML(o, i) {
     const kind = [TYPE[o.type] || "", o.deal === "rent" ? "аренда" : ""].filter(Boolean).join(" · ");
     const pl = placeText(o);
@@ -152,6 +166,7 @@
         ${o.is_active ? "" : `<p class="pv-gone">Этот объект уже сняли с продажи — уточните у агента, есть ли похожие.</p>`}
         ${o.note ? `<div class="pv-comment"><b>Комментарий агента</b>${esc(o.note)}</div>` : ""}
         ${o.description ? `<div class="pk-desc"><p>${esc(o.description)}</p></div>` : ""}
+        ${videoHTML(o)}
         ${o.is_active ? reactHTML(o) : ""}
       </div></li>`;
   }
@@ -310,6 +325,16 @@
     okT.textContent = RE_OK[kind];
     if (navigator.vibrate) navigator.vibrate(8);
   }
+
+  $("pkList").addEventListener("toggle", ({ target }) => {
+    if (!target.matches(".pv-video")) return;
+    const players = target.querySelector(".pv-video-players");
+    if (target.open) players.replaceChildren(target.querySelector("template").content.cloneNode(true));
+    else {
+      players.querySelector("video")?.pause();
+      players.replaceChildren();
+    }
+  }, true);
 
   document.addEventListener("click", (e) => {
     const t = e.target;

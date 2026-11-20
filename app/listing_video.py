@@ -38,12 +38,16 @@ def root() -> Path:
     return Path(config.DB_PATH).parent / "listing-videos"
 
 
-def file_url(listing_id: int, name: str | None) -> str | None:
-    return f"/listing-videos/{listing_id}/{name}" if name and FILE_NAME.fullmatch(name) else None
+def file_url(listing_id: int, name: str | None, *, prefix: str = "/listing-videos") -> str | None:
+    return f"{prefix}/{listing_id}/{name}" if name and FILE_NAME.fullmatch(name) else None
 
 
-def fields(row) -> dict:
-    return {"video_url": file_url(row["id"], row["video_file"]), "kinescope_url": row["kinescope_url"]}
+def fields(row, *, prefix: str = "/listing-videos") -> dict:
+    try:
+        embed = kinescope_url(row["kinescope_url"] or "")
+    except ValueError:
+        embed = None
+    return {"video_url": file_url(row["id"], row["video_file"], prefix=prefix), "kinescope_url": embed}
 
 
 def discard(listing_id: int, name: str | None) -> None:

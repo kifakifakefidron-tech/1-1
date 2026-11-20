@@ -162,6 +162,20 @@ a { color: inherit; }
 .pv-comment b { display: block; margin-bottom: 2px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
 .pk-desc { margin: 16px 0 0; }
 .pk-desc p { margin: 0; color: var(--ink-2); font-size: 16px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pv-video { margin-top: 16px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--fill); }
+.pv-video summary { display: flex; align-items: center; gap: 10px; padding: 10px 12px; min-height: 48px;
+  list-style: none; cursor: pointer; font-size: 15px; font-weight: 600; }
+.pv-video summary::-webkit-details-marker { display: none; }
+.pv-video summary::after { content: ""; width: 7px; height: 7px; border: solid var(--ink-3); border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg); margin: -3px 4px 0 auto; }
+.pv-video[open] summary::after { transform: rotate(225deg); margin-top: 3px; }
+.pv-video-play { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 18%, var(--card)); }
+.pv-video-play::before { content: ""; border-style: solid; border-width: 6px 0 6px 9px;
+  border-color: transparent transparent transparent var(--ink); margin-left: 2px; }
+.pv-video-players { display: grid; gap: 10px; padding: 0 10px 10px; }
+.pv-video-players > :is(video, iframe) { display: block; width: 100%; aspect-ratio: 16 / 9; border: 0;
+  border-radius: calc(var(--r-m) - 4px); background: #000; object-fit: contain; }
 .pk-desc.clamp p { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
 .pk-desc button { margin-top: 6px; padding: 0; border: 0; background: none; color: #0071e3; font-size: 15px; cursor: pointer; }
 @media (prefers-color-scheme: dark) { .pk-desc button { color: #2997ff; } }
