@@ -2514,8 +2514,7 @@
     try {
       const s = await getJSON("/api/stats");
       const cell = (n, t) => (n ? `<span><b>${num(n)}</b>${t}</span>` : "");
-      box.innerHTML = cell(s.sale_offers, "Предложения в продаже") + cell(s.rent_offers, "Предложения в аренде")
-        + cell(s.new_offers_24h, "Предложения в новых карточках за сутки");
+      box.innerHTML = cell(s.sale_offers, "в продаже") + cell(s.rent_offers, "в аренде") + cell(s.new_offers_24h, "новых за сутки");
       box.hidden = !box.innerHTML;
     } catch { box.hidden = true; }
   }

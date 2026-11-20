@@ -645,9 +645,30 @@ def _catalog_entries(candidates, groups, archived, hidden, matching):
 
 def _count_offers(entries, matching: set[int]) -> int:
     return sum(
-        sum(offer["id"] in matching for offer in visible) if visible else 1
-        for _, _, visible in entries
+        sum(offer["id"] in matching for offer in visible) if visible else lid in matching
+        for lid, _, visible in entries
     )
+
+
+def _recent_offer_ids(candidates, groups, repeated, since: int) -> set[int]:
+    from . import offers
+    by_group = {}
+    recent = set()
+    for row in candidates:
+        if row["catalog_migrated"] or row["first_seen"] < since:
+            continue
+        lid = row["id"]
+        group = groups.get(lid)
+        if group:
+            key = group[0]["id"]
+            if key not in by_group:
+                by_group[key] = offers.agent_publications(group, repeated)
+            first_seen, migrated, _ = by_group[key][lid]
+        else:
+            first_seen, migrated, _ = repeated.get(lid, offers.publication(row))
+        if not migrated and first_seen >= since:
+            recent.add(lid)
+    return recent
 
 
 def catalog_counts(conn, now: int) -> dict:
@@ -655,6 +676,7 @@ def catalog_counts(conn, now: int) -> dict:
     from . import offers
     groups = offers.groups(conn)
     archived = offers.archived_publications(conn)
+    repeated = offers.repeat_publications(conn)
     day = now - 86400
     out = {"new_24h": 0, "new_offers_24h": 0}
     for deal in ("sale", "rent"):
@@ -663,11 +685,11 @@ def catalog_counts(conn, now: int) -> dict:
         matching = {r["id"] for r in candidates}
         unique = _catalog_entries(candidates, groups, archived, set(), matching)
         fresh = [entry for entry in unique if not entry[1][1] and entry[1][0] >= day]
-        fresh_matching = {r["id"] for r in candidates if not r["catalog_migrated"] and r["first_seen"] >= day}
+        fresh_matching = _recent_offer_ids(candidates, groups, repeated, day)
         out[deal] = len(unique)
         out[f"{deal}_offers"] = _count_offers(unique, matching)
         out["new_24h"] += len(fresh)
-        out["new_offers_24h"] += _count_offers(fresh, fresh_matching)
+        out["new_offers_24h"] += _count_offers(unique, fresh_matching)
     return out
 
 
@@ -679,11 +701,11 @@ def _grouped_search(conn, qr, where, params, order, size, page, now):
     archived = offers.archived_publications(conn) if candidates else {}
     hidden = offers.hidden_ids(conn, qr.hide_user)
     matching = {r["id"] for r in candidates}
+    if candidates and (qr.since or qr.new_days):
+        cutoff = max(qr.since + 1 if qr.since else 0, now - qr.new_days * 86400 if qr.new_days else 0)
+        matching = _recent_offer_ids(candidates, groups, offers.repeat_publications(conn), cutoff)
+        candidates = [row for row in candidates if row["id"] in matching]
     unique = _catalog_entries(candidates, groups, archived, hidden, matching)
-    if qr.since:
-        unique = [e for e in unique if not e[1][1] and e[1][0] > qr.since]
-    if qr.new_days:
-        unique = [e for e in unique if not e[1][1] and e[1][0] >= now - qr.new_days * 86400]
     if order == NEWEST_FIRST:
         unique.sort(key=lambda entry: (entry[1][1], -entry[1][0], -entry[1][2]))
     if qr.hl:

@@ -196,6 +196,36 @@ def publication(row) -> tuple[int, int, int]:
     return row["first_seen"], row["catalog_migrated"], row["id"]
 
 
+def repeat_publications(conn: sqlite3.Connection) -> dict[int, tuple[int, int, int]]:
+    """Первые публикации версий одного предложения, в том числе уже снятых."""
+    decisions, published = {}, {}
+    for a, first_a, moved_a, b, first_b, moved_b in conn.execute("""
+        SELECT a.id, a.first_seen, a.catalog_migrated, b.id, b.first_seen, b.catalog_migrated
+        FROM dup_pairs p JOIN listings a ON a.id = p.a JOIN listings b ON b.id = p.b
+        WHERE p.status = 'repeat' AND a.deal = b.deal
+    """):
+        decisions[a, b] = "repeat"
+        published[a] = first_a, moved_a, a
+        published[b] = first_b, moved_b, b
+    families = _repeat_ids(decisions)
+    first = {}
+    for lid, family in families.items():
+        first[family] = min(first.get(family, published[lid]), published[lid])
+    return {lid: first[family] for lid, family in families.items()}
+
+
+def agent_publications(group, repeated: dict) -> dict[int, tuple[int, int, int]]:
+    """Первая дата каждого предложения внутри общей карточки."""
+    reps = representatives(group, set())
+    first = {}
+    for row in group:
+        lid = row["id"]
+        rep = reps[lid]["id"]
+        date = repeated.get(lid, publication(row))
+        first[rep] = min(first.get(rep, date), date)
+    return {lid: first[rep["id"]] for lid, rep in reps.items()}
+
+
 def archived_publications(conn: sqlite3.Connection, lid: int | None = None) -> dict[int, tuple[int, int, int]]:
     """Первая публикация подтверждённого дубля учитывается и после снятия предложения."""
     by_id = {}

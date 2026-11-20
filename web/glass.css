@@ -79,7 +79,7 @@ dialog::backdrop { background: rgba(0, 18, 18, .5); backdrop-filter: blur(6px); 
   background: linear-gradient(90deg, #f3e8bc, #e3cb8f 45%, #c9a85c); -webkit-background-clip: text; background-clip: text;
   -webkit-text-fill-color: transparent; }
 .hero-sub { max-width: 640px; margin: 14px 0 0; color: var(--ink-2); font-size: 16px; line-height: 1.55; }
-.hero-stats { display: flex; flex-wrap: wrap; gap: 10px 34px; margin-top: 24px; }
+.hero-stats { --stats-gap: clamp(14px, 1.8vw, 28px); display: flex; flex-wrap: wrap; gap: 10px var(--stats-gap); margin-top: 24px; }
 .hero-stats div { display: grid; gap: 2px; }
 .hero-stats b { font: 600 30px/1 var(--display); letter-spacing: -.02em; color: var(--ink); font-variant-numeric: tabular-nums; }
 .hero-stats span { font-size: 12.5px; color: var(--ink-3); }
@@ -1796,7 +1796,7 @@ html:has(#detailOffers):not(.map-mode, .embed) { scrollbar-gutter: stable; }
 @media (prefers-reduced-motion: reduce) { .flame .f-body, .flame .f-spark { animation: none; } .flame .f-spark { opacity: 0; } }
 
 /* 30.10 «онлайн сейчас» на первом экране (варианты 2 + 3): пятая цифра, кружки, панель подробностей */
-.hero-live { position: relative; display: grid; gap: 2px; padding: 0 0 0 34px; margin: 0; border: 0; border-left: 1px solid var(--glass-line);
+.hero-live { position: relative; display: grid; gap: 2px; padding: 0 0 0 var(--stats-gap, 28px); margin: 0; border: 0; border-left: 1px solid var(--glass-line);
   background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .hero-live[hidden] { display: none; }
 .hero-live > b { display: inline-flex; align-items: flex-end; gap: 12px; font: 600 30px/1 var(--display); letter-spacing: -.02em; color: #c7f5d9;

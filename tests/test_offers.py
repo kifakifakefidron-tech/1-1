@@ -126,14 +126,33 @@ def test_new_offers_cannot_republish_a_known_property(conn):
     matched = items(price_max=6_600_000, hl=now - 60)
     assert [row["id"] for row in matched] == [fresh, newer]
     assert matched[1]["first_seen"] == born
-    assert [row["id"] for row in items(new_days=1)] == [fresh]
-    assert [row["id"] for row in items(since=now - 60)] == [fresh]
+    assert [row["id"] for row in items(new_days=1)] == [fresh, newer]
+    assert [row["id"] for row in items(since=now - 60)] == [fresh, newer]
+    assert items(new_days=1)[1]["first_seen"] == born
+    assert items(new_days=1)[1]["offer_group"]["matching"] == 1
     assert [row["id"] for row in items()] == [fresh, newer, imported]
     recent = search.search(conn, search.Query(new_days=1), now, False, group_offers=True)
-    assert recent["offer_total"] == search.catalog_counts(conn, now)["new_offers_24h"] == 1
+    assert recent["offer_total"] == search.catalog_counts(conn, now)["new_offers_24h"] == 2
     conn.execute("UPDATE listings SET is_active=0 WHERE id=?", (older,))
-    assert [row["id"] for row in items(new_days=1)] == [fresh]
+    assert [row["id"] for row in items(new_days=1)] == [fresh, newer]
     assert items()[1]["first_seen"] == born
+
+
+def test_new_offers_exclude_revisions_linked_through_archived_versions(conn):
+    now = int(time.time())
+    original = listing(conn, "79000000001", media=())
+    intermediate = listing(conn, "79000000001", price=6900000, media=())
+    current = listing(conn, "79000000001", price=7000000, media=())
+    fresh = listing(conn, "79000000002", house="61", media=())
+    conn.execute("UPDATE listings SET first_seen=? WHERE id=?", (now - 3 * 86400, original))
+    conn.execute("UPDATE listings SET is_active=0 WHERE id IN (?, ?)", (original, intermediate))
+    decide(conn, original, intermediate, "repeat")
+    decide(conn, intermediate, current, "repeat")
+
+    stats = search.catalog_counts(conn, now)
+    result = search.search(conn, search.Query(new_days=1), now, False, group_offers=True)
+    assert stats["sale_offers"] == 2 and stats["new_offers_24h"] == result["offer_total"] == 1
+    assert [row["id"] for row in result["items"]] == [fresh]
 
 
 DETAIL = ("Двухкомнатная квартира на Домбайской улице, чистый подъезд, кухня с выходом на застеклённую лоджию. "
@@ -230,7 +249,7 @@ def test_confirmed_group_shows_each_agent_once_and_counts_one_property(conn, mon
     assert filtered["items"][0]["id"] == agent
     assert filtered["offer_total"] == 1
     assert search.catalog_counts(conn, now) == {
-        "sale": 1, "rent": 1, "new_24h": 1, "sale_offers": 3, "rent_offers": 1, "new_offers_24h": 1,
+        "sale": 1, "rent": 1, "new_24h": 1, "sale_offers": 3, "rent_offers": 1, "new_offers_24h": 3,
     }
     assert conn.execute("SELECT COUNT(*) FROM listings WHERE is_active=1").fetchone()[0] == 6
 
