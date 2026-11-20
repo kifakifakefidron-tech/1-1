@@ -38,7 +38,6 @@
   let favMode = false;      // показываем избранное вместо поиска
   let tgPoll = 0;           // ожидание входа через Telegram
   let loadedAt = 0;         // время сервера, когда загрузили список (для «новых объектов»)
-  let lastTotal = 0;        // сколько объектов найдено — для кнопки «Показать N»
 
   // ─── форматирование ──────────────────────────────────────────────────────
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
@@ -678,14 +677,16 @@
     $("results").classList.remove("busy");
     if (!append && !favMode) {
       loadedAt = data.now || Math.floor(Date.now() / 1000);
-      lastTotal = data.total;
       hideNewPill();
     }
-    $("sheetApply").textContent = data.total ? `Показать ${num(data.total)} ${plural(data.total, "объект", "объекта", "объектов")}` : "Ничего не нашлось";
+    const count = favMode ? data.total : data.offer_total;
+    const unit = favMode ? plural(count, "объект", "объекта", "объектов") : plural(count, "предложение", "предложения", "предложений");
+    const countLabel = count ? `${num(count)} ${unit}` : "";
+    $("sheetApply").textContent = countLabel ? `Показать ${countLabel}` : "Ничего не нашлось";
     $("count").innerHTML = favMode
       ? `Избранное: ${num(data.total)} <button type="button" class="link-btn" id="favExit">← ко всем объектам</button>
         <a class="link-btn" href="/picks">📁 Подборки для клиентов</a> <a class="link-btn" href="/planner">📅 Планер</a>${crmChips()}`
-      : esc(data.total ? `${num(data.total)} ${plural(data.total, "объект", "объекта", "объектов")}` : "Ничего не нашлось")
+      : esc(countLabel || "Ничего не нашлось")
         + understoodHTML(data.understood);
     if (!append && data.understood && data.understood.deal && data.understood.deal !== state.deal) {   // «аренда 1к» — переключатель тоже на аренду
       state.deal = data.understood.deal;
@@ -2233,12 +2234,13 @@
   async function checkNew() {
     if (document.hidden || favMode || !loadedAt || Date.now() - lastNewCheck < 20000) return;
     lastNewCheck = Date.now();
+    const seq = reqSeq;
     const r = await call(`/api/listings?${apiParams({ size: 1, since: loadedAt, group_offers: 1 })}`);
-    if (r.ok && r.data.total > 0) {
-      $("newCount").textContent = num(r.data.total);
-      $("newPill").hidden = false;
-      $("newPill").classList.add("show");
-    }
+    if (!r.ok || seq !== reqSeq || favMode) return;
+    if (!r.data.offer_total) { hideNewPill(); return; }
+    $("newCount").textContent = num(r.data.offer_total);
+    $("newPill").hidden = false;
+    $("newPill").classList.add("show");
   }
 
   function reloadList() {
@@ -2512,7 +2514,8 @@
     try {
       const s = await getJSON("/api/stats");
       const cell = (n, t) => (n ? `<span><b>${num(n)}</b>${t}</span>` : "");
-      box.innerHTML = cell(s.sale, "в продаже") + cell(s.rent, "в аренде") + cell(s.new_24h, "новых за сутки");
+      box.innerHTML = cell(s.sale_offers, "Предложения в продаже") + cell(s.rent_offers, "Предложения в аренде")
+        + cell(s.new_offers_24h, "Предложения в новых карточках за сутки");
       box.hidden = !box.innerHTML;
     } catch { box.hidden = true; }
   }
@@ -3473,7 +3476,9 @@
     try {
       const s = await getJSON("/api/stats");
       hero.querySelectorAll("[data-k]").forEach((b) => {
-        if (s[b.dataset.k]) countUp(b, s[b.dataset.k]); else b.parentElement.hidden = true;   // нули не показываем
+        const value = s[b.dataset.k];
+        b.parentElement.hidden = !value;
+        if (value) countUp(b, value);
       });
     } catch { /* без цифр — тоже красиво */ }
   }

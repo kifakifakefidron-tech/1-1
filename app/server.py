@@ -261,7 +261,7 @@ def _hero_ssr(request: Request, html_text: str) -> str:
     страница на телефоне «прыгала» (CLS 0,93)."""
     # 26.10 (Артём): первый экран с логотипом и числом объектов — ВСЕГДА (и вошедшим), без крестика; кука hh больше не действует
     s = _stats_fast()
-    for k in ("sale", "rent", "new_24h", "requests", "removed"):
+    for k in ("sale_offers", "rent_offers", "new_offers_24h", "requests", "removed"):
         v = s.get(k)
         # 01.11: цифра бывает и ссылкой (<a class="hs-req" …>) — меняем только саму цифру, нули прячем вместе с подписью
         m = re.search(rf'<(div|a)([^>]*)><b data-k="{k}">—</b>', html_text)
@@ -569,7 +569,8 @@ def api_listings(request: Request, body: dict | None = None):
     if not _loadtest(request) and _too_often(request, "list", lim[0], lim[1], who=_ip_key(request) if guest else None):
         return _err("Слишком много запросов подряд. Подождите пару минут" + (" или войдите — 14 дней бесплатно." if guest else "."), 429)
     if guest and (_num(request.query_params.get("page"), int) or 1) > GUEST_PAGES:
-        return JSONResponse({"items": [], "total": 0, "page": GUEST_PAGES + 1, "pages": GUEST_PAGES, "guest_limit": True})
+        return JSONResponse({"items": [], "total": 0, "offer_total": 0,
+                             "page": GUEST_PAGES + 1, "pages": GUEST_PAGES, "guest_limit": True})
     hider = _hider(request)
 
     def compute():

@@ -27,6 +27,7 @@ def test_groups_paginate_and_only_show_prices_that_match(conn):
     qr = search.Query(price_max=6900000, size=1, sort="price_asc")
     result = search.search(conn, qr, int(time.time()), False, group_offers=True)
     assert result["total"] == result["pages"] == 2
+    assert result["offer_total"] == 2
     assert result["items"][0]["id"] == c
     qr.page = 2
     item = search.search(conn, qr, int(time.time()), False, group_offers=True)["items"][0]
@@ -36,7 +37,11 @@ def test_groups_paginate_and_only_show_prices_that_match(conn):
     assert [(r["id"], r["matches"]) for r in group["offers"]] == [(a, True), (b, False)]
     assert "7900000000" not in json.dumps(group)
     qr.price_max = None
-    assert search.search(conn, qr, int(time.time()), False, group_offers=True)["total"] == 2
+    now = int(time.time())
+    unfiltered = search.search(conn, qr, now, False, group_offers=True)
+    assert unfiltered["total"] == unfiltered["pages"] == 2
+    assert unfiltered["offer_total"] == search.catalog_counts(conn, now)["sale_offers"] == 3
+    assert search.catalog_counts(conn, now)["new_offers_24h"] == 3
     assert search.search(conn, qr, int(time.time()), False)["total"] == 3
 
 
@@ -124,6 +129,8 @@ def test_new_offers_cannot_republish_a_known_property(conn):
     assert [row["id"] for row in items(new_days=1)] == [fresh]
     assert [row["id"] for row in items(since=now - 60)] == [fresh]
     assert [row["id"] for row in items()] == [fresh, newer, imported]
+    recent = search.search(conn, search.Query(new_days=1), now, False, group_offers=True)
+    assert recent["offer_total"] == search.catalog_counts(conn, now)["new_offers_24h"] == 1
     conn.execute("UPDATE listings SET is_active=0 WHERE id=?", (older,))
     assert [row["id"] for row in items(new_days=1)] == [fresh]
     assert items()[1]["first_seen"] == born
@@ -217,10 +224,14 @@ def test_confirmed_group_shows_each_agent_once_and_counts_one_property(conn, mon
     assert mapped[stayl]["id"] == site and mapped[slava]["id"] == mapped[slava_again]["id"]
     unfiltered = search.search(conn, search.Query(), now, False, group_offers=True)
     assert unfiltered["total"] == 1 and unfiltered["items"][0]["id"] == site
+    assert unfiltered["offer_total"] == 3
     assert [p["id"] for p in unfiltered["items"][0]["offer_group"]["offers"]] == [site, agent, slava_again]
     filtered = search.search(conn, search.Query(price_max=7220000), now, False, group_offers=True)
     assert filtered["items"][0]["id"] == agent
-    assert search.catalog_counts(conn, now) == {"sale": 1, "rent": 1, "new_24h": 1}
+    assert filtered["offer_total"] == 1
+    assert search.catalog_counts(conn, now) == {
+        "sale": 1, "rent": 1, "new_24h": 1, "sale_offers": 3, "rent_offers": 1, "new_offers_24h": 1,
+    }
     assert conn.execute("SELECT COUNT(*) FROM listings WHERE is_active=1").fetchone()[0] == 6
 
 

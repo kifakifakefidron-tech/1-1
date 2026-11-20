@@ -643,18 +643,31 @@ def _catalog_entries(candidates, groups, archived, hidden, matching):
     return unique
 
 
+def _count_offers(entries, matching: set[int]) -> int:
+    return sum(
+        sum(offer["id"] in matching for offer in visible) if visible else 1
+        for _, _, visible in entries
+    )
+
+
 def catalog_counts(conn, now: int) -> dict:
-    """Те же объекты, что в выдаче без фильтров, и их первая публикация."""
+    """Карточки и предложения выдачи без фильтров с учётом первой публикации."""
     from . import offers
     groups = offers.groups(conn)
     archived = offers.archived_publications(conn)
-    out = {"new_24h": 0}
+    day = now - 86400
+    out = {"new_24h": 0, "new_offers_24h": 0}
     for deal in ("sale", "rent"):
         where, params = _where(Query(deal=deal), now)
         candidates = conn.execute(f"SELECT l.id,l.first_seen,l.catalog_migrated FROM listings l WHERE {where}", params).fetchall()
-        unique = _catalog_entries(candidates, groups, archived, set(), {r["id"] for r in candidates})
+        matching = {r["id"] for r in candidates}
+        unique = _catalog_entries(candidates, groups, archived, set(), matching)
+        fresh = [entry for entry in unique if not entry[1][1] and entry[1][0] >= day]
+        fresh_matching = {r["id"] for r in candidates if not r["catalog_migrated"] and r["first_seen"] >= day}
         out[deal] = len(unique)
-        out["new_24h"] += sum(not moved and ts >= now - 86400 for _, (ts, moved, _), _ in unique)
+        out[f"{deal}_offers"] = _count_offers(unique, matching)
+        out["new_24h"] += len(fresh)
+        out["new_offers_24h"] += _count_offers(fresh, fresh_matching)
     return out
 
 
@@ -691,7 +704,8 @@ def _grouped_search(conn, qr, where, params, order, size, page, now):
                     if len(visible) > 1:
                         item["offer_group"] = summary
                 items.append(item)
-    return {"total": len(unique), "page": page, "pages": (len(unique) + size - 1) // size, "items": items}
+    return {"total": len(unique), "offer_total": _count_offers(unique, matching), "page": page,
+            "pages": (len(unique) + size - 1) // size, "items": items}
 
 
 def map_points(conn: sqlite3.Connection, qr: Query, now: int) -> dict:

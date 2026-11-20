@@ -70,9 +70,9 @@
     <h1 class="hero-title">Вся база риелторских чатов Краснодара — <em>в одном поиске</em></h1>
     <p class="hero-sub">Объявления агентов из тысяч чатов: без повторов, на карте районов, с ценой за метр и номером агента.</p>
     <div class="hero-stats" id="heroStats">
-      <div><b data-k="sale">—</b><span>в продаже</span></div>
-      <div><b data-k="rent">—</b><span>в аренде</span></div>
-      <div><b data-k="new_24h">—</b><span>новых за сутки</span></div>
+      <div><b data-k="sale_offers">—</b><span>Предложения в продаже</span></div>
+      <div><b data-k="rent_offers">—</b><span>Предложения в аренде</span></div>
+      <div><b data-k="new_offers_24h">—</b><span>Предложения в новых карточках за сутки</span></div>
       <!-- 01.11 (Артём): запросы покупателей на первом экране — цифра ведёт в ленту -->
       <a class="hs-req" href="/requests" title="Что ищут покупатели прямо сейчас"><b data-k="requests">—</b><span>запросов покупателей</span></a>
       <div title="Проданные, под задатком, не присылали 15 дней — убрали с сайта за последние сутки"><b data-k="removed">—</b><span>убрано за сутки</span></div>
@@ -266,7 +266,7 @@
   <svg class="vf-map" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 6.5 9 4z"/><path d="M9 4v13M15 6.5v13"/></svg>
   <svg class="vf-list" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/></svg>
   <span>Показать на карте</span></button>
-<button type="button" class="new-pill" id="newPill" hidden>↑ Новые объекты: <b id="newCount"></b></button>
+<button type="button" class="new-pill" id="newPill" hidden>↑ Новые предложения: <b id="newCount"></b></button>
 <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
 <div class="cmp-bar" id="cmpBar" hidden><span id="cmpText"></span>
   <button type="button" class="pill" id="cmpOpen">Сравнить</button>
@@ -529,7 +529,7 @@
 <script src="/static/yasel.js?v=4"></script>
 <script src="/static/bell.js?v=8"></script>
 <script src="/static/lightbox.js?v=4"></script>
-<script src="/static/app.js?v=179"></script>
+<script src="/static/app.js?v=180"></script>
 <script src="/static/agent.js?v=10"></script>
 </body>
 </html>
