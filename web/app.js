@@ -353,7 +353,11 @@
       cmp.push(id);
     }
     cmpSave();
-    document.querySelectorAll(`[data-cmp="${id}"]`).forEach((b) => b.classList.toggle("on", cmp.includes(id)));
+    document.querySelectorAll(`[data-cmp="${id}"]`).forEach((b) => {
+      const active = cmp.includes(id);
+      b.classList.toggle("on", active);
+      if (b.hasAttribute("aria-pressed")) b.setAttribute("aria-pressed", String(active));
+    });
     renderCmpBar();
     if (cmp.length === 1 && cmp.includes(id)) toast("Добавлено к сравнению — выберите ещё 1–2 объекта", 2600);
   }
@@ -1231,9 +1235,13 @@
   }
   const MATCH = { new: "первое сообщение", repost: "репост", "same-object": "тот же объект" };
 
-  // Раскрывающаяся строка окна объекта: иконка, название, короткая подсказка справа
+  const detailIcon = (name) => `<span class="dv-acc-ic">${ic(name)}</span>`;
+  const detailSectionLabel = (icon, title, hint) => `${detailIcon(icon)}<span class="dv-acc-label">
+      <span class="dv-acc-t">${title}</span>${hint ? `<span class="dv-acc-h">${hint}</span>` : ""}</span>`;
+
+  // Раскрывающаяся строка окна объекта
   const acc = (icon, title, hint, body, opts = {}) => body ? `<details class="dv-acc${opts.cls ? " " + opts.cls : ""}"${opts.open ? " open" : ""}>
-      <summary><span class="dv-acc-ic">${icon}</span><span class="dv-acc-t">${title}</span>${hint ? `<span class="dv-acc-h">${hint}</span>` : ""}</summary>
+      <summary>${detailSectionLabel(icon, title, hint)}<span class="dv-acc-arrow" aria-hidden="true">${ic("chevron")}</span></summary>
       <div class="dv-acc-b">${body}</div></details>` : "";
 
   // Журнал работы по объекту: заметка / звонок / показ — для клиента или подборки (видно и у клиента, и в подборке)
@@ -1244,8 +1252,9 @@
     const opts = [`<option value="">Без привязки</option>`]
       .concat(ctx.clients.map((c) => `<option value="c:${c.id}">Клиент · ${esc(c.name)}${c.has ? " ✓" : ""}</option>`))
       .concat(ctx.picks.map((p) => `<option value="p:${p.id}">Подборка · ${esc(p.title)}${p.has ? " ✓" : ""}</option>`)).join("");
-    return `<button type="button" class="wk-open" data-wk-open="${o.id}">${ic("plus")}Новая запись <small>звонок, показ, заметка — для клиента или подборки</small></button>
-      <form class="wk-add" data-wk-add="${o.id}" autocomplete="off" hidden>
+    return `<div class="dv-wk-head"><h3>Журнал</h3>
+      <button type="button" class="wk-open" data-wk-open="${o.id}" aria-label="Новая запись" aria-controls="dv-wk-${o.id}">${ic("plus")}Запись</button></div>
+      <form class="wk-add" id="dv-wk-${o.id}" data-wk-add="${o.id}" autocomplete="off" hidden>
         <div class="wk-kinds" role="radiogroup" aria-label="Что было">${Object.entries(WK).map(([k, [icon, t]], i) =>
           `<button type="button" role="radio" aria-checked="${i ? "false" : "true"}" class="${i ? "" : "on"}" data-wk-kind="${k}">${ic(icon)}${t}</button>`).join("")}</div>
         <textarea name="text" rows="2" maxlength="2000" placeholder="Что было: созвонились, показали, торг, ответ клиента…"></textarea>
@@ -1260,6 +1269,40 @@
           ${w.pick_title ? `<a class="wk-tag" href="/picks?open=${w.collection_id}" target="_top">${ic("folder")}${esc(w.pick_title)}</a>` : ""}</p>
           ${w.text ? `<p class="wk-t">${esc(w.text)}</p>` : ""}</div>
         <button type="button" class="wk-del" data-wk-del="${w.id}" data-id="${o.id}" aria-label="Удалить запись">${ic("x")}</button></li>`).join("")}</ul>`;
+  }
+
+  function detailClientsHTML(o, fit, pairs) {
+    const suggestions = fit.map((c) => {
+      const initials = c.name.trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join("").toLocaleUpperCase("ru-RU");
+      return `<div class="pr-it fit">
+        <p class="dv-fit-caption">По пожеланиям клиента</p>
+        <a class="dv-fit-person" href="/clients?id=${c.id}" target="_top">
+          <span class="dv-fit-avatar" aria-hidden="true">${initials ? esc(initials) : ic("user")}</span>
+          <span><b>${esc(c.name)}</b><small data-fit-state>Ещё не отправлено</small></span></a>
+        <small class="pr-st">${esc(c.stage_label)}</small>
+        <button type="button" class="pill light pr-add" data-fit-add="${c.id}" data-fit-for="${o.id}">${ic("plus")}В подборку</button>
+      </div>`;
+    }).join("");
+    const sent = pairs.map((p) => `<div class="pr-it"><a href="/clients?id=${p.id}" target="_top">${ic("user")}${esc(p.name)}</a>
+      ${p.reaction ? `<span class="pr-re">ответ: ${esc({ like: "нравится", no: "не подходит", want_show: "хочет посмотреть", question: "вопрос" }[p.reaction] || "")}</span>` : ""}
+      <select data-pair-set="${p.id}:${o.id}" aria-label="Статус для ${esc(p.name)}">${Object.entries(PAIR_L).map(([k, v]) =>
+        `<option value="${k}"${p.status === k ? " selected" : ""}>${v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></div>`).join("");
+    return `<div class="dv-clients-layout">
+      <div class="dv-client-stack">
+        ${suggestions ? `<div class="pr-list dv-fit-list">${suggestions}</div>` : ""}
+        ${sent ? `<h3>У клиентов</h3><div class="pr-list">${sent}</div>` : ""}
+        ${sent || suggestions ? "" : '<p class="wk-empty">Объект ещё не отправлен ни одному клиенту.</p>'}
+        <button type="button" class="wk-open dv-send" data-client-open="${o.id}">${ic("share")}Отправить клиенту</button>
+      </div>
+      <div class="dv-client-work">
+        <div class="wk" data-wk="${o.id}">${journalHTML(o)}</div>
+        <div class="dv-client-note">
+          <label for="dv-note-${o.id}">Личная заметка <small>Только вы</small></label>
+          <textarea id="dv-note-${o.id}" class="d-note-text wk-note" data-note="${o.id}" rows="2" maxlength="2000" placeholder="Например, торг 100 тыс. ₽, собственник один">${esc(o.note || "")}</textarea>
+          <span class="note d-note-saved" role="status" hidden>Сохранено</span>
+        </div>
+      </div>
+    </div>`;
   }
 
   function detailHTML(o) {
@@ -1284,12 +1327,14 @@
     const admin = u && u.is_admin;
     const st = o.status || myStatus(o.id);
     const inCmp = cmp.includes(o.id);
-    const actions = [   // 17.10 (Артём): «Клиенту» — первой и главной, «Сравнить» — на её прежнем месте
-      toolsAccess ? `<a class="dv-act" href="/planner?add=show&listing=${o.id}"><i>${ic("calendar")}</i><span>Показ</span></a>` : "",
-      `<button type="button" class="dv-act${inCmp ? " on" : ""}" data-cmp="${o.id}"><i>${ic("scale")}</i><span data-s="${inCmp ? "В сравн." : "Сравнить"}">${inCmp ? "В сравнении" : "Сравнить"}</span></button>`,
-      `<button type="button" class="dv-act" data-share="${o.id}"><i>${ic("share")}</i><span data-s="Ссылка">Поделиться</span></button>`,
-      !u || toolsAccess ? `<button type="button" class="dv-act" data-watch-open="${o.id}"><i>${ic("bell")}</i><span>Следить</span></button>` : "",
-      u ? `<button type="button" class="dv-act" data-hide-open="${o.id}"><i>${ic("eye")}</i><span>Скрыть</span></button>` : "",
+    const actions = [
+      toolsAccess ? `<a class="dv-act dv-show" href="/planner?add=show&listing=${o.id}" aria-label="Запланировать показ">
+        ${detailIcon("calendar")}<span class="dv-show-arrow" aria-hidden="true">↗</span>
+        <span class="dv-show-copy"><b>Показ</b><small>В планер</small></span></a>` : "",
+      `<button type="button" class="dv-act${inCmp ? " on" : ""}" data-cmp="${o.id}" aria-pressed="${inCmp}">${detailIcon("scale")}<span>Сравнить</span></button>`,
+      `<button type="button" class="dv-act" data-share="${o.id}" aria-label="Поделиться">${detailIcon("share")}<span class="dv-share-label">Поделиться</span><span class="dv-share-short" aria-hidden="true">Ссылка</span></button>`,
+      !u || toolsAccess ? `<button type="button" class="dv-act" data-watch-open="${o.id}">${detailIcon("bell")}<span>Следить</span></button>` : "",
+      u ? `<button type="button" class="dv-act" data-hide-open="${o.id}">${detailIcon("eye")}<span>Скрыть</span></button>` : "",
     ].join("");
 
     // раскрывающиеся строки
@@ -1299,26 +1344,13 @@
       + (m ? `<p class="dv-line"><b>${marketLabel(m.diff)}</b>
           <small>медиана цены м² — ${esc(num(m.median))} ₽ · ${esc(m.base)}, ${m.n} ${plural(m.n, "объект", "объекта", "объектов")}</small></p>` : "")
       + chart;
-    const priceHint = [days != null ? `${days < 1 ? "новое" : days + " дн."}` : "", chart ? "график" : ""].filter(Boolean).join(" · ");
+    const priceHint = m ? `<span${m.diff <= -3 ? ' class="dv-acc-market"' : ""}>${marketLabel(m.diff)}</span>`
+      : [days != null ? `${days < 1 ? "новое" : days + " дн."}` : "", chart ? "график" : ""].filter(Boolean).join(" · ");
     const pairs = o.pairs || [];
-    // 17.10: «Подходит вашим клиентам» — теперь внутри «Клиенты и заметки» (один блок вместо двух с клиентами)
-    const fit = o.fit_clients || [];   // ваши клиенты, которым объект подходит по пожеланиям и ещё не предложен
-    const fitInline = fit.length ? `<p class="wk-sh wk-sh2">${ic("sparkle")}Подходит по пожеланиям — ещё не отправлен</p>
-      <div class="pr-list">${fit.map((c) => `<div class="pr-it fit"><a href="/clients?id=${c.id}" target="_top">${ic("user")}${esc(c.name)}</a>
-        <small class="pr-st">${esc(c.stage_label)}</small>
-        <button type="button" class="pill light pr-add" data-fit-add="${c.id}" data-fit-for="${o.id}">${ic("plus")}В подборку</button></div>`).join("")}</div>` : "";
-    const notesBody = toolsAccess && !o.loading ? `<div class="wk-sec"><p class="wk-sh">Клиенты по объекту</p>
-      ${pairs.length ? `<div class="pr-list">${pairs.map((p) => `<div class="pr-it"><a href="/clients?id=${p.id}" target="_top">${ic("user")}${esc(p.name)}</a>
-        ${p.reaction ? `<span class="pr-re">ответ: ${esc({ like: "нравится", no: "не подходит", want_show: "хочет посмотреть", question: "вопрос" }[p.reaction] || "")}</span>` : ""}
-        <select data-pair-set="${p.id}:${o.id}" aria-label="Статус для ${esc(p.name)}">${Object.entries(PAIR_L).map(([k, v]) =>
-          `<option value="${k}"${p.status === k ? " selected" : ""}>${v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></div>`).join("")}</div>`
-        : `<p class="wk-empty">Объект ещё не отправлен ни одному клиенту.</p>`}
-      ${fitInline}
-      <button type="button" class="wk-open" data-client-open="${o.id}">${ic("users")}Отправить клиенту <small>в его подборку</small></button></div>
-      <div class="wk-sec"><p class="wk-sh">Журнал — что, кому и когда</p><div class="wk" data-wk="${o.id}">${journalHTML(o)}</div></div>
-      <div class="wk-sec"><p class="wk-sh">Личная заметка <small>видите только вы</small></p>
-      <textarea class="d-note-text wk-note" data-note="${o.id}" rows="2" maxlength="2000" placeholder="Например: торг 100 т.р., собственник один">${esc(o.note || "")}</textarea>
-      <span class="note d-note-saved" hidden>Сохранено</span></div>` : "";
+    const fit = o.fit_clients || [];
+    const clientHint = fit.length ? `<span class="dv-fit-count" data-fit-count>Подходит ${fit.length}</span>`
+      : pairs.length ? `У клиентов: ${pairs.length}` : "Журнал и заметки";
+    const notesBody = toolsAccess && !o.loading ? detailClientsHTML(o, fit, pairs) : "";
     const when = (ts) => new Date(ts * 1000).toLocaleString("ru-RU", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
     const plans = (o.plans || []);
     const plansBody = plans.length ? `<ul class="dv-list">${plans.map((p) => `<li><a href="/planner?event=${p.id}">${PLAN_KINDS[p.kind] || ""} · ${esc(when(p.ts))}</a>${p.done ? " ✓" : ""}
@@ -1427,20 +1459,19 @@
             allow="fullscreen; picture-in-picture; encrypted-media" allowfullscreen></iframe>` : ""}
         </section>` : ""}
         ${contactHTML(o)}
-        ${gone ? "" : `<div class="dv-acts">${actions}</div>`}
+        ${gone ? "" : `<div class="dv-acts${toolsAccess ? " with-show" : ""}" role="group" aria-label="Действия с объектом">${actions}</div>`}
         ${o.lat && o.lon && !o.loading && ["street", "district"].includes(o.geo_level)
           ? `<p class="dv-vague">Адрес уточняется — в объявлении ${o.geo_hint ? `только ${o.geo_hint}` : o.geo_level === "street" ? "указана только улица" : "указан только район"}, поэтому на карте объекта нет.</p>` : ""}
         ${o.district_note && !o.loading ? `<p class="dv-vague">Район «${esc(o.district)}» определён примерно — ${esc(o.district_note)}. Уточните у агента.</p>` : ""}
         ${o.lat && o.lon && !o.loading && !["street", "district"].includes(o.geo_level) ? `<div class="dv-map-wrap"><div class="dv-map" id="dvMap" aria-label="Объект на карте"></div>
           ${o.geo_approx ? `<p class="note dv-map-note">Место примерное — в объявлении нет точного адреса</p>` : ""}</div>` : ""}
         <div class="dv-accs">
-          ${acc("📈", "Цена и рынок", priceHint, priceBody)}
-          ${toolsAccess ? acc(ic("users"), "Клиенты", [pairs.length ? `у клиентов: ${pairs.length}` : "", fit.length ? `подходит ${fit.length}` : "",
-            (o.work || []).length ? `записей: ${o.work.length}` : o.note ? "есть заметка" : ""].filter(Boolean).join(" · ") || "заметки и журнал", notesBody, { cls: fit.length ? "good" : "" }) : ""}
-          ${acc("📅", "В планере", plans.length ? `${plans.length}` : "", plansBody)}
-          ${acc("🕓", "История", hist ? `${o.history_total || H.length} ${plural(o.history_total || H.length, "сообщение", "сообщения", "сообщений")}` : "", histBody)}
-          ${o.can_edit ? `<a class="dv-acc-btn" href="/my/edit?id=${o.id}" target="_top"><span class="dv-acc-ic">✎</span>Изменить моё объявление</a>` : ""}
-          ${acc("⚙", "Админ", cmNew.length ? `<b class="adm-warn">${cmNew.length} ${plural(cmNew.length, "жалоба", "жалобы", "жалоб")}</b> · правка, точка, история`
+          ${acc("trend", "Цена и рынок", priceHint, priceBody)}
+          ${acc("users", "Клиенты", clientHint, notesBody, { cls: "dv-clients" })}
+          ${acc("calendar", "В планере", plans.length ? `${plans.length}` : "", plansBody)}
+          ${acc("history", "История", hist ? `${o.history_total || H.length} ${plural(o.history_total || H.length, "сообщение", "сообщения", "сообщений")}` : "", histBody)}
+          ${o.can_edit ? `<a class="dv-acc-btn" href="/my/edit?id=${o.id}" target="_top">${detailSectionLabel("edit", "Изменить моё объявление", "")}</a>` : ""}
+          ${acc("sliders", "Админ", cmNew.length ? `<b class="adm-warn">${cmNew.length} ${plural(cmNew.length, "жалоба", "жалобы", "жалоб")}</b> · правка, точка, история`
             : "правка, точка, фото, история", adminBody, { cls: "admin" + (cmNew.length ? " has-cm" : "") })}
           ${reportHTML(o)}
         </div>
@@ -2104,11 +2135,10 @@
     const R = [["sold", "Продан или неактуален", "объекта уже нет"], ["address", "Неверный адрес или район", "не тот район, ЖК, улица или точка на карте"], ["wrong", "Неверные данные", "цена, этаж, площадь, комнаты"],
       ["my_phone", "Это мой номер", "уберите его или дайте управлять"], ...((o.photos || []).length ? [["photo", "Чужие фото", "не от этого объекта, с номером, реклама"]] : []),
       ["other", "Другое", "опишите ниже"]];
-    if (!me()) return `<details class="dv-acc d-report"><summary><span class="dv-acc-ic">⚠</span><span class="dv-acc-t">Ошибка в объявлении?</span><span class="dv-acc-h">сообщить администратору</span></summary>
-      <div class="report-form">${about}<p class="note">Сообщить могут те, кто вошёл, — так мы сможем уточнить детали.</p>
-        <button type="button" class="pill" data-login>Войти и сообщить</button></div></details>`;
-    return `<details class="dv-acc d-report"><summary><span class="dv-acc-ic">⚠</span><span class="dv-acc-t">Ошибка в объявлении?</span><span class="dv-acc-h">сообщить администратору</span></summary>
-      <form class="report-form" data-report="${o.id}">
+    const form = !me() ? `<div class="report-form">${about}
+      <p class="note">Сообщить могут те, кто вошёл, — так мы сможем уточнить детали.</p>
+      <button type="button" class="pill" data-login>Войти и сообщить</button></div>`
+      : `<form class="report-form" data-report="${o.id}">
         ${about}
         <p class="rp-h">Что не так?</p>
         <div class="rp-reasons" role="radiogroup">${R.map(([v, t, s], i) => `<label class="rp-r"><input type="radio" name="reason" value="${v}"${i ? "" : " checked"}>
@@ -2119,7 +2149,8 @@
         <p class="note" data-optout-hint hidden>Мы проверим и уберём номер. Хотите сами управлять своими объявлениями (цена, фото, «продано»)?
           Подтвердите номер в разделе <a href="/my" target="_top">«Мои объекты»</a>.</p>
         <div class="rp-go"><button type="submit" class="pill">Отправить администратору</button><small>Увидит только администратор 1+1</small></div>
-      </form></details>`;
+      </form>`;
+    return acc("alert", "Ошибка в объявлении?", "Сообщить администратору", form, { cls: "d-report" });
   }
 
   function openDlg(d) {
@@ -2847,13 +2878,18 @@
       if (t.dataset.clientOpen) { openClientMenu(Number(t.dataset.clientOpen)); return; }
       if (t.dataset.clientAdd) { cmAdd(Number(t.dataset.clientAdd)); return; }
       if (t.dataset.fitAdd) {   // «Подходит вашим клиентам» → объект в подборку клиента
+        t.disabled = true;
         call(`/api/clients/${t.dataset.fitAdd}/add`, { listing_id: Number(t.dataset.fitFor) }).then((r) => {
-          if (!r.ok) { toast(r.data.detail || "Не получилось", 3500); return; }
+          if (!r.ok) { t.disabled = false; toast(r.data.detail || "Не получилось", 3500); return; }
           const row = t.closest(".pr-it");
-          if (row) row.classList.add("sent", "just");
+          const section = t.closest(".dv-clients");
+          row.classList.add("sent", "just");
+          row.querySelector("[data-fit-state]").textContent = "Объект в подборке";
           const b = document.createElement("span");
           b.className = "sent-badge"; b.innerHTML = `${ic("check")}В подборке`;
           t.replaceWith(b);
+          const remaining = section.querySelectorAll("[data-fit-add]").length;
+          section.querySelector("[data-fit-count]").textContent = remaining ? `Подходит ${remaining}` : "В подборке";
           toast("Объект в подборке клиента", 2200);
         });
         return;
@@ -3025,7 +3061,7 @@
     document.addEventListener("click", async (e) => {
       const op = e.target.closest("[data-wk-open]");
       if (op) {
-        const f = op.parentElement.querySelector("[data-wk-add]");
+        const f = op.closest("[data-wk]").querySelector("[data-wk-add]");
         f.hidden = false; op.hidden = true;
         if (window.Pick) { const sel = f.querySelector("select[name=to]"); if (sel) Pick.select(sel, { searchPlaceholder: "Клиент или подборка" }); }
         f.text.focus();
@@ -3034,7 +3070,8 @@
       const cn = e.target.closest("[data-wk-cancel]");
       if (cn) {
         const f = cn.closest("[data-wk-add]");
-        f.hidden = true; f.reset(); f.parentElement.querySelector("[data-wk-open]").hidden = false;
+        const opener = f.closest("[data-wk]").querySelector("[data-wk-open]");
+        f.hidden = true; f.reset(); opener.hidden = false; opener.focus();
         return;
       }
       const k = e.target.closest("[data-wk-kind]");
