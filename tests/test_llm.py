@@ -90,3 +90,33 @@ class DeepSeekTests(unittest.TestCase):
         rows = [tuple(row) for row in conn.execute("SELECT ts, status, error FROM messages ORDER BY id")]
         self.assertEqual(rows, [(cases[0][1], "new", None), (cases[1][1], "error", missing_import),
                                 (cases[2][1], "error", "unrelated error")])
+
+    def test_import_applies_model_disagreements_without_filing_for_manual_review(self):
+        conn = db.connect(":memory:")
+        self.addCleanup(conn.close)
+        text = ("Продам 1-к квартиру в Краснодаре\nЖК Губернский, ул. Домбайская 59\n"
+                "54 м², этаж 7/16\nЦена 6,8 млн рублей")
+        mid = ingest.add_message(conn, source="wa", text=text, ts=int(time.time()), msg_id="model-dispute")
+        response = {"kind": "listing", "objects": [{"lines": [1, 4], "type": "flat", "rooms": 2,
+                                                    "area_m2": 54, "floor": 8, "floors": 18, "price_rub": 6500000}]}
+        with patch.object(llm, "parse_message", return_value=response):
+            result = ingest.process_message(conn, mid, use_llm=True)
+        self.assertEqual(result["status"], "done")
+        cur = conn.execute("SELECT rooms,floor,floors,price,parse_dispute FROM listings").fetchone()
+        self.assertEqual(tuple(cur), (2, 8, 18, 6500000, None))
+
+    def test_saved_model_disputes_update_existing_card_and_preserve_newer_and_manual_values(self):
+        conn = db.connect(":memory:")
+        self.addCleanup(conn.close)
+        sample = {"rooms": {"rules": 1, "ai": 2}, "floor": {"rules": 7, "ai": 9},
+                  "price": {"rules": 6800000, "ai": 6500000}}
+        for floor, fixed in ((7, 0), (6, 1)):
+            conn.execute("""INSERT INTO listings (type,deal,title,rooms,floor,floors,area,price,price_fixed,
+                parse_dispute,first_seen,last_seen) VALUES ('flat','sale','Квартира',1,?,16,54,6800000,?,?,1,2)""",
+                (floor, fixed, json.dumps(sample)))
+        conn.commit()
+        self.assertEqual(ingest.resolve_parse_disputes(conn), {"checked": 2, "updated": 2})
+        cur = conn.execute("SELECT rooms,floor,price,parse_dispute FROM listings ORDER BY id").fetchall()
+        self.assertEqual([tuple(r) for r in cur], [(2, 9, 6500000, None), (2, 6, 6800000, None)])
+        self.assertEqual(ingest.resolve_parse_disputes(conn), {})
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM listing_edits WHERE src='нейросеть'").fetchone()[0], 6)

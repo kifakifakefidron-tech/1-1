@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
 from dataclasses import asdict, dataclass, field
 
@@ -47,8 +48,9 @@ def _num(v) -> float | None:
     try:
         if v is None or v == "":
             return None
-        return float(str(v).replace(",", ".").replace(" ", ""))
-    except ValueError:
+        n = float(str(v).replace(",", ".").replace(" ", ""))
+        return n if math.isfinite(n) else None
+    except (TypeError, ValueError):
         return None
 
 
@@ -236,8 +238,7 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
     if otype in ("flat", "new", "room"):
         land = None
 
-    # Цена: явно подписанная цена из текста куска надёжнее ответа нейросети
-    # (нейросеть иногда берёт обременение или «сумму в ДКП»)
+    # Базовая цена для случая, когда ответ модели отсутствует.
     strict_price = rules.extract_price(fragment, deal, strict=True)
     price = strict_price or _int(obj.get("price_rub"))
     if price is not None and deal == "sale" and price < 300_000:
@@ -253,7 +254,7 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
     if (price is None or price < 1000) and not rent_words:
         price = r.price
 
-    # Комнаты: тип планировки (студия/мини/евро/обычная) по тексту надёжнее нейросети
+    # Тип планировки читаем из текста, число комнат при расхождении уточняет модель.
     rk = rules.extract_room_kind(fragment)
     room_kind = rk[0] if rk else None
     rooms = obj.get("rooms")
@@ -317,18 +318,52 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
     description = strip_phones(_clean_description(fragment))
     disputes = _disputes(obj, r, rk, strict_price, deal, fragment, text_words) if obj else {}
 
-    return ParsedObject(
+    result = ParsedObject(
         type=otype, deal=deal, rooms=rooms, area=area, land=land, floor=floor, floors=floors,
         price=price, district=district, complex=complex_rec.name if complex_rec else None,
-        settlement=settlement, street=street, house=(house or "").strip() or None,
+        settlement=settlement, street=street, house=str(house or "").strip() or None,
         description=description, fragment=fragment.strip(), phones=phones, phone_roles=roles,
         room_kind=room_kind, article=rules.extract_article(fragment), disputes=disputes,
     )
+    for name, value in model_dispute_fields(vars(result), disputes).items():
+        setattr(result, name, value)
+    return result
+
+
+def model_dispute_fields(current, disputes: dict) -> dict:
+    """Допустимые значения DeepSeek из спорных полей для новых и сохранённых объявлений."""
+    patch = {}
+    limits = {
+        "rooms": (0, 9), "area": (0.1, 20000), "floor": (1, 99), "floors": (1, 99),
+        "price": (300_000 if current["deal"] == "sale" else 1000, 3_000_000_000),
+    }
+    for field, evidence in disputes.items():
+        if not isinstance(evidence, dict):
+            continue
+        value = evidence.get("ai")
+        if field in limits:
+            number = _num(value) if field == "area" else _int(value)
+            low, high = limits[field]
+            if number is not None and low <= number <= high:
+                patch[field] = number
+        elif field in ("street", "house", "complex", "district") and isinstance(value, str) and value.strip():
+            patch[field] = value.strip()
+    if current["type"] in ("commercial", "land"):
+        patch.pop("rooms", None)
+    floor, floors = (patch.get(field, current[field]) for field in ("floor", "floors"))
+    if floor is not None and floors is not None and floor > floors:
+        patch.pop("floor", None)
+        patch.pop("floors", None)
+    if "rooms" in patch:
+        if patch["rooms"] == 0:
+            patch["room_kind"] = "studio"
+        elif current["room_kind"] in (None, "studio"):
+            patch["room_kind"] = "classic"
+    return patch
 
 
 def _disputes(obj: dict, r, rk, strict_price, deal: str, fragment: str, text_words: str) -> dict:
-    """16.11 (Артём: «сверка правил и нейросети»): где правила и нейросеть прочитали текст по-разному.
-    Сравниваем только когда ОБА что-то нашли — пустое у одного не спор. Решает админ на /fix?kind=dispute."""
+    """Отмечает поля, которые правила и модель прочитали по-разному."""
     out = {}
 
     def put(f, a, b):
@@ -346,7 +381,7 @@ def _disputes(obj: dict, r, rk, strict_price, deal: str, fragment: str, text_wor
             put(f, a, b)
     ai_price = _int(obj.get("price_rub"))
     if strict_price and ai_price and ai_price >= (300_000 if deal == "sale" else 1000) \
-            and abs(ai_price - strict_price) / strict_price > 0.05:
+            and ai_price != strict_price:
         put("price", strict_price, ai_price)
     ai_street = obj.get("street") if _in_text(obj.get("street"), text_words) and not is_field_label(obj.get("street")) else None
     if ai_street and r.street and words(ai_street).replace("улица ", "") not in words(r.street) \

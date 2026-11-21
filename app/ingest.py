@@ -422,6 +422,11 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
                   "street", "house", "article"):
             if merged.get(k) in (None, "") and d.get(k) not in (None, ""):
                 merged[k] = d[k]
+        model_fields = {}
+        if cur_d["source"] == "chat" and not cur_d["admin_fixed"] and ts >= cur_d["last_seen"] \
+                and ts > (cur_d["owner_edited_at"] or 0):
+            model_fields = parser.model_dispute_fields(d, d["disputes"])
+            merged.update({k: d[k] for k in model_fields if k != "price"})
         for k, v in json.loads(cur_d.get("admin_fields") or "{}").items():   # поправленное админом — главнее повтора
             if k in merged and k != "repair":
                 merged[k] = v
@@ -437,9 +442,12 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
                  or (d.get("rooms") is not None and cur_d.get("rooms") is not None and d["rooms"] != cur_d["rooms"]))
         jump = bool(d["price"] and cur_d["price"] and not cur_d.get("price_doubt")
                     and abs(d["price"] - cur_d["price"]) / cur_d["price"] > MERGE_MAX_JUMP)
+        same_text_model_price = ("price" in model_fields and model_fields["price"] == d["price"]
+                                 and not cur_d["price_fixed"] and fh == dedupe.fragment_hash(cur_d["fragment"] or ""))
         if not stale_revision and (exact_revision or ts >= cur_d["last_seen"]) and d["price"] \
                 and ts > (cur_d.get("owner_edited_at") or 0) \
-                and not other and not jump and not (d.get("price_doubt") and not cur_d.get("price_doubt")):
+                and (same_text_model_price or (not other and not jump)) \
+                and not (d.get("price_doubt") and not cur_d.get("price_doubt")):
             confirmed_price = d["price"] == cur_d["price"] and not d.get("price_doubt")
             if not cur_d.get("price_fixed") or d["price"] not in (cur_d.get("price_wrong"), cur_d["price"]):
                 new_price = d["price"] != cur_d["price"]
@@ -488,10 +496,6 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         )
         d["search_text"] = merged["search_text"]
     _reindex(conn, lid, d["search_text"])
-    if d.get("disputes"):   # 16.11: правила и нейросеть разобрали по-разному — в очередь «спорят» (пока админ не решил)
-        conn.execute("""UPDATE listings SET parse_dispute = ? WHERE id = ? AND parse_dispute IS NULL
-                        AND COALESCE(admin_fixed, 0) = 0 AND source = 'chat'""",
-                     (json.dumps(d["disputes"], ensure_ascii=False), lid))
     # «Под задатком», «забронирована» — с продажи снят сразу; новый пост без задатка возвращает объект
     from .rules import under_deposit, is_sold
     from .region import mark_foreign
@@ -512,6 +516,71 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         (lid, message_id, ts, d["price"], json.dumps(d["phones"]), fh, why),
     )
     return lid, why
+
+
+def resolve_parse_disputes(conn: sqlite3.Connection, limit: int = 100) -> dict:
+    """Разбирает сохранённые расхождения по ответам DeepSeek, уже записанным при импорте."""
+    from .pricefix import plausible
+
+    rows = conn.execute("""SELECT * FROM listings WHERE is_active=1 AND source='chat'
+        AND admin_fixed=0 AND parse_dispute IS NOT NULL ORDER BY id DESC LIMIT ?""", (limit,)).fetchall()
+    if not rows:
+        return {}
+    changed = 0
+    now = int(time.time())
+    with conn:
+        for row in rows:
+            try:
+                evidence = json.loads(row["parse_dispute"])
+            except (TypeError, ValueError):
+                evidence = {}
+            current = dict(row)
+            proposed = parser.model_dispute_fields(current, evidence) if isinstance(evidence, dict) else {}
+            # При сохранении спора фиксировались оба значения. Более новая правка важнее старого спора.
+            fields = {k: v for k, v in proposed.items() if k in evidence and isinstance(evidence[k], dict)
+                      and current[k] == evidence[k].get("rules") and v != current[k]}
+            if row["owner_edited_at"]:
+                fields.clear()
+            if "price" in fields and (row["price_fixed"] or not plausible(fields["price"], row["deal"], row["type"],
+                                                                          fields.get("area", row["area"]))):
+                fields.pop("price")
+            if "rooms" in fields and "room_kind" in proposed:
+                fields["room_kind"] = proposed["room_kind"]
+            floor, floors = (fields.get(k, row[k]) for k in ("floor", "floors"))
+            if floor is not None and floors is not None and floor > floors:
+                fields.pop("floor", None)
+                fields.pop("floors", None)
+            sets = {"parse_dispute": None}
+            if fields:
+                current.update(fields)
+                sets.update(fields, price_m2=_price_m2(current["price"], current["area"]),
+                            rooms_mask=rooms_mask(current["room_kind"], current["rooms"]),
+                            title=make_title(current))
+                current["title"] = sets["title"]
+                sets["search_text"] = make_search_text(current)
+                if "price" in fields:
+                    sets["price_doubt"] = None
+                if "district" in fields:
+                    sets["district_src"] = "ai"
+                if fields.keys() & {"street", "house", "complex"} and row["geo_status"] not in ("manual", "feed", "learned"):
+                    sets["geo_status"] = "pending"
+            saved = conn.execute(f"""UPDATE listings SET {', '.join(f'{k}=?' for k in sets)} WHERE id=?
+                AND is_active=1 AND admin_fixed=0 AND parse_dispute=?
+                AND owner_edited_at IS ? AND price_fixed=? AND fragment IS ? AND price IS ? AND last_seen=?""",
+                (*sets.values(), row["id"], row["parse_dispute"], row["owner_edited_at"], row["price_fixed"],
+                 row["fragment"], row["price"], row["last_seen"])).rowcount
+            if not saved or not fields:
+                continue
+            changed += 1
+            _reindex(conn, row["id"], sets["search_text"])
+            conn.executemany("""INSERT INTO listing_edits(listing_id,user_id,ts,field,old,new,src)
+                VALUES (?,0,?,?,?,?, 'нейросеть')""",
+                ((row["id"], now, k, json.dumps(row[k], ensure_ascii=False), json.dumps(v, ensure_ascii=False))
+                 for k, v in fields.items()))
+        if changed:
+            conn.execute("""INSERT INTO state(key,value) VALUES ('cache_ver',?)
+                            ON CONFLICT(key) DO UPDATE SET value=excluded.value""", (str(time.time()),))
+    return {"checked": len(rows), "updated": changed}
 
 
 def fix_settlement_districts(conn: sqlite3.Connection) -> int:

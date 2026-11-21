@@ -1,6 +1,6 @@
 import json
 
-from app import accounts, dedupe, dupreview, offers, search
+from app import accounts, config, dedupe, dupreview, llm, offers, search
 
 
 def listing(conn, phone="+79000000001"):
@@ -215,3 +215,46 @@ def test_auto_price_respects_existing_decisions_and_manual_corrections(conn):
     assert [r[0] for r in conn.execute("SELECT status FROM dup_pairs WHERE user_id=1 ORDER BY id")] == [
         "diff", "market", "split", "open",
     ]
+
+
+def test_model_suggestion_is_cached_and_compared_with_the_admin_verdict(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    a, b = listing(conn, "+79000000001"), listing(conn, "+79000000002")
+    conn.execute("UPDATE listings SET fragment=? WHERE id=?",
+                 ("ЖК Губернский. Двухкомнатная, 54 кв. м. Тел. +7 900 000-00-01", a))
+    pid = pair(conn, a, b)
+    prompts = []
+
+    def model(system, content, max_tokens):
+        prompts.append(content)
+        assert dupreview.ask_ai(conn, pid) == {"ok": True, "pending": True}
+        assert "+7 900 000-00-01" not in content and "+79000000002" not in content
+        return {"verdict": "market", "confidence": 0.93, "why": "Площадь, этаж и дом совпадают, контакты разные."}
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    result = dupreview.ask_ai(conn, pid)
+    assert result["ok"] and result["ai"]["verdict"] == "market"
+    assert dupreview.ask_ai(conn, pid) == result and len(prompts) == 1
+    assert conn.execute("SELECT status FROM dup_pairs WHERE id=?", (pid,)).fetchone()[0] == "open"
+    assert dupreview.pairs(conn, "open")["pairs"][0]["ai"]["confidence"] == 0.93
+    conn.execute("UPDATE listings SET floor=17 WHERE id=?", (b,))
+    assert dupreview.pairs(conn, "open")["pairs"][0]["ai"] is None
+    assert dupreview.ask_ai(conn, pid)["ok"] and len(prompts) == 2
+    assert dupreview.decide(conn, pid, "market", user_id=1)["ok"]
+    result = dupreview.pairs(conn, "done")
+    assert result["pairs"][0]["ai"]["verdict"] == "market"
+    assert result["ai_review"] == {"compared": 1, "agreed": 1}
+
+
+def test_model_timeout_does_not_resolve_pair_and_can_be_retried(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    pid = pair(conn, listing(conn), listing(conn))
+
+    def failure(*args, **kwargs):
+        raise llm.LLMError("timeout")
+
+    monkeypatch.setattr(llm, "ask_json", failure)
+    assert "error" in dupreview.ask_ai(conn, pid)
+    assert tuple(conn.execute("SELECT status,ai FROM dup_pairs WHERE id=?", (pid,)).fetchone()) == ("open", None)
+    monkeypatch.setattr(llm, "ask_json", lambda *a, **kw: {"verdict": "unsure", "why": "Не указан корпус"})
+    assert dupreview.ask_ai(conn, pid)["ai"]["verdict"] == "unsure"

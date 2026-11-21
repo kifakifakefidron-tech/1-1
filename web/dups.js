@@ -14,8 +14,14 @@
 
   let tab = "open", data = null, pairs = [], busy = false, loading = false;
   const skipped = new Set();
+  let aiInFlight = false;
+  const aiErrors = new Map();
   const KEYS = { "1": "repeat", "2": "diff", "3": "market", ArrowRight: "skip" };
   const comparing = () => tab === "open" || tab === "price";
+  const AI_LABELS = {
+    repeat: "1 · Один объект", diff: "2 · Разные объекты",
+    market: "3 · Один объект, разные агенты", unsure: "Недостаточно данных",
+  };
 
   async function call(url, body) {
     const opts = { credentials: "same-origin", method: body ? "POST" : "GET" };
@@ -112,10 +118,6 @@
   function pairHTML(p, selected) {
     const [ma, mb] = diffMarks(p.a.text || "", p.b.text || "");
     const R = rows(p.a, p.b);
-    const ai = p.ai ? `<div class="dp-ai ${p.ai.same === true ? "same" : p.ai.same === false ? "diff" : ""}">${ic("sparkle")}
-        <span><b>Нейросеть: ${p.ai.same === true ? "похоже, один объект" : p.ai.same === false ? "похоже, разные" : "не уверена"}</b>
-        ${p.ai.confidence != null ? ` · уверенность ${Math.round(p.ai.confidence * 100)} %` : ""}<small>${esc(p.ai.why)}</small></span></div>`
-      : data.ai_enabled ? `<button type="button" class="pill light dp-askai" data-ai="${p.id}">${ic("sparkle")} Спросить нейросеть</button>` : "";
     return `<section class="dp-pair" data-anchor="${p.a.id}" data-pid="${p.id}">
       <header class="dp-head">
         <span class="mark">${esc(p.kind_label)}</span>
@@ -123,7 +125,7 @@
       </header>
       <div class="chips dp-why">${(p.why || []).map((w) => `<span class="chip">${esc(w)}</span>`).join("")}
         ${p.shared_photos ? `<span class="chip">Совпали фото: ${n0(p.shared_photos)}</span>` : ""}</div>
-      ${ai}
+      <div id="dpAiNote" aria-live="polite">${aiHTML(p)}</div>
       <div class="dp-table"><div class="dp-tr dp-th"><span></span><span>Карточка № ${p.a.id}</span><span>Карточка № ${p.b.id}</span></div>
         ${R.map((r) => `<div class="dp-tr ${r.cls}"><span>${esc(r.label)}</span><b>${esc(r.va ?? "не указано")}</b><b>${esc(r.vb ?? "не указано")}</b></div>`).join("")}
       </div>
@@ -138,6 +140,44 @@
         <button type="button" class="pill light dp-skip" data-v="skip"><kbd>→</kbd> Пропустить</button>
       </div>
     </section>`;
+  }
+
+  function aiHTML(p) {
+    const verdict = AI_LABELS[p.ai?.verdict];
+    if (verdict) {
+      const confidence = p.ai.confidence == null ? "" : `<small class="dp-ai-confidence">Уверенность модели ${Math.round(p.ai.confidence * 100)}%</small>`;
+      return `<div class="dp-ai ${p.ai.verdict}">${ic("sparkle")}<div class="dp-ai-copy">
+        <span class="dp-ai-label">DeepSeek предлагает</span><strong>${verdict}</strong>
+        ${p.ai.why ? `<small>${esc(p.ai.why)}</small>` : ""}${confidence}
+      </div></div>`;
+    }
+    if (!data.ai_enabled) return "";
+    const error = aiErrors.get(p.id);
+    return `<div class="dp-ai">${ic("sparkle")}<div class="dp-ai-copy"><span>${error ? esc(error) : "DeepSeek сравнивает карточки…"}</span>
+      ${error ? `<button type="button" class="chip dp-askai" data-ai="${p.id}">Повторить запрос</button>` : ""}</div></div>`;
+  }
+
+  async function requestAI(p, retry = false) {
+    if (!p || !comparing() || !data.ai_enabled || p.ai || aiInFlight || (aiErrors.has(p.id) && !retry)) return;
+    aiInFlight = true;
+    aiErrors.delete(p.id);
+    const current = () => comparing() && pairs[0]?.id === p.id;
+    if (current() && $("dpAiNote")) $("dpAiNote").innerHTML = aiHTML(p);
+    let result = await call("/api/admin/dups", { id: p.id, ai: true });
+    for (let i = 0; current() && result.data.pending && i < 10; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      if (!current()) break;
+      result = await call("/api/admin/dups", { id: p.id, ai: true });
+    }
+    aiInFlight = false;
+    if (result.data.ai) {
+      p.ai = result.data.ai;
+      if (current()) pairs[0].ai = p.ai;
+    } else {
+      aiErrors.set(p.id, result.data.error || (result.data.pending ? "DeepSeek ещё проверяет пару." : "DeepSeek пока не ответил."));
+    }
+    if (current() && $("dpAiNote")) $("dpAiNote").innerHTML = aiHTML(pairs[0]);
+    if (!current() && comparing()) requestAI(pairs[0]);
   }
 
   // ─── «Один агент — несколько номеров» ───
@@ -176,7 +216,8 @@
       <div class="dp-row-t"><a href="/?open=${kept.id}">${esc(kept.title)}</a>
         <small>${autoPrice ? "" : `${esc(p.kind_label)} · ${esc((p.why || []).slice(0, 3).join(", "))} · `}${esc(day(p.decided_at))}</small>
         <small>${autoPrice ? `№ ${archived.id} ${esc(mln(archived.price, archived.deal))} → № ${kept.id} ${esc(mln(kept.price, kept.deal))}`
-          : `№ ${p.a.id} ${esc(mln(p.a.price, p.a.deal))} · № ${p.b.id} ${esc(mln(p.b.price, p.b.deal))}`}</small></div>
+          : `№ ${p.a.id} ${esc(mln(p.a.price, p.a.deal))} · № ${p.b.id} ${esc(mln(p.b.price, p.b.deal))}`}</small>
+        ${p.ai?.verdict ? `<small>DeepSeek предлагал ${esc(AI_LABELS[p.ai.verdict])}</small>` : ""}</div>
       ${["auto", "same"].includes(p.status) ? `<button type="button" class="pill light" data-split="${p.id}">Разделить</button>`
         : ["diff", "market", "repeat"].includes(p.status) ? `<button type="button" class="pill light" data-reopen="${p.id}">${p.merged ? "Отменить объединение" : "Вернуть в очередь"}</button>` : ""}
     </div>`;
@@ -197,6 +238,9 @@
       renderComparison();
     } else $("dpBody").innerHTML = listHTML();
     $("dpStats").innerHTML = statsHTML(data.stats || []);
+    const review = data.ai_review;
+    $("dpAiStats").textContent = review?.compared
+      ? `Рекомендации DeepSeek совпали с вашими решениями в ${n0(review.agreed)} из ${n0(review.compared)} пар.` : "";
     if (!document.activeElement || document.activeElement.id !== "dpGIn") $("dpGroups").innerHTML = groupsHTML(data.phone_groups || []);
   }
 
@@ -239,6 +283,7 @@
     data = r.data;
     pairs = data.pairs || [];
     render();
+    if (comparing()) requestAI(pairs[0]);
     if (next && comparing() && pairs.length) $("dpBody").querySelector(".dp-pair").scrollIntoView({ block: "start" });
   }
 
@@ -286,12 +331,7 @@
     if (t.dataset.tab) { tab = t.dataset.tab; return load(); }
     if (t.dataset.v) return decide(t.dataset.v);
     if (t.dataset.ai) {
-      t.disabled = true; t.textContent = "Спрашиваю…";
-      const r = await call("/api/admin/dups", { id: Number(t.dataset.ai), ai: true });
-      const choice = comparing() && pairs.find((p) => p.id === Number(t.dataset.ai));
-      if (r.data.ai && choice) { choice.ai = r.data.ai; renderComparison(); }
-      else if (!r.data.ai) { toast(r.data.error || "Нейросеть не ответила"); t.disabled = false; }
-      return;
+      return requestAI(pairs.find((p) => p.id === Number(t.dataset.ai)), true);
     }
     if (t.dataset.split) {
       if (!confirm("Разделить? Копия снова станет отдельной карточкой, пара запомнится как «разные». Избранное и клиенты останутся на основной.")) return;

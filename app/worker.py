@@ -66,6 +66,13 @@ def tick(conn) -> dict:
     if llm.available():
         stats["deepseek_parsed"] = llm.parsed_messages
         stats["deepseek_errors"] = llm.failures
+    try:
+        disputes = ingest.resolve_parse_disputes(conn)
+        if disputes:
+            stats["ai_disputes"] = disputes
+    except Exception:  # noqa: BLE001
+        conn.rollback()
+        log.exception("не удалось применить сохранённые ответы DeepSeek")
     lap("разбор")
     from . import media
     if media.trim_chat_photos(conn):   # один раз: у объявлений из чатов — по одному фото

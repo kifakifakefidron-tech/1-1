@@ -58,8 +58,8 @@ QUEUES: list[dict] = [
     {"key": "agent", "mode": "place", "label": "Поправил агент",
      "hint": "Агент сам поправил адрес или район своего объявления — проверьте. «Сохранить» без правок — подтвердить",
      "where": "l.agent_fixed IS NOT NULL AND l.addr_complaint IS NULL"},
-    {"key": "dispute", "mode": "place", "label": "Правила и нейросеть спорят",
-     "hint": "Правила и нейросеть прочитали текст по-разному (комнаты, площадь, этаж, цена, адрес) — выберите, кто прав",
+    {"key": "dispute", "mode": "place", "label": "Расхождения разбирает DeepSeek",
+     "hint": "Сервис применяет сохранённый ответ нейросети. Остаток очереди уменьшается в фоне.",
      "where": "l.parse_dispute IS NOT NULL AND l.admin_fixed = 0"},
     {"key": "price", "mode": "price", "label": "Сомнительные цены",
      "hint": "Сверьте цену с исходным объявлением. Подтверждённая сумма появится в карточке.",
@@ -137,7 +137,7 @@ def _with_dups(conn: sqlite3.Connection, queues: list[dict]) -> list[dict]:
     """24.10: очередь «Возможно, повтор» (пары карточек, app/dupreview.py) — сразу после «Спорных»."""
     from . import dupreview
     q = {"key": "dups", "mode": "place", "label": "Спорные: возможно, повтор", "href": "/dups", "n": dupreview.open_count(conn),
-         "hint": "Две карточки почти совпадают — один это объект или разные, решаете вы. Ваши ответы сервис запоминает"}
+         "hint": "DeepSeek предлагает решение по открытой паре. Вы можете сверить его со своим вердиктом."}
     return queues[:1] + [q] + queues[1:]
 
 
