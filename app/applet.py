@@ -216,7 +216,7 @@ def parse_csv(body: bytes) -> list[dict]:
 
 
 def sync(conn: sqlite3.Connection, body: bytes, now: int | None = None) -> dict:
-    from . import cxnorm, geoaudit
+    from . import cxnorm, geoaudit, offers
     from .ingest import _price_m2, _reindex, make_search_text, make_title
 
     now = int(now or time.time())
@@ -231,6 +231,7 @@ def sync(conn: sqlite3.Connection, body: bytes, now: int | None = None) -> dict:
         initial = not db.get_state(conn, SYNCED)
         splitting = not db.get_state(conn, SPLIT)
         existing = {r["ext_id"]: r for r in conn.execute("SELECT * FROM listings WHERE ext_id LIKE 'appletv:%'")}
+        transferred = offers.transferred_photos(conn)
         yml = {r["article"]: r["id"] for r in conn.execute("""SELECT id, article FROM listings
              WHERE source='feed' AND ext_id LIKE 'feed:%' AND is_active=1 AND article IS NOT NULL
              GROUP BY article HAVING COUNT(*) = 1""")}
@@ -244,7 +245,7 @@ def sync(conn: sqlite3.Connection, body: bytes, now: int | None = None) -> dict:
             if ext in banned:
                 continue
             prev = existing.get(ext)
-            if prev and prev["hidden_reason"] in ("admin", "phone"):
+            if prev and prev["hidden_reason"] in ("admin", "phone", offers.MERGED_REPEAT):
                 continue
             unit_key = item.pop("_unit_key")
             if prev and prev["price_fixed"] and item["price"] == prev["price_wrong"]:
@@ -255,6 +256,8 @@ def sync(conn: sqlite3.Connection, body: bytes, now: int | None = None) -> dict:
                         price_m2=_price_m2(item["price"], item["area"]),
                         rooms_mask=rules.rooms_mask(item["room_kind"], item["rooms"]),
                         phones=json.dumps(item["phones"]))
+            if prev and (extra := transferred.get(prev["id"])):
+                item["photos"] = json.dumps([url for url in offers._tokens(prev["photos"]) if url in extra])
             repair_context = item.pop("repair_context")
             item["search_text"] = make_search_text(item)
             repair_text = make_search_text({**item, "description": repair_context})

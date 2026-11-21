@@ -84,11 +84,15 @@
     }).filter(Boolean);
   }
 
-  function side(c, marked) {
+  function side(c, marked, selected) {
     const ph = (c.photos || []).slice(0, 4);
     const used = [c.favorites && `в избранном у ${c.favorites}`, c.clients && `у клиентов: ${c.clients}`,
       c.picks && `в подборках: ${c.picks}`].filter(Boolean);
     return `<article class="dp-side" data-id="${c.id}">
+      <label class="dp-keep">
+        <input type="radio" name="dpKeep" value="${c.id}"${selected === c.id ? " checked" : ""}>
+        <span>Оставить эту карточку</span>
+      </label>
       <div class="dp-ph${ph.length ? "" : " none"}">${ph.length ? ph.map((u) => `<img src="${esc(u)}" alt="" loading="lazy">`).join("")
         : "<span>Фото нет</span>"}${(c.photos || []).length > 4 ? `<em>+${c.photos.length - 4}</em>` : ""}</div>
       <a class="dp-title" href="/?open=${c.id}">${esc(c.title || `Объект ${c.id}`)}</a>
@@ -104,7 +108,7 @@
     </article>`;
   }
 
-  function pairHTML(p) {
+  function pairHTML(p, selected) {
     const [ma, mb] = diffMarks(p.a.text || "", p.b.text || "");
     const R = rows(p.a, p.b);
     const ai = p.ai ? `<div class="dp-ai ${p.ai.same === true ? "same" : p.ai.same === false ? "diff" : ""}">${ic("sparkle")}
@@ -124,9 +128,10 @@
       </div>
       <p class="note dp-legend"><i class="eq"></i> совпало <i class="ne"></i> различается <i class="miss"></i> указано не у обоих
         · в тексте подсвечены слова, которых нет в другой карточке</p>
-      <div class="dp-sides">${side(p.a, ma)}${side(p.b, mb)}</div>
+      <div class="dp-sides" role="group" aria-label="Карточка, которая останется после объединения">${side(p.a, ma, selected)}${side(p.b, mb, selected)}</div>
       <div class="dp-acts">
-        <button type="button" class="pill" data-v="repeat" title="Версии одного объявления одного агента"><kbd>1</kbd> Один объект</button>
+        <p class="dp-merge-note">При объединении сохранятся цена и текст выбранной карточки, а фото обеих версий соберутся в одной галерее.</p>
+        <button type="button" class="pill" data-v="repeat" title="Объединить версии объявления одного агента"><kbd>1</kbd> Один объект</button>
         <button type="button" class="pill light dp-diff" data-v="diff"><kbd>2</kbd> Разные объекты</button>
         <button type="button" class="pill light dp-mkt" data-v="market"><kbd>3</kbd> Один объект · разные агенты</button>
         <button type="button" class="pill light dp-skip" data-v="skip"><kbd>→</kbd> Пропустить</button>
@@ -161,12 +166,12 @@
   function listHTML() {
     if (!pairs.length) return `<p class="dp-empty">${tab === "auto" ? "Сервис пока ничего не склеивал сам." : "Решений пока нет."}</p>`;
     return `<div class="dp-list">${pairs.map((p) => `<div class="dp-row" data-pid="${p.id}">
-      <span class="mark">${esc(STATUS[p.status] || p.status)}</span>
+      <span class="mark">${esc(p.merged ? "Объединено" : STATUS[p.status] || p.status)}</span>
       <div class="dp-row-t"><a href="/?open=${p.keep || p.a.id}">${esc(p.a.id === p.keep ? p.a.title : p.b.title)}</a>
         <small>${esc(p.kind_label)} · ${esc((p.why || []).slice(0, 3).join(", "))} · ${esc(day(p.decided_at))}</small>
         <small>№ ${p.a.id} ${esc(mln(p.a.price, p.a.deal))} · № ${p.b.id} ${esc(mln(p.b.price, p.b.deal))}</small></div>
       ${["auto", "same"].includes(p.status) ? `<button type="button" class="pill light" data-split="${p.id}">Разделить</button>`
-        : ["diff", "market", "repeat"].includes(p.status) ? `<button type="button" class="pill light" data-reopen="${p.id}">Вернуть в очередь</button>` : ""}
+        : ["diff", "market", "repeat"].includes(p.status) ? `<button type="button" class="pill light" data-reopen="${p.id}">${p.merged ? "Отменить объединение" : "Вернуть в очередь"}</button>` : ""}
     </div>`).join("")}</div>`;
   }
 
@@ -187,7 +192,9 @@
   }
 
   function renderComparison() {
-    $("dpBody").innerHTML = pairs[0] ? pairHTML(pairs[0]) : data.counts.open
+    const pair = pairs[0];
+    const selected = pair && $("dpBody").querySelector(`[data-pid="${pair.id}"] [name="dpKeep"]:checked`);
+    $("dpBody").innerHTML = pair ? pairHTML(pair, Number(selected?.value)) : data.counts.open
       ? `<div class="dp-empty"><p>Остались пропущенные пары.</p><button type="button" class="pill" data-reset>Вернуться к пропущенным</button></div>`
       : `<p class="dp-empty">${ic("check")} Все пары разобраны.</p>`;
     updateActions();
@@ -227,9 +234,19 @@
       skipped.add(p.id);
       return load(true);
     }
+    const body = { id: p.id, verdict: v };
+    if (v === "repeat") {
+      const selected = $("dpBody").querySelector('[name="dpKeep"]:checked');
+      if (!selected) {
+        toast("Выберите, какую карточку оставить.");
+        $("dpBody").querySelector('[name="dpKeep"]')?.focus();
+        return;
+      }
+      body.keep_id = Number(selected.value);
+    }
     busy = true;
     updateActions();
-    const r = await call("/api/admin/dups", { id: p.id, verdict: v });
+    const r = await call("/api/admin/dups", body);
     busy = false;
     if (!r.ok || !r.data.ok) {
       toast(r.data.error || (r.data.stale ? "Пара уже изменилась. Загружаем следующую." : "Решение не сохранилось."));
@@ -237,7 +254,8 @@
       updateActions();
       return;
     }
-    toast(v === "repeat" ? "Версии объявления связаны" : v === "market" ? "Предложения агентов связаны" : "Решение сохранено");
+    toast(v === "repeat" ? `Карточка № ${r.data.keep_id} сохранена · перенесено фото: ${n0(r.data.photos_added)}`
+      : v === "market" ? "Предложения агентов связаны" : "Решение сохранено");
     return load(true);
   }
 
@@ -267,8 +285,10 @@
       return load();
     }
     if (t.dataset.reopen) {
+      busy = true;
       const r = await call("/api/admin/dups", { id: Number(t.dataset.reopen), verdict: "reopen" });
-      toast(r.ok ? "Пара снова в очереди" : "Статус пары уже изменился");
+      busy = false;
+      toast(r.ok ? "Пара снова в очереди" : r.data.error || "Статус пары уже изменился");
       return load();
     }
   });
@@ -284,7 +304,8 @@
   });
   document.addEventListener("keydown", (e) => {
     const v = KEYS[e.key];
-    if (!v || e.repeat || tab !== "open" || e.target.closest("input, textarea, select, [contenteditable=true]")
+    if (!v || e.repeat || tab !== "open" || (e.target.closest("input, textarea, select, [contenteditable=true]")
+        && !(e.key === "1" && e.target.name === "dpKeep"))
         || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
     e.preventDefault();
     decide(v);

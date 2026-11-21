@@ -81,31 +81,29 @@ def test_review_separates_listing_versions_from_other_agents(conn):
     conn.execute("UPDATE listings SET last_seen=3, first_seen=3, price=7100000, floor=NULL WHERE id=?", (new,))
     repeat = pair(conn, old, new)
     market = pair(conn, old, other)
-    before = list(map(tuple, conn.execute("SELECT * FROM listings")))
     assert not dupreview.decide(conn, repeat, "market", 1)["ok"]
-    assert dupreview.decide(conn, repeat, "repeat", 1)["status"] == "repeat"
+    assert dupreview.decide(conn, market, "market", 1)["status"] == "market"
+    assert dupreview.decide(conn, repeat, "repeat", 1, keep_id=new)["status"] == "repeat"
 
     def result():
         return search.search(conn, search.Query(), 4, False, group_offers=True)
 
-    items = result()["items"]
-    updated = next(row for row in items if row["id"] == new)
-    assert result()["total"] == 2
-    assert updated["price"] == 7100000 and updated["first_seen"] == 1 and "offer_group" not in updated
-    assert dupreview.decide(conn, market, "market", 1)["status"] == "market"
     linked = result()
     assert linked["total"] == 1
-    assert {item["id"] for item in linked["items"][0]["offer_group"]["offers"]} == {new, other}
-    assert list(map(tuple, conn.execute("SELECT * FROM listings"))) == before
+    card = linked["items"][0]
+    assert card["first_seen"] == 1
+    assert {item["id"]: item["price"] for item in card["offer_group"]["offers"]}[new] == 7100000
+    assert {item["id"] for item in card["offer_group"]["offers"]} == {new, other}
+    assert not conn.execute("SELECT is_active FROM listings WHERE id=?", (old,)).fetchone()[0]
     assert dupreview.pairs(conn, "done")["counts"]["done"] == 2
     assert dupreview.decide(conn, repeat, "reopen", 1)["status"] == "open"
     assert result()["total"] == 2
 
 
-def test_explicit_repeat_uses_one_version_when_contacts_are_missing(conn):
+def test_legacy_repeat_uses_one_version_when_contacts_are_missing(conn):
     a, b = [listing(conn) for _ in range(2)]
     conn.execute("UPDATE listings SET phones='[]' WHERE id IN (?,?)", (a, b))
-    assert dupreview.decide(conn, pair(conn, a, b), "repeat", 1)["ok"]
+    conn.execute("UPDATE dup_pairs SET status='repeat' WHERE id=?", (pair(conn, a, b),))
     group = offers.groups(conn)[a]
     reps = offers.representatives(group, set())
     assert reps[a]["id"] == reps[b]["id"] == b

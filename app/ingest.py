@@ -336,7 +336,7 @@ def _price_m2(price, area) -> int | None:
 
 def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: int | None, ts: int) -> tuple[int, str]:
     """Создаёт новый объект или обновляет найденный дубль. Возвращает (id, как сопоставили)."""
-    from . import applet
+    from . import applet, offers
     if message_id is not None and (managed := applet.active_numbers(conn)):
         if applet.only_catalog_phones(o.phones, managed):
             return 0, "appletv"
@@ -381,6 +381,13 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
                 "VALUES (?,?,?,?,?,?,'strely')", (own["id"], message_id, ts, d["price"], json.dumps(d["phones"]), fh))
             return own["id"], "strely"
     match, why = dedupe.find_match(conn, o, fh, ts)
+    if match is not None and match["hidden_reason"] == offers.MERGED_REPEAT:
+        original = offers.merged_listing(conn, match)
+        conn.execute("""INSERT INTO listing_events (listing_id,message_id,ts,price,phones,fragment_hash,match)
+                        VALUES (?,?,?,?,?,?,'merged_repeat')""",
+                     (original["id"], message_id, ts, d["price"], json.dumps(d["phones"]), fh))
+        conn.execute("UPDATE listings SET seen_count=seen_count+1 WHERE id=?", (original["id"],))
+        return original["id"], "merged_repeat"
     if match is not None and match["hidden_reason"] == "admin":   # тот же объект, удалённый админом
         return match["id"], "banned"
 
@@ -1114,6 +1121,9 @@ def cleanup_old(conn: sqlite3.Connection, now: int | None = None) -> dict:
     ids = [r[0] for r in conn.execute("""SELECT id FROM listings WHERE is_active = 0
                                          AND COALESCE(removed_at, last_seen + ?) < ?
                                          AND MAX(last_seen, COALESCE(added_at, 0)) < ?
+                                         AND NOT (hidden_reason IS 'dup_repeat' AND EXISTS (
+                                             SELECT 1 FROM listings main WHERE main.id=listings.merged_into
+                                             AND (main.is_active=1 OR main.hidden_reason IS 'dup_repeat')))
                                          AND COALESCE(hidden_reason, '') NOT IN ('admin', 'phone')""",
                                       (config.STALE_DAYS * 86400, arch, life))]
     for i in ids:

@@ -4,9 +4,14 @@ from __future__ import annotations
 import difflib
 import functools
 import json
+import os
+import re
+import shutil
 import sqlite3
+import tempfile
 import time
 from collections import defaultdict
+from pathlib import Path
 
 from . import applet, config, db, geo, offers
 from .dedupe import _close, _house_eq, text_twin
@@ -193,18 +198,106 @@ def split(conn: sqlite3.Connection, pid: int, user_id: int = 0) -> bool:
     return True
 
 
-def decide(conn: sqlite3.Connection, pid: int, verdict: str, user_id: int = 0) -> dict:
-    """Решение по одной активной паре хранится отдельно от объявлений."""
+_LOCAL_PHOTO = re.compile(r"/photos/(\d{1,10})/([a-f0-9]{16}\.(?:jpg|png|webp))")
+
+
+def _merge_photos(keep, drop) -> list[str]:
+    current = offers._tokens(keep["photos"])
+    local_names = {m[2] for url in current if (m := _LOCAL_PHOTO.fullmatch(url))}
+    added = []
+    root = Path(config.PHOTOS_DIR)
+    for url in dict.fromkeys(offers._tokens(drop["photos"])):
+        if url in current:
+            continue
+        m = _LOCAL_PHOTO.fullmatch(url)
+        if m:
+            folder, name = m.groups()
+            if name in local_names:
+                continue
+            source = root / folder / name
+            dest = root / str(keep["id"]) / name
+            if not source.is_file() and not dest.is_file():
+                continue
+            if not dest.is_file():
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                with tempfile.NamedTemporaryFile(dir=dest.parent, delete=False) as f:
+                    tmp = Path(f.name)
+                try:
+                    shutil.copyfile(source, tmp)
+                    tmp.chmod(0o644)
+                    os.replace(tmp, dest)
+                finally:
+                    tmp.unlink(missing_ok=True)
+            url = f"/photos/{keep['id']}/{name}"
+            local_names.add(name)
+        added.append(url)
+    return added
+
+
+def _merge_repeat(conn, pid, keep, drop, user_id):
+    from . import ownmatch
+    try:
+        added = _merge_photos(keep, drop)
+    except OSError:
+        return {"ok": False, "error": "Не удалось перенести фотографии. Попробуйте ещё раз."}
+    k, d = keep["id"], drop["id"]
+    now = int(time.time())
+    undo = {"photos": added, "events": [r[0] for r in conn.execute(
+        "SELECT id FROM listing_events WHERE listing_id=?", (d,))],
+        "previous": [r[0] for r in conn.execute(
+            "SELECT id FROM dup_pairs WHERE status='repeat' AND keep_id=? AND drop_id IS NOT NULL", (k,))]}
+    conn.execute("""UPDATE dup_pairs SET status='repeat', keep_id=?, drop_id=?, undo=?, decided_at=?, user_id=?
+                    WHERE id=?""", (k, d, json.dumps(undo), now, user_id, pid))
+    conn.execute("""UPDATE listings SET is_active=0, hidden_reason=?, merged_into=? WHERE id=?""",
+                 (offers.MERGED_REPEAT, k, d))
+    conn.execute("UPDATE listings SET photos=?, seen_count=seen_count+?, owner_user_id=COALESCE(owner_user_id,?) WHERE id=?",
+                 (json.dumps(offers._tokens(keep["photos"]) + added, ensure_ascii=False), drop["seen_count"], drop["owner_user_id"], k))
+    conn.execute("UPDATE listing_events SET listing_id=? WHERE listing_id=?", (k, d))
+    for table in ownmatch._REFS:
+        conn.execute(f"UPDATE OR IGNORE {table} SET listing_id=? WHERE listing_id=?", (k, d))
+    return {"ok": True, "status": "repeat", "keep_id": k, "photos_added": len(added)}
+
+
+def _reopen_repeat(conn, pair):
+    k, d = pair["keep_id"], pair["drop_id"]
+    keep = conn.execute("SELECT photos FROM listings WHERE id=? AND is_active=1", (k,)).fetchone()
+    drop = conn.execute("SELECT seen_count FROM listings WHERE id=? AND merged_into=? AND hidden_reason=?",
+                        (d, k, offers.MERGED_REPEAT)).fetchone()
+    if not keep or not drop:
+        return {"ok": False, "error": "Карточка больше недоступна. Проверьте последние объединения."}
+    for (raw,) in conn.execute("SELECT undo FROM dup_pairs WHERE status='repeat' AND keep_id=? AND id!=? AND undo IS NOT NULL",
+                               (k, pair["id"])):
+        if pair["id"] in json.loads(raw).get("previous", []):
+            return {"ok": False, "error": "Сначала отмените более позднее объединение этой карточки."}
+    undo = json.loads(pair["undo"])
+    added = set(undo["photos"])
+    photos = [url for url in offers._tokens(keep["photos"]) if url not in added]
+    conn.execute("UPDATE listings SET photos=?, seen_count=MAX(1,seen_count-?) WHERE id=?",
+                 (json.dumps(photos, ensure_ascii=False), drop["seen_count"], k))
+    conn.execute("UPDATE listings SET is_active=1, hidden_reason=NULL, merged_into=NULL WHERE id=?", (d,))
+    events = undo["events"]
+    for i in range(0, len(events), 500):
+        chunk = events[i:i + 500]
+        conn.execute(f"UPDATE listing_events SET listing_id=? WHERE listing_id=? AND id IN ({','.join('?' * len(chunk))})",
+                     (d, k, *chunk))
+    return None
+
+
+def decide(conn: sqlite3.Connection, pid: int, verdict: str, user_id: int = 0, keep_id: int | None = None) -> dict:
+    """Сохраняет решение по паре и объединяет версии одного объявления."""
     verdict = "repeat" if verdict == "same" else verdict
     if verdict == "reopen":
-        saved = conn.execute("""UPDATE dup_pairs SET status='open', decided_at=NULL, user_id=?
+        pair = conn.execute("SELECT * FROM dup_pairs WHERE id=? AND status='repeat' AND drop_id IS NOT NULL", (pid,)).fetchone()
+        if pair and (error := _reopen_repeat(conn, pair)):
+            return error
+        saved = conn.execute("""UPDATE dup_pairs SET status='open', decided_at=NULL, user_id=?, keep_id=NULL, drop_id=NULL, undo=NULL
                               WHERE id=? AND status IN ('diff','market','repeat')""", (user_id, pid))
         if saved.rowcount:
             return {"ok": True, "status": "open"}
     elif verdict in ("repeat", "market", "diff"):
         if verdict in ("repeat", "market"):
             from . import phonegroups
-            rows = conn.execute(f"""SELECT l.id, l.phones, l.ext_id, l.owner_user_id, l.deal
+            rows = conn.execute(f"""SELECT l.id, l.phones, l.ext_id, l.owner_user_id, l.deal, l.photos, l.seen_count
                 FROM dup_pairs p JOIN listings l ON l.id IN (p.a,p.b)
                 WHERE p.id=? AND p.status='open' {_ACTIVE_PAIR}""", (pid,)).fetchall()
             if len(rows) != 2:
@@ -216,9 +309,15 @@ def decide(conn: sqlite3.Connection, pid: int, verdict: str, user_id: int = 0) -
             ka, kb = offers.agent_key(a), offers.agent_key(b)
             if verdict == "market" and ka == kb:
                 return {"ok": False, "error": "У обеих карточек один агент. Для версий объявления используйте кнопку 1."}
-            if verdict == "repeat" and ((ka[0] == kb[0] == "account" and ka != kb)
-                                        or {ka[0], kb[0]} == {"slava", "stayl"}):
-                return {"ok": False, "error": "У карточек разные агенты. Если объект один, используйте кнопку 3."}
+            if verdict == "repeat":
+                owners = {row["owner_user_id"] for row in rows if row["owner_user_id"]}
+                phones_a, phones_b = (offers.contact_keys(row) for row in rows)
+                if (len(owners) > 1 or {ka[0], kb[0]} == {"slava", "stayl"}
+                        or ka != kb and phones_a and phones_b and not phones_a & phones_b):
+                    return {"ok": False, "error": "У карточек разные агенты. Если объект один, используйте кнопку 3."}
+                if type(keep_id) is not int or keep_id not in (a["id"], b["id"]):
+                    return {"ok": False, "error": "Выберите, какую карточку оставить."}
+                return _merge_repeat(conn, pid, a, b, user_id) if a["id"] == keep_id else _merge_repeat(conn, pid, b, a, user_id)
         saved = conn.execute(f"""UPDATE dup_pairs AS p SET status=?, decided_at=?, user_id=?
                                 WHERE p.id=? AND p.status='open' {_ACTIVE_PAIR}""",
                              (verdict, int(time.time()), user_id, pid))
@@ -418,7 +517,9 @@ def recheck_offers(conn: sqlite3.Connection, batch: int = 250, budget_s: float =
 
 def tidy(conn: sqlite3.Connection) -> int:
     """Открытые пары, где одной карточки уже нет на сайте, — убрать из очереди."""
-    cur = conn.execute("""UPDATE dup_pairs SET status = 'gone' WHERE status = 'open' AND (
+    cur = conn.execute("""UPDATE dup_pairs SET status = 'gone' WHERE status = 'open'
+                          AND NOT EXISTS (SELECT 1 FROM listings WHERE id IN (a,b) AND hidden_reason='dup_repeat')
+                          AND (
                             (SELECT COALESCE(is_active, 0) FROM listings WHERE id = a) IS NOT 1
                          OR (SELECT COALESCE(is_active, 0) FROM listings WHERE id = b) IS NOT 1)""")
     return cur.rowcount
@@ -582,7 +683,7 @@ def pairs(conn: sqlite3.Connection, status: str = "open", limit: int = 30, offse
         if (a["last_seen"] or 0, a["id"]) > (b["last_seen"] or 0, b["id"]):   # 25.10 (Артём): справа — присланное позже
             a, b = b, a
         keep = p["keep_id"]
-        out.append({**_pair_details(p, a, b), "a": a, "b": b, "keep": keep})
+        out.append({**_pair_details(p, a, b), "a": a, "b": b, "keep": keep, "merged": p["status"] == "repeat" and bool(p["drop_id"])})
     return {**_queue_data(conn), "pairs": out}
 
 

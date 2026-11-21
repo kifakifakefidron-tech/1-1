@@ -21,7 +21,7 @@ import sqlite3
 import time
 from pathlib import Path
 
-from . import accounts, config, geo, listing_video, notices, rules
+from . import accounts, config, geo, listing_video, notices, offers, rules
 from .search import NEWEST_FIRST
 
 DAY = 86400
@@ -253,22 +253,24 @@ def my_listings(conn: sqlite3.Connection, user_id: int) -> list[sqlite3.Row]:
     phones = verified_phones(conn, user_id)
     if not phones:
         return conn.execute(f"""SELECT * FROM listings l WHERE owner_user_id = ?
-                               AND COALESCE(hidden_reason, '') != 'appletv_chat'
-                               ORDER BY l.is_active DESC, {NEWEST_FIRST}""", (user_id,)).fetchall()
+                               AND COALESCE(hidden_reason, '') NOT IN ('appletv_chat', ?)
+                               ORDER BY l.is_active DESC, {NEWEST_FIRST}""", (user_id, offers.MERGED_REPEAT)).fetchall()
     cond, params = _phone_like(phones)
     # 18.10: и объекты с сайта (фид) с этим номером — чтобы было видно всё своё (править их — на сайте); без потолка 300;
     # скрытые копии своих объектов (приклеены к карточке с сайта — ownmatch) не показываем
     return conn.execute(f"""SELECT * FROM listings l WHERE (l.owner_user_id = ? OR (({cond})
                             AND (l.owner_user_id IS NULL OR l.owner_user_id = ?)))
-                            AND COALESCE(l.hidden_reason, '') NOT IN ('strely', 'own_dup', 'strely_photo', 'appletv_chat')
+                            AND COALESCE(l.hidden_reason, '') NOT IN ('strely', 'own_dup', 'strely_photo', 'appletv_chat', ?)
                             ORDER BY l.is_active DESC, {NEWEST_FIRST} LIMIT 3000""",
-                        [user_id, *params, user_id]).fetchall()
+                        [user_id, *params, user_id, offers.MERGED_REPEAT]).fetchall()
 
 
 def can_edit(conn: sqlite3.Connection, user: sqlite3.Row, row: sqlite3.Row) -> tuple[bool, str]:
     """Править можно только своё: объявление с моим подтверждённым номером, у которого нет другого владельца."""
     if row is None:
         return False, "Объект не найден."
+    if row["hidden_reason"] == offers.MERGED_REPEAT:
+        return False, "Эта версия объединена с другой карточкой. Откройте итоговую карточку."
     if row["hidden_reason"] == "appletv_chat" or (row["ext_id"] or "").startswith("appletv:"):
         return False, "Эти объявления обновляются из базы «Яблоня». Внесите изменения в базе."
     if row["source"] == "feed":
@@ -497,7 +499,7 @@ def confirm(conn: sqlite3.Connection, listing_id: int, action: str, token: str) 
     if not hmac.compare_digest(token, confirm_token(listing_id, action)):
         return "bad"
     row = conn.execute("SELECT * FROM listings WHERE id = ? AND source = 'own'", (listing_id,)).fetchone()
-    if row is None:
+    if row is None or row["hidden_reason"] == offers.MERGED_REPEAT:
         return "gone"
     now = int(time.time())
     if action == "yes":

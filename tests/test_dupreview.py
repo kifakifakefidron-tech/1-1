@@ -1,7 +1,8 @@
 """24.10 (Артём: «сомневается — в спорные, разберу сам и обучу»): очередь «Возможно, повтор» (app/dupreview.py)."""
+import json
 import time
 
-from app import accounts, db, dupreview, ingest, offers
+from app import accounts, config, db, dupreview, ingest, offers, search
 
 A = "Продаётся 2-к квартира 58 м², 7/16 эт., ЖК Мозаика. Евроремонт, кухня-гостиная, вид на парк. 7,5 млн. 89181112233"
 B = "Срочно! Двушка в ЖК Мозаика, 7 этаж из 16, 58 кв.м. Хозяин снизил цену. Документы готовы. 7,3 млн. 89181112233"
@@ -42,21 +43,55 @@ def test_floor_missing_goes_to_queue_not_merged():
     assert p["kind"] == "nodetail" and {p["a"]["id"], p["b"]["id"]} == {a, c}
 
 
-def test_legacy_same_verdict_only_links_and_keeps_favorites_on_their_listing():
+def test_repeat_merges_into_selected_listing_and_can_be_reopened(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PHOTOS_DIR", str(tmp_path))
     conn = db.connect(":memory:")
     a = _lid(_send(conn, A))
     c = _lid(_send(conn, NO_FLOOR, "c2"))
+    name = "0123456789abcdef.jpg"
+    (tmp_path / str(c)).mkdir()
+    (tmp_path / str(c) / name).write_bytes(b"photo")
+    photo = f"/photos/{c}/{name}"
+    conn.execute("UPDATE listings SET photos=? WHERE id=?", (json.dumps([photo, photo]), c))
     uid = accounts.upsert_email_user(conn, "x@y.ru")["id"]
     conn.execute("INSERT INTO favorites (user_id, listing_id, created) VALUES (?, ?, ?)", (uid, c, int(time.time())))
     dupreview.run(conn)
     pid = dupreview.pairs(conn)["pairs"][0]["id"]
-    assert dupreview.decide(conn, pid, "same")["status"] == "repeat"
-    assert _active(conn) == [a, c]
-    assert conn.execute("SELECT merged_into, hidden_reason FROM listings WHERE id = ?", (c,)).fetchone()[:] == (None, None)
-    assert conn.execute("SELECT listing_id FROM favorites WHERE user_id = ?", (uid,)).fetchone()[0] == c
-    assert set(offers.groups(conn)) == {a, c}
+    assert not dupreview.decide(conn, pid, "repeat")["ok"]
+    assert not dupreview.decide(conn, pid, "repeat", keep_id=999)["ok"]
+    before = conn.execute("SELECT price, description, phones, first_seen FROM listings WHERE id=?", (a,)).fetchone()
+    assert dupreview.decide(conn, pid, "repeat", keep_id=a) == {
+        "ok": True, "status": "repeat", "keep_id": a, "photos_added": 1,
+    }
+    assert _active(conn) == [a]
+    assert conn.execute("SELECT merged_into, hidden_reason FROM listings WHERE id = ?", (c,)).fetchone()[:] == (a, offers.MERGED_REPEAT)
+    assert conn.execute("SELECT listing_id FROM favorites WHERE user_id = ?", (uid,)).fetchone()[0] == a
+    assert conn.execute("SELECT price, description, phones, first_seen FROM listings WHERE id=?", (a,)).fetchone()[:] == before[:]
+    assert search.listing_detail(conn, a, False)["photos"] == [f"/photos/{a}/{name}"]
+    assert (tmp_path / str(a) / name).read_bytes() == b"photo"
+    alias = conn.execute("SELECT * FROM listings WHERE id=?", (c,)).fetchone()
+    assert offers.merged_listing(conn, alias)["id"] == a
     dupreview.scan(conn, full=True)
-    assert dupreview.open_count(conn) == 0 and len(_active(conn)) == 2
+    assert dupreview.open_count(conn) == 0
+    _send(conn, NO_FLOOR, "c3")
+    assert _active(conn) == [a]
+    assert dupreview.decide(conn, pid, "reopen")["status"] == "open"
+    assert _active(conn) == [a, c]
+    assert search.listing_detail(conn, a, False)["photos"] == []
+    assert search.listing_detail(conn, c, False)["photos"] == [photo, photo]
+
+
+def test_repeat_keeps_confirmed_offer_from_another_agent():
+    conn = db.connect(":memory:")
+    a = _lid(_send(conn, A))
+    b = _lid(_send(conn, NO_FLOOR, "c2"))
+    c = _lid(_send(conn, B.replace("89181112233", "89184445566"), "c3"))
+    conn.execute("INSERT INTO dup_pairs(a,b,kind,status,created_at,user_id) VALUES (?,?,'offer_review','market',0,1)", (b, c))
+    pid = conn.execute("INSERT INTO dup_pairs(a,b,kind,status,created_at) VALUES (?,?,'agent','open',0)", (a, b)).lastrowid
+    conn.execute("UPDATE listings SET photos=? WHERE id=?", (json.dumps(["https://example.test/photo.jpg"]), b))
+    assert dupreview.decide(conn, pid, "repeat", keep_id=a)["ok"]
+    assert set(offers.groups(conn)) == {a, c}
+    assert search.listing_detail(conn, c, False)["photos"] == []
 
 
 def test_admin_diff_is_remembered():

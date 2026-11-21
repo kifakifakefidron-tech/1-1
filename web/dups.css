@@ -42,6 +42,12 @@
 
 .dp-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px; }
 .dp-side { min-width: 0; border: 1.5px solid var(--line); border-radius: var(--r-lg); padding: 14px; }
+.dp-side:has(.dp-keep input:checked) { border-color: var(--gold); }
+.dp-keep { display: flex; align-items: center; gap: 9px; min-height: 44px; padding: 7px 11px; margin-bottom: 10px;
+  border-radius: 11px; color: var(--ink-2); background: color-mix(in srgb, var(--ink) 5%, transparent);
+  font-size: 13px; font-weight: 600; cursor: pointer; }
+.dp-keep:has(input:checked) { background: color-mix(in srgb, var(--gold) 16%, transparent); color: var(--gold); }
+.dp-keep input { width: 16px; height: 16px; margin: 0; accent-color: var(--gold); }
 .dp-ph { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 10px; }
 .dp-ph img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; background: var(--line); }
 .dp-ph.none { display: flex; align-items: center; justify-content: center; height: 64px; border-radius: 8px;
@@ -70,6 +76,7 @@
   border-radius: var(--r-lg); background: color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px); border: 1px solid var(--line); }
 .dp-acts .pill { display: inline-flex; gap: 8px; align-items: center; padding: 12px 20px; font-size: 15px; }
+.dp-merge-note { flex: 0 0 100%; margin: 0; padding: 1px 4px; color: var(--ink-2); font-size: 12px; line-height: 1.4; }
 .dp-acts .pill:disabled { opacity: .48; cursor: default; }
 .dp-acts .pill svg { width: 16px; height: 16px; }
 .dp-acts kbd { font: 600 11px/1 var(--body, inherit); padding: 3px 6px; border-radius: 5px; border: 1px solid currentColor; opacity: .85; }
@@ -95,7 +102,7 @@
   .dp-sides { grid-template-columns: 1fr; }
   .dp-tr { grid-template-columns: 86px minmax(0, 1fr) minmax(0, 1fr); font-size: 13px; padding: 7px 8px; }
   .dp-acts { bottom: calc(84px + env(safe-area-inset-bottom)); }   /* над нижней панелью меню */
-  .dp-acts .pill { flex: 1 1 44%; text-align: left; padding: 8px; font-size: 12px; line-height: 1.2; }
+  .dp-acts .pill { flex: 1 1 44%; min-height: 44px; text-align: left; padding: 8px; font-size: 12px; line-height: 1.2; }
   .dp-row { flex-wrap: wrap; }
 }
 

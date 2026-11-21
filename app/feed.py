@@ -16,7 +16,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from collections import Counter
 
-from . import config, db, geo, geocode, learning, parser, rules
+from . import config, db, geo, geocode, learning, offers as offer_groups, parser, rules
 from .ingest import _price_m2, _reindex, make_search_text, make_title
 from .rules import rooms_mask
 
@@ -113,7 +113,8 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
     parsed = [d for offer in offers if (d := parse_offer(offer, skip))]
     articles = Counter(d["article"] for d in parsed if d["article"])
     ids = {d["ext_id"] for d in parsed}
-    columns = "id, ext_id, price, lat, lon, geo_status, deal, deal_fixed, hidden_reason, price_fixed, price_wrong"
+    columns = "id, ext_id, price, lat, lon, geo_status, deal, deal_fixed, hidden_reason, price_fixed, price_wrong, photos"
+    transferred = offer_groups.transferred_photos(conn)
     for d in parsed:
         seen.add(d["ext_id"])
         if conn.execute("SELECT 1 FROM banned WHERE kind = 'feed' AND key = ?", (d["ext_id"],)).fetchone():
@@ -136,6 +137,10 @@ def sync(conn: sqlite3.Connection, xml_bytes: bytes | None = None, now: int | No
                     continue
         if row and row["price_fixed"] and d["price"] == row["price_wrong"]:
             d["price"] = row["price"]
+        if row and row["hidden_reason"] == offer_groups.MERGED_REPEAT:
+            continue
+        if row and (extra := transferred.get(row["id"])):
+            d["photos"] = list(dict.fromkeys(d["photos"] + [url for url in offer_groups._tokens(row["photos"]) if url in extra]))
         if row and row["deal_fixed"]:   # админ сам перенёс в аренду/продажу — фид не перебивает
             d["deal"] = row["deal"]
             d["title"] = make_title(d)

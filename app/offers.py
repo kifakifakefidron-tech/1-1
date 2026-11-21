@@ -14,6 +14,7 @@ from .textnorm import words
 
 CHAT_PHOTO = re.compile(r"/photos/\d+/([a-f0-9]{16})\.[a-z0-9]+$")
 LINK_TYPES = "('market','repeat')"
+MERGED_REPEAT = "dup_repeat"
 MATCH_FIELDS = ("id, type, deal, rooms, room_kind, area, land, floor, floors, complex, street, house, "
                 "settlement, price, price_doubt, phones, title, last_seen")
 
@@ -28,6 +29,26 @@ def _tokens(raw: str) -> list[str]:
 
 def _photo_keys(raw: str) -> set[str]:
     return {match[1] for url in _tokens(raw) if (match := CHAT_PHOTO.fullmatch(url))}
+
+
+def merged_listing(conn, row):
+    seen = set()
+    while row["hidden_reason"] == MERGED_REPEAT and row["merged_into"] and row["id"] not in seen:
+        seen.add(row["id"])
+        target = conn.execute("SELECT * FROM listings WHERE id=?", (row["merged_into"],)).fetchone()
+        if target is None:
+            break
+        row = target
+    return row
+
+
+def transferred_photos(conn) -> dict[int, set[str]]:
+    """Фото ручного объединения остаются в карточке при обновлении её источником."""
+    by_id = defaultdict(set)
+    for lid, raw in conn.execute("""SELECT keep_id, undo FROM dup_pairs
+                                  WHERE status='repeat' AND drop_id IS NOT NULL AND undo IS NOT NULL"""):
+        by_id[lid].update(json.loads(raw).get("photos", []))
+    return by_id
 
 
 def contact_keys(row) -> set[str]:
@@ -157,12 +178,12 @@ def representatives(group, hidden: set[int]) -> dict:
     by_agent = {}
     shown = [row for row in group if row["id"] not in hidden]
     keys = {row["id"]: agent_key(row) for row in shown}
-    for row in sorted(shown, key=lambda r: (not is_site(r), -r["last_seen"], -r["first_seen"], -r["id"])):
+    for row in sorted(shown, key=lambda r: (not r.get("kept"), not is_site(r), -r["last_seen"], -r["first_seen"], -r["id"])):
         if row.get("repeat_id") is not None:
             versions.setdefault(row["repeat_id"], row)
             family_keys[row["repeat_id"]].add(keys[row["id"]])
     aliases = {}
-    for row in shown:
+    for row in sorted(shown, key=lambda r: not r.get("kept")):
         repeat_id = row.get("repeat_id")
         version = versions.get(repeat_id, row)
         aliases[row["id"]] = ("repeat", repeat_id) if len(family_keys.get(repeat_id, ())) > 1 else keys[version["id"]]
@@ -240,6 +261,18 @@ def archived_publications(conn: sqlite3.Connection, lid: int | None = None) -> d
         (lid, lid) if lid is not None else ()):
         published = first_seen, migrated, old_id
         by_id[active_id] = min(published, by_id.get(active_id, published))
+    scope = "AND k.id=?" if lid is not None else ""
+    for keep, first_seen, migrated, original in conn.execute(f"""WITH RECURSIVE merged(keep, source, first_seen, migrated) AS (
+        SELECT k.id, s.id, s.first_seen, s.catalog_migrated
+        FROM listings s JOIN listings k ON k.id=s.merged_into
+        WHERE s.hidden_reason=? AND k.is_active=1 {scope}
+        UNION ALL
+        SELECT m.keep, s.id, s.first_seen, s.catalog_migrated FROM listings s JOIN merged m ON s.merged_into=m.source
+        WHERE s.hidden_reason=?
+    ) SELECT keep, first_seen, migrated, source FROM merged""",
+        (MERGED_REPEAT, lid, MERGED_REPEAT) if lid is not None else (MERGED_REPEAT, MERGED_REPEAT)):
+        published = first_seen, migrated, original
+        by_id[keep] = min(published, by_id.get(keep, published))
     return by_id
 
 
@@ -254,9 +287,24 @@ def _build_groups(conn: sqlite3.Connection):
         SELECT a, b, status FROM dup_pairs WHERE status IN ('market', 'repeat', 'diff', 'split')
         AND NOT (status = 'market' AND kind = 'offer_photo' AND COALESCE(user_id, 0) = 0)""")}
     repeats = _repeat_ids(decisions)
+    aliases = dict(conn.execute("SELECT id, merged_into FROM listings WHERE hidden_reason=? AND merged_into IS NOT NULL",
+                                (MERGED_REPEAT,)))
+
+    def active_id(lid):
+        while lid in aliases:
+            lid = aliases[lid]
+        return lid
+
+    if aliases:
+        # Прямой вердикт по двум оставшимся карточкам важнее любой связи их прежних версий.
+        for (a, b), status in sorted(decisions.items(), key=lambda item: item[1] not in ("diff", "split")):
+            pair = tuple(sorted((active_id(a), active_id(b))))
+            if pair[0] != pair[1]:
+                decisions.setdefault(pair, status)
     rows = {r["id"]: r for r in conn.execute(f"""SELECT l.id, l.source, l.type, l.deal, l.settlement, l.street, l.house,
         l.complex, l.rooms, l.room_kind, l.floor, l.floors, l.area, l.land, l.photos, l.phones, l.price, l.price_doubt, l.last_seen,
         l.ext_id, l.owner_user_id, l.district, l.repair, l.price_m2, l.first_seen, l.catalog_migrated, l.fragment, l.description,
+        l.id IN (SELECT keep_id FROM dup_pairs WHERE status='repeat' AND drop_id IS NOT NULL) AS kept,
         CASE WHEN l.source = 'own' THEN (SELECT MAX(e.ts) FROM listing_edits e
             WHERE e.listing_id = l.id AND e.field = 'confirm' AND e.new = '"yes"' AND e.reverted = 0) END AS confirmed_at
         FROM listings l WHERE l.is_active = 1 AND (

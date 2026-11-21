@@ -662,6 +662,8 @@ def api_listing(request: Request, body: dict | None = None):
     row = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
     if not row:
         return _err("не найдено", 404)
+    row = offers.merged_listing(conn, row)
+    lid = row["id"]
     group = offers.for_listing(conn, row) if row["is_active"] else None
     hidden = offers.hidden_ids(conn, user["id"] if user else None)
     reps = offers.representatives(group, hidden) if group else {}
@@ -870,7 +872,7 @@ def _stats() -> dict:
     })
 
 
-_NOT_REMOVED = ("dup_same", "dup_text", "own_dup", "strely", "strely_photo", "appletv_chat", "chat", "rent_rule", "foreign")
+_NOT_REMOVED = ("dup_same", "dup_repeat", "dup_text", "own_dup", "strely", "strely_photo", "appletv_chat", "chat", "rent_rule", "foreign")
 
 
 # ─── промокод для коллег (временный) ───────────────────────────────────────
@@ -3291,7 +3293,7 @@ def dups_page(request: Request, body: dict | None = None):
 
 
 def api_admin_dups(request: Request, body: dict | None = None):
-    """Очередь пар; POST {id, verdict: repeat|diff|market|reopen} сохраняет решение.
+    """Очередь пар; POST {id, verdict: repeat|diff|market|reopen} сохраняет решение (repeat требует keep_id).
     {id, split} — разделить старую склейку; {id, ai} — подсказка нейросети.
     {phone_groups: текст} — номера одного агента (строка — группа), {phone_group_add: [номера]} — добавить группу."""
     user, err = _need_admin(request)
@@ -3320,10 +3322,12 @@ def api_admin_dups(request: Request, body: dict | None = None):
         if b.get("split"):
             ok = dupreview.split(conn, pid, user["id"])
         else:
-            res = dupreview.decide(conn, pid, str(b.get("verdict") or ""), user["id"])
-            conn.commit()
+            with conn:
+                conn.execute("BEGIN IMMEDIATE")
+                res = dupreview.decide(conn, pid, str(b.get("verdict") or ""), user["id"], keep_id=b.get("keep_id"))
             if not res["ok"]:
                 return JSONResponse(res, status_code=409 if res.get("stale") else 400)
+            _bump_cache()
             return JSONResponse(res)
         conn.commit()
         _bump_cache()
