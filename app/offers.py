@@ -15,6 +15,7 @@ from .textnorm import words
 CHAT_PHOTO = re.compile(r"/photos/\d+/([a-f0-9]{16})\.[a-z0-9]+$")
 LINK_TYPES = "('market','repeat')"
 MERGED_REPEAT = "dup_repeat"
+REVIEW_AREA_TOLERANCE_M2 = 2
 MATCH_FIELDS = ("id, type, deal, rooms, room_kind, area, land, floor, floors, complex, street, house, "
                 "settlement, price, price_doubt, phones, title, last_seen")
 
@@ -85,23 +86,34 @@ def _different(a, b):
     return bool(a and b and a != b)
 
 
-def _conflicts(a, b, place_a, place_b):
+def review_area_delta(a, b) -> float | None:
+    return round(abs(a - b), 6) if a is not None and b is not None else None
+
+
+def review_area_close(a, b) -> bool | None:
+    delta = review_area_delta(a, b)
+    return delta <= REVIEW_AREA_TOLERANCE_M2 if delta is not None else None
+
+
+def _conflicts(a, b, place_a, place_b, *, for_review: bool = False):
+    close_area = (review_area_close(a["area"], b["area"]) if for_review
+                  else dedupe._close(a["area"], b["area"], 0.03, 2))
     return (any(_different(x, y) for x, y in zip(place_a, place_b))
             or _different(house_key(a["house"]), house_key(b["house"]))
             or _different(words(a["settlement"]), words(b["settlement"]))
             or _different(a["room_kind"], b["room_kind"])
             or any(a[k] is not None and b[k] is not None and a[k] != b[k]
                    for k in ("rooms", "floor", "floors"))
-            or dedupe._close(a["area"], b["area"], 0.03, 2) is False
+            or close_area is False
             or dedupe._close(a["land"], b["land"], 0.04, 0.3) is False)
 
 
 def similar_signals(a, b, place_a, place_b):
     """Совпадения для подсказки и ручной проверки. Цена без характеристик не считается."""
-    if not any(x and x == y for x, y in zip(place_a, place_b)) or _conflicts(a, b, place_a, place_b):
+    if not any(x and x == y for x, y in zip(place_a, place_b)) or _conflicts(a, b, place_a, place_b, for_review=True):
         return []
     labels = []
-    area = dedupe._close(a["area"], b["area"], 0.03, 2) is True
+    area = review_area_close(a["area"], b["area"]) is True
     floor = a["floor"] is not None and a["floor"] == b["floor"]
     if area:
         labels.append("Близкая площадь")

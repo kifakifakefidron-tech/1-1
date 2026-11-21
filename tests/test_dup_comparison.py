@@ -258,3 +258,46 @@ def test_model_timeout_does_not_resolve_pair_and_can_be_retried(conn, monkeypatc
     assert tuple(conn.execute("SELECT status,ai FROM dup_pairs WHERE id=?", (pid,)).fetchone()) == ("open", None)
     monkeypatch.setattr(llm, "ask_json", lambda *a, **kw: {"verdict": "unsure", "why": "Не указан корпус"})
     assert dupreview.ask_ai(conn, pid)["ai"]["verdict"] == "unsure"
+
+
+def test_repeat_suggestion_keeps_newest_version_even_if_the_old_message_was_forwarded(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    old = _price_version(conn, 10, 6900000, last_seen=90)
+    fresh = _price_version(conn, 20, 6800000)
+    conn.execute("UPDATE listings SET area=52 WHERE id=?", (fresh,))
+    pid = pair(conn, old, fresh)
+    calls = []
+
+    def model(system, content, max_tokens):
+        calls.append(content)
+        assert "до 2 м² включительно" in system
+        assert json.loads(content)["разница площади в м²"] == 2
+        return {"verdict": "repeat", "confidence": 0.94, "why": "Совпали дом, этаж и детали квартиры."}
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    ai = dupreview.ask_ai(conn, pid)["ai"]
+    assert (ai["keep_id"], ai["keep_version_ts"]) == (fresh, 20)
+    saved = {k: v for k, v in ai.items() if k not in ("keep_id", "keep_version_ts")}
+    conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps(saved), pid))
+    row = dupreview.pairs(conn, "open")["pairs"][0]
+    assert row["a"]["id"] == fresh and row["b"]["id"] == old
+    assert row["area_in_tolerance"] and row["ai"]["keep_id"] == fresh
+    assert dupreview.ask_ai(conn, pid)["ai"] == ai and len(calls) == 1
+
+
+def test_manual_duplicate_review_accepts_area_difference_of_at_most_two_square_metres(conn):
+    a, b = listing(conn), listing(conn)
+    conn.execute("UPDATE listings SET area=36.1 WHERE id=?", (a,))
+    conn.execute("UPDATE listings SET area=38.1 WHERE id=?", (b,))
+
+    def rows():
+        return conn.execute("SELECT * FROM listings WHERE id IN (?,?) ORDER BY id", (a, b)).fetchall()
+
+    left, right = rows()
+    assert dupreview.classify(left, right)
+    assert "Близкая площадь" in offers.similar_signals(left, right, offers.place_keys(left), offers.place_keys(right))
+    conn.execute("UPDATE listings SET area=104 WHERE id=?", (a,))
+    conn.execute("UPDATE listings SET area=106.1 WHERE id=?", (b,))
+    left, right = rows()
+    assert dupreview.classify(left, right) is None
+    assert not offers.similar_signals(left, right, offers.place_keys(left), offers.place_keys(right))

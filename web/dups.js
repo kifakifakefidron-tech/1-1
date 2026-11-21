@@ -67,8 +67,8 @@
     return [out(ta, wa, ka), out(tb, wb, kb)];
   }
 
-  // ─── характеристики: совпало / различается / не указано у одного ───
-  function rows(a, b) {
+  // ─── характеристики ───
+  function rows(a, b, areaInTolerance) {
     const room = (c) => c.rooms == null ? (c.room_kind === "studio" ? "студия" : null)
       : `${c.rooms}${c.room_kind && KIND_ROOM[c.room_kind] ? ` (${KIND_ROOM[c.room_kind]})` : ""}`;
     const fl = (c) => c.floor == null ? null : `${c.floor}${c.floors ? ` из ${c.floors}` : ""}`;
@@ -86,7 +86,8 @@
       const va = f(a), vb = f(b);
       if (va == null && vb == null && !always) return null;
       const key = (v) => String(v ?? "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, "");
-      const cls = va == null || vb == null ? "miss" : key(va) === key(vb) ? "eq" : price ? "warn" : "ne";
+      const cls = va == null || vb == null ? "miss" : key(va) === key(vb) ? "eq"
+        : label === "Площадь" && areaInTolerance ? "near" : price ? "warn" : "ne";
       return { label, va, vb, cls };
     }).filter(Boolean);
   }
@@ -117,7 +118,7 @@
 
   function pairHTML(p, selected) {
     const [ma, mb] = diffMarks(p.a.text || "", p.b.text || "");
-    const R = rows(p.a, p.b);
+    const R = rows(p.a, p.b, p.area_in_tolerance);
     return `<section class="dp-pair" data-anchor="${p.a.id}" data-pid="${p.id}">
       <header class="dp-head">
         <span class="mark">${esc(p.kind_label)}</span>
@@ -130,6 +131,7 @@
         ${R.map((r) => `<div class="dp-tr ${r.cls}"><span>${esc(r.label)}</span><b>${esc(r.va ?? "не указано")}</b><b>${esc(r.vb ?? "не указано")}</b></div>`).join("")}
       </div>
       <p class="note dp-legend"><i class="eq"></i> совпало <i class="ne"></i> различается <i class="miss"></i> указано не у обоих
+        ${p.area_in_tolerance ? `<i class="near"></i> разница площади в пределах 2 м²` : ""}
         · в тексте подсвечены слова, которых нет в другой карточке</p>
       <div class="dp-sides" role="group" aria-label="Карточка, которая останется после объединения">${side(p.a, ma, selected)}${side(p.b, mb, selected)}</div>
       <div class="dp-acts">
@@ -142,12 +144,19 @@
     </section>`;
   }
 
+  function recommendedKeep(p) {
+    const lid = p.ai?.verdict === "repeat" ? p.ai.keep_id : null;
+    return lid === p.a.id || lid === p.b.id ? lid : null;
+  }
+
   function aiHTML(p) {
     const verdict = AI_LABELS[p.ai?.verdict];
     if (verdict) {
+      const kept = recommendedKeep(p);
       const confidence = p.ai.confidence == null ? "" : `<small class="dp-ai-confidence">Уверенность модели ${Math.round(p.ai.confidence * 100)}%</small>`;
       return `<div class="dp-ai ${p.ai.verdict}">${ic("sparkle")}<div class="dp-ai-copy">
         <span class="dp-ai-label">DeepSeek предлагает</span><strong>${verdict}</strong>
+        ${kept ? `<small class="dp-ai-fresh">Свежая версия № ${kept} · ${esc(day(p.ai.keep_version_ts))}</small>` : ""}
         ${p.ai.why ? `<small>${esc(p.ai.why)}</small>` : ""}${confidence}
       </div></div>`;
     }
@@ -176,7 +185,16 @@
     } else {
       aiErrors.set(p.id, result.data.error || (result.data.pending ? "DeepSeek ещё проверяет пару." : "DeepSeek пока не ответил."));
     }
-    if (current() && $("dpAiNote")) $("dpAiNote").innerHTML = aiHTML(pairs[0]);
+    if (current() && $("dpAiNote")) {
+      const choice = pairs[0];
+      $("dpAiNote").innerHTML = aiHTML(choice);
+      const keep = recommendedKeep(choice);
+      const panel = $("dpAiNote").closest(".dp-pair");
+      if (keep && panel && !panel.querySelector('[name="dpKeep"]:checked')) {
+        const input = panel.querySelector(`[name="dpKeep"][value="${keep}"]`);
+        if (input) input.checked = true;
+      }
+    }
     if (!current() && comparing()) requestAI(pairs[0]);
   }
 
@@ -247,7 +265,7 @@
   function renderComparison() {
     const pair = pairs[0];
     const selected = pair && $("dpBody").querySelector(`[data-pid="${pair.id}"] [name="dpKeep"]:checked`);
-    $("dpBody").innerHTML = pair ? pairHTML(pair, Number(selected?.value)) : data.counts[tab]
+    $("dpBody").innerHTML = pair ? pairHTML(pair, selected ? Number(selected.value) : recommendedKeep(pair)) : data.counts[tab]
       ? `<div class="dp-empty"><p>Остались пропущенные пары.</p><button type="button" class="pill" data-reset>Вернуться к пропущенным</button></div>`
       : tab === "price" && !data.price_scan_ready ? `<p class="dp-empty">Проверка опубликованных объявлений выполняется в фоне.</p>`
       : tab === "price" ? `<p class="dp-empty">${ic("check")} Нет пар, где отличается только цена.</p>`

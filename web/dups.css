@@ -22,6 +22,7 @@
 .dp-ai strong { color: var(--ink); font-size: 16px; line-height: 1.25; }
 .dp-ai small { color: var(--ink-2); font-size: 13px; line-height: 1.45; }
 .dp-ai .dp-ai-confidence { color: var(--ink-3); font-size: 12px; }
+.dp-ai .dp-ai-fresh { color: var(--gold); font-weight: 600; }
 .dp-ai.repeat, .dp-ai.market { border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
 .dp-ai.diff { border-color: color-mix(in srgb, var(--bad) 50%, transparent); }
 .dp-ai-stats:empty { display: none; }
@@ -35,6 +36,7 @@
 .dp-th { background: color-mix(in srgb, var(--ink) 4%, transparent); }
 .dp-th > span { color: var(--ink-3); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
 .dp-tr.eq { background: color-mix(in srgb, var(--ok) 9%, transparent); }
+.dp-tr.near { background: color-mix(in srgb, var(--ok) 16%, transparent); }
 .dp-tr.ne { background: color-mix(in srgb, var(--bad) 12%, transparent); }
 .dp-tr.ne > b { color: var(--bad); }
 .dp-tr.warn { background: color-mix(in srgb, var(--gold) 10%, transparent); }
@@ -42,6 +44,7 @@
 .dp-legend { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 12px; }
 .dp-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 2px; }
 .dp-legend i.eq { background: color-mix(in srgb, var(--ok) 40%, transparent); }
+.dp-legend i.near { background: color-mix(in srgb, var(--ok) 65%, transparent); }
 .dp-legend i.ne { background: color-mix(in srgb, var(--bad) 45%, transparent); }
 .dp-legend i.miss { background: var(--line); }
 
