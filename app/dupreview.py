@@ -13,11 +13,12 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-from . import applet, config, db, geo, offers
+from . import applet, config, db, geo, offers, rules
 from .dedupe import _close, _house_eq, text_twin
-from .textnorm import words
+from .textnorm import norm, words
 
 KINDS = {
+    "price_revision": "Одинаковый текст · разная цена",
     "text": "Тот же текст, другая цена",
     "agent": "Тот же агент, место, комнаты и этаж",
     "similar": "Текст похож, номера те же",
@@ -30,6 +31,8 @@ KINDS = {
 }
 SIM_MIN = 0.8
 PER_ROW = 3
+PRICE_REVISION_SCAN = "dup_price_revision_scan_v1"
+_PRICE_PAIR_SCOPE = "p.kind='price_revision' AND a.price != b.price"
 
 _FLATLIKE = ("flat", "new", "room", "commercial")
 _COLS = ("id, type, deal, rooms, room_kind, floor, floors, area, land, complex, street, house, district, settlement, "
@@ -255,6 +258,9 @@ def _merge_repeat(conn, pid, keep, drop, user_id):
     conn.execute("UPDATE listing_events SET listing_id=? WHERE listing_id=?", (k, d))
     for table in ownmatch._REFS:
         conn.execute(f"UPDATE OR IGNORE {table} SET listing_id=? WHERE listing_id=?", (k, d))
+    if conn.execute("""SELECT 1 FROM dup_pairs WHERE status='open' AND kind='price_revision'
+                        AND (a=? OR b=?) LIMIT 1""", (d, d)).fetchone():
+        conn.execute("DELETE FROM state WHERE key=?", (PRICE_REVISION_SCAN,))
     return {"ok": True, "status": "repeat", "keep_id": k, "photos_added": len(added)}
 
 
@@ -521,6 +527,61 @@ def tidy(conn: sqlite3.Connection) -> int:
     return cur.rowcount
 
 
+def _price_revision_groups(conn: sqlite3.Connection):
+    from . import phonegroups
+
+    phonegroups.refresh(conn)
+    groups = defaultdict(list)
+    checked = 0
+    rows = conn.execute("""SELECT id, type, deal, phones, owner_user_id, fragment, price, rooms, room_kind,
+        area, land, floor, floors, street, house, complex, settlement
+        FROM listings WHERE is_active=1 AND COALESCE(price_doubt,0)=0 AND price>0 AND fragment IS NOT NULL
+        ORDER BY first_seen DESC, id DESC""")
+    for row in rows:
+        checked += 1
+        contacts = offers.contact_keys(row)
+        text = rules.normalize_digits(row["fragment"])
+        if not contacts or not (price := rules.explicit_price_span(text, row["deal"])) or price[0] != row["price"]:
+            continue
+        _, start, end = price
+        before, after = norm(text[:start]), norm(text[end:])
+        if len(words(f"{before} {after}").split()) < 12:
+            continue
+        attrs = (row["deal"], offers.property_type(row["type"]), row["rooms"], row["room_kind"], row["area"],
+                 row["land"], row["floor"], row["floors"], offers.house_key(row["house"]),
+                 offers.place_keys(row), words(row["settlement"]))
+        groups[(frozenset(contacts), row["owner_user_id"], attrs, before, after)].append((row["id"], row["price"]))
+    return checked, groups
+
+
+def scan_price_revisions(conn: sqlite3.Connection) -> dict:
+    """Помечает совпавшие версии в очереди. Карточки и решения админа сохраняются."""
+    checked, groups = _price_revision_groups(conn)
+    now = int(time.time())
+    why = json.dumps(["Тот же контакт и характеристики", "В исходном тексте отличается только цена"], ensure_ascii=False)
+    prepared = []
+    for members in groups.values():
+        latest = members[0]
+        alternative = next((member for member in members if member[1] != latest[1]), None)
+        if alternative is None:
+            continue
+        # Одного сравнения на версию достаточно: все участники совпали по одному строгому ключу.
+        for member in members[1:]:
+            other = latest if member[1] != latest[1] else alternative
+            (a, price_a), (b, price_b) = sorted((member, other))
+            prepared.append((why, now, b, a, price_a, price_b))
+    with conn:
+        saved = conn.executemany("""INSERT INTO dup_pairs(a,b,kind,score,why,status,created_at)
+            SELECT a.id,b.id,'price_revision',1,?,'open',?
+            FROM listings a JOIN listings b ON b.id=?
+            WHERE a.id=? AND a.is_active=1 AND b.is_active=1 AND a.price=? AND b.price=?
+            ON CONFLICT(a,b) DO UPDATE SET kind=excluded.kind,score=excluded.score,why=excluded.why
+            WHERE dup_pairs.status='open' AND dup_pairs.kind != excluded.kind""", prepared).rowcount
+        report = {"checked": checked, "pairs": len(prepared), "marked": saved}
+        db.set_state(conn, PRICE_REVISION_SCAN, json.dumps(report))
+    return report
+
+
 def run(conn: sqlite3.Connection) -> dict:
     if not db.get_state(conn, "phone_groups_v1"):   # 25.10: номера одного агента — перепроверить все карточки заново
         db.set_state(conn, "phone_groups_v1", "1")
@@ -641,8 +702,13 @@ _ACTIVE_PAIR = """AND EXISTS (SELECT 1 FROM listings WHERE id = p.a AND is_activ
 def _queue_data(conn: sqlite3.Connection) -> dict:
     from . import phonegroups
     counts = dict(conn.execute("SELECT status, COUNT(*) FROM dup_pairs GROUP BY status"))
+    price_open = conn.execute(f"""SELECT COUNT(*) FROM dup_pairs p JOIN listings a ON a.id=p.a
+        JOIN listings b ON b.id=p.b WHERE p.status='open' AND a.is_active=1 AND b.is_active=1
+        AND {_PRICE_PAIR_SCOPE}""").fetchone()[0]
     return {"phone_groups": phonegroups.listing(conn), "counts": {"open": open_count(conn),
-            "auto": counts.get("auto", 0), "done": sum(counts.get(k, 0) for k in ("same", "diff", "split", "market", "repeat"))},
+            "price": price_open, "auto": counts.get("auto", 0),
+            "done": sum(counts.get(k, 0) for k in ("same", "diff", "split", "market", "repeat"))},
+            "price_scan_ready": db.get_state(conn, PRICE_REVISION_SCAN) is not None,
             "stats": stats(conn), "ai_enabled": bool(config.DEEPSEEK_API_KEY)}
 
 
@@ -657,14 +723,16 @@ def _pair_details(p, a, b):
 def pairs(conn: sqlite3.Connection, status: str = "open", limit: int = 30, offset: int = 0,
           skip: list[int] | None = None) -> dict:
     # 26.10 («database is locked»): только чтение — раньше здесь была запись (tidy), и база ждала, пока посчитаются карточки
-    st = {"open": ("open",), "auto": ("auto",), "done": ("same", "diff", "split", "market", "repeat")}.get(status, ("open",))
+    st = {"auto": ("auto",), "done": ("same", "diff", "split", "market", "repeat")}.get(status, ("open",))
     source = "dup_pairs p"
     scope = f"p.status IN ({','.join('?' * len(st))})"
     params = list(st)
     order = "p.decided_at DESC, p.id DESC"
-    if status == "open":
+    if status in ("open", "price"):
         source += " JOIN listings a ON a.id=p.a JOIN listings b ON b.id=p.b"
         scope += " AND a.is_active=1 AND b.is_active=1"
+        if status == "price":
+            scope += f" AND {_PRICE_PAIR_SCOPE}"
         order = "MAX(a.first_seen, b.first_seen) DESC, p.score DESC, p.id"
         if skip:
             scope += f" AND p.id NOT IN ({','.join('?' for _ in skip)})"

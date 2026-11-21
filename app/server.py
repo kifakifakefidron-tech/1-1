@@ -3334,14 +3334,15 @@ def api_admin_dups(request: Request, body: dict | None = None):
         return JSONResponse({"ok": ok})
     q = request.query_params
     status = q.get("status", "open")
-    if status not in ("open", "auto", "done"):
+    if status not in ("open", "price", "auto", "done"):
         return _err("Неизвестная очередь.")
     try:
         off = max(0, int(q.get("offset") or 0))
     except ValueError:
         off = 0
     skip = [int(value) for value in q.get("skip", "").split(",")[:150] if value.isascii() and value.isdigit() and len(value) <= 18]
-    return JSONResponse(dupreview.pairs(conn, status, 1 if q.get("view") == "pair" and status == "open" else 30, off, skip))
+    limit = 1 if q.get("view") == "pair" and status in ("open", "price") else 30
+    return JSONResponse(dupreview.pairs(conn, status, limit, off, skip))
 
 
 def api_admin_recheck(request: Request, body: dict | None = None):

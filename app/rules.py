@@ -98,12 +98,7 @@ def extract_article(text: str) -> str | None:
 _PRICE_LABEL_BEFORE = re.compile(r"(?:цен[аы]|стоимост\w*|💰|🪙)\s*[:\-–—]?\s*$", re.IGNORECASE)
 
 
-def extract_price(text: str, deal: str = "sale", strict: bool = False) -> int | None:
-    """Самая правдоподобная цена объекта в тексте (₽).
-
-    strict=True — только «настоящая» цена: с единицей (млн, т.р., ₽) или словом
-    «цена/стоимость». Так «Обрем: сбер 3800» и «В дкп 1350» ценой не считаются."""
-    best: tuple[int, int] | None = None  # (score, value)
+def _price_candidates(text: str, deal: str, strict: bool):
     for m in _PRICE_RE.finditer(text):
         num = _to_number(m.group("num"))
         if num is None:
@@ -164,9 +159,22 @@ def extract_price(text: str, deal: str = "sale", strict: bool = False) -> int | 
         score = (5 if labelled else 0) + (3 if unit or cur else 0) + (1 if word else 0) + (1 if " " in m.group("num") else 0)
         if score == 0:
             continue
-        if best is None or score > best[0]:
-            best = (score, value)
-    return best[1] if best else None
+        yield score, value, m.start("num"), end, bool(unit or cur or labelled)
+
+
+def extract_price(text: str, deal: str = "sale", strict: bool = False) -> int | None:
+    """Самая правдоподобная цена объекта в тексте (₽)."""
+    match = max(_price_candidates(text, deal, strict), key=lambda candidate: candidate[0], default=None)
+    return match[1] if match else None
+
+
+def explicit_price_span(text: str, deal: str) -> tuple[int, int, int] | None:
+    """Одна явно указанная цена и её границы в исходном тексте."""
+    matches = list(_price_candidates(text, deal, strict=True))
+    if len(matches) != 1 or not matches[0][4]:
+        return None
+    _, value, start, end, _ = matches[0]
+    return value, start, end
 
 
 def explicit_price_line(line: str, deal: str) -> int | None:

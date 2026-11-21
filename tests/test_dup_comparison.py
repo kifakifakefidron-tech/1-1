@@ -107,3 +107,50 @@ def test_legacy_repeat_uses_one_version_when_contacts_are_missing(conn):
     group = offers.groups(conn)[a]
     reps = offers.representatives(group, set())
     assert reps[a]["id"] == reps[b]["id"] == b
+
+
+def test_price_revision_scan_preserves_cards_and_existing_decisions(conn):
+    text = ("Краснодар, ЖК Губернский, ул. Домбайская 59. Квартира с ремонтом, мебелью и техникой. "
+            "Цена {price} ₽, возможен торг. В ДКП {contract} млн.")
+
+    def card(price, *, phone="+79000000001", contract=4, prefix=""):
+        lid = listing(conn, phone)
+        conn.execute("UPDATE listings SET price=?, fragment=?, first_seen=?, last_seen=? WHERE id=?",
+                     (price, prefix + text.format(price=f"{price:,}".replace(",", " "), contract=contract), lid, lid, lid))
+        return lid
+
+    a, b = card(6800000), card(6900000)
+    other_agent = card(7000000, phone="+79000000002")
+    other_contract = card(7100000, contract=5)
+    d, e = card(6800000, prefix="Ключи в агентстве. "), card(6900000, prefix="Ключи в агентстве. ")
+    prior = pair(conn, d, e)
+    conn.execute("UPDATE dup_pairs SET status='diff' WHERE id=?", (prior,))
+    conn.commit()
+    before = list(map(tuple, conn.execute("SELECT * FROM listings ORDER BY id")))
+    assert dupreview.scan_price_revisions(conn) == {"checked": 6, "pairs": 2, "marked": 1}
+    result = dupreview.pairs(conn, "price")
+    assert result["price_scan_ready"] and result["counts"]["price"] == 1
+    found = result["pairs"][0]
+    assert (found["kind"], found["a"]["id"], found["b"]["id"]) == ("price_revision", a, b)
+    assert conn.execute("SELECT status FROM dup_pairs WHERE id=?", (prior,)).fetchone()[0] == "diff"
+    assert not conn.execute("SELECT 1 FROM dup_pairs WHERE a IN (?,?) OR b IN (?,?)",
+                            (other_agent, other_contract, other_agent, other_contract)).fetchone()
+    assert list(map(tuple, conn.execute("SELECT * FROM listings ORDER BY id"))) == before
+    assert dupreview.scan_price_revisions(conn)["marked"] == 0
+
+
+def test_price_revision_scan_recovers_remaining_versions_after_chosen_merge(conn):
+    text = "Цена{}🍋\nЖК Губернский, квартира с ремонтом, мебелью, техникой, отдельной спальней и видом на парк."
+    a, b, c = [listing(conn) for _ in range(3)]
+    for lid, price in ((a, 6800), (b, 6900), (c, 7100)):
+        conn.execute("UPDATE listings SET fragment=?, price=?, first_seen=?, last_seen=? WHERE id=?",
+                     (text.format(price), price * 1000, lid, lid, lid))
+    conn.commit()
+    assert dupreview.scan_price_revisions(conn)["marked"] == 2
+    pid = conn.execute("SELECT id FROM dup_pairs WHERE a=? AND b=?", (a, c)).fetchone()[0]
+    assert dupreview.decide(conn, pid, "repeat", user_id=1, keep_id=a)["ok"]
+    conn.commit()
+    assert not dupreview.pairs(conn, "price")["price_scan_ready"]
+    assert dupreview.scan_price_revisions(conn)["marked"] == 1
+    found = dupreview.pairs(conn, "price")["pairs"]
+    assert len(found) == 1 and {found[0]["a"]["id"], found[0]["b"]["id"]} == {a, b}

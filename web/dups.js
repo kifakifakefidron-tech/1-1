@@ -15,6 +15,7 @@
   let tab = "open", data = null, pairs = [], busy = false, loading = false;
   const skipped = new Set();
   const KEYS = { "1": "repeat", "2": "diff", "3": "market", ArrowRight: "skip" };
+  const comparing = () => tab === "open" || tab === "price";
 
   async function call(url, body) {
     const opts = { credentials: "same-origin", method: body ? "POST" : "GET" };
@@ -118,7 +119,7 @@
     return `<section class="dp-pair" data-anchor="${p.a.id}" data-pid="${p.id}">
       <header class="dp-head">
         <span class="mark">${esc(p.kind_label)}</span>
-        <span class="dp-count">Пар в очереди: ${n0(data.counts.open)}</span>
+        <span class="dp-count">Пар в очереди: ${n0(data.counts[tab])}</span>
       </header>
       <div class="chips dp-why">${(p.why || []).map((w) => `<span class="chip">${esc(w)}</span>`).join("")}
         ${p.shared_photos ? `<span class="chip">Совпали фото: ${n0(p.shared_photos)}</span>` : ""}</div>
@@ -181,10 +182,11 @@
   }
 
   function render() {
-    $("dpTabs").innerHTML = [["open", "Ждут решения", data.counts.open], ["auto", "Старые автосклейки", data.counts.auto],
+    $("dpTabs").innerHTML = [["open", "Ждут решения", data.counts.open], ["price", "Только цена", data.counts.price],
+      ["auto", "Старые автосклейки", data.counts.auto],
       ["done", "Ваши решения", data.counts.done]].map(([k, l, n]) =>
       `<button type="button" class="chip${tab === k ? " on" : ""}" data-tab="${k}">${l} <b>${n0(n)}</b></button>`).join("");
-    if (tab === "open") {
+    if (comparing()) {
       renderComparison();
     } else $("dpBody").innerHTML = listHTML();
     $("dpStats").innerHTML = statsHTML(data.stats || []);
@@ -194,8 +196,10 @@
   function renderComparison() {
     const pair = pairs[0];
     const selected = pair && $("dpBody").querySelector(`[data-pid="${pair.id}"] [name="dpKeep"]:checked`);
-    $("dpBody").innerHTML = pair ? pairHTML(pair, Number(selected?.value)) : data.counts.open
+    $("dpBody").innerHTML = pair ? pairHTML(pair, Number(selected?.value)) : data.counts[tab]
       ? `<div class="dp-empty"><p>Остались пропущенные пары.</p><button type="button" class="pill" data-reset>Вернуться к пропущенным</button></div>`
+      : tab === "price" && !data.price_scan_ready ? `<p class="dp-empty">Проверка опубликованных объявлений выполняется в фоне.</p>`
+      : tab === "price" ? `<p class="dp-empty">${ic("check")} Нет пар, где отличается только цена.</p>`
       : `<p class="dp-empty">${ic("check")} Все пары разобраны.</p>`;
     updateActions();
   }
@@ -208,7 +212,7 @@
     loading = true;
     updateActions();
     const query = new URLSearchParams({ status: tab });
-    if (tab === "open") {
+    if (comparing()) {
       query.set("view", "pair");
       if (skipped.size) query.set("skip", [...skipped].slice(-150).join(","));
     }
@@ -224,12 +228,12 @@
     data = r.data;
     pairs = data.pairs || [];
     render();
-    if (next && tab === "open" && pairs.length) $("dpBody").querySelector(".dp-pair").scrollIntoView({ block: "start" });
+    if (next && comparing() && pairs.length) $("dpBody").querySelector(".dp-pair").scrollIntoView({ block: "start" });
   }
 
   async function decide(v) {
     const p = pairs[0];
-    if (tab !== "open" || !p || busy || loading) return;
+    if (!comparing() || !p || busy || loading) return;
     if (v === "skip") {
       skipped.add(p.id);
       return load(true);
@@ -273,7 +277,7 @@
     if (t.dataset.ai) {
       t.disabled = true; t.textContent = "Спрашиваю…";
       const r = await call("/api/admin/dups", { id: Number(t.dataset.ai), ai: true });
-      const choice = tab === "open" && pairs.find((p) => p.id === Number(t.dataset.ai));
+      const choice = comparing() && pairs.find((p) => p.id === Number(t.dataset.ai));
       if (r.data.ai && choice) { choice.ai = r.data.ai; renderComparison(); }
       else if (!r.data.ai) { toast(r.data.error || "Нейросеть не ответила"); t.disabled = false; }
       return;
@@ -304,7 +308,7 @@
   });
   document.addEventListener("keydown", (e) => {
     const v = KEYS[e.key];
-    if (!v || e.repeat || tab !== "open" || (e.target.closest("input, textarea, select, [contenteditable=true]")
+    if (!v || e.repeat || !comparing() || (e.target.closest("input, textarea, select, [contenteditable=true]")
         && !(e.key === "1" && e.target.name === "dpKeep"))
         || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
     e.preventDefault();

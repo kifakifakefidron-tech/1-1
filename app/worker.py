@@ -175,6 +175,12 @@ def tick(conn) -> dict:
     except Exception:  # noqa: BLE001
         log.exception("проверка повторов не прошла")
     try:
+        if not db.get_state(conn, dupreview.PRICE_REVISION_SCAN):
+            stats["price_revisions"] = dupreview.scan_price_revisions(conn)
+    except Exception:  # noqa: BLE001
+        conn.rollback()
+        log.exception("перепроверка версий с разной ценой не прошла")
+    try:
         offer_check = dupreview.recheck_offers(conn)
         if offer_check:
             stats["offer_check"] = offer_check
