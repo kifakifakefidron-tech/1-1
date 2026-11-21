@@ -4,7 +4,8 @@ import json
 import time
 from datetime import datetime, timedelta, timezone
 
-from app import agent, applet, config, db, dupreview, feed, ingest, parser, search, stats
+from app import accounts, agent, applet, config, db, dupreview, feed, ingest, parser, picks, search, stats
+from app.branding import partner_text
 
 
 SLAVA = ("+79000000011", "+79000000012")
@@ -48,6 +49,45 @@ def test_catalog_scope_price_and_private_columns(monkeypatch):
     assert items[2]["description"] == "♟Е2 КВ♟\n▪️ Техника остаётся при продаже"
     assert all("177" not in item["description"] and "4600" not in item["description"] for item in items)
     assert all("9999" not in json.dumps(item) and "79000000019" not in json.dumps(item) for item in items)
+
+
+def test_partner_brand_for_existing_listings_and_collections(conn, monkeypatch):
+    configure(monkeypatch)
+    assert applet.contact_labels()[ARTEM] == ("Артём · СТРЕЛЫ", False)
+    assert applet.contact_labels()[SLAVA[0]] == ("Вячеслав Цветков", False)
+    assert applet.contact_labels()[SLAVA[1]] == ("Вячеслав Цветков · WhatsApp", True)
+    assert partner_text("Stayl, STAYL и stayl.") == "СТРЕЛЫ, СТРЕЛЫ и СТРЕЛЫ."
+    assert partner_text("https://stayl.example/about @stayl stayl@example.test Lifestyle") == (
+        "https://stayl.example/about @stayl stayl@example.test Lifestyle")
+
+    row = values()
+    row[31] = row[31].replace("Техника остаётся при продаже", "Техника остаётся при продаже. Показ от Stayl.")
+    applet.sync(conn, snapshot(row))
+    artem = conn.execute("SELECT * FROM listings WHERE ext_id LIKE 'appletv:stayl:%'").fetchone()
+    slava = conn.execute("SELECT id FROM listings WHERE id!=?", (artem["id"],)).fetchone()[0]
+    assert "Показ от Stayl." in artem["description"]
+    for with_contacts in (True, False):
+        assert "Показ от СТРЕЛЫ" in search.listing_detail(conn, artem["id"], with_contacts)["description"]
+    pid = conn.execute("""INSERT INTO dup_pairs(a,b,kind,created_at) VALUES(?,?,'similar',1)
+        ON CONFLICT(a,b) DO UPDATE SET status='open',kind='similar' RETURNING id""",
+                       tuple(sorted((artem["id"], slava)))).fetchone()[0]
+    review = next(p for p in dupreview.pairs(conn)["pairs"] if p["id"] == pid)
+    card = next(review[key] for key in ("a", "b") if review[key]["id"] == artem["id"])
+    assert "Показ от СТРЕЛЫ." in card["text"]
+    assert "Показ от Stayl." in dupreview._card(conn, artem["id"])["text"]
+
+    user = accounts.upsert_email_user(conn, "partner-brand@example.test")
+    cid = conn.execute("""INSERT INTO collections(user_id,token,title,contact_name,created,updated)
+        VALUES(?,'brand-test','Подборка Stayl','Артём · Stayl',1,1)""", (user["id"],)).lastrowid
+    conn.execute("INSERT INTO collection_items(collection_id,listing_id,text,added) VALUES(?,?,?,1)",
+                 (cid, artem["id"], "Показ от Stayl."))
+    published = picks.public(conn, "brand-test", count_view=False)
+    assert published["contact_name"] == "Артём · СТРЕЛЫ"
+    assert published["items"][0]["description"] == "Показ от СТРЕЛЫ."
+    saved = picks.mine(conn, user["id"])[0]
+    assert saved["title"] == "Подборка СТРЕЛЫ"
+    assert saved["contact_name"] == "Артём · СТРЕЛЫ"
+    assert saved["items"][0]["text"] == "Показ от СТРЕЛЫ."
 
 
 def test_catalog_review_reads_full_ad_and_links_only_same_private_unit(conn, monkeypatch):

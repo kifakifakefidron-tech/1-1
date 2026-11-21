@@ -12,6 +12,7 @@ import sqlite3
 import time
 
 from . import config, listing_video, offers, parser, rules, search, settings, worklog
+from .branding import partner_text
 
 MAX_COLLECTIONS = 200
 PROMO_NAME = "Коллега (по коду)"   # служебное имя аккаунта по промокоду — клиенту его не показываем никогда
@@ -44,6 +45,8 @@ def mine(conn: sqlite3.Connection, user_id: int) -> list[dict]:
                              FROM collections c LEFT JOIN clients k ON k.id = c.client_id AND k.user_id = c.user_id
                              WHERE c.user_id = ? ORDER BY c.updated DESC""", (user_id,)):
         d = dict(r)
+        for field in ("title", "client_title", "contact_name", "note"):
+            d[field] = partner_text(d[field])
         d["url"] = f"{config.PICK_URL}/c/{r['token']}"   # ссылка для клиента (на нейтральном адресе, если он задан)
         d["color"] = r["color"] if r["color"] in settings.COLORS else settings.COLORS[r["id"] % len(settings.COLORS)]
         d["notes"] = {str(k): v[:5] for k, v in worklog.for_pick(conn, user_id, r["id"], r["client_id"]).items()}
@@ -57,6 +60,8 @@ def mine(conn: sqlite3.Connection, user_id: int) -> list[dict]:
             "SELECT listing_id, status, reaction, reaction_text FROM client_items WHERE client_id = ?", (r["client_id"],))} \
             if r["client_id"] else {}
         for it in d["items"]:
+            for field in ("title", "text", "note"):
+                it[field] = partner_text(it[field])
             photos = json.loads(it.pop("photos") or "[]")
             it["my_photos"] = json.loads(it["my_photos"] or "[]")
             it["photos_all"], it["photos_hidden"] = ordered_photos(it["my_photos"], photos, it.pop("photo_order"))
@@ -553,7 +558,7 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
                              WHERE i.collection_id = ? ORDER BY i.pos, i.added""", (c["id"],)):
         no_license = _no_license(conn, r["phones"])
         items.append({
-            "id": r["id"], "title": r["title"], "type": r["type"], "deal": r["deal"],
+            "id": r["id"], "title": partner_text(r["title"]), "type": r["type"], "deal": r["deal"],
             # цена: своя цена агента для клиента, иначе из объявления; «скрыть цену» — клиент видит «цена по запросу»
             "price": None if r["hide_price"] else (r["my_price"] or r["price"]),
             "price_m2": None if r["hide_price"] else (round(r["my_price"] / r["area"]) if r["my_price"] and r["area"] else
@@ -568,14 +573,16 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
             "photos": ordered_photos(json.loads(r["my_photos"] or "[]"), [] if no_license else json.loads(r["photos"] or "[]"),
                                      r["photo_order"])[0],
             "description": "" if not r["is_active"] or (not r["item_text"] and no_license) else
-                           parser.guard_phones(r["item_text"] or parser.client_text(r["description"]))[:5000],
-            "note": r["item_note"] or "", "is_active": r["is_active"],
+                           partner_text(parser.guard_phones(r["item_text"] or parser.client_text(r["description"])))[:5000],
+            "note": partner_text(r["item_note"] or ""), "is_active": r["is_active"],
             **(listing_video.fields(r, prefix=f"/api/c/{token}/video") if r["is_active"] and not no_license else {}),
             "reaction": mine_r.get(r["id"])})
     from . import settings
     # название подборки — для агента («Ирине — 2к ФМР»); клиент видит только свой заголовок (или нейтральный)
-    return {"title": c["client_title"] or "Подобрали для вас", "note": c["note"], "hide_map": no_map,
-            "contact_name": "" if (c["contact_name"] or "") == PROMO_NAME else c["contact_name"], "contact_phone": c["contact_phone"],
+    return {"title": partner_text(c["client_title"]) or "Подобрали для вас",
+            "note": partner_text(c["note"]), "hide_map": no_map,
+            "contact_name": "" if c["contact_name"] == PROMO_NAME else partner_text(c["contact_name"]),
+            "contact_phone": c["contact_phone"],
             "updated": c["updated"], "items": items,
             "style": {**(st := settings.public_pick_style(conn, c["user_id"])),
                       "cover": (c["cover"] if "cover" in c.keys() else None) or st.get("cover") or ""}}

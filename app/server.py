@@ -25,6 +25,7 @@ from starlette.staticfiles import StaticFiles
 
 from . import (accounts, agent, autolearn, callcheck, bankrates, brain, buyers, clients, dashboard, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
                dupreview, listing_video, market, notify, payments, picks, planner, region, reqexport, search, settings, stats, tg, wappi, widgets, worklog)
+from .branding import partner_text
 from .rules import TYPE_LABELS
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -298,7 +299,8 @@ def index(request: Request, body: dict | None = None):
     if r is not None:
         place = " · ".join(x for x in (f"ЖК {r['complex']}" if r["complex"] else None, r["district"],
                                        f"ул. {r['street']}" if r["street"] else None) if x)
-        title = f"{r['title']} — {_price_text(r['price'], r['deal'])}"
+        listing_title = partner_text(r["title"])
+        title = f"{listing_title} — {_price_text(r['price'], r['deal'])}"
         photos = json.loads(r["photos"] or "[]")
         # фото из чатов — чужие произведения: в превью ссылки только фото партнёра (фид СТРЕЛ), иначе значок 1+1
         img = photos[0] if photos and r["source"] == "feed" else "/static/og-image.jpg"   # 18.10: превью 1200×630, а не иконка
@@ -315,11 +317,11 @@ def index(request: Request, body: dict | None = None):
                 f'<meta property="og:url" content="{esc(url)}">'
                 f'<meta property="og:site_name" content="1+1 · поиск объектов">')
         # Schema.org: предложение (цена, адрес) — для поиска Яндекса и Google; без телефонов
-        ld = {"@context": "https://schema.org", "@type": "Offer", "name": r["title"], "url": url,
+        ld = {"@context": "https://schema.org", "@type": "Offer", "name": listing_title, "url": url,
               "description": desc, "priceCurrency": "RUB", "image": img,
               "availability": "https://schema.org/InStock" if r["is_active"] else "https://schema.org/SoldOut",
               "itemOffered": {"@type": "Accommodation" if r["type"] in ("flat", "new", "room", "house") else "Place",
-                              "name": r["title"],
+                              "name": listing_title,
                               **({"floorSize": {"@type": "QuantitativeValue", "value": r["area"], "unitCode": "MTK"}} if r["area"] else {}),
                               **({"numberOfRooms": r["rooms"]} if r["rooms"] is not None else {}),
                               "address": {"@type": "PostalAddress", "addressLocality": r["settlement"] or "Краснодар",
@@ -2646,7 +2648,8 @@ def _fix_item(conn, lid: int, *, price_only: bool = False) -> dict | None:
     item = {k: r[k] for k in ("id", "title", "price", "deal", "type", "rooms", "area", "floor", "floors", "complex",
                              "district", "street", "house", "settlement", "lat", "lon", "geo_status", "admin_fixed",
                              "source", "room_kind", "repair", "price_doubt")} | {
-        "text": text, "photo": photos[0] if photos else None, "photos": photos[:12], "land": r["land"],
+        "title": partner_text(r["title"]), "text": partner_text(text),
+        "photo": photos[0] if photos else None, "photos": photos[:12], "land": r["land"],
         "phones": json.loads(r["phones"] or "[]"),
         "extra_districts": json.loads(r["extra_districts"] or "[]"),
     }

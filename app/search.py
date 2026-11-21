@@ -12,6 +12,7 @@ import sqlite3
 from dataclasses import dataclass, field
 
 from . import config, geo
+from .branding import partner_text
 from .rules import TYPE_LABELS
 from .textnorm import norm, words
 
@@ -560,12 +561,15 @@ def mask_phone(p: str) -> str:
 
 def row_to_item(r: sqlite3.Row, with_contacts: bool) -> dict:
     d = {k: r[k] for k in PUBLIC_FIELDS}
+    d["title"] = partner_text(d["title"])
     if "ext_id" in r.keys() and (r["ext_id"] or "").startswith("appletv:"):
         d["appletv"] = True
     from .parser import guard_phones, public_text
     d["description"] = guard_phones(d["description"])   # номеров в описании не отдаём никому — они в контакте
     if not with_contacts:   # списки и все без доступа: без имён агентов, комиссии и «номеров с опечатками» (152-ФЗ)
         d["description"] = public_text(d["description"])
+    else:
+        d["description"] = partner_text(d["description"])
     keys = r.keys()
     d["catalog_migrated"] = bool(r["catalog_migrated"]) if "catalog_migrated" in keys else False
     d["price_doubt"] = bool(r["price_doubt"]) if "price_doubt" in keys else False
@@ -585,7 +589,7 @@ def row_to_item(r: sqlite3.Row, with_contacts: bool) -> dict:
     phones = json.loads(r["phones"] or "[]")
     if with_contacts:
         d["phones"] = phones
-        d["fragment"] = r["fragment"]
+        d["fragment"] = partner_text(r["fragment"])
     else:
         d["phones_masked"] = [mask_phone(p) for p in phones]
     return d
@@ -802,7 +806,8 @@ def listing_detail(conn: sqlite3.Connection, listing_id: int, with_contacts: boo
         last = conn.execute(sel + " ORDER BY e.ts DESC, e.rowid DESC LIMIT 49", (listing_id,)).fetchall()
         ev = sorted({x["rid"]: x for x in ([first] if first else []) + list(last)}.values(), key=lambda x: (x["ts"], x["rid"]))
     history = [{"ts": e["ts"], "price": e["price"], "match": e["match"],
-                "chat": e["chat_name"], "sender": e["sender_name"], "source": e["source"]} for e in ev]
+                "chat": partner_text(e["chat_name"]), "sender": partner_text(e["sender_name"]),
+                "source": e["source"]} for e in ev]
     d["history"] = history
     d["history_total"] = conn.execute("SELECT COUNT(*) FROM listing_events WHERE listing_id = ?", (listing_id,)).fetchone()[0]         if is_admin else None
     d["price_history"] = [{"ts": h[0], "price": h[1]} for h in conn.execute("""WITH RECURSIVE versions(id) AS (

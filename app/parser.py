@@ -11,6 +11,7 @@ import re
 from dataclasses import asdict, dataclass, field
 
 from . import geo, llm, rules
+from .branding import partner_text
 from .textnorm import words
 
 log = logging.getLogger(__name__)
@@ -167,7 +168,7 @@ def client_text(description: str | None) -> str:
     # имя агента одной строкой в самом конце («➳ Артём»)
     while lines and re.fullmatch(r"[А-ЯЁA-Z][а-яёa-z]{2,14}", lines[-1]):
         lines.pop()
-    return "\n".join(lines).strip()
+    return partner_text("\n".join(lines).strip())
 
 
 # ─── открытый текст объявления (без входа, превью, поисковики): без имён и «номеров с опечатками» ───

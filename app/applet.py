@@ -14,6 +14,7 @@ from collections import defaultdict
 from itertools import combinations
 
 from . import config, db, geo, rules
+from .branding import PARTNER_NAME
 from .stats import day_start
 from .textnorm import norm, words
 
@@ -57,7 +58,7 @@ def contact_labels() -> dict[str, tuple[str, bool]]:
     if not artem:
         return {}
     return {slava[0]: ("Вячеслав Цветков", False), slava[1]: ("Вячеслав Цветков · WhatsApp", True),
-            artem: ("Артём · Stayl", False)}
+            artem: (f"Артём · {PARTNER_NAME}", False)}
 
 
 def _phones(text: str) -> set[str]:

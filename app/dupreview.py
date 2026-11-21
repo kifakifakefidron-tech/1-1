@@ -15,6 +15,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from . import applet, config, db, geo, offers
+from .branding import partner_text
 from .dedupe import _close, _house_eq, price_revision_key, price_revision_time, text_twin
 from .textnorm import words
 
@@ -800,6 +801,8 @@ def _pair_details(p, a, b):
     ai = _read_ai(p["ai"])
     if p["status"] == "open" and ai:
         ai = _with_recommended_keep(ai, [a, b]) if ai.get("signature") == _ai_signature([a, b]) else {}
+    if isinstance(ai.get("why"), str):
+        ai["why"] = partner_text(ai["why"])
     area_delta = offers.review_area_delta(a["area"], b["area"])
     return {"id": p["id"], "kind": p["kind"], "kind_label": KINDS.get(p["kind"], p["kind"]),
             "why": json.loads(p["why"] or "[]"), "status": p["status"], "score": p["score"],
@@ -837,7 +840,11 @@ def pairs(conn: sqlite3.Connection, status: str = "open", limit: int = 30, offse
         if (a["last_seen"] or 0, a["id"]) > (b["last_seen"] or 0, b["id"]):   # 25.10 (Артём): справа — присланное позже
             a, b = b, a
         keep = p["keep_id"]
-        out.append({**_pair_details(p, a, b), "a": a, "b": b, "keep": keep, "merged": p["status"] == "repeat" and bool(p["drop_id"])})
+        details = _pair_details(p, a, b)
+        for card in (a, b):
+            for field in ("title", "text", "chat", "sender_name"):
+                card[field] = partner_text(card[field])
+        out.append({**details, "a": a, "b": b, "keep": keep, "merged": p["status"] == "repeat" and bool(p["drop_id"])})
     return {**_queue_data(conn), "pairs": out}
 
 
@@ -982,7 +989,7 @@ def ask_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False) -> 
     verdict, confidence = res.get("verdict"), res.get("confidence")
     ai = {"verdict": verdict if verdict in _AI_VERDICTS else "unsure",
           "confidence": confidence if type(confidence) in (int, float) and 0 <= confidence <= 1 else None,
-          "why": parser.mask_names(parser.strip_phones(str(res.get("why") or "")))[:400],
+          "why": partner_text(parser.mask_names(parser.strip_phones(str(res.get("why") or ""))))[:400],
           "ts": int(time.time()), "signature": signature}
     ai = _with_recommended_keep(ai, cards)
     encoded = json.dumps(ai, ensure_ascii=False)
