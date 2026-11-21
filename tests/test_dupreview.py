@@ -9,8 +9,9 @@ B = "Срочно! Двушка в ЖК Мозаика, 7 этаж из 16, 58 �
 NO_FLOOR = "Двухкомнатная в ЖК Мозаика, хороший ремонт, мебель остаётся, рядом школа. 7,4 млн. 89181112233"
 
 
-def _send(conn, text, chat="c1"):
-    m = ingest.add_message(conn, source="wa", text=text, chat_id=chat, msg_id=f"{chat}-{time.time_ns()}", ts=int(time.time()))
+def _send(conn, text, chat="c1", sender=None):
+    m = ingest.add_message(conn, source="wa", text=text, chat_id=chat, msg_id=f"{chat}-{time.time_ns()}",
+                           ts=int(time.time()), sender=sender)
     return ingest.process_message(conn, m, use_llm=False)
 
 
@@ -92,6 +93,22 @@ def test_repeat_keeps_confirmed_offer_from_another_agent():
     assert dupreview.decide(conn, pid, "repeat", keep_id=a)["ok"]
     assert set(offers.groups(conn)) == {a, c}
     assert search.listing_detail(conn, c, False)["photos"] == []
+
+
+def test_admin_repeat_overrides_different_numbers_with_same_sender(conn):
+    sender = "79180000011@c.us"
+    a = _lid(_send(conn, A.replace(" 89181112233", ""), sender=sender))
+    b = _lid(_send(conn, A.replace("89181112233", "89190000012"), "c2", sender=sender))
+    assert a < b
+    left, right = (dupreview._card(conn, lid) for lid in (a, b))
+    assert left["sender_phones"] == right["sender_phones"] == ["+7 918 000-00-11"]
+    assert left["text_phones"] == [] and right["text_phones"] == ["+7 919 000-00-12"]
+    assert set(left["phones"]).isdisjoint(right["phones"])
+    pid = conn.execute("INSERT INTO dup_pairs(a,b,kind,status,created_at) VALUES (?,?,'agent','open',0)", (a, b)).lastrowid
+    assert dupreview.decide(conn, pid, "repeat", user_id=1, keep_id=b)["ok"]
+    assert _active(conn) == [b]
+    result = conn.execute("SELECT phones FROM listings WHERE id=?", (b,)).fetchone()
+    assert json.loads(result["phones"]) == right["phones"]
 
 
 def test_admin_diff_is_remembered():

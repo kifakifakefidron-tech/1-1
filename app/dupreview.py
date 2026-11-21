@@ -303,21 +303,17 @@ def decide(conn: sqlite3.Connection, pid: int, verdict: str, user_id: int = 0, k
             if len(rows) != 2:
                 return {"ok": False, "stale": True}
             a, b = rows
+            if verdict == "repeat":
+                # При ручном объединении администратор подтверждает, что это версии одного объявления.
+                if type(keep_id) is not int or keep_id not in (a["id"], b["id"]):
+                    return {"ok": False, "error": "Выберите, какую карточку оставить."}
+                keep, drop = (a, b) if a["id"] == keep_id else (b, a)
+                return _merge_repeat(conn, pid, keep, drop, user_id)
             if a["deal"] != b["deal"]:
                 return {"ok": False, "error": "У объявлений разные типы сделки. Проверьте продажу и аренду."}
             phonegroups.refresh(conn)
-            ka, kb = offers.agent_key(a), offers.agent_key(b)
-            if verdict == "market" and ka == kb:
+            if offers.agent_key(a) == offers.agent_key(b):
                 return {"ok": False, "error": "У обеих карточек один агент. Для версий объявления используйте кнопку 1."}
-            if verdict == "repeat":
-                owners = {row["owner_user_id"] for row in rows if row["owner_user_id"]}
-                phones_a, phones_b = (offers.contact_keys(row) for row in rows)
-                if (len(owners) > 1 or {ka[0], kb[0]} == {"slava", "stayl"}
-                        or ka != kb and phones_a and phones_b and not phones_a & phones_b):
-                    return {"ok": False, "error": "У карточек разные агенты. Если объект один, используйте кнопку 3."}
-                if type(keep_id) is not int or keep_id not in (a["id"], b["id"]):
-                    return {"ok": False, "error": "Выберите, какую карточку оставить."}
-                return _merge_repeat(conn, pid, a, b, user_id) if a["id"] == keep_id else _merge_repeat(conn, pid, b, a, user_id)
         saved = conn.execute(f"""UPDATE dup_pairs AS p SET status=?, decided_at=?, user_id=?
                                 WHERE p.id=? AND p.status='open' {_ACTIVE_PAIR}""",
                              (verdict, int(time.time()), user_id, pid))
