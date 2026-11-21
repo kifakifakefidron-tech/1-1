@@ -1,6 +1,6 @@
 import json
 
-from app import accounts, config, dedupe, dupreview, llm, offers, picks, repeat_refs, search
+from app import accounts, config, db, dedupe, dupreview, llm, offers, picks, repeat_refs, search
 
 
 def listing(conn, phone="+79000000001"):
@@ -415,3 +415,69 @@ def test_auto_review_ignores_confident_response_for_changed_listing(conn, monkey
     assert dupreview.review_ai(conn, pid)["stale"]
     assert dupreview.pairs(conn)["pairs"][0]["ai"] is None
     assert conn.execute("SELECT SUM(is_active) FROM listings").fetchone()[0] == 2
+
+
+def test_backlog_only_reviews_the_initial_queue_and_reuses_previous_results(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+
+    def candidate(house, created):
+        a, b = listing(conn), listing(conn)
+        conn.execute("UPDATE listings SET house=?,first_seen=? WHERE id IN (?,?)", (house, created, a, b))
+        return pair(conn, a, b)
+
+    old = candidate("10", 1)
+    recent = candidate("20", 2)
+    low = candidate("30", 3)
+    reopened = candidate("40", 4)
+    conn.execute("UPDATE dup_pairs SET user_id=1 WHERE id=?", (reopened,))
+    calls, new_pairs = [], []
+
+    def model(system, content, max_tokens):
+        house = json.loads(content)["объявления"][0]["house"]
+        calls.append(house)
+        if house == "20":
+            new_pairs.append(candidate("50", 5))
+            conn.commit()
+        return {"verdict": "diff", "confidence": {"10": 0.79, "20": 0.8, "30": 0.79}[house]}
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    assert dupreview.ask_ai(conn, low)["ai"]["confidence"] == 0.79
+    assert dupreview.review_backlog(conn) == {"total": 2, "applied": 1, "manual": 1, "changed": 0}
+    assert calls == ["30", "20", "10"]
+    assert dict(conn.execute("SELECT id,status FROM dup_pairs")) == {
+        old: "open", recent: "diff", low: "open", reopened: "open", new_pairs[0]: "open"}
+    assert conn.execute("SELECT ai FROM dup_pairs WHERE id=?", (new_pairs[0],)).fetchone()[0] is None
+
+
+def test_backlog_waits_for_worker_and_retries_after_failed_request(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    a, b = listing(conn), listing(conn)
+    pid = pair(conn, a, b)
+    clock = [1000.0]
+    sleeps, calls = [], []
+    monkeypatch.setattr(dupreview.time, "time", lambda: clock[0])
+    signature = dupreview._ai_signature([dupreview._card(conn, lid) for lid in (a, b)])
+    conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?",
+                 (json.dumps({"pending": True, "ts": 1000, "signature": signature}), pid))
+    conn.commit()
+    assert dupreview.auto_review(conn) == {}
+
+    def wait(seconds):
+        sleeps.append(seconds)
+        clock[0] += seconds
+        if len(sleeps) == 1:
+            conn.execute("UPDATE dup_pairs SET ai=NULL WHERE id=?", (pid,))
+            conn.commit()
+
+    def model(system, content, max_tokens):
+        calls.append(clock[0])
+        if len(calls) == 1:
+            raise llm.LLMError("timeout")
+        return {"verdict": "diff", "confidence": 0.9}
+
+    monkeypatch.setattr(dupreview.time, "sleep", wait)
+    monkeypatch.setattr(llm, "ask_json", model)
+    assert dupreview.review_backlog(conn) == {"total": 1, "applied": 1, "manual": 0, "changed": 0}
+    assert sleeps == [3] + [60] * 5
+    assert calls == [1003, 1303]
+    assert float(db.get_state(conn, dupreview._AI_RETRY_AT)) == 1303

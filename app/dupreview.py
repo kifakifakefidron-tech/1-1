@@ -38,6 +38,7 @@ _PRICE_PAIR_SCOPE = "p.kind='price_revision' AND a.price != b.price"
 _AI_VERDICTS = ("repeat", "diff", "market", "unsure")
 AI_AUTO_CONFIDENCE = 0.8
 _AI_RETRY_AT = "dup_ai_retry_at"
+_AI_RETRY_SECONDS = 300
 
 _FLATLIKE = ("flat", "new", "room", "commercial")
 _COLS = ("id, type, deal, rooms, room_kind, floor, floors, area, land, complex, street, house, district, settlement, "
@@ -1021,16 +1022,12 @@ def review_ai(conn: sqlite3.Connection, pid: int) -> dict:
         return {"ok": True, "ai": ai, "applied": not reason}
 
 
-def auto_review(conn: sqlite3.Connection, limit: int = 12, budget_s: float = 12.0) -> dict:
-    """Проверяет открытые пары в фоне, начиная со свежих. Слабые оценки остаются в очереди."""
-    now = time.time()
-    if not config.DEEPSEEK_API_KEY or float(db.get_state(conn, _AI_RETRY_AT) or 0) > now:
-        return {}
-    rows = conn.execute("""SELECT p.id FROM dup_pairs p
+def _auto_review_ids(conn: sqlite3.Connection, limit: int, *, include_pending: bool = False) -> list[int]:
+    return [pid for (pid,) in conn.execute("""SELECT p.id FROM dup_pairs p
         JOIN listings a ON a.id=p.a JOIN listings b ON b.id=p.b
         WHERE p.status='open' AND a.is_active=1 AND b.is_active=1 AND COALESCE(p.user_id,0)=0
         AND CASE WHEN NOT json_valid(p.ai) THEN 1
-                 WHEN json_extract(p.ai,'$.pending') THEN COALESCE(json_extract(p.ai,'$.ts'),0)<=?
+                 WHEN json_extract(p.ai,'$.pending') THEN (? OR COALESCE(json_extract(p.ai,'$.ts'),0)<=?)
                  WHEN json_extract(p.ai,'$.verdict')='unsure' THEN 0
                  WHEN json_extract(p.ai,'$.verdict') IN ('repeat','diff','market')
                    THEN json_extract(p.ai,'$.manual_reason') IS NULL
@@ -1038,17 +1035,28 @@ def auto_review(conn: sqlite3.Connection, limit: int = 12, budget_s: float = 12.
                    AND json_extract(p.ai,'$.confidence') BETWEEN ? AND 1
                  ELSE 1 END
         ORDER BY MAX(a.first_seen,b.first_seen) DESC,p.score DESC,p.id LIMIT ?""",
-        (int(now) - 90, AI_AUTO_CONFIDENCE, limit)).fetchall()
-    if not rows:
+        (include_pending, int(time.time()) - 90, AI_AUTO_CONFIDENCE, limit))]
+
+
+def _retry_pause(conn: sqlite3.Connection) -> float:
+    return max(0.0, float(db.get_state(conn, _AI_RETRY_AT) or 0) - time.time())
+
+
+def auto_review(conn: sqlite3.Connection, limit: int = 12, budget_s: float = 12.0) -> dict:
+    """Проверяет открытые пары в фоне, начиная со свежих. Слабые оценки остаются в очереди."""
+    if not config.DEEPSEEK_API_KEY or _retry_pause(conn):
+        return {}
+    pair_ids = _auto_review_ids(conn, limit)
+    if not pair_ids:
         return {}
     deadline = time.monotonic() + budget_s
     stats = {"applied": 0, "manual": 0, "retry": 0}
-    for (pid,) in rows:
+    for pid in pair_ids:
         if time.monotonic() >= deadline:
             break
         result = review_ai(conn, pid)
         if result.get("retryable"):
-            db.set_state(conn, _AI_RETRY_AT, str(time.time() + 300))
+            db.set_state(conn, _AI_RETRY_AT, str(time.time() + _AI_RETRY_SECONDS))
             stats["retry"] += 1
             break
         if result.get("ai"):
@@ -1056,7 +1064,55 @@ def auto_review(conn: sqlite3.Connection, limit: int = 12, budget_s: float = 12.
     return stats
 
 
+def review_backlog(conn: sqlite3.Connection) -> dict[str, int]:
+    """Разбирает снимок накопленной очереди без захвата пар, появившихся при запуске."""
+    if not config.DEEPSEEK_API_KEY:
+        raise RuntimeError("Не задан DEEPSEEK_API_KEY в контейнере worker.")
+    pair_ids = _auto_review_ids(conn, -1, include_pending=True)
+    stats = {"total": len(pair_ids), "applied": 0, "manual": 0, "changed": 0}
+    print(f"К авторазбору пар: {len(pair_ids)}. Порог уверенности {AI_AUTO_CONFIDENCE:.0%}.", flush=True)
+    for number, pid in enumerate(pair_ids, 1):
+        retried = False
+        while True:
+            while pause := _retry_pause(conn):
+                time.sleep(min(pause, 60))
+            result = review_ai(conn, pid)
+            if result.get("retryable"):
+                db.set_state(conn, _AI_RETRY_AT, str(time.time() + _AI_RETRY_SECONDS))
+                if retried:
+                    raise RuntimeError(f"DeepSeek снова не ответил. Проверено {number - 1} из {len(pair_ids)} пар.")
+                retried = True
+                print("DeepSeek временно недоступен. Повтор через 5 минут.", flush=True)
+                continue
+            if result.get("pending"):
+                time.sleep(3)
+                continue
+            break
+        status = "applied" if result.get("applied") else "manual" if result.get("ai") else "changed"
+        stats[status] += 1
+        if number % 25 == 0:
+            print(f"Проверено {number} из {len(pair_ids)}. Автоматически: {stats['applied']}, "
+                  f"вручную: {stats['manual']}, пары уже изменились: {stats['changed']}.", flush=True)
+    return stats
+
+
 if __name__ == "__main__":
+    import argparse
+
+    cli = argparse.ArgumentParser(description="Сравнение объявлений в очереди повторов.")
+    cli.add_argument("--backlog", action="store_true", help="один раз разобрать накопившиеся пары через DeepSeek")
+    args = cli.parse_args()
+    if args.backlog and not config.DEEPSEEK_API_KEY:
+        cli.exit(1, "Не задан DEEPSEEK_API_KEY в контейнере worker.\n")
     c = db.get()
-    print(scan(c, budget_s=600))
-    print("в очереди:", open_count(c))
+    if args.backlog:
+        try:
+            report = review_backlog(c)
+        except RuntimeError as error:
+            cli.exit(1, f"{error} Сохранённые решения уже применены.\n")
+        print(f"Готово. Автоматически: {report['applied']} из {report['total']}. "
+              f"Оставлено вручную: {report['manual']}. Пары уже изменились: {report['changed']}. "
+              f"Всего открытых пар сейчас: {open_count(c)}.")
+    else:
+        print(scan(c, budget_s=600))
+        print("в очереди:", open_count(c))
