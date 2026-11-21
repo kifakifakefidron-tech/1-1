@@ -1,4 +1,5 @@
 import json
+from contextlib import closing
 
 from app import accounts, config, db, dedupe, dupreview, llm, offers, picks, repeat_refs, search
 
@@ -481,3 +482,65 @@ def test_backlog_waits_for_worker_and_retries_after_failed_request(conn, monkeyp
     assert sleeps == [3] + [60] * 5
     assert calls == [1003, 1303]
     assert float(db.get_state(conn, dupreview._AI_RETRY_AT)) == 1303
+
+
+def test_backlog_saves_model_response_after_a_concurrent_sqlite_write(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    path = str(tmp_path / "backlog.db")
+    with closing(db.connect(path)) as conn, closing(db.connect(path)) as writer:
+        conn.execute("PRAGMA busy_timeout=0")
+        first = pair(conn, listing(conn), listing(conn))
+        second = pair(conn, listing(conn), listing(conn))
+        conn.commit()
+        calls, delays = [], []
+
+        def model(system, content, max_tokens):
+            assert not conn.in_transaction
+            calls.append(content)
+            if len(calls) == 1:
+                writer.execute("BEGIN IMMEDIATE")
+                writer.execute("INSERT INTO state(key,value) VALUES ('worker_write','saved')")
+            return {"verdict": "diff", "confidence": 0.9}
+
+        def wait(seconds):
+            assert not conn.in_transaction
+            delays.append(seconds)
+            if len(delays) == 3:
+                writer.commit()
+
+        monkeypatch.setattr(llm, "ask_json", model)
+        monkeypatch.setattr(dupreview.time, "sleep", wait)
+        assert dupreview.review_backlog(conn) == {"total": 2, "applied": 2, "manual": 0, "changed": 0}
+        assert delays == [2, 2, 2]
+        assert len(calls) == 2
+        assert dict(conn.execute("SELECT id,status FROM dup_pairs")) == {first: "diff", second: "diff"}
+        assert dupreview.pairs(conn, "done")["ai_auto"] == 2
+        assert db.get_state(conn, "worker_write") == "saved"
+
+
+def test_background_retries_applying_a_saved_decision_when_sqlite_is_busy(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    path = str(tmp_path / "auto.db")
+    with closing(db.connect(path)) as conn, closing(db.connect(path)) as writer:
+        conn.execute("PRAGMA busy_timeout=0")
+        pid = pair(conn, listing(conn), listing(conn))
+        calls = []
+
+        def model(system, content, max_tokens):
+            calls.append(content)
+            return {"verdict": "repeat", "confidence": 0.8}
+
+        monkeypatch.setattr(llm, "ask_json", model)
+        assert dupreview.ask_ai(conn, pid)["ok"]
+        writer.execute("BEGIN IMMEDIATE")
+        waits = []
+
+        def wait(seconds):
+            assert not conn.in_transaction
+            waits.append(seconds)
+            writer.commit()
+
+        monkeypatch.setattr(dupreview.time, "sleep", wait)
+        assert dupreview.auto_review(conn) == {"applied": 1, "manual": 0, "retry": 0}
+        assert len(calls) == len(waits) == 1
+        assert conn.execute("SELECT status FROM dup_pairs WHERE id=?", (pid,)).fetchone()[0] == "repeat"
