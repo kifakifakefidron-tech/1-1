@@ -1,6 +1,6 @@
 import json
 
-from app import accounts, config, dedupe, dupreview, llm, offers, search
+from app import accounts, config, dedupe, dupreview, llm, offers, picks, repeat_refs, search
 
 
 def listing(conn, phone="+79000000001"):
@@ -301,3 +301,117 @@ def test_manual_duplicate_review_accepts_area_difference_of_at_most_two_square_m
     left, right = rows()
     assert dupreview.classify(left, right) is None
     assert not offers.similar_signals(left, right, offers.place_keys(left), offers.place_keys(right))
+
+
+def test_repeat_merge_preserves_reactions_and_combines_saved_duplicates(conn, monkeypatch):
+    old, keep = listing(conn), listing(conn)
+    uid = accounts.upsert_email_user(conn, "saved-duplicates@example.test")["id"]
+    client = conn.execute("INSERT INTO clients(user_id,name,created,updated) VALUES(?,'Клиент',1,1)", (uid,)).lastrowid
+    collection = conn.execute("""INSERT INTO collections(user_id,client_id,token,title,created,updated)
+        VALUES(?,?,'saved-pick','Подборка',1,1)""", (uid, client)).lastrowid
+    conn.executemany("INSERT INTO favorites(user_id,listing_id,created) VALUES(?,?,1)", [(uid, old), (uid, keep)])
+    conn.executemany("INSERT INTO notes(user_id,listing_id,text,ts) VALUES(?,?,?,1)",
+                     [(uid, old, "Старая заметка"), (uid, keep, "Новая заметка")])
+    conn.executemany("""INSERT INTO collection_items(collection_id,listing_id,note,price,text,added)
+        VALUES(?,?,?,?,?,1)""", [(collection, old, "Первая заметка", 6500000, "Текст для клиента"),
+                                (collection, keep, "Вторая заметка", None, None)])
+    conn.executemany("INSERT INTO client_items(client_id,listing_id,status,ts) VALUES(?,?,?,1)",
+                     [(client, old, "show"), (client, keep, "opened")])
+    conn.executemany("""INSERT INTO pick_reactions(collection_id,listing_id,kind,text,device,ts) VALUES(?,?,?,?,?,?)""",
+                     [(collection, keep, "like", None, "browser", 1),
+                      (collection, old, "want_show", "В субботу", "browser", 2),
+                      (collection, old, "question", "Когда можно?", "browser", 3)])
+    assert dupreview.decide(conn, pair(conn, old, keep), "repeat", uid, keep_id=keep)["ok"]
+    assert [r[0] for r in conn.execute("SELECT listing_id FROM favorites")] == [keep]
+    assert tuple(conn.execute("SELECT listing_id,text FROM notes").fetchone()) == (keep, "Новая заметка\n\nСтарая заметка")
+    assert [tuple(r) for r in conn.execute("SELECT listing_id,status,reaction,reaction_text FROM client_items")] == [
+        (keep, "show", "want_show", "В субботу")]
+    assert [r[0] for r in conn.execute("SELECT listing_id FROM pick_reactions ORDER BY id")] == [keep] * 3
+    item, = picks.public(conn, "saved-pick", count_view=False, device="browser")["items"]
+    assert (item["id"], item["price"], item["description"], item["reaction"]) == (
+        keep, 6500000, "Текст для клиента", "want_show")
+    assert item["note"] == "Вторая заметка\n\nПервая заметка"
+    monkeypatch.setattr(picks, "_mail_agent", lambda *a: None)
+    assert picks.react(conn, "saved-pick", old, "like", device="browser")["ok"]
+    assert picks.public(conn, "saved-pick", count_view=False, device="browser")["items"][0]["reaction"] == "like"
+
+
+def test_repair_preserves_old_reaction_and_cleans_a_chain_of_repeats(conn):
+    old, middle, keep = (listing(conn) for _ in range(3))
+    uid = accounts.upsert_email_user(conn, "old-reactions@example.test")["id"]
+    collection = conn.execute("""INSERT INTO collections(user_id,token,title,created,updated)
+        VALUES(?,'old-pick','Подборка',1,1)""", (uid,)).lastrowid
+    conn.executemany("INSERT INTO collection_items(collection_id,listing_id,added) VALUES(?,?,1)",
+                     [(collection, old), (collection, keep)])
+    conn.execute("""INSERT INTO pick_reactions(collection_id,listing_id,kind,device,ts)
+        VALUES(?,?,'like','browser',1)""", (collection, old))
+    conn.executemany("UPDATE listings SET is_active=0,hidden_reason='dup_repeat',merged_into=? WHERE id=?",
+                     [(middle, old), (keep, middle)])
+    conn.commit()
+    assert repeat_refs.repair(conn) == 1
+    assert repeat_refs.repair(conn) == 0
+    item, = picks.public(conn, "old-pick", count_view=False, device="browser")["items"]
+    assert (item["id"], item["reaction"], item["is_active"]) == (keep, "like", 1)
+
+
+def test_auto_review_applies_confident_verdicts_and_keeps_manual_cases(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+
+    def example(house, *, different_agents=False):
+        a = listing(conn)
+        b = listing(conn, "+79000000002" if different_agents else "+79000000001")
+        conn.execute("UPDATE listings SET house=?,first_seen=? WHERE id IN (?,?)", (str(house), house, a, b))
+        return a, b, pair(conn, a, b)
+
+    older, fresh, repeat = example(11)
+    conn.execute("UPDATE listings SET last_seen=20 WHERE id=?", (fresh,))
+    _, _, low = example(12)
+    _, _, unsure = example(13)
+    cross_left, cross_right, cross = example(14, different_agents=True)
+    market_left, market_right, market = example(15, different_agents=True)
+    _, _, diff = example(16)
+    answers = {"11": ("repeat", 0.8), "12": ("repeat", 0.799), "13": ("unsure", 0.99),
+               "14": ("repeat", 0.94), "15": ("market", 0.91), "16": ("diff", 0.85)}
+    calls = []
+
+    def model(system, content, max_tokens):
+        house = json.loads(content)["объявления"][0]["house"]
+        calls.append(house)
+        verdict, confidence = answers[house]
+        return {"verdict": verdict, "confidence": confidence}
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    assert dupreview.ask_ai(conn, repeat)["ai"]["confidence"] == 0.8
+    assert dupreview.auto_review(conn) == {"applied": 3, "manual": 3, "retry": 0}
+    assert calls == ["11", "16", "15", "14", "13", "12"]
+    done = dupreview.pairs(conn, "done")
+    assert done["ai_auto"] == 3
+    assert {row["id"]: row["status"] for row in done["pairs"] if row["ai_applied"]} == {
+        repeat: "repeat", market: "market", diff: "diff"}
+    assert tuple(conn.execute("SELECT is_active,merged_into FROM listings WHERE id=?", (older,)).fetchone()) == (0, fresh)
+    for left, right in ((cross_left, cross_right), (market_left, market_right)):
+        assert conn.execute("SELECT SUM(is_active) FROM listings WHERE id IN (?,?)", (left, right)).fetchone()[0] == 2
+    manual = {p["id"]: p for p in dupreview.pairs(conn)["pairs"]}
+    assert set(manual) == {low, unsure, cross}
+    assert manual[cross]["ai"]["manual_reason"]
+    assert dupreview.decide(conn, repeat, "reopen", user_id=1)["ok"]
+    conn.commit()
+    assert dupreview.auto_review(conn) == {}
+    assert dupreview.review_ai(conn, repeat)["ai"]["verdict"] == "repeat"
+    assert dupreview.pairs(conn)["counts"]["open"] == 4
+
+
+def test_auto_review_ignores_confident_response_for_changed_listing(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    a, b = listing(conn), listing(conn)
+    pid = pair(conn, a, b)
+
+    def model(system, content, max_tokens):
+        conn.execute("UPDATE listings SET floor=17 WHERE id=?", (b,))
+        conn.commit()
+        return {"verdict": "repeat", "confidence": 0.99}
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    assert dupreview.review_ai(conn, pid)["stale"]
+    assert dupreview.pairs(conn)["pairs"][0]["ai"] is None
+    assert conn.execute("SELECT SUM(is_active) FROM listings").fetchone()[0] == 2

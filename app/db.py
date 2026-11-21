@@ -323,6 +323,7 @@ CREATE TABLE IF NOT EXISTS pick_reactions (
     text TEXT, phone TEXT, device TEXT, ts INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_pick_reactions ON pick_reactions (collection_id, listing_id);
+CREATE INDEX IF NOT EXISTS ix_pick_reactions_listing ON pick_reactions (listing_id);
 -- Честные просмотры подборки: одно устройство — один раз в день (агент, вошедшие и боты-превью не считаются)
 CREATE TABLE IF NOT EXISTS collection_views (
     collection_id INTEGER NOT NULL, day TEXT NOT NULL, device TEXT NOT NULL, ts INTEGER NOT NULL,

@@ -11,7 +11,7 @@ import secrets
 import sqlite3
 import time
 
-from . import config, listing_video, parser, rules, search, settings, worklog
+from . import config, listing_video, offers, parser, rules, search, settings, worklog
 
 MAX_COLLECTIONS = 200
 PROMO_NAME = "Коллега (по коду)"   # служебное имя аккаунта по промокоду — клиенту его не показываем никогда
@@ -389,6 +389,9 @@ def react(conn: sqlite3.Connection, token: str, listing_id: int, kind: str, text
                         LEFT JOIN clients cl ON cl.id = k.client_id WHERE k.token = ?""", (token,)).fetchone()
     if c is None:
         return {"error": "Подборка не найдена."}
+    card = conn.execute("SELECT id,hidden_reason,merged_into FROM listings WHERE id=?", (listing_id,)).fetchone()
+    if card is not None:
+        listing_id = offers.merged_listing(conn, card)["id"]
     lst = conn.execute("""SELECT l.id, l.title, l.complex FROM collection_items i JOIN listings l ON l.id = i.listing_id
                           WHERE i.collection_id = ? AND i.listing_id = ?""", (c["id"], listing_id)).fetchone()
     if lst is None:
@@ -543,7 +546,7 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
     # ответ этого устройства по каждому объекту (последний) — клиент видит, что уже ответил
     mine_r = {r[0]: r[1] for r in conn.execute(
         """SELECT listing_id, kind FROM pick_reactions WHERE collection_id = ? AND device = ? AND kind != 'question'
-           ORDER BY ts""",
+           ORDER BY ts,id""",
         (c["id"], device or "-"))} if device else {}
     for r in conn.execute("""SELECT l.*, i.note AS item_note, i.text AS item_text, i.price AS my_price, i.hide_price, i.photos AS my_photos,
                                     i.photo_order, i.map_lat, i.map_lon, i.map_off FROM collection_items i JOIN listings l ON l.id = i.listing_id

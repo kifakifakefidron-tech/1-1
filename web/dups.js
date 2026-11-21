@@ -153,11 +153,12 @@
     const verdict = AI_LABELS[p.ai?.verdict];
     if (verdict) {
       const kept = recommendedKeep(p);
-      const confidence = p.ai.confidence == null ? "" : `<small class="dp-ai-confidence">Уверенность модели ${Math.round(p.ai.confidence * 100)}%</small>`;
+      const confidence = p.ai.confidence == null ? "" : `<small class="dp-ai-confidence">Уверенность модели ${Math.floor(p.ai.confidence * 100)}%</small>`;
       return `<div class="dp-ai ${p.ai.verdict}">${ic("sparkle")}<div class="dp-ai-copy">
         <span class="dp-ai-label">DeepSeek предлагает</span><strong>${verdict}</strong>
         ${kept ? `<small class="dp-ai-fresh">Свежая версия № ${kept} · ${esc(day(p.ai.keep_version_ts))}</small>` : ""}
         ${p.ai.why ? `<small>${esc(p.ai.why)}</small>` : ""}${confidence}
+        ${p.ai.manual_reason ? `<small>${esc(p.ai.manual_reason)}</small>` : ""}
       </div></div>`;
     }
     if (!data.ai_enabled) return "";
@@ -179,6 +180,10 @@
       result = await call("/api/admin/dups", { id: p.id, ai: true });
     }
     aiInFlight = false;
+    if (current() && (result.data.applied || result.data.stale)) {
+      if (result.data.applied) toast("DeepSeek разобрал пару автоматически");
+      return load(true);
+    }
     if (result.data.ai) {
       p.ai = result.data.ai;
       if (current()) pairs[0].ai = p.ai;
@@ -228,14 +233,16 @@
       const kept = p.keep === p.b.id ? p.b : p.a;
       const archived = kept === p.a ? p.b : p.a;
       const autoPrice = p.kind === "auto_price_revision";
-      const label = autoPrice ? "Цена обновлена автоматически" : p.merged ? "Объединено" : STATUS[p.status] || p.status;
+      const label = p.ai_applied ? "Решение DeepSeek"
+        : autoPrice ? "Цена обновлена автоматически" : p.merged ? "Объединено" : STATUS[p.status] || p.status;
       return `<div class="dp-row${autoPrice ? " dp-row-price" : ""}" data-pid="${p.id}">
       <span class="mark">${esc(label)}</span>
       <div class="dp-row-t"><a href="/?open=${kept.id}">${esc(kept.title)}</a>
         <small>${autoPrice ? "" : `${esc(p.kind_label)} · ${esc((p.why || []).slice(0, 3).join(", "))} · `}${esc(day(p.decided_at))}</small>
         <small>${autoPrice ? `№ ${archived.id} ${esc(mln(archived.price, archived.deal))} → № ${kept.id} ${esc(mln(kept.price, kept.deal))}`
           : `№ ${p.a.id} ${esc(mln(p.a.price, p.a.deal))} · № ${p.b.id} ${esc(mln(p.b.price, p.b.deal))}`}</small>
-        ${p.ai?.verdict ? `<small>DeepSeek предлагал ${esc(AI_LABELS[p.ai.verdict])}</small>` : ""}</div>
+        ${p.ai?.verdict ? `<small>${p.ai_applied ? `${esc(AI_LABELS[p.ai.verdict])} · ${Math.floor(p.ai.confidence * 100)}%`
+          : `DeepSeek предлагал ${esc(AI_LABELS[p.ai.verdict])}`}</small>` : ""}</div>
       ${["auto", "same"].includes(p.status) ? `<button type="button" class="pill light" data-split="${p.id}">Разделить</button>`
         : ["diff", "market", "repeat"].includes(p.status) ? `<button type="button" class="pill light" data-reopen="${p.id}">${p.merged ? "Отменить объединение" : "Вернуть в очередь"}</button>` : ""}
     </div>`;
@@ -250,15 +257,17 @@
   function render() {
     $("dpTabs").innerHTML = [["open", "Ждут решения", data.counts.open], ["price", "Только цена", data.counts.price],
       ["auto", "Старые автосклейки", data.counts.auto],
-      ["done", "Ваши решения", data.counts.done]].map(([k, l, n]) =>
+      ["done", "История решений", data.counts.done]].map(([k, l, n]) =>
       `<button type="button" class="chip${tab === k ? " on" : ""}" data-tab="${k}">${l} <b>${n0(n)}</b></button>`).join("");
     if (comparing()) {
       renderComparison();
     } else $("dpBody").innerHTML = listHTML();
     $("dpStats").innerHTML = statsHTML(data.stats || []);
     const review = data.ai_review;
-    $("dpAiStats").textContent = review?.compared
-      ? `Рекомендации DeepSeek совпали с вашими решениями в ${n0(review.agreed)} из ${n0(review.compared)} пар.` : "";
+    $("dpAiStats").textContent = [
+      data.ai_enabled ? `DeepSeek разобрал автоматически ${n0(data.ai_auto || 0)} пар.` : "",
+      review?.compared ? `Рекомендации совпали с вашими решениями в ${n0(review.agreed)} из ${n0(review.compared)} пар.` : "",
+    ].filter(Boolean).join(" ");
     if (!document.activeElement || document.activeElement.id !== "dpGIn") $("dpGroups").innerHTML = groupsHTML(data.phone_groups || []);
   }
 

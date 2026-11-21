@@ -41,10 +41,18 @@ class _Laps:
 
 def tick(conn) -> dict:
     lap = _Laps()
+    from . import repeat_refs
+    try:
+        repaired_refs = repeat_refs.repair(conn)
+    except Exception:  # noqa: BLE001
+        repaired_refs = 0
+        log.exception("сохранённые ссылки объединённых карточек не обновились")
     if config.WAPPI_ENABLED and wappi.refresh_chat_names(conn) is not None:
         stats_r = region.hide_foreign(conn)   # чаты Сочи/Адлера/… — не показываем
         log.info("другие города: %s", stats_r)
     stats = {"new_messages": wappi.poll_all(conn) if config.WAPPI_ENABLED else "пауза"}
+    if repaired_refs:
+        stats["repeat_refs"] = repaired_refs
     lap("wappi")
     if not config.WAPPI_ENABLED and wappi.poll_verify_only(conn):   # пауза, но агенты ждут подтверждения номера
         stats["verify_check"] = True
@@ -194,6 +202,13 @@ def tick(conn) -> dict:
     except Exception:  # noqa: BLE001
         conn.rollback()
         log.exception("перепроверка похожих предложений не прошла")
+    try:
+        ai_duplicates = dupreview.auto_review(conn)
+        if ai_duplicates:
+            stats["dup_ai"] = ai_duplicates
+    except Exception:  # noqa: BLE001
+        conn.rollback()
+        log.exception("авторазбор повторов через DeepSeek не прошёл")
     lap("повторы")
     from . import cxnorm
     cx = cxnorm.maybe_run(conn)   # один раз (ТЗ v2, P1.7): одно название на один ЖК, отчёт — в админке

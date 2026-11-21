@@ -1863,8 +1863,11 @@ def api_pick_react(request: Request, body: dict | None = None):
         return _err("Слишком часто — попробуйте позже.", 429)
     body = body or {}
     device, _ = _device(request)
-    res = picks.react(db.get(), request.path_params["token"], _num(body.get("listing_id"), int) or 0, str(body.get("kind") or ""),
-                      str(body.get("text") or ""), str(body.get("phone") or ""), device)
+    conn = db.get()
+    with conn:
+        conn.execute("BEGIN IMMEDIATE")
+        res = picks.react(conn, request.path_params["token"], _num(body.get("listing_id"), int) or 0, str(body.get("kind") or ""),
+                          str(body.get("text") or ""), str(body.get("phone") or ""), device)
     if "error" in res:
         return _err(res["error"])
     resp = JSONResponse(res)
@@ -3318,7 +3321,7 @@ def api_admin_dups(request: Request, body: dict | None = None):
         except (TypeError, ValueError):
             return _err("Нет пары")
         if b.get("ai"):
-            return JSONResponse(dupreview.ask_ai(conn, pid))
+            return JSONResponse(dupreview.review_ai(conn, pid))
         if b.get("split"):
             ok = dupreview.split(conn, pid, user["id"])
         else:
