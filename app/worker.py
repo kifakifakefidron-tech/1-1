@@ -104,16 +104,10 @@ def tick(conn) -> dict:
     reminded = planner.remind(conn, _mail(conn))   # показы и созвоны: напомнить заранее
     if reminded:
         stats["reminders"] = reminded
-    # 19.10: «Под ваш объект есть покупатель» — раз в 15 минут; при первом запуске старые запросы не рассылаем
-    if not db.get_state(conn, "buyers_notify_v1"):
-        conn.execute("UPDATE buyer_requests SET notified = 1")
-        db.set_state(conn, "buyers_notify_v1", "1")
-    if time.time() - float(db.get_state(conn, "buyer_notify_at") or 0) > 900:
-        db.set_state(conn, "buyer_notify_at", str(int(time.time())))
-        from . import buyers as _b
-        n = _b.notify_matches(conn)
-        if n:
-            stats["buyer_notices"] = n
+    from . import buyers
+    buyer_notices = buyers.notify_daily_digest(conn)
+    if buyer_notices:
+        stats["buyer_notices"] = buyer_notices
     # «Новое под клиента» — раз в 15 минут
     if time.time() - float(db.get_state(conn, "client_match_at") or 0) > 900:
         db.set_state(conn, "client_match_at", str(int(time.time())))
@@ -224,23 +218,18 @@ def tick(conn) -> dict:
         stats["rent_leak"] = ingest.fix_rent_leak(conn)
         db.set_state(conn, "rent_leak_v1", "1")
     if not db.get_state(conn, "buyers_v2"):   # «запросить по номеру» — не запрос: удалить и разобрать заново
-        from . import buyers
         stats["buyers_recheck"] = buyers.recheck(conn)
         db.set_state(conn, "buyers_v2", "1")
     if not db.get_state(conn, "buyers_v3"):   # 19.10: «сейф/прайс по запросу», портянки, «продам» — объявления, не запросы
-        from . import buyers
         res = buyers.recheck(conn)
         stats["buyers_recheck_v3"] = res
         db.set_state(conn, "buyers_v3", json.dumps(res))
     if not db.get_state(conn, "buyers_ads_v1"):   # один раз (19.10): явная реклама — с ленты запросов
-        from . import buyers
         db.set_state(conn, "buyers_ads_v1", str(buyers.hide_ads(conn)))
     if not db.get_state(conn, "buyers_v1"):   # один раз: запросы из уже разобранных сообщений
-        from . import buyers
         stats["buyers_backfill"] = buyers.backfill(conn)
         db.set_state(conn, "buyers_v1", "1")
     if db.get_state(conn, "cleanup_day") != time.strftime("%Y-%m-%d"):
-        from . import buyers
         stats["buyers_archived"] = buyers.archive(conn)
         stats["cleanup"] = ingest.cleanup_old(conn)
         db.set_state(conn, "cleanup_day", time.strftime("%Y-%m-%d"))

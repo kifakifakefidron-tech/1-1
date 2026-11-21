@@ -474,39 +474,44 @@ def published(conn: sqlite3.Connection, user_id: int, client_id: int) -> dict | 
     return dict(r) if r else None
 
 
-NOTIFY_PER_DAY = 10   # не больше стольких «под ваш объект есть покупатель» одному агенту в сутки
+def notify_daily_digest(conn: sqlite3.Connection, now: int | None = None) -> int:
+    """После 09:00 МСК отправляет сводку за вчера пользователям с активными своими объявлениями."""
+    from . import db, notices
+    from .stats import day_start
 
-
-def notify_matches(conn: sqlite3.Connection) -> int:
-    """Раз в 15 мин (worker): новые запросы (из чатов и от агентов сайта) → подтверждённым агентам с подходящими объектами —
-    уведомление «Под ваш объект есть покупатель». Свой же запрос себе не шлём; не больше NOTIFY_PER_DAY в сутки."""
-    from . import notices
-    reqs = conn.execute("SELECT * FROM buyer_requests WHERE is_active = 1 AND removed = 0 AND notified = 0 LIMIT 300").fetchall()
-    if not reqs:
+    now = int(now or time.time())
+    today = day_start(now)
+    key = "buyer_digest_day"
+    day = str(today)
+    if now < today + 9 * 3600 or db.get_state(conn, key) == day:
         return 0
-    agents = [r[0] for r in conn.execute("SELECT DISTINCT user_id FROM agent_phones")]
-    mine = {u: agent_listings(conn, u) for u in agents}
-    day_ago = int(time.time()) - 86400
+
     sent = 0
-    for r in reqs:
-        req = _req(r)
-        for uid, lst in mine.items():
-            if uid == r["user_id"] or not lst:
-                continue
-            hit = [o for o in lst if matches(req, o)]
-            if not hit:
-                continue
-            n_today = conn.execute("SELECT COUNT(*) FROM notices WHERE user_id = ? AND kind = 'buyer' AND ts > ?", (uid, day_ago)).fetchone()[0]
-            if n_today >= NOTIFY_PER_DAY:
-                continue
-            o = hit[0]
-            what = (o.get("complex") and f"ЖК {o['complex']}") or o.get("title") or "ваш объект"
-            src = "запрос агента на 1+1" if r["source"] == "agent" else "запрос из чатов"
-            if notices.add(conn, uid, "buyer", f"Под ваш объект есть покупатель — {what}", f"{(r['text'] or '')[:160]} ({src})",
-                           url=f"/requests?id={r['id']}", listing_id=o["id"], dedup_s=7 * 86400):
+    with conn:
+        # Сводка и отметка об отправке сохраняются одной транзакцией.
+        claimed = conn.execute("""INSERT INTO state(key, value) VALUES (?, ?)
+                                  ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                                  WHERE CAST(state.value AS INTEGER) < CAST(excluded.value AS INTEGER)""",
+                               (key, day)).rowcount
+        if not claimed:
+            return 0
+        by_author = dict(conn.execute("""SELECT user_id, COUNT(*) FROM buyer_requests
+                                         WHERE is_active = 1 AND removed = 0 AND first_seen >= ? AND first_seen < ?
+                                         GROUP BY user_id""", (today - notices.DAY, today)).fetchall())
+        total = sum(by_author.values())
+        if not total:
+            return 0
+        for (uid,) in conn.execute("""SELECT DISTINCT l.owner_user_id FROM listings l
+                                      WHERE l.source = 'own' AND l.is_active = 1 AND l.owner_user_id IS NOT NULL
+                                      AND NOT EXISTS (
+                                          SELECT 1 FROM notices n WHERE n.user_id = l.owner_user_id
+                                          AND n.kind = 'buyer' AND n.ts >= ?
+                                      )""", (today,)).fetchall():
+            count = total - by_author.get(uid, 0)
+            if count and notices.add(conn, uid, "buyer", f"Новые запросы за вчера · {count}",
+                                     "Посмотрите, кому можно предложить вашу недвижимость.",
+                                     url="/requests", dedup_s=0):
                 sent += 1
-        conn.execute("UPDATE buyer_requests SET notified = 1 WHERE id = ?", (r["id"],))
-    conn.commit()
     return sent
 
 
