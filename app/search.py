@@ -805,8 +805,14 @@ def listing_detail(conn: sqlite3.Connection, listing_id: int, with_contacts: boo
                 "chat": e["chat_name"], "sender": e["sender_name"], "source": e["source"]} for e in ev]
     d["history"] = history
     d["history_total"] = conn.execute("SELECT COUNT(*) FROM listing_events WHERE listing_id = ?", (listing_id,)).fetchone()[0]         if is_admin else None
-    d["price_history"] = [{"ts": h[0], "price": h[1]} for h in conn.execute(
-        "SELECT ts, price FROM price_history WHERE listing_id = ? ORDER BY ts, rowid LIMIT 100", (listing_id,))]
+    d["price_history"] = [{"ts": h[0], "price": h[1]} for h in conn.execute("""WITH RECURSIVE versions(id) AS (
+        SELECT ?
+        UNION
+        SELECT p.drop_id FROM versions v JOIN dup_pairs p ON p.keep_id=v.id
+        WHERE p.status='repeat' AND p.kind='auto_price_revision' AND p.drop_id IS NOT NULL
+    )
+    SELECT DISTINCT h.ts, h.price FROM versions v JOIN price_history h ON h.listing_id=v.id
+    ORDER BY h.ts, h.rowid LIMIT 100""", (listing_id,))]
     d["seen_count"] = r["seen_count"] if is_admin else None
     d["geo_approx"] = d["geo_level"] != "house"   # примерное место — на мини-карте кругом, а не меткой
     if is_admin:

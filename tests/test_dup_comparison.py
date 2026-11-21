@@ -1,6 +1,6 @@
 import json
 
-from app import dupreview, offers
+from app import accounts, dedupe, dupreview, offers, search
 
 
 def listing(conn, phone="+79000000001"):
@@ -154,3 +154,64 @@ def test_price_revision_scan_recovers_remaining_versions_after_chosen_merge(conn
     assert dupreview.scan_price_revisions(conn)["marked"] == 1
     found = dupreview.pairs(conn, "price")["pairs"]
     assert len(found) == 1 and {found[0]["a"]["id"], found[0]["b"]["id"]} == {a, b}
+
+
+def _price_version(conn, first_seen, price, *, last_seen=None, phones='["+79000000001"]'):
+    text = ("ЖК Губернский, ул. Домбайская 59. Квартира с ремонтом, мебелью и техникой. "
+            f"Цена {price} ₽, возможен торг. В ДКП 4 млн.")
+    lid = conn.execute("""INSERT INTO listings(type,deal,title,rooms,area,floor,street,house,price,
+        phones,first_seen,last_seen,fragment,description)
+        VALUES ('flat','sale','Квартира',2,54,16,'Домбайская','59',?,?,?,?,?,?)""",
+        (price, phones, first_seen, last_seen or first_seen, text, text)).lastrowid
+    conn.execute("INSERT INTO listing_events(listing_id,ts,price,fragment_hash) VALUES (?,?,?,?)",
+                 (lid, first_seen, price, dedupe.fragment_hash(text)))
+    return lid
+
+
+def test_auto_price_keeps_newest_version_and_combines_history_and_photos(conn):
+    older = _price_version(conn, 10, 6900000, last_seen=90)
+    middle = _price_version(conn, 20, 6800000)
+    newest = _price_version(conn, 30, 6850000)
+    uid = accounts.upsert_email_user(conn, "price-photo@example.test")["id"]
+    conn.execute("INSERT INTO favorites(user_id,listing_id,created) VALUES (?,?,?)", (uid, older, 11))
+    conn.executemany("UPDATE listings SET photos=? WHERE id=?", [
+        (json.dumps([f"https://example.test/photo-{lid}.jpg", "https://example.test/shared.jpg"]), lid)
+        for lid in (older, middle, newest)
+    ])
+    assert dupreview.scan_price_revisions(conn, apply=True) == {"checked": 3, "pairs": 0, "marked": 0, "merged": 2}
+    assert conn.execute("SELECT id FROM listings WHERE is_active=1").fetchone()[0] == newest
+    assert conn.execute("SELECT listing_id FROM favorites WHERE user_id=?", (uid,)).fetchone()[0] == newest
+    assert {tuple(r) for r in conn.execute("SELECT id,merged_into FROM listings WHERE is_active=0")} == {
+        (older, newest), (middle, newest),
+    }
+    detail = search.listing_detail(conn, newest, False, True)
+    assert detail["price"] == 6850000
+    assert detail["photos"] == [f"https://example.test/photo-{newest}.jpg", "https://example.test/shared.jpg",
+                                f"https://example.test/photo-{older}.jpg", f"https://example.test/photo-{middle}.jpg"]
+    assert [p["price"] for p in detail["price_history"]] == [6900000, 6800000, 6850000]
+    assert [p["price"] for p in detail["history"]] == [6900000, 6800000, 6850000]
+    assert offers.archived_publications(conn, newest)[newest][0] == 10
+    assert dupreview.scan_price_revisions(conn, apply=True)["merged"] == 0
+    decisions = dupreview.pairs(conn, "done")
+    assert decisions["price_auto"] == 2 and decisions["counts"]["price"] == 0
+    pid = decisions["pairs"][0]["id"]
+    assert dupreview.decide(conn, pid, "reopen", user_id=uid)["ok"]
+    assert dupreview.scan_price_revisions(conn, apply=True)["merged"] == 0
+    assert [p["price"] for p in search.listing_detail(conn, newest, False)["price_history"]] == [6900000, 6850000]
+
+
+def test_auto_price_respects_existing_decisions_and_manual_corrections(conn):
+    for i, status in enumerate(("diff", "market", "split", "open", None), 1):
+        phones = f'["+7900000000{i}"]'
+        a = _price_version(conn, 10, 6900000, phones=phones)
+        b = _price_version(conn, 20, 6800000, phones=phones)
+        if status:
+            pid = pair(conn, a, b, status=status)
+            conn.execute("UPDATE dup_pairs SET user_id=1 WHERE id=?", (pid,))
+        else:
+            conn.execute("UPDATE listings SET price_fixed=1 WHERE id=?", (a,))
+    assert dupreview.scan_price_revisions(conn, apply=True)["merged"] == 0
+    assert conn.execute("SELECT COUNT(*) FROM listings WHERE is_active=1").fetchone()[0] == 10
+    assert [r[0] for r in conn.execute("SELECT status FROM dup_pairs WHERE user_id=1 ORDER BY id")] == [
+        "diff", "market", "split", "open",
+    ]

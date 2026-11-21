@@ -24,7 +24,7 @@ from .textnorm import norm, words
 TYPE_GROUPS = {"flat": ("flat", "new"), "new": ("flat", "new"), "room": ("room",),
                "house": ("house",), "land": ("land",), "commercial": ("commercial",)}
 LOOKBACK_DAYS = 120
-_PRICE_REVISION = "тот же текст с новой ценой отдельной строкой"
+PRICE_REVISION_MATCH = "тот же текст с новой ценой"
 
 
 def fragment_hash(fragment: str) -> str:
@@ -109,15 +109,32 @@ def text_twin(a: str | None, b: str | None, short_ok: bool = False) -> bool:
     return all(t.isdigit() or t in _PRICE_WORDS for t in changed)
 
 
-@functools.lru_cache(maxsize=4096)
-def _without_price_line(fragment: str, deal: str) -> tuple[int | None, str]:
-    lines = rules.normalize_digits(fragment).splitlines()
-    prices = [(i, price) for i, line in enumerate(lines) if (price := rules.explicit_price_line(line, deal))]
-    if len(prices) != 1:
-        return None, ""
-    index, price = prices[0]
-    del lines[index]
-    return price, norm("\n".join(lines))
+@functools.lru_cache(maxsize=8192)
+def price_revision_key(fragment: str, deal: str, price: int | None) -> tuple[str, str] | None:
+    """Сопоставимая подпись, если подтверждена ровно одна цена объекта."""
+    text = rules.normalize_digits(fragment)
+    span = rules.explicit_price_span(text, deal)
+    if not span or span[0] != price:
+        return None
+    _, start, end = span
+    before, after = norm(text[:start]), norm(text[end:])
+    if len(words(f"{before} {after}").split()) >= 12:
+        return before, after
+    return None
+
+
+def price_revision_time(conn: sqlite3.Connection, row: sqlite3.Row) -> int:
+    """Первая публикация текущей версии цены. Репосты старого текста не меняют её дату."""
+    ts = conn.execute("""SELECT MIN(ts) FROM listing_events WHERE listing_id=? AND fragment_hash=? AND price=?""",
+                      (row["id"], fragment_hash(row["fragment"] or ""), row["price"])).fetchone()[0]
+    return ts if ts is not None else (row["description_ts"] or row["first_seen"])
+
+
+def is_price_revision(fragment: str, price: int | None, row: sqlite3.Row) -> bool:
+    if not price or price == row["price"] or row["price_doubt"]:
+        return False
+    signature = price_revision_key(fragment, row["deal"], price)
+    return bool(signature and signature == price_revision_key(row["fragment"] or "", row["deal"], row["price"]))
 
 
 def same_object(o: ParsedObject, row: sqlite3.Row) -> tuple[bool, str]:
@@ -145,25 +162,21 @@ def same_object(o: ParsedObject, row: sqlite3.Row) -> tuple[bool, str]:
 
     if o.article and o.article == row["article"] and phones_row:
         return True, "тот же артикул и контакт"
+    if (phones_row and o.type in ("flat", "new", "room") and ((street and house) or cx)
+            and rooms and floor and o.area and o.area == row["area"]
+            and is_price_revision(o.fragment, o.price, row)):
+        return True, PRICE_REVISION_MATCH
     if text_twin(o.fragment, row["fragment"]):
         return True, "тот же текст, другая цена"
     detailed = (street and house) or (rooms and floor and area)
     if detailed and (cx or street) and _close(o.price, row["price"], 0.10, 0) and text_twin(
             o.fragment, row["fragment"], short_ok=True):
         return True, "тот же короткий текст и характеристики"
-    if (phones_row and o.type in ("flat", "new", "room") and ((street and house) or cx)
-            and rooms and floor and o.area and o.area == row["area"]
-            and not row["price_doubt"] and o.price and o.price != row["price"]):
-        old_price, old_text = _without_price_line(row["fragment"] or "", o.deal)
-        new_price, new_text = _without_price_line(o.fragment, o.deal)
-        if (old_price and old_price == row["price"] and new_price == o.price
-                and old_text == new_text and len(words(old_text).split()) >= 12):
-            return True, _PRICE_REVISION
     return False, "отдельное объявление"
 
 
 def find_match(conn: sqlite3.Connection, o: ParsedObject, frag_hash: str, now: int) -> tuple[sqlite3.Row | None, str]:
-    from . import phonegroups
+    from . import offers, phonegroups
     phonegroups.refresh(conn)
     # 1) Дословный репост того же текста
     rows = conn.execute(
@@ -196,16 +209,25 @@ def find_match(conn: sqlite3.Connection, o: ParsedObject, frag_hash: str, now: i
             ORDER BY last_seen DESC LIMIT 400""",
         params,
     ).fetchall()
-    found = []
-    price_revisions = []
+    found = {}
+    price_revisions = {}
     for r in rows:
         ok, why = same_object(o, r)
-        if ok:
-            (price_revisions if why == _PRICE_REVISION else found).append((r, why))
+        if not ok:
+            continue
+        if r["hidden_reason"] == offers.MERGED_REPEAT:
+            current = offers.merged_listing(conn, r)
+            if current["is_active"] and current["source"] != "feed":
+                matches_current, current_why = same_object(o, current)
+                if matches_current:
+                    r, why = current, current_why
+        matches = price_revisions if why == PRICE_REVISION_MATCH else found
+        matches.setdefault(r["id"], (r, why))
     if len(found) > 1:   # 24.10: подходят несколько карточек (вы решили, что это разные квартиры) — та, чей текст ближе
         import difflib
         ta = words(o.fragment or "").split()
-        found.sort(key=lambda f: -difflib.SequenceMatcher(None, ta, words(f[0]["fragment"] or "").split(), autojunk=False).ratio())
+        return max(found.values(), key=lambda f: difflib.SequenceMatcher(None, ta, words(f[0]["fragment"] or "").split(),
+                                                                        autojunk=False).ratio())
     if found:
-        return found[0]
-    return price_revisions[0] if len(price_revisions) == 1 else (None, "")
+        return next(iter(found.values()))
+    return next(iter(price_revisions.values())) if len(price_revisions) == 1 else (None, "")

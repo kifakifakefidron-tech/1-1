@@ -354,7 +354,7 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
     d = o.to_dict()
     from .rules import multi_units
     d["multi_units"] = multi_units(o.fragment) or None
-    from .pricefix import check as price_check, learned_price
+    from .pricefix import MERGE_MAX_JUMP, check as price_check, learned_price
     was_price = d["price"]
     d["price"], d["price_doubt"] = price_check(d["price"], d["deal"], d["type"], d["area"])   # склейку повторов это не меняет (P3)
     if was_price and d["price"] and d["price"] > was_price and rules.explicit_rub(o.fragment, was_price):
@@ -428,13 +428,17 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         # Карточкой управляет агент (кабинет): его цену меняет только более свежий пост, описание не трогаем
         owned = bool(cur_d.get("owner_user_id"))
         new_price = confirmed_price = False
+        exact_revision = why == dedupe.PRICE_REVISION_MATCH
+        stale_revision = (ts <= dedupe.price_revision_time(conn, match) if exact_revision else
+                          why == "repost" and dedupe.is_price_revision(o.fragment, d["price"], match))
         # Акт 14.10, Б2: повтор другого типа/комнатности, с ценой «под вопросом» или дальше 25 % от прежней —
         # цену карточки не перебивает (обычно это чужой объект, склеенный по похожему тексту)
         other = ((d.get("type") and cur_d.get("type") and d["type"] != cur_d["type"] and {d["type"], cur_d["type"]} != {"flat", "new"})
                  or (d.get("rooms") is not None and cur_d.get("rooms") is not None and d["rooms"] != cur_d["rooms"]))
         jump = bool(d["price"] and cur_d["price"] and not cur_d.get("price_doubt")
-                    and abs(d["price"] - cur_d["price"]) / cur_d["price"] > 0.25)
-        if ts >= cur_d["last_seen"] and d["price"] and ts > (cur_d.get("owner_edited_at") or 0) \
+                    and abs(d["price"] - cur_d["price"]) / cur_d["price"] > MERGE_MAX_JUMP)
+        if not stale_revision and (exact_revision or ts >= cur_d["last_seen"]) and d["price"] \
+                and ts > (cur_d.get("owner_edited_at") or 0) \
                 and not other and not jump and not (d.get("price_doubt") and not cur_d.get("price_doubt")):
             confirmed_price = d["price"] == cur_d["price"] and not d.get("price_doubt")
             if not cur_d.get("price_fixed") or d["price"] not in (cur_d.get("price_wrong"), cur_d["price"]):
@@ -445,13 +449,15 @@ def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: in
         def mentions(desc: str | None) -> int:
             w = words(desc or "")
             return sum(1 for v in (merged.get("complex"), merged.get("street")) if v and words(v) and words(v) in w)
-        if not owned and d["description"] and (new_price or mentions(d["description"]) > mentions(cur_d["description"]) or (
+        keep_text = stale_revision or (exact_revision and d["price"] != merged["price"])
+        if not keep_text and not owned and d["description"] and (new_price or mentions(d["description"]) > mentions(cur_d["description"]) or (
                 mentions(d["description"]) == mentions(cur_d["description"])
                 and len(d["description"] or "") > len(cur_d["description"] or "") * 1.2)):
             merged["description"] = d["description"]   # новая цена — значит, и текст этого (свежего) поста
         # Агент отметил «продано» — повторы старого поста объект не возвращают (только новый пост через 3 дня)
         active = 0 if cur_d.get("sold_at") and ts < cur_d["sold_at"] + 3 * 86400 else 1
-        if (new_price and not owned and d["fragment"]) or len(d["fragment"] or "") > len(cur_d["fragment"] or ""):
+        if not keep_text and ((new_price and (exact_revision or not owned) and d["fragment"])
+                             or len(d["fragment"] or "") > len(cur_d["fragment"] or "")):
             merged["fragment"] = d["fragment"]
         roles = json.loads(cur_d.get("phone_roles") or "{}")
         for p, role in (d.get("phone_roles") or {}).items():

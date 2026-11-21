@@ -353,6 +353,8 @@ CREATE TABLE IF NOT EXISTS dup_pairs (
     created_at INTEGER NOT NULL, decided_at INTEGER, user_id INTEGER, UNIQUE (a, b)
 );
 CREATE INDEX IF NOT EXISTS ix_dup_pairs_status ON dup_pairs (status);
+CREATE INDEX IF NOT EXISTS ix_dup_auto_price_keep ON dup_pairs (keep_id, drop_id)
+    WHERE status = 'repeat' AND kind = 'auto_price_revision';
 CREATE TABLE IF NOT EXISTS notes (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
     text TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)
@@ -530,6 +532,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 if "duplicate column" not in str(e):
                     raise
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_listings_ext ON listings(ext_id) WHERE ext_id IS NOT NULL")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_listings_merged_into ON listings(merged_into) WHERE merged_into IS NOT NULL")
     # Любая смена цены (чаты, фид, правка агента) запоминает прошлую цену
     conn.execute("""CREATE TRIGGER IF NOT EXISTS trg_price_change AFTER UPDATE OF price ON listings
                     WHEN OLD.price IS NOT NULL AND NEW.price IS NOT NULL AND NEW.price != OLD.price

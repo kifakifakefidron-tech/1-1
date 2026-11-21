@@ -95,9 +95,6 @@ def extract_article(text: str) -> str | None:
     return m.group(1) if m else None
 
 
-_PRICE_LABEL_BEFORE = re.compile(r"(?:цен[аы]|стоимост\w*|💰|🪙)\s*[:\-–—]?\s*$", re.IGNORECASE)
-
-
 def _price_candidates(text: str, deal: str, strict: bool):
     for m in _PRICE_RE.finditer(text):
         num = _to_number(m.group("num"))
@@ -175,21 +172,6 @@ def explicit_price_span(text: str, deal: str) -> tuple[int, int, int] | None:
         return None
     _, value, start, end, _ = matches[0]
     return value, start, end
-
-
-def explicit_price_line(line: str, deal: str) -> int | None:
-    """Возвращает цену, если вся строка состоит из одной явно указанной суммы."""
-    line = line.strip()
-    match = _PRICE_RE.search(line)
-    if not match or match.end() != len(line):
-        return None
-    prefix = line[:match.start()].strip()
-    if prefix:
-        if not _PRICE_LABEL_BEFORE.fullmatch(prefix):
-            return None
-    elif not (match["unit"] or match["cur"]):
-        return None
-    return extract_price(line, deal, strict=True)
 
 
 # ─── площадь ───────────────────────────────────────────────────────────────

@@ -13,12 +13,13 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-from . import applet, config, db, geo, offers, rules
-from .dedupe import _close, _house_eq, text_twin
-from .textnorm import norm, words
+from . import applet, config, db, geo, offers
+from .dedupe import _close, _house_eq, price_revision_key, price_revision_time, text_twin
+from .textnorm import words
 
 KINDS = {
     "price_revision": "Одинаковый текст · разная цена",
+    "auto_price_revision": "Цена обновлена автоматически",
     "text": "Тот же текст, другая цена",
     "agent": "Тот же агент, место, комнаты и этаж",
     "similar": "Текст похож, номера те же",
@@ -31,7 +32,7 @@ KINDS = {
 }
 SIM_MIN = 0.8
 PER_ROW = 3
-PRICE_REVISION_SCAN = "dup_price_revision_scan_v1"
+PRICE_REVISION_SCAN = "dup_price_revision_scan_v2"
 _PRICE_PAIR_SCOPE = "p.kind='price_revision' AND a.price != b.price"
 
 _FLATLIKE = ("flat", "new", "room", "commercial")
@@ -296,7 +297,8 @@ def decide(conn: sqlite3.Connection, pid: int, verdict: str, user_id: int = 0, k
         pair = conn.execute("SELECT * FROM dup_pairs WHERE id=? AND status='repeat' AND drop_id IS NOT NULL", (pid,)).fetchone()
         if pair and (error := _reopen_repeat(conn, pair)):
             return error
-        saved = conn.execute("""UPDATE dup_pairs SET status='open', decided_at=NULL, user_id=?, keep_id=NULL, drop_id=NULL, undo=NULL
+        saved = conn.execute("""UPDATE dup_pairs SET status='open', decided_at=NULL, user_id=?, keep_id=NULL, drop_id=NULL, undo=NULL,
+                              kind=CASE WHEN kind='auto_price_revision' THEN 'price_revision' ELSE kind END
                               WHERE id=? AND status IN ('diff','market','repeat')""", (user_id, pid))
         if saved.rowcount:
             return {"ok": True, "status": "open"}
@@ -527,6 +529,17 @@ def tidy(conn: sqlite3.Connection) -> int:
     return cur.rowcount
 
 
+def _price_revision_group_key(row):
+    contacts = offers.contact_keys(row)
+    signature = price_revision_key(row["fragment"] or "", row["deal"], row["price"])
+    if not contacts or not signature:
+        return None
+    attrs = (row["deal"], offers.property_type(row["type"]), row["rooms"], row["room_kind"], row["area"],
+             row["land"], row["floor"], row["floors"], offers.house_key(row["house"]),
+             offers.place_keys(row), words(row["settlement"]))
+    return frozenset(contacts), row["owner_user_id"], attrs, signature
+
+
 def _price_revision_groups(conn: sqlite3.Connection):
     from . import phonegroups
 
@@ -539,31 +552,76 @@ def _price_revision_groups(conn: sqlite3.Connection):
         ORDER BY first_seen DESC, id DESC""")
     for row in rows:
         checked += 1
-        contacts = offers.contact_keys(row)
-        text = rules.normalize_digits(row["fragment"])
-        if not contacts or not (price := rules.explicit_price_span(text, row["deal"])) or price[0] != row["price"]:
-            continue
-        _, start, end = price
-        before, after = norm(text[:start]), norm(text[end:])
-        if len(words(f"{before} {after}").split()) < 12:
-            continue
-        attrs = (row["deal"], offers.property_type(row["type"]), row["rooms"], row["room_kind"], row["area"],
-                 row["land"], row["floor"], row["floors"], offers.house_key(row["house"]),
-                 offers.place_keys(row), words(row["settlement"]))
-        groups[(frozenset(contacts), row["owner_user_id"], attrs, before, after)].append((row["id"], row["price"]))
+        if key := _price_revision_group_key(row):
+            groups[key].append((row["id"], row["price"]))
     return checked, groups
 
 
-def scan_price_revisions(conn: sqlite3.Connection) -> dict:
-    """Помечает совпавшие версии в очереди. Карточки и решения админа сохраняются."""
+def _apply_price_revisions(conn: sqlite3.Connection, key, members, why: str, now: int) -> int:
+    from .pricefix import MERGE_MAX_JUMP
+
+    ids = [lid for lid, _ in members]
+    slots = ",".join("?" for _ in ids)
+    with conn:
+        conn.execute("BEGIN IMMEDIATE")
+        rows = conn.execute(f"SELECT * FROM listings WHERE id IN ({slots})", ids).fetchall()
+        if len(rows) != len(ids) or any(
+            not row["is_active"] or row["source"] != "chat" or row["price_doubt"] or row["price_fixed"]
+            or row["owner_edited_at"] or row["admin_fixed"] or row["sold_at"] or row["video_file"]
+            or row["kinescope_url"] or _price_revision_group_key(row) != key for row in rows
+        ):
+            return 0
+        if len({row["price"] for row in rows}) < 2:
+            return 0
+        # Учитываем решения о разных объектах и об отдельных предложениях, включая их архивные версии.
+        if conn.execute(f"""WITH RECURSIVE family(root,id) AS (
+                SELECT id,id FROM listings WHERE id IN ({slots})
+                UNION ALL
+                SELECT f.root,l.id FROM family f JOIN listings l ON l.merged_into=f.id WHERE l.hidden_reason=?
+            )
+            SELECT 1 FROM dup_pairs p JOIN family a ON a.id=p.a JOIN family b ON b.id=p.b
+            WHERE a.root!=b.root AND (p.status NOT IN ('open','gone') OR COALESCE(p.user_id,0)>0)
+            LIMIT 1""", (*ids, offers.MERGED_REPEAT)).fetchone():
+            return 0
+        timed = sorted(((price_revision_time(conn, row), row) for row in rows),
+                       key=lambda entry: (entry[0], entry[1]["first_seen"], entry[1]["id"]))
+        latest_at, keep = timed[-1]
+        if any(ts == latest_at and row["price"] != keep["price"] for ts, row in timed[:-1]):
+            return 0
+        if any(abs(b["price"] - a["price"]) > a["price"] * MERGE_MAX_JUMP
+               for (_, a), (_, b) in zip(timed, timed[1:])):
+            return 0
+        for _, drop in timed[:-1]:
+            a, b = _pair_key(keep["id"], drop["id"])
+            pid = conn.execute("""INSERT INTO dup_pairs(a,b,kind,score,why,status,created_at)
+                VALUES (?,?,'auto_price_revision',1,?,'open',?)
+                ON CONFLICT(a,b) DO UPDATE SET kind=excluded.kind,score=excluded.score,why=excluded.why,status='open'
+                RETURNING id""", (a, b, why, now)).fetchone()[0]
+            if not _merge_repeat(conn, pid, keep, drop, 0)["ok"]:
+                conn.rollback()
+                return 0
+            keep = conn.execute("SELECT * FROM listings WHERE id=?", (keep["id"],)).fetchone()
+        conn.execute("""INSERT INTO state(key,value) VALUES ('cache_ver',?)
+                        ON CONFLICT(key) DO UPDATE SET value=excluded.value""", (str(time.time()),))
+    return len(rows) - 1
+
+
+def scan_price_revisions(conn: sqlite3.Connection, *, apply: bool = False) -> dict:
+    """Объединяет строгие версии по цене, а спорные совпадения помечает в очереди."""
     checked, groups = _price_revision_groups(conn)
     now = int(time.time())
     why = json.dumps(["Тот же контакт и характеристики", "В исходном тексте отличается только цена"], ensure_ascii=False)
     prepared = []
-    for members in groups.values():
+    merged = 0
+    if apply:
+        db.flush(conn)
+    for key, members in groups.items():
         latest = members[0]
         alternative = next((member for member in members if member[1] != latest[1]), None)
         if alternative is None:
+            continue
+        if apply and (count := _apply_price_revisions(conn, key, members, why, now)):
+            merged += count
             continue
         # Одного сравнения на версию достаточно: все участники совпали по одному строгому ключу.
         for member in members[1:]:
@@ -578,6 +636,8 @@ def scan_price_revisions(conn: sqlite3.Connection) -> dict:
             ON CONFLICT(a,b) DO UPDATE SET kind=excluded.kind,score=excluded.score,why=excluded.why
             WHERE dup_pairs.status='open' AND dup_pairs.kind != excluded.kind""", prepared).rowcount
         report = {"checked": checked, "pairs": len(prepared), "marked": saved}
+        if apply:
+            report["merged"] = merged
         db.set_state(conn, PRICE_REVISION_SCAN, json.dumps(report))
     return report
 
@@ -705,10 +765,13 @@ def _queue_data(conn: sqlite3.Connection) -> dict:
     price_open = conn.execute(f"""SELECT COUNT(*) FROM dup_pairs p JOIN listings a ON a.id=p.a
         JOIN listings b ON b.id=p.b WHERE p.status='open' AND a.is_active=1 AND b.is_active=1
         AND {_PRICE_PAIR_SCOPE}""").fetchone()[0]
+    price_auto = conn.execute("""SELECT COUNT(*) FROM dup_pairs
+                                 WHERE kind='auto_price_revision' AND status='repeat'""").fetchone()[0]
     return {"phone_groups": phonegroups.listing(conn), "counts": {"open": open_count(conn),
             "price": price_open, "auto": counts.get("auto", 0),
             "done": sum(counts.get(k, 0) for k in ("same", "diff", "split", "market", "repeat"))},
             "price_scan_ready": db.get_state(conn, PRICE_REVISION_SCAN) is not None,
+            "price_auto": price_auto,
             "stats": stats(conn), "ai_enabled": bool(config.DEEPSEEK_API_KEY)}
 
 

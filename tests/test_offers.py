@@ -1,7 +1,7 @@
 import json
 import time
 
-from app import config, dupfix, dupreview, hooks, ingest, offers, search
+from app import config, dedupe, dupfix, dupreview, hooks, ingest, offers, search
 
 
 def listing(conn, phone, *, price=6800000, floor=16, house="59", media=("a", "b"), deal="sale"):
@@ -261,6 +261,40 @@ def test_compact_price_does_not_change_two_possible_candidates(conn):
     latest = _import_priced_post(conn, f"{_COMPACT_PRICE_TEXT}\nЦена3400🍋", "79000000001", now + 1, "ambiguous")
     assert latest not in (first, second)
     assert [r[0] for r in conn.execute("SELECT price FROM listings ORDER BY id")] == [3450000, 3460000, 3400000]
+
+
+def test_inline_price_update_after_older_repost_uses_source_date(conn):
+    now = int(time.time())
+    sender = "79000000001"
+    old_post = f"{_COMPACT_PRICE_TEXT}\nЦена3450🍋, возможен торг."
+    lid = _import_priced_post(conn, old_post, sender, now, "first-inline")
+    # Старая версия снова пришла из другого чата уже после публикации нового объявления.
+    mid = ingest.add_message(conn, source="wa", text=old_post, ts=now + 120, msg_id="inline-repost", sender=sender)
+    assert ingest.process_message(conn, mid, use_llm=False)["status"] == "repost"
+    assert _import_priced_post(conn, old_post.replace("3450", "3400"), sender, now + 60, "new-inline") == lid
+    row = conn.execute("SELECT price,fragment,last_seen FROM listings WHERE id=?", (lid,)).fetchone()
+    assert (row["price"], row["last_seen"]) == (3400000, now + 120)
+    assert "3400🍋" in row["fragment"]
+
+
+def test_price_revision_after_auto_merge_updates_existing_card_and_ignores_known_old_text(conn):
+    from unittest.mock import patch
+
+    now = int(time.time()) - 600
+    sender = "79000000001"
+    old = f"{_COMPACT_PRICE_TEXT}\nЦена3450🍋, возможен торг."
+    newer = old.replace("3450", "3400")
+    first_id = _import_priced_post(conn, old, sender, now, "old-version")
+    with patch.object(dedupe, "find_match", return_value=(None, "")):
+        canonical = _import_priced_post(conn, newer, sender, now + 60, "second-version")
+    assert dupreview.scan_price_revisions(conn, apply=True)["merged"] == 1
+    assert _import_priced_post(conn, newer.replace("3400", "3370"), sender, now + 120, "third-version") == canonical
+    # То же исходное объявление может прийти в составе новой рассылки: доходит до совпадения фрагмента.
+    from app import parser
+    _, parsed = parser.parse(old, sender_phone=sender, use_llm=False)
+    assert ingest.save_object(conn, parsed[0], None, now + 180) == (canonical, "repost")
+    rows = list(map(tuple, conn.execute("SELECT id,price,merged_into FROM listings ORDER BY id")))
+    assert rows == [(first_id, 3450000, canonical), (canonical, 3370000, None)]
 
 
 def test_confirmed_group_shows_each_agent_once_and_counts_one_property(conn, monkeypatch):

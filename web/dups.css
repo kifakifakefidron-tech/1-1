@@ -87,6 +87,7 @@
 .dp-row-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .dp-row-t a { color: var(--ink); font-weight: 600; text-decoration: none; }
 .dp-row-t small { color: var(--ink-3); font-size: 12px; overflow-wrap: anywhere; }
+.dp-row-price .dp-row-t small:last-child { color: var(--gold); font-size: 14px; font-weight: 600; }
 
 .dp-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
 .dp-stat { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; background: var(--paper); border: 1px solid var(--line);
@@ -104,6 +105,7 @@
   .dp-acts { bottom: calc(84px + env(safe-area-inset-bottom)); }   /* над нижней панелью меню */
   .dp-acts .pill { flex: 1 1 44%; min-height: 44px; text-align: left; padding: 8px; font-size: 12px; line-height: 1.2; }
   .dp-row { flex-wrap: wrap; }
+  .dp-row-price .dp-row-t { flex-basis: 100%; }
 }
 
 /* 25.10: «Один агент — несколько номеров» */

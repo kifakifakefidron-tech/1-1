@@ -166,14 +166,21 @@
     repeat: "Версии одного объявления", market: "Один объект · разные агенты" };
   function listHTML() {
     if (!pairs.length) return `<p class="dp-empty">${tab === "auto" ? "Сервис пока ничего не склеивал сам." : "Решений пока нет."}</p>`;
-    return `<div class="dp-list">${pairs.map((p) => `<div class="dp-row" data-pid="${p.id}">
-      <span class="mark">${esc(p.merged ? "Объединено" : STATUS[p.status] || p.status)}</span>
-      <div class="dp-row-t"><a href="/?open=${p.keep || p.a.id}">${esc(p.a.id === p.keep ? p.a.title : p.b.title)}</a>
-        <small>${esc(p.kind_label)} · ${esc((p.why || []).slice(0, 3).join(", "))} · ${esc(day(p.decided_at))}</small>
-        <small>№ ${p.a.id} ${esc(mln(p.a.price, p.a.deal))} · № ${p.b.id} ${esc(mln(p.b.price, p.b.deal))}</small></div>
+    return `<div class="dp-list">${pairs.map((p) => {
+      const kept = p.keep === p.b.id ? p.b : p.a;
+      const archived = kept === p.a ? p.b : p.a;
+      const autoPrice = p.kind === "auto_price_revision";
+      const label = autoPrice ? "Цена обновлена автоматически" : p.merged ? "Объединено" : STATUS[p.status] || p.status;
+      return `<div class="dp-row${autoPrice ? " dp-row-price" : ""}" data-pid="${p.id}">
+      <span class="mark">${esc(label)}</span>
+      <div class="dp-row-t"><a href="/?open=${kept.id}">${esc(kept.title)}</a>
+        <small>${autoPrice ? "" : `${esc(p.kind_label)} · ${esc((p.why || []).slice(0, 3).join(", "))} · `}${esc(day(p.decided_at))}</small>
+        <small>${autoPrice ? `№ ${archived.id} ${esc(mln(archived.price, archived.deal))} → № ${kept.id} ${esc(mln(kept.price, kept.deal))}`
+          : `№ ${p.a.id} ${esc(mln(p.a.price, p.a.deal))} · № ${p.b.id} ${esc(mln(p.b.price, p.b.deal))}`}</small></div>
       ${["auto", "same"].includes(p.status) ? `<button type="button" class="pill light" data-split="${p.id}">Разделить</button>`
         : ["diff", "market", "repeat"].includes(p.status) ? `<button type="button" class="pill light" data-reopen="${p.id}">${p.merged ? "Отменить объединение" : "Вернуть в очередь"}</button>` : ""}
-    </div>`).join("")}</div>`;
+    </div>`;
+    }).join("")}</div>`;
   }
 
   function statsHTML(stats) {
@@ -201,6 +208,10 @@
       : tab === "price" && !data.price_scan_ready ? `<p class="dp-empty">Проверка опубликованных объявлений выполняется в фоне.</p>`
       : tab === "price" ? `<p class="dp-empty">${ic("check")} Нет пар, где отличается только цена.</p>`
       : `<p class="dp-empty">${ic("check")} Все пары разобраны.</p>`;
+    if (tab === "price" && data.price_auto) {
+      $("dpBody").insertAdjacentHTML("afterbegin", `<p class="note">Автоматически объединено версий <strong>${n0(data.price_auto)}</strong>
+        · <button type="button" class="chip" data-tab="done">История решений</button></p>`);
+    }
     updateActions();
   }
 
