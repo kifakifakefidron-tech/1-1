@@ -169,6 +169,21 @@ def extract_price(text: str, deal: str = "sale", strict: bool = False) -> int | 
     return best[1] if best else None
 
 
+def explicit_price_line(line: str, deal: str) -> int | None:
+    """Возвращает цену, если вся строка состоит из одной явно указанной суммы."""
+    line = line.strip()
+    match = _PRICE_RE.search(line)
+    if not match or match.end() != len(line):
+        return None
+    prefix = line[:match.start()].strip()
+    if prefix:
+        if not _PRICE_LABEL_BEFORE.fullmatch(prefix):
+            return None
+    elif not (match["unit"] or match["cur"]):
+        return None
+    return extract_price(line, deal, strict=True)
+
+
 # ─── площадь ───────────────────────────────────────────────────────────────
 _AREA_RE = re.compile(
     r"(?P<num>\d+(?:[.,]\d+)?)\s*(?P<unit>м2|м²|м\.?\s?кв|кв\.?\s?м\.?|квм|кв\b|метр\w*|м\b)",

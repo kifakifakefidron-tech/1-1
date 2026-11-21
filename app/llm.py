@@ -57,6 +57,7 @@ class LLMError(RuntimeError):
 
 
 failures = 0  # сколько раз нейросеть не ответила (worker читает и обнуляет каждый цикл)
+parsed_messages = 0
 
 
 def available() -> bool:
@@ -90,6 +91,7 @@ def numbered(text: str, limit: int = 8000) -> str:
 
 def parse_message(text: str, retries: int = 2, *, price_hints: tuple[str, ...] = ()) -> dict:
     """Возвращает словарь по схеме из SYSTEM_PROMPT. Бросает LLMError."""
+    global failures, parsed_messages
     body = {
         "temperature": 0,
         "max_tokens": 4000,
@@ -111,6 +113,7 @@ def parse_message(text: str, retries: int = 2, *, price_hints: tuple[str, ...] =
             if not isinstance(parsed, dict):
                 raise LLMError("ответ не объект")
             parsed.setdefault("objects", [])
+            parsed_messages += 1
             return parsed
         except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError, LLMError) as e:
             last = e
@@ -120,7 +123,6 @@ def parse_message(text: str, retries: int = 2, *, price_hints: tuple[str, ...] =
             if attempt == retries:
                 break
             time.sleep(2 * (attempt + 1))
-    global failures
     failures += 1
     raise LLMError(str(last))
 

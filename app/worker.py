@@ -52,6 +52,7 @@ def tick(conn) -> dict:
     if purged["chats"]:
         stats["purged"] = purged
     llm.failures = 0
+    llm.parsed_messages = 0
     catalog = applet.maybe_sync(conn)
     if catalog:
         stats["appletv"] = catalog
@@ -62,6 +63,9 @@ def tick(conn) -> dict:
             stats["requeued_llm_errors"] = recovered
             log.info("Возвращено в очередь после ошибки разбора: %s", recovered)
     stats["processed"] = ingest.process_pending(conn, limit=300, budget_s=60)
+    if llm.available():
+        stats["deepseek_parsed"] = llm.parsed_messages
+        stats["deepseek_errors"] = llm.failures
     lap("разбор")
     from . import media
     if media.trim_chat_photos(conn):   # один раз: у объявлений из чатов — по одному фото

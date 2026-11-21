@@ -222,6 +222,47 @@ def test_reposted_text_with_separate_agent_phones_cannot_merge_original_data(con
     assert conn.execute("SELECT COUNT(*) FROM listings WHERE is_active=1").fetchone()[0] == 2
 
 
+_COMPACT_PRICE_TEXT = ("Ул. Тепличная 94\n1-к квартира, 43 м², 6/7 этаж\n"
+                       "Ремонт, мебель, техника. Полная сумма в договоре. Быстрый выход на сделку.")
+
+
+def _import_priced_post(conn, text, sender, ts, suffix):
+    mid = ingest.add_message(conn, source="wa", text=text, ts=ts, msg_id=f"compact-price-{suffix}", sender=sender)
+    result = ingest.process_message(conn, mid, use_llm=False)
+    assert result["status"] == "done"
+    return result["results"][0]["listing_id"]
+
+
+def test_compact_price_updates_same_listing_without_transferring_contacts(conn):
+    now = int(time.time())
+    sender = "79000000001"
+    original = _import_priced_post(conn, f"{_COMPACT_PRICE_TEXT}\nЦена3450🍋", sender, now, "first")
+    other_agent = _import_priced_post(conn, f"{_COMPACT_PRICE_TEXT}\nЦена3470🍋", "79000000002", now + 1, "other")
+    new_text = f"{_COMPACT_PRICE_TEXT}\nЦена3400🍋"
+    assert _import_priced_post(conn, new_text, sender, now + 2, "revision") == original
+    other_floor = _import_priced_post(conn, new_text.replace("6/7", "5/7"), sender, now + 3, "other-floor")
+    assert len({original, other_agent, other_floor}) == 3
+    rows = [(r["id"], r["price"], json.loads(r["phones"])) for r in conn.execute("SELECT * FROM listings ORDER BY id")]
+    assert rows == [(original, 3400000, ["+79000000001"]), (other_agent, 3470000, ["+79000000002"]),
+                    (other_floor, 3400000, ["+79000000001"])]
+    assert conn.execute("SELECT first_seen FROM listings WHERE id=?", (original,)).fetchone()[0] == now
+    assert [r[0] for r in conn.execute("SELECT price FROM listing_events WHERE listing_id=? ORDER BY ts", (original,))] == [
+        3450000, 3400000,
+    ]
+
+
+def test_compact_price_does_not_change_two_possible_candidates(conn):
+    now = int(time.time())
+    first = _import_priced_post(conn, f"{_COMPACT_PRICE_TEXT}\nЦена3450🍋", "79000000001", now, "first")
+    second = conn.execute("""INSERT INTO listings (type,deal,rooms,area,floor,floors,street,house,price,
+        fragment,phones,title,first_seen,last_seen)
+        SELECT type,deal,rooms,area,floor,floors,street,house,3460000,replace(fragment,'3450','3460'),phones,title,
+               first_seen,last_seen FROM listings WHERE id=?""", (first,)).lastrowid
+    latest = _import_priced_post(conn, f"{_COMPACT_PRICE_TEXT}\nЦена3400🍋", "79000000001", now + 1, "ambiguous")
+    assert latest not in (first, second)
+    assert [r[0] for r in conn.execute("SELECT price FROM listings ORDER BY id")] == [3450000, 3460000, 3400000]
+
+
 def test_confirmed_group_shows_each_agent_once_and_counts_one_property(conn, monkeypatch):
     monkeypatch.setattr(config, "APPLET_SLAVA_PHONES", "+79000000011,+79000000012")
     monkeypatch.setattr(config, "APPLET_ARTEM_PHONE", "+79000000013")

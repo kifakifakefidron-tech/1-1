@@ -43,12 +43,14 @@ class DeepSeekTests(unittest.TestCase):
         failure = HTTPError(config.DEEPSEEK_URL, 429, "rate limited", {}, None)
         result = {"kind": "other", "objects": []}
         response = io.BytesIO(json.dumps({"choices": [{"message": {"content": json.dumps(result)}}]}).encode())
-        with patch("app.llm.urllib.request.urlopen", side_effect=[failure, response]) as request, patch(
-            "app.llm.time.sleep"
-        ) as wait:
+        with patch.object(llm, "parsed_messages", 0), patch.object(llm, "failures", 0), patch(
+            "app.llm.urllib.request.urlopen", side_effect=[failure, response]
+        ) as request, patch("app.llm.time.sleep") as wait:
             self.assertEqual(llm.parse_message("Тест"), result)
             self.assertEqual(request.call_count, 2)
             wait.assert_called_once()
+            self.assertEqual(llm.parsed_messages, 1)
+            self.assertEqual(llm.failures, 0)
 
     def test_worker_queue_saves_listing_using_flash(self):
         conn = db.connect(":memory:")

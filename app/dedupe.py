@@ -17,12 +17,14 @@ import json
 import re
 import sqlite3
 
+from . import rules
 from .parser import ParsedObject
-from .textnorm import words
+from .textnorm import norm, words
 
 TYPE_GROUPS = {"flat": ("flat", "new"), "new": ("flat", "new"), "room": ("room",),
                "house": ("house",), "land": ("land",), "commercial": ("commercial",)}
 LOOKBACK_DAYS = 120
+_PRICE_REVISION = "тот же текст с новой ценой отдельной строкой"
 
 
 def fragment_hash(fragment: str) -> str:
@@ -107,6 +109,17 @@ def text_twin(a: str | None, b: str | None, short_ok: bool = False) -> bool:
     return all(t.isdigit() or t in _PRICE_WORDS for t in changed)
 
 
+@functools.lru_cache(maxsize=4096)
+def _without_price_line(fragment: str, deal: str) -> tuple[int | None, str]:
+    lines = rules.normalize_digits(fragment).splitlines()
+    prices = [(i, price) for i, line in enumerate(lines) if (price := rules.explicit_price_line(line, deal))]
+    if len(prices) != 1:
+        return None, ""
+    index, price = prices[0]
+    del lines[index]
+    return price, norm("\n".join(lines))
+
+
 def same_object(o: ParsedObject, row: sqlite3.Row) -> tuple[bool, str]:
     """Решение «это тот же объект» + причина (для отладки)."""
     rooms = None if o.rooms is None or row["rooms"] is None else o.rooms == row["rooms"]
@@ -138,6 +151,14 @@ def same_object(o: ParsedObject, row: sqlite3.Row) -> tuple[bool, str]:
     if detailed and (cx or street) and _close(o.price, row["price"], 0.10, 0) and text_twin(
             o.fragment, row["fragment"], short_ok=True):
         return True, "тот же короткий текст и характеристики"
+    if (phones_row and o.type in ("flat", "new", "room") and ((street and house) or cx)
+            and rooms and floor and o.area and o.area == row["area"]
+            and not row["price_doubt"] and o.price and o.price != row["price"]):
+        old_price, old_text = _without_price_line(row["fragment"] or "", o.deal)
+        new_price, new_text = _without_price_line(o.fragment, o.deal)
+        if (old_price and old_price == row["price"] and new_price == o.price
+                and old_text == new_text and len(words(old_text).split()) >= 12):
+            return True, _PRICE_REVISION
     return False, "отдельное объявление"
 
 
@@ -176,12 +197,15 @@ def find_match(conn: sqlite3.Connection, o: ParsedObject, frag_hash: str, now: i
         params,
     ).fetchall()
     found = []
+    price_revisions = []
     for r in rows:
         ok, why = same_object(o, r)
         if ok:
-            found.append((r, why))
+            (price_revisions if why == _PRICE_REVISION else found).append((r, why))
     if len(found) > 1:   # 24.10: подходят несколько карточек (вы решили, что это разные квартиры) — та, чей текст ближе
         import difflib
         ta = words(o.fragment or "").split()
         found.sort(key=lambda f: -difflib.SequenceMatcher(None, ta, words(f[0]["fragment"] or "").split(), autojunk=False).ratio())
-    return found[0] if found else (None, "")
+    if found:
+        return found[0]
+    return price_revisions[0] if len(price_revisions) == 1 else (None, "")
