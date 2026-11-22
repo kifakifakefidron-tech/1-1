@@ -41,6 +41,7 @@ AI_AUTO_CONFIDENCE = 0.8
 _AI_RETRY_AT = "dup_ai_retry_at"
 _AI_RETRY_SECONDS = 300
 _AI_LEASE_SECONDS = 180
+_OLD_CONTACT_HOLD = "Проверьте контакты и принадлежность объявлений одному агенту."
 
 _FLATLIKE = ("flat", "new", "room", "commercial")
 _COLS = ("id, type, deal, rooms, room_kind, floor, floors, area, land, complex, street, house, district, settlement, "
@@ -934,6 +935,16 @@ def _current_ai_result(conn, pid, cards, signature):
     return {"ok": True, "pending": True} if saved.get("pending") else {"ok": True, "stale": True}
 
 
+def _review_same_agent(a, b) -> bool | None:
+    left, right = offers.agent_key(a), offers.agent_key(b)
+    if left[0] == "listing" or right[0] == "listing":
+        return None
+    if left[0] == right[0] == "phones":
+        # В версии без номера в тексте контактом мог стать один из прежних номеров отправителя.
+        return left[1] <= right[1] or right[1] <= left[1]
+    return left == right
+
+
 def ask_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False) -> dict:
     """Рекомендация по открытой паре с сохранением ответа и защитой от повторных запросов."""
     if not config.DEEPSEEK_API_KEY:
@@ -966,11 +977,10 @@ def ask_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False) -> 
         return _current_ai_result(conn, pid, cards, signature)
 
     phonegroups.refresh(conn)
-    agents = [offers.agent_key(row) for row in conn.execute(
-        "SELECT ext_id,owner_user_id,phones,id FROM listings WHERE id IN (?,?) ORDER BY id", (p["a"], p["b"]))]
-    relation = "неясно"
-    if len(agents) == 2 and all(agent[0] != "listing" for agent in agents):
-        relation = "совпадают" if agents[0] == agents[1] else "различаются"
+    agent_rows = conn.execute("SELECT ext_id,owner_user_id,phones,id FROM listings WHERE id IN (?,?) ORDER BY id",
+                              (p["a"], p["b"])).fetchall()
+    same_agent = _review_same_agent(*agent_rows) if len(agent_rows) == 2 else None
+    relation = {True: "совпадают", False: "различаются", None: "неясно"}[same_agent]
     senders = [phonegroups.canon_set(filter(None, map(normalize_phone, c["sender_phones"]))) for c in cards]
     payload = {
         "объявления": [{**{k: c[k] for k in _AI_FIELDS if c[k] not in (None, "")},
@@ -1006,6 +1016,11 @@ def _confident(ai: dict) -> bool:
             and type(certainty) in (float, int) and AI_AUTO_CONFIDENCE <= certainty <= 1)
 
 
+def _requires_manual_review(ai: dict) -> bool:
+    reason = ai.get("manual_reason")
+    return bool(reason and not (ai.get("verdict") == "repeat" and reason == _OLD_CONTACT_HOLD))
+
+
 def _repeat_review_reason(conn, a, b, keep_id):
     from . import phonegroups
 
@@ -1014,9 +1029,8 @@ def _repeat_review_reason(conn, a, b, keep_id):
     if a["owner_user_id"] and b["owner_user_id"] and a["owner_user_id"] != b["owner_user_id"]:
         return "У карточек разные владельцы."
     phonegroups.refresh(conn)
-    left, right = offers.agent_key(a), offers.agent_key(b)
-    if left != right and left[0] != "listing" and right[0] != "listing":
-        return "Проверьте контакты и принадлежность объявлений одному агенту."
+    if _review_same_agent(a, b) is False:
+        return "Уточните, принадлежат ли контактные номера одному агенту."
     archived = b if a["id"] == keep_id else a
     if (archived["source"] != "chat" or archived["price_fixed"] or archived["owner_edited_at"]
             or archived["admin_fixed"] or archived["video_file"] or archived["kinescope_url"]):
@@ -1030,7 +1044,7 @@ def review_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False) 
     """Использует сохранённую оценку, затем применяет уверенный ответ к актуальной паре."""
     result = ask_ai(conn, pid, wait_for_db=wait_for_db)
     proposed = result.get("ai") or {}
-    if not _confident(proposed) or proposed.get("manual_reason"):
+    if not _confident(proposed) or _requires_manual_review(proposed):
         return result
     db.flush(conn)
 
@@ -1045,7 +1059,7 @@ def review_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False) 
         cards = [_card(conn, pair["a"]), _card(conn, pair["b"])]
         if not all(card and card["is_active"] for card in cards) or ai.get("signature") != _ai_signature(cards):
             return {"ok": True, "stale": True}
-        if not _confident(ai) or ai.get("manual_reason"):
+        if not _confident(ai) or _requires_manual_review(ai):
             return {"ok": True, "ai": ai}
         ai = _with_recommended_keep(ai, cards)
         verdict, keep_id = ai["verdict"], ai.get("keep_id")
@@ -1061,6 +1075,7 @@ def review_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False) 
         if reason:
             ai["manual_reason"] = reason
         else:
+            ai.pop("manual_reason", None)
             ai["applied"] = True
             conn.execute("""INSERT INTO state(key,value) VALUES ('cache_ver',?)
                             ON CONFLICT(key) DO UPDATE SET value=excluded.value""", (str(time.time()),))
@@ -1078,12 +1093,13 @@ def _auto_review_ids(conn: sqlite3.Connection, limit: int, *, include_pending: b
                  WHEN json_extract(p.ai,'$.pending') THEN (? OR COALESCE(json_extract(p.ai,'$.ts'),0)<=?)
                  WHEN json_extract(p.ai,'$.verdict')='unsure' THEN 0
                  WHEN json_extract(p.ai,'$.verdict') IN ('repeat','diff','market')
-                   THEN json_extract(p.ai,'$.manual_reason') IS NULL
+                   THEN (json_extract(p.ai,'$.manual_reason') IS NULL
+                         OR (json_extract(p.ai,'$.verdict')='repeat' AND json_extract(p.ai,'$.manual_reason')=?))
                    AND json_type(p.ai,'$.confidence') IN ('integer','real')
                    AND json_extract(p.ai,'$.confidence') BETWEEN ? AND 1
                  ELSE 1 END
         ORDER BY MAX(a.first_seen,b.first_seen) DESC,p.score DESC,p.id LIMIT ?""",
-        (include_pending, int(time.time()) - _AI_LEASE_SECONDS, AI_AUTO_CONFIDENCE, limit))]
+        (include_pending, int(time.time()) - _AI_LEASE_SECONDS, _OLD_CONTACT_HOLD, AI_AUTO_CONFIDENCE, limit))]
 
 
 def _retry_pause(conn: sqlite3.Connection) -> float:

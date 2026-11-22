@@ -158,7 +158,7 @@
         <span class="dp-ai-label">DeepSeek предлагает</span><strong>${verdict}</strong>
         ${kept ? `<small class="dp-ai-fresh">Свежая версия № ${kept} · ${esc(day(p.ai.keep_version_ts))}</small>` : ""}
         ${p.ai.why ? `<small>${esc(p.ai.why)}</small>` : ""}${confidence}
-        ${p.ai.manual_reason ? `<small>${esc(p.ai.manual_reason)}</small>` : ""}
+        ${p.ai.manual_reason ? `<small>Ручная проверка · ${esc(p.ai.manual_reason)}</small>` : ""}
       </div></div>`;
     }
     if (!data.ai_enabled) return "";
