@@ -409,9 +409,8 @@ def test_auto_review_reuses_legacy_hold_when_advertised_number_is_now_the_sender
     text = "Яблоновка\nул. Гагарина 131\n1 комнатная квартира\n32,8 м², этаж 4 из 5\nРемонт, мебель, техника"
     conn.execute("""UPDATE listings SET rooms=1,area=32.8,floor=4,floors=5,street='Гагарина',
                     house='131',price=3100000,fragment=? WHERE id IN (?,?)""", (text, old, fresh))
-    conn.execute("UPDATE listings SET phones=?,phone_roles=?,district='ФМР',last_seen=50,fragment=? WHERE id=?",
-                 (json.dumps([main, alternate]), json.dumps({main: "text", alternate: "text", forwarder: "sender"}),
-                  text + "\nЗаклад обсуждаем", old))
+    conn.execute("UPDATE listings SET phones=?,phone_roles=?,district='ФМР',last_seen=50 WHERE id=?",
+                 (json.dumps([main, alternate]), json.dumps({main: "text", alternate: "text", forwarder: "sender"}), old))
     conn.execute("""UPDATE listings SET phone_roles=?,district='Яблоновский',first_seen=20,last_seen=21
                     WHERE id=?""", (json.dumps({main: "sender", alternate: "sender"}), fresh))
     pid = pair(conn, old, fresh, kind="agent")
@@ -437,32 +436,114 @@ def test_auto_review_reuses_legacy_hold_when_advertised_number_is_now_the_sender
     assert tuple(survivor) == (fresh, "Яблоновский", json.dumps([alternate]))
 
 
-def test_auto_review_does_not_merge_two_contact_lists_with_different_extra_numbers(conn, monkeypatch):
+def test_auto_review_leaves_overlapping_contacts_with_different_texts_for_review(conn, monkeypatch):
     monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
     shared, left, right, forwarder = (f"+7900000002{i}" for i in range(1, 5))
     a, b = listing(conn, left), listing(conn, right)
     for lid, number in ((a, left), (b, right)):
         conn.execute("UPDATE listings SET phones=?,phone_roles=? WHERE id=?",
                      (json.dumps([shared, number]), json.dumps({forwarder: "sender"}), lid))
+    conn.execute("UPDATE listings SET fragment='Домбайская 59, 54 м². В квартире сделан ремонт.' WHERE id=?", (a,))
+    conn.execute("UPDATE listings SET fragment='Домбайская 59, 54 м². Квартира без ремонта.' WHERE id=?", (b,))
     pid = pair(conn, a, b, kind="agent")
     calls = []
 
     def model(system, content, max_tokens):
         payload = json.loads(content)
         calls.append(payload)
-        assert payload["контакты карточек"] == "различаются"
+        assert payload["контакты карточек"] == "совпадают"
         assert payload["один отправитель"]
         return {"verdict": "repeat", "confidence": 0.98}
 
     monkeypatch.setattr(llm, "ask_json", model)
     saved = dupreview.ask_ai(conn, pid)["ai"]
-    saved["manual_reason"] = "Проверьте контакты и принадлежность объявлений одному агенту."
+    saved["manual_reason"] = "Уточните, принадлежат ли контактные номера одному агенту."
     conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps(saved), pid))
     assert dupreview.auto_review(conn) == {"applied": 0, "manual": 1, "retry": 0}
     assert dupreview.auto_review(conn) == {}
     assert len(calls) == 1
     assert conn.execute("SELECT SUM(is_active) FROM listings").fetchone()[0] == 2
-    assert dupreview.pairs(conn)["pairs"][0]["ai"]["manual_reason"].startswith("Уточните")
+    assert dupreview.pairs(conn)["pairs"][0]["ai"]["manual_reason"] == (
+        "Есть общий номер. Сверьте различия в тексте объявлений.")
+
+
+def test_auto_review_merges_shared_contact_and_matching_text_with_new_price(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    old_extra, new_extra, shared = "+79000000031", "+79000000032", "+79000000033"
+    old, fresh = listing(conn, old_extra), listing(conn, new_extra)
+    body = ("Краснодар, ул. Домбайская 59. Двухкомнатная квартира 54 м² на шестнадцатом этаже. "
+            "Окна выходят во двор, остаются мебель и техника.")
+    versions = ((old, old_extra, 6800000, "6 800 000", 1), (fresh, new_extra, 6750000, "6 750 000", 20))
+    for lid, extra, price, caption, seen in versions:
+        fragment = f"{body}\nЦена {caption} руб.\nТел. {shared}\nWhatsApp: {extra}"
+        conn.execute("UPDATE listings SET phones=?,fragment=?,price=?,first_seen=?,last_seen=? WHERE id=?",
+                     (json.dumps([shared, extra]), fragment, price, seen, seen, lid))
+    pid = pair(conn, old, fresh, kind="agent")
+    calls = []
+
+    def model(system, content, max_tokens):
+        calls.append(json.loads(content)["контакты карточек"])
+        return {"verdict": "repeat", "confidence": 0.98}
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    saved = dupreview.ask_ai(conn, pid)["ai"]
+    saved["manual_reason"] = "Уточните, принадлежат ли контактные номера одному агенту."
+    conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps(saved), pid))
+    assert dupreview.auto_review(conn) == {"applied": 1, "manual": 0, "retry": 0}
+    assert calls == ["совпадают"]
+    survivor = conn.execute("SELECT id,price,phones FROM listings WHERE is_active=1").fetchone()
+    assert tuple(survivor) == (fresh, 6750000, json.dumps([shared, new_extra]))
+    result, = dupreview.pairs(conn, "done")["pairs"]
+    assert result["merged"] and result["ai_applied"] and "manual_reason" not in result["ai"]
+
+
+def test_auto_review_keeps_one_ad_when_ai_suggested_linking_matching_contacts_and_text(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    a, b = listing(conn, "+79000000041"), listing(conn, "+79000000041")
+    conn.execute("UPDATE listings SET phones=? WHERE id=?", (json.dumps(["+79000000041", "+79000000042"]), a))
+    conn.execute("UPDATE listings SET phones=? WHERE id=?", (json.dumps(["+79000000043", "+79000000041"]), b))
+    conn.execute("UPDATE listings SET fragment='Домбайская 59, 54 м². Окна во двор, ремонт.' WHERE id IN (?,?)", (a, b))
+    pid = pair(conn, a, b)
+    monkeypatch.setattr(llm, "ask_json", lambda *args, **kw: {"verdict": "market", "confidence": 0.95})
+    decision = dupreview.review_ai(conn, pid)
+    assert decision["applied"] and decision["ai"]["verdict"] == "repeat"
+    assert decision["ai"]["model_verdict"] == "market"
+    assert tuple(conn.execute("SELECT status,keep_id,drop_id FROM dup_pairs").fetchone()) == ("repeat", b, a)
+
+
+def test_auto_review_accepts_verbatim_reposts_from_different_sender_numbers(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    proposals = []
+
+    def model(system, content, max_tokens):
+        payload = json.loads(content)
+        assert payload["контакты карточек"] == "различаются"
+        proposals.append(payload["совпал весь исходный текст, номера взяты только у отправителей"])
+        return {"verdict": "repeat", "confidence": 0.98}
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    for case in ("same", "emoji", "declared", "verified"):
+        left, right = (f"+790000000{51 + 2 * len(proposals) + offset:02d}" for offset in (0, 1))
+        a, b = listing(conn, left), listing(conn, right)
+        text = "🏠 Домбайская 59. Двухкомнатная квартира, 54 м², 16 этаж. Мебель остаётся. 🌿"
+        conn.execute("UPDATE listings SET fragment=?,phone_roles=? WHERE id=?",
+                     (text, json.dumps({left: "sender"}), a))
+        conn.execute("UPDATE listings SET fragment=?,phone_roles=? WHERE id=?",
+                     (text.replace("🌿", "🌳") if case == "emoji" else text,
+                      json.dumps({right: "text" if case == "declared" else "sender"}), b))
+        if case == "verified":
+            for i, phone in enumerate((left, right)):
+                uid = accounts.upsert_email_user(conn, f"verified-ad-{i}@example.test")["id"]
+                conn.execute("INSERT INTO agent_phones(phone,user_id,verified_at) VALUES(?,?,1)", (phone, uid))
+        pid = pair(conn, a, b)
+        if case == "same":
+            ai = dupreview.ask_ai(conn, pid)["ai"]
+            ai["manual_reason"] = "Уточните, принадлежат ли контактные номера одному агенту."
+            conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps(ai), pid))
+        result = dupreview.review_ai(conn, pid)
+        assert result["applied"] == (case == "same")
+        assert ("manual_reason" in result["ai"]) == (case != "same")
+    assert proposals == [True, False, False, False]
 
 
 def test_auto_review_ignores_confident_response_for_changed_listing(conn, monkeypatch):

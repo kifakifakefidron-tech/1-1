@@ -41,7 +41,10 @@ AI_AUTO_CONFIDENCE = 0.8
 _AI_RETRY_AT = "dup_ai_retry_at"
 _AI_RETRY_SECONDS = 300
 _AI_LEASE_SECONDS = 180
-_OLD_CONTACT_HOLD = "Проверьте контакты и принадлежность объявлений одному агенту."
+_CONTACT_HOLDS_TO_RECHECK = (
+    "Проверьте контакты и принадлежность объявлений одному агенту.",
+    "Уточните, принадлежат ли контактные номера одному агенту.",
+)
 
 _FLATLIKE = ("flat", "new", "room", "commercial")
 _COLS = ("id, type, deal, rooms, room_kind, floor, floors, area, land, complex, street, house, district, settlement, "
@@ -724,6 +727,8 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
         card_ph = [p for p in json.loads(r["phones"] or "[]") if p]
     except (TypeError, ValueError):
         card_ph = []
+    sender_only_contacts = (r["source"] == "chat" and bool(card_ph) and not text_ph
+                            and all(roles.get(phone) == "sender" for phone in card_ph))
     text_from = "text"
     if not text_ph:
         text_ph = [p for p in card_ph if roles.get(p) != "sender" and p not in sender]
@@ -744,6 +749,7 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
     version_ts = price_revision_time(conn, r) if r["source"] == "chat" else r["last_seen"]
     return {"text_from": text_from, "sender_name": who,"id": r["id"], "title": r["title"], "text_phones": [_pretty(x) for x in text_ph], "raw_phones": text_ph + sender,
             "sender_phones": [_pretty(x) for x in sender], "type": r["type"], "deal": r["deal"], "price": r["price"],
+            "sender_only_contacts": sender_only_contacts,
             "price_m2": r["price_m2"], "rooms": r["rooms"], "room_kind": r["room_kind"], "area": r["area"],
             "land": r["land"], "floor": r["floor"], "floors": r["floors"], "complex": r["complex"],
             "district": r["district"], "street": r["street"], "house": r["house"], "settlement": r["settlement"],
@@ -783,7 +789,8 @@ def _queue_data(conn: sqlite3.Connection) -> dict:
     price_auto = conn.execute("""SELECT COUNT(*) FROM dup_pairs
                                  WHERE kind='auto_price_revision' AND status='repeat'""").fetchone()[0]
     compared, agreed = conn.execute("""WITH reviewed(verdict, proposed) AS (
-        SELECT status, CASE WHEN json_valid(ai) THEN json_extract(ai, '$.verdict') END
+        SELECT status, CASE WHEN json_valid(ai)
+            THEN COALESCE(json_extract(ai, '$.model_verdict'), json_extract(ai, '$.verdict')) END
         FROM dup_pairs WHERE user_id>0 AND status IN ('repeat','diff','market')
     ) SELECT COUNT(*),COALESCE(SUM(verdict=proposed),0) FROM reviewed
         WHERE proposed IN ('repeat','diff','market')""").fetchone()
@@ -856,6 +863,8 @@ _AI_SYSTEM = f"""Сравни два объявления о недвижимо�
 Одинаковая планировка, один ЖК, один отправитель или типовое фото сами по себе не доказывают, что квартира одна.
 Разница площади до {offers.REVIEW_AREA_TOLERANCE_M2} м² включительно допустима из-за округления и сама по себе не означает, что объекты разные.
 Разная цена может быть обычным обновлением. Разные контакты не доказывают, что квартиры разные.
+Если совпадает контакт и текст объявления, в том числе при обновлении цены, это версии одного объявления.
+Полностью одинаковый исходный текст с разными номерами только у отправителей может быть повтором одного агента.
 Верни JSON {{"verdict":"repeat" | "diff" | "market" | "unsure", "confidence": число от 0 до 1, "why": "короткое объяснение по-русски"}}.
 repeat — один объект и версии объявления одного агента.
 diff — разные объекты, например другой корпус или этаж.
@@ -935,14 +944,34 @@ def _current_ai_result(conn, pid, cards, signature):
     return {"ok": True, "pending": True} if saved.get("pending") else {"ok": True, "stale": True}
 
 
-def _review_same_agent(a, b) -> bool | None:
-    left, right = offers.agent_key(a), offers.agent_key(b)
+def _review_text_matches(a, b) -> bool:
+    from .parser import strip_phones
+
+    if a["deal"] != b["deal"] or offers.property_type(a["type"]) != offers.property_type(b["type"]) or _contra(a, b):
+        return False
+    left, right = (strip_phones(card["text"] or "") for card in (a, b))
+    if (left_words := words(left)) and left_words == words(right):
+        return True
+    left_key = price_revision_key(left, a["deal"], a["price"])
+    return left_key is not None and left_key == price_revision_key(right, b["deal"], b["price"])
+
+
+def _review_same_agent(left, right) -> bool | None:
     if left[0] == "listing" or right[0] == "listing":
         return None
-    if left[0] == right[0] == "phones":
-        # В версии без номера в тексте контактом мог стать один из прежних номеров отправителя.
-        return left[1] <= right[1] or right[1] <= left[1]
-    return left == right
+    return left == right or (left[0] == right[0] == "phones" and not left[1].isdisjoint(right[1]))
+
+
+def _matching_sender_copy(conn, cards, agents, *, text_matches: bool) -> bool:
+    a, b = cards
+    if (not text_matches or not a["text"] or a["text"] != b["text"]
+            or not (a["sender_only_contacts"] and b["sender_only_contacts"])
+            or agents[0][0] != "phones" or agents[1][0] != "phones"):
+        return False
+    phones = set(a["phones"]) | set(b["phones"])
+    accounts = conn.execute(f"""SELECT COUNT(DISTINCT user_id) FROM agent_phones
+        WHERE phone IN ({','.join('?' * len(phones))}) AND verified_at > 0""", tuple(phones)).fetchone()[0]
+    return accounts <= 1
 
 
 def ask_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False) -> dict:
@@ -977,15 +1006,18 @@ def ask_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False) -> 
         return _current_ai_result(conn, pid, cards, signature)
 
     phonegroups.refresh(conn)
-    agent_rows = conn.execute("SELECT ext_id,owner_user_id,phones,id FROM listings WHERE id IN (?,?) ORDER BY id",
-                              (p["a"], p["b"])).fetchall()
-    same_agent = _review_same_agent(*agent_rows) if len(agent_rows) == 2 else None
+    agents = [offers.agent_key(row) for row in conn.execute(
+        "SELECT ext_id,owner_user_id,phones,id FROM listings WHERE id IN (?,?) ORDER BY id", (p["a"], p["b"]))]
+    same_agent = _review_same_agent(*agents) if len(agents) == 2 else None
     relation = {True: "совпадают", False: "различаются", None: "неясно"}[same_agent]
+    sender_copy = same_agent is False and _matching_sender_copy(
+        conn, cards, agents, text_matches=_review_text_matches(*cards))
     senders = [phonegroups.canon_set(filter(None, map(normalize_phone, c["sender_phones"]))) for c in cards]
     payload = {
         "объявления": [{**{k: c[k] for k in _AI_FIELDS if c[k] not in (None, "")},
                         "text": parser.mask_names(parser.strip_phones(c["text"] or ""))[:3000]} for c in cards],
         "контакты карточек": relation, "один отправитель": bool(senders[0] & senders[1]),
+        "совпал весь исходный текст, номера взяты только у отправителей": sender_copy,
         "разница площади в м²": offers.review_area_delta(cards[0]["area"], cards[1]["area"]),
         "совпавших фото": len(offers._photo_keys(json.dumps(cards[0]["photos"])) & offers._photo_keys(json.dumps(cards[1]["photos"]))),
     }
@@ -1018,19 +1050,19 @@ def _confident(ai: dict) -> bool:
 
 def _requires_manual_review(ai: dict) -> bool:
     reason = ai.get("manual_reason")
-    return bool(reason and not (ai.get("verdict") == "repeat" and reason == _OLD_CONTACT_HOLD))
+    return bool(reason and not (ai.get("verdict") == "repeat" and reason in _CONTACT_HOLDS_TO_RECHECK))
 
 
-def _repeat_review_reason(conn, a, b, keep_id):
-    from . import phonegroups
-
+def _repeat_review_reason(conn, a, b, keep_id, *, cards, agents, text_matches: bool):
     if a["deal"] != b["deal"]:
         return "Проверьте тип сделки у двух объявлений."
     if a["owner_user_id"] and b["owner_user_id"] and a["owner_user_id"] != b["owner_user_id"]:
         return "У карточек разные владельцы."
-    phonegroups.refresh(conn)
-    if _review_same_agent(a, b) is False:
-        return "Уточните, принадлежат ли контактные номера одному агенту."
+    same_agent = _review_same_agent(*agents)
+    if same_agent is False and not _matching_sender_copy(conn, cards, agents, text_matches=text_matches):
+        return "Сверьте, какие контактные номера относятся к одному агенту."
+    if same_agent and agents[0] != agents[1] and not text_matches:
+        return "Есть общий номер. Сверьте различия в тексте объявлений."
     archived = b if a["id"] == keep_id else a
     if (archived["source"] != "chat" or archived["price_fixed"] or archived["owner_edited_at"]
             or archived["admin_fixed"] or archived["video_file"] or archived["kinescope_url"]):
@@ -1061,20 +1093,31 @@ def review_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False) 
             return {"ok": True, "stale": True}
         if not _confident(ai) or _requires_manual_review(ai):
             return {"ok": True, "ai": ai}
-        ai = _with_recommended_keep(ai, cards)
-        verdict, keep_id = ai["verdict"], ai.get("keep_id")
+        decision = ai
         reason = None
-        if verdict == "repeat":
+        if ai["verdict"] in ("repeat", "market"):
+            from . import phonegroups
+
             a, b = conn.execute("SELECT * FROM listings WHERE id IN (?,?)", (pair["a"], pair["b"])).fetchall()
-            reason = _repeat_review_reason(conn, a, b, keep_id)
+            phonegroups.refresh(conn)
+            agents = offers.agent_key(a), offers.agent_key(b)
+            text_matches = _review_text_matches(*cards)
+            if ai["verdict"] == "market" and text_matches and _review_same_agent(*agents):
+                decision = {**ai, "verdict": "repeat", "model_verdict": "market",
+                            "why": "Совпали текст объявления и агент."}
+            decision = _with_recommended_keep(decision, cards)
+            if decision["verdict"] == "repeat":
+                reason = _repeat_review_reason(conn, a, b, decision["keep_id"], cards=cards, agents=agents,
+                                               text_matches=text_matches)
         if not reason:
-            saved = decide(conn, pid, verdict, keep_id=keep_id)
+            saved = decide(conn, pid, decision["verdict"], keep_id=decision.get("keep_id"))
             if saved.get("stale"):
                 return {"ok": True, "stale": True}
             reason = saved.get("error")
         if reason:
-            ai["manual_reason"] = reason
+            ai = {**_with_recommended_keep(ai, cards), "manual_reason": reason}
         else:
+            ai = decision
             ai.pop("manual_reason", None)
             ai["applied"] = True
             conn.execute("""INSERT INTO state(key,value) VALUES ('cache_ver',?)
@@ -1094,12 +1137,12 @@ def _auto_review_ids(conn: sqlite3.Connection, limit: int, *, include_pending: b
                  WHEN json_extract(p.ai,'$.verdict')='unsure' THEN 0
                  WHEN json_extract(p.ai,'$.verdict') IN ('repeat','diff','market')
                    THEN (json_extract(p.ai,'$.manual_reason') IS NULL
-                         OR (json_extract(p.ai,'$.verdict')='repeat' AND json_extract(p.ai,'$.manual_reason')=?))
+                         OR (json_extract(p.ai,'$.verdict')='repeat' AND json_extract(p.ai,'$.manual_reason') IN (?,?)))
                    AND json_type(p.ai,'$.confidence') IN ('integer','real')
                    AND json_extract(p.ai,'$.confidence') BETWEEN ? AND 1
                  ELSE 1 END
         ORDER BY MAX(a.first_seen,b.first_seen) DESC,p.score DESC,p.id LIMIT ?""",
-        (include_pending, int(time.time()) - _AI_LEASE_SECONDS, _OLD_CONTACT_HOLD, AI_AUTO_CONFIDENCE, limit))]
+        (include_pending, int(time.time()) - _AI_LEASE_SECONDS, *_CONTACT_HOLDS_TO_RECHECK, AI_AUTO_CONFIDENCE, limit))]
 
 
 def _retry_pause(conn: sqlite3.Connection) -> float:
