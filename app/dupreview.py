@@ -40,6 +40,8 @@ _AI_VERDICTS = ("repeat", "diff", "market", "unsure")
 _AI_AUTO_VERDICTS = ("diff", "market")
 AI_AUTO_CONFIDENCE = 0.7
 _AI_REVIEW_VERSION = 2
+_CONTACT_HOLD = "Нужно подтвердить общий контакт агента."
+_CONTACT_REVIEW_VERSION = 1
 _AI_RETRY_AT = "dup_ai_retry_at"
 _AI_RETRY_SECONDS = 300
 _AI_LEASE_SECONDS = 180
@@ -811,6 +813,8 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
         card_ph = [p for p in json.loads(r["phones"] or "[]") if p]
     except (TypeError, ValueError):
         card_ph = []
+    inherited_phones = ([phone for phone in card_ph if roles.get(phone) == "text"]
+                        if r["source"] == "chat" and not literal_phones else [])
     sender_only_contacts = (r["source"] == "chat" and bool(card_ph) and not text_ph
                             and all(roles.get(phone) == "sender" for phone in card_ph))
     contact_matches_history_sender = bool(
@@ -838,7 +842,7 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
     return {"text_from": text_from, "sender_name": who,"id": r["id"], "title": r["title"], "text_phones": [_pretty(x) for x in text_ph], "raw_phones": text_ph + sender,
             "sender_phones": [_pretty(x) for x in sender], "type": r["type"], "deal": r["deal"], "price": r["price"],
             "sender_only_contacts": sender_only_contacts, "contact_matches_history_sender": contact_matches_history_sender,
-            "literal_phones": literal_phones,
+            "literal_phones": literal_phones, "inherited_phones": inherited_phones,
             **{key: r[key] for key in ("source", "ext_id", "article", "owner_user_id", "price_doubt", "price_fixed",
                                        "owner_edited_at", "admin_fixed", "multi_units", "sold_at", "video_file",
                                        "kinescope_url", "phone_roles")},
@@ -1122,11 +1126,16 @@ def _shared_review_phones(cards, *, allow_sender: bool = False) -> bool:
     contacts = []
     for card in cards:
         stored = phonegroups.canon_set(filter(None, map(normalize_phone, card["phones"])))
+        direct = phonegroups.canon_set(card["literal_phones"]) & stored
+        inherited = set()
         if allow_sender and (card["sender_only_contacts"] or card["contact_matches_history_sender"]):
-            contacts.append(stored)
-        else:
-            contacts.append(phonegroups.canon_set(card["literal_phones"]) & stored)
-    return bool(contacts[0] & contacts[1])
+            direct |= stored
+        if allow_sender:
+            inherited = phonegroups.canon_set(filter(None, map(normalize_phone, card["inherited_phones"])))
+        contacts.append((direct, inherited))
+    (direct_a, inherited_a), (direct_b, inherited_b) = contacts
+    # Номер из общей части сообщения подтверждается контактом или отправителем другой версии.
+    return bool(direct_a & (direct_b | inherited_b) or inherited_a & direct_b)
 
 
 def _alternatives(conn, cards, limit=3):
@@ -1241,8 +1250,11 @@ def ask_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False, che
 
 def _can_auto_apply(ai: dict, *, auto_merge: bool) -> bool:
     certainty = ai.get("confidence")
-    allowed = ai.get("verdict") in _AI_AUTO_VERDICTS or (auto_merge and ai.get("verdict") == "repeat")
-    return (allowed and not ai.get("manual_reason")
+    repeat = ai.get("verdict") == "repeat"
+    allowed = ai.get("verdict") in _AI_AUTO_VERDICTS or (auto_merge and repeat)
+    reason = ai.get("manual_reason")
+    recheck_contact = repeat and reason == _CONTACT_HOLD and ai.get("contact_review_version") != _CONTACT_REVIEW_VERSION
+    return (allowed and (not reason or recheck_contact)
             and type(certainty) in (float, int) and AI_AUTO_CONFIDENCE <= certainty <= 1)
 
 
@@ -1339,7 +1351,7 @@ def _review_guard(conn, cards, ai, *, auto_merge: bool) -> str | None:
                or card["kinescope_url"] for card in cards):
             return "Есть правки, отдельный источник, видео или данные, которые нужно проверить перед слиянием."
         if not _repeat_contact_confirmed(cards, agents):
-            return "Нужно подтвердить общий контакт агента."
+            return _CONTACT_HOLD
         if not _same_unit_proof(a, b, for_repeat=True):
             return "Нужно подтвердить, что это одна квартира."
         if _competing_version(conn, cards):
@@ -1388,8 +1400,11 @@ def review_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False, 
         reason = saved.get("error")
         if reason and (ai["verdict"] != "repeat" or auto_merge):
             ai["manual_reason"] = reason
+            if reason == _CONTACT_HOLD:
+                ai["contact_review_version"] = _CONTACT_REVIEW_VERSION
         elif not reason:
             ai.pop("manual_reason", None)
+            ai.pop("contact_review_version", None)
             ai["applied"] = True
             conn.execute("""INSERT INTO state(key,value) VALUES ('cache_ver',?)
                             ON CONFLICT(key) DO UPDATE SET value=excluded.value""", (str(time.time()),))
@@ -1411,13 +1426,15 @@ def _auto_review_ids(conn: sqlite3.Connection, limit: int, *, include_pending: b
                   WHEN json_extract(p.ai,'$.verdict')='unsure' THEN 0
                   WHEN json_extract(p.ai,'$.verdict')='repeat' AND NOT ? THEN 0
                   WHEN json_extract(p.ai,'$.verdict') IN (?,?,'repeat')
-                   THEN json_extract(p.ai,'$.manual_reason') IS NULL
+                   THEN (json_extract(p.ai,'$.manual_reason') IS NULL
+                     OR (json_extract(p.ai,'$.verdict')='repeat' AND json_extract(p.ai,'$.manual_reason')=?
+                         AND json_extract(p.ai,'$.contact_review_version') IS NOT ?))
                    AND json_type(p.ai,'$.confidence') IN ('integer','real')
                    AND json_extract(p.ai,'$.confidence') BETWEEN ? AND 1
                  ELSE 1 END
         ORDER BY MAX(a.first_seen,b.first_seen) DESC,p.score DESC,p.id LIMIT ?""",
         (include_reviewed, include_pending, int(time.time()) - _AI_LEASE_SECONDS, config.DUP_AI_AUTO_MERGE,
-         *_AI_AUTO_VERDICTS, AI_AUTO_CONFIDENCE, limit))]
+         *_AI_AUTO_VERDICTS, _CONTACT_HOLD, _CONTACT_REVIEW_VERSION, AI_AUTO_CONFIDENCE, limit))]
 
 
 def _retry_pause(conn: sqlite3.Connection) -> float:
