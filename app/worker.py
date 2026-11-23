@@ -199,6 +199,9 @@ def tick(conn) -> dict:
         offer_check = dupreview.recheck_offers(conn)
         if offer_check:
             stats["offer_check"] = offer_check
+        changed_pairs = dupreview.recheck_changed(conn)
+        if changed_pairs:
+            stats["dup_changed"] = changed_pairs
     except Exception:  # noqa: BLE001
         conn.rollback()
         log.exception("перепроверка похожих предложений не прошла")

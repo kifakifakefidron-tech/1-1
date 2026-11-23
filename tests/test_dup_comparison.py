@@ -1,7 +1,7 @@
 import json
 from contextlib import closing
 
-from app import accounts, config, db, dedupe, dupreview, llm, offers, picks, repeat_refs, search
+from app import accounts, config, db, dedupe, dupreview, ingest, llm, offers, parser, picks, repeat_refs, search
 
 
 def listing(conn, phone="+79000000001"):
@@ -14,6 +14,114 @@ def listing(conn, phone="+79000000001"):
 def pair(conn, a, b, *, score=0.8, status="open", kind="similar"):
     return conn.execute("""INSERT INTO dup_pairs (a,b,kind,score,status,created_at) VALUES (?,?,?,?,?,1)""",
                         (*sorted((a, b)), kind, score, status)).lastrowid
+
+
+def test_multilisting_contacts_belong_to_their_own_blocks():
+    text = ("Продаётся 2-комнатная квартира 58 м², этаж 7/16.\n"
+            "ул. Домбайская 59, ремонт.\nЦена 7 500 000 рублей, звонить +7 900 000-00-01.\n\n"
+            "Продаётся 1-комнатная квартира 39 м², этаж 2/10.\n"
+            "ул. Восточно-Кругликовская 13, мебель.\nЦена 5 100 000 рублей.")
+    _, objects = parser.parse(text, use_llm=False)
+    assert [(item.price, item.phones) for item in objects] == [(7500000, ["+79000000001"]), (5100000, [])]
+    _, objects = parser.parse(text + "\n\nКонтакты для всех объектов: +7 900 000-00-02", use_llm=False)
+    assert objects[1].phones == ["+79000000002"]
+
+
+def test_ambiguous_price_keeps_both_existing_prices(conn):
+    a, b = listing(conn), listing(conn)
+    stem = ("Краснодар улица Домбайская двухкомнатная квартира 54 м² этаж 16 "
+            "мебель и техника остаются окна во двор цена ")
+    conn.execute("UPDATE listings SET fragment=? WHERE id=?", (stem + "6 800 000 руб", a))
+    conn.execute("UPDATE listings SET house='61',price=6900000,fragment=? WHERE id=?",
+                 (stem + "6 900 000 руб", b))
+    assert dupreview.decide(conn, pair(conn, a, b), "diff", 1)["ok"]
+    obj = parser.ParsedObject(type="flat", deal="sale", rooms=2, area=54, land=None, floor=16, floors=None,
+                              street="Домбайская", house=None, district=None, complex=None, settlement=None,
+                              phones=["+79000000001"], price=7000000, fragment=stem + "7 000 000 руб",
+                              description=stem + "7 000 000 руб")
+    added, action = ingest.save_object(conn, obj, None, 10)
+    assert added not in (a, b) and action == "new"
+    assert [row["price"] for row in conn.execute("SELECT price FROM listings ORDER BY id")] == [6800000, 6900000, 7000000]
+
+
+def test_new_evidence_requeues_old_hold_and_reopens_conflicting_group(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    a, b = listing(conn), listing(conn, "+79000000002")
+    pid = pair(conn, a, b)
+    monkeypatch.setattr(llm, "ask_json", lambda *args, **kwargs: {"object": "unknown", "confidence": 0.5})
+    assert dupreview.review_ai(conn, pid)["ai"]["verdict"] == "unsure"
+    assert not dupreview._auto_review_ids(conn, 10)
+    conn.execute("UPDATE listings SET last_seen=40 WHERE id=?", (b,))
+    assert not dupreview._auto_review_ids(conn, 10)
+    conn.execute("UPDATE listings SET photos='[\"/photos/2/aaaaaaaaaaaaaaaa.jpg\"]' WHERE id=?", (b,))
+    assert dupreview._auto_review_ids(conn, 10) == [pid]
+    monkeypatch.setattr(llm, "ask_json", lambda *args, **kwargs: {
+        "object": "same", "agent": "different", "confidence": 0.98})
+    assert dupreview.review_ai(conn, pid)["applied"]
+    assert set(offers.groups(conn)) == {a, b}
+    conn.execute("UPDATE listings SET floor=14,admin_fixed=1 WHERE id=?", (b,))
+    assert not offers.groups(conn)
+    assert dupreview.recheck_changed(conn)["reopened"] == 1
+    assert dupreview._auto_review_ids(conn, 10) == [pid]
+
+
+def _confirmed_versions(conn):
+    older, newer = listing(conn), listing(conn)
+    text = ("2-комнатная квартира 54 м², 16 этаж. Краснодар, ул. Домбайская 59. "
+            "Окна выходят во двор, остаётся мебель и техника, документы готовы.\n")
+    conn.execute("UPDATE listings SET fragment=? WHERE id=?",
+                 (text + "Цена 6 800 000 рублей\nТел. +79000000001", older))
+    conn.execute("UPDATE listings SET fragment=?,price=6700000,first_seen=5,last_seen=5 WHERE id=?",
+                 (text + "Цена 6 700 000 рублей\nТел. +79000000001", newer))
+    return older, newer, pair(conn, older, newer)
+
+
+def test_safe_automatic_repeat_undo_restores_refs_and_keeps_later_reactions(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    monkeypatch.setattr(config, "DUP_AI_AUTO_MERGE", True)
+    monkeypatch.setattr(llm, "ask_json", lambda *args, **kwargs: {
+        "object": "same", "agent": "same", "confidence": 0.95})
+    old, fresh, pid = _confirmed_versions(conn)
+    conn.execute("INSERT INTO users(id,created) VALUES (1,1)")
+    conn.execute("INSERT INTO collections (id,user_id,token,title,created,updated) VALUES (1,1,'restore','Подборка',1,1)")
+    conn.execute("INSERT INTO collection_items (collection_id,listing_id,added) VALUES (1,?,1)", (old,))
+    conn.execute("INSERT INTO favorites (user_id,listing_id,created) VALUES (1,?,1),(1,?,2)", (old, fresh))
+    conn.execute("INSERT INTO pick_reactions (collection_id,listing_id,kind,ts) VALUES (1,?,'like',1)", (old,))
+    conn.execute("INSERT INTO notes (user_id,listing_id,text,ts) VALUES (1,?,'old',1),(1,?,'new',2)", (old, fresh))
+    assert dupreview.review_ai(conn, pid)["applied"]
+    assert conn.execute("SELECT merged_into FROM listings WHERE id=?", (old,)).fetchone()[0] == fresh
+    assert {row["price"] for row in search.listing_detail(conn, fresh, False)["price_history"]} == {6700000, 6800000}
+    assert conn.execute("SELECT listing_id FROM pick_reactions").fetchone()[0] == fresh
+    conn.execute("INSERT INTO pick_reactions (collection_id,listing_id,kind,ts) VALUES (1,?,'question',3)", (fresh,))
+    conn.execute("UPDATE notes SET text='updated',ts=3 WHERE listing_id=?", (fresh,))
+    assert dupreview.decide(conn, pid, "reopen", user_id=1)["ok"]
+    assert [tuple(row) for row in conn.execute("SELECT listing_id,created FROM favorites ORDER BY listing_id")] == [
+        (old, 1), (fresh, 2)]
+    assert [tuple(row) for row in conn.execute("SELECT listing_id,text FROM notes ORDER BY listing_id")] == [
+        (old, "old"), (fresh, "updated")]
+    assert [row[0] for row in conn.execute("SELECT listing_id FROM pick_reactions ORDER BY id")] == [old, old]
+    assert conn.execute("SELECT listing_id FROM collection_items").fetchone()[0] == old
+    assert not dupreview._auto_review_ids(conn, 10)
+
+
+def test_read_only_audit_estimates_backlog_without_writing(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    _, _, pid = _confirmed_versions(conn)
+    a, b = listing(conn), listing(conn, "+79000000002")
+    weak = pair(conn, a, b, kind="offer_review")
+
+    def answer(system, payload, max_tokens):
+        shared = json.loads(payload)["совпали номера прямо в текстах"]
+        return {"object": "same", "agent": "same" if shared else "different", "confidence": 0.99}
+
+    monkeypatch.setattr(llm, "ask_json", answer)
+    conn.commit()
+    conn.execute("PRAGMA query_only=ON")
+    report = dupreview.audit_backlog(conn, 10)
+    assert report["would_apply"] == {"repeat": 1, "diff": 0, "market": 0} and report["held"] == 1
+    assert {item["id"] for item in report["pairs"]} == {pid, weak}
+    assert conn.execute("SELECT COUNT(*) FROM dup_pairs WHERE status='open' AND ai IS NULL").fetchone()[0] == 2
+    assert conn.execute("SELECT SUM(is_active) FROM listings").fetchone()[0] == 4
 
 
 

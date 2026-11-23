@@ -185,10 +185,14 @@ def find_match(conn: sqlite3.Connection, o: ParsedObject, frag_hash: str, now: i
         (frag_hash,),
     )
     phones = phonegroups.canon_set(o.phones)
+    reposts = {}
     for row in rows:
         previous = phonegroups.canon_set(json.loads(row["phones"] or "[]"))
         if row["type"] in TYPE_GROUPS.get(o.type or "", ()) and row["deal"] == o.deal and phones == previous:
-            return row, "repost"
+            original = offers.merged_listing(conn, row)
+            reposts.setdefault(original["id"], row)
+    if reposts:
+        return (next(iter(reposts.values())), "repost") if len(reposts) == 1 else (None, "")
 
     # 2) Тот же объект по характеристикам — по всей базе
     groups = TYPE_GROUPS.get(o.type or "", (o.type,))
@@ -210,7 +214,6 @@ def find_match(conn: sqlite3.Connection, o: ParsedObject, frag_hash: str, now: i
         params,
     ).fetchall()
     found = {}
-    price_revisions = {}
     for r in rows:
         ok, why = same_object(o, r)
         if not ok:
@@ -221,13 +224,6 @@ def find_match(conn: sqlite3.Connection, o: ParsedObject, frag_hash: str, now: i
                 matches_current, current_why = same_object(o, current)
                 if matches_current:
                     r, why = current, current_why
-        matches = price_revisions if why == PRICE_REVISION_MATCH else found
-        matches.setdefault(r["id"], (r, why))
-    if len(found) > 1:   # 24.10: подходят несколько карточек (вы решили, что это разные квартиры) — та, чей текст ближе
-        import difflib
-        ta = words(o.fragment or "").split()
-        return max(found.values(), key=lambda f: difflib.SequenceMatcher(None, ta, words(f[0]["fragment"] or "").split(),
-                                                                        autojunk=False).ratio())
-    if found:
-        return next(iter(found.values()))
-    return next(iter(price_revisions.values())) if len(price_revisions) == 1 else (None, "")
+        original = offers.merged_listing(conn, r)
+        found.setdefault(original["id"], (r, why))
+    return next(iter(found.values())) if len(found) == 1 else (None, "")

@@ -78,6 +78,7 @@ def save(conn: sqlite3.Connection, text: str) -> list[list[str]]:
     gs = parse(text)
     db.set_state(conn, "phone_groups", json.dumps(gs, ensure_ascii=False))
     db.set_state(conn, "dup_scan_id", "0")
+    conn.execute("UPDATE dup_pairs SET ai=NULL WHERE status='open' AND COALESCE(user_id,0)=0")
     conn.commit()
     refresh(conn, force=True)
     return gs

@@ -8,6 +8,63 @@ import time
 from . import clients, db, offers, ownmatch
 
 _REPAIR_KEY = "dup_repeat_saved_refs_v1"
+_SAVED = {
+    "favorites": "user_id",
+    "notes": "user_id",
+    "hidden_listings": "user_id",
+    "client_items": "client_id",
+    "client_hidden": "client_id",
+    "collection_items": "collection_id",
+}
+_EVENTS = ("planner_events", "work_notes", "pick_reactions")
+
+
+def _row(conn, table, key, item, listing_id):
+    row = conn.execute(f"SELECT * FROM {table} WHERE {key}=? AND listing_id=?", (item, listing_id)).fetchone()
+    return dict(row) if row else None
+
+
+def _before_move(conn, keep, drop):
+    saved = {}
+    for table, key in _SAVED.items():
+        archived = conn.execute(f"SELECT * FROM {table} WHERE listing_id=?", (drop,)).fetchall()
+        if archived:
+            saved[table] = [[dict(row), _row(conn, table, key, row[key], keep)] for row in archived]
+    events = {table: [row[0] for row in conn.execute(f"SELECT id FROM {table} WHERE listing_id=?", (drop,))]
+              for table in _EVENTS}
+    return {"saved": saved, "events": events}
+
+
+def restore(conn, keep: int, drop: int, undo: dict) -> None:
+    """Возвращает перенесённые записи и сохраняет последующие изменения пользователей."""
+    for table in _EVENTS:
+        conn.executemany(f"UPDATE {table} SET listing_id=? WHERE id=? AND listing_id=?",
+                         ((drop, item, keep) for item in undo["events"].get(table, ())))
+    for table, key in _SAVED.items():
+        for archived, original, merged in undo["saved"].get(table, ()):
+            item = archived[key]
+            current = _row(conn, table, key, item, keep)
+            if current is None:
+                continue  # запись уже удалил пользователь
+            if original is None:
+                conn.execute(f"UPDATE OR IGNORE {table} SET listing_id=? WHERE {key}=? AND listing_id=?",
+                             (drop, item, keep))
+                if table == "collection_items":
+                    conn.execute("""UPDATE collection_items SET photo_order=replace(photo_order,?,?)
+                                    WHERE collection_id=? AND listing_id=?""",
+                                 (f'"/photos/{keep}/', f'"/photos/{drop}/', item, drop))
+                    conn.execute("UPDATE pick_reactions SET listing_id=? WHERE collection_id=? AND listing_id=?",
+                                 (drop, item, keep))
+                continue
+            cols = tuple(archived)
+            conn.execute(f"INSERT OR IGNORE INTO {table} ({','.join(cols)}) VALUES ({','.join('?' for _ in cols)})",
+                         tuple(archived.values()))
+            corrections = {col: value for col, value in original.items()
+                           if current.get(col) == merged.get(col) and current.get(col) != value}
+            if corrections:
+                fields = ", ".join(f"{col}=?" for col in corrections)
+                conn.execute(f"UPDATE {table} SET {fields} WHERE {key}=? AND listing_id=?",
+                             (*corrections.values(), item, keep))
 
 
 def _notes(kept, archived):
@@ -53,8 +110,9 @@ def _merge_client(conn, kept, archived):
                   next((r["question"] for r in by_time if r["question"]), None), kept["client_id"], kept["listing_id"]))
 
 
-def move(conn: sqlite3.Connection, keep: int, drop: int) -> None:
+def move(conn: sqlite3.Connection, keep: int, drop: int, *, reversible: bool = False) -> dict | None:
     """Оставляет одну запись на пользователя, клиента или подборку и переносит журнал ответов."""
+    undo = _before_move(conn, keep, drop) if reversible else None
     for table in ownmatch._REFS:
         conn.execute(f"UPDATE OR IGNORE {table} SET listing_id=? WHERE listing_id=?", (keep, drop))
 
@@ -83,6 +141,12 @@ def move(conn: sqlite3.Connection, keep: int, drop: int) -> None:
     conn.execute("UPDATE pick_reactions SET listing_id=? WHERE listing_id=?", (keep, drop))
     for table in ("favorites", "notes", "hidden_listings", "client_items", "client_hidden", "collection_items"):
         conn.execute(f"DELETE FROM {table} WHERE listing_id=?", (drop,))
+    if undo:
+        for table, rows in undo["saved"].items():
+            key = _SAVED[table]
+            for entry in rows:
+                entry.append(_row(conn, table, key, entry[0][key], keep))
+    return undo
 
 
 def repair(conn: sqlite3.Connection) -> int:

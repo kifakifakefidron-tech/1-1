@@ -308,7 +308,7 @@ def _build(obj: dict | None, fragment: str, text: str, sender_phone: str | None,
     if not district and street and not out_of_city:
         district = geo.district_by_street(street)
 
-    phones = r.phones or rules.extract_phones(text)
+    phones = r.phones or (rules.extract_phones(text) if single else [])
     sender = rules.normalize_phone(sender_phone) if sender_phone else None
     roles = {p: "text" for p in phones}
     if sender:

@@ -23,8 +23,8 @@ MATCH_FIELDS = ("id, type, deal, rooms, room_kind, area, land, floor, floors, co
 
 def _tokens(raw: str) -> list[str]:
     try:
-        values = json.loads(raw or "[]")
-    except ValueError:
+        values = raw if isinstance(raw, list) else json.loads(raw or "[]")
+    except (TypeError, ValueError):
         return []
     return [value for value in values if isinstance(value, str)] if isinstance(values, list) else []
 
@@ -107,6 +107,11 @@ def _conflicts(a, b, place_a, place_b, *, for_review: bool = False):
                    for k in ("rooms", "floor", "floors"))
             or close_area is False
             or dedupe._close(a["land"], b["land"], 0.04, 0.3) is False)
+
+
+def identity_conflict(a, b) -> bool:
+    return (a["deal"] != b["deal"] or property_type(a["type"]) != property_type(b["type"])
+            or _conflicts(a, b, place_keys(a), place_keys(b), for_review=True))
 
 
 def similar_signals(a, b, place_a, place_b):
@@ -296,10 +301,12 @@ def first_publication(rows, archived: dict) -> tuple[int, int, int]:
 
 def _build_groups(conn: sqlite3.Connection):
     """Автоматические группы требуют попарного совпадения. Для подтверждённых пар допустима связь через общее предложение."""
-    decisions = {(a, b): status for a, b, status in conn.execute("""
-        SELECT a, b, status FROM dup_pairs WHERE status IN ('market', 'repeat', 'diff', 'split')
-        AND NOT (status = 'market' AND kind = 'offer_photo' AND COALESCE(user_id, 0) = 0)""")}
-    repeats = _repeat_ids(decisions)
+    stored = conn.execute("""
+        SELECT a, b, status, CASE WHEN user_id IS NULL OR user_id=0 THEN
+            CASE WHEN json_valid(ai) THEN json_extract(ai,'$.applied') END END AS ai_applied
+        FROM dup_pairs WHERE status IN ('market', 'repeat', 'diff', 'split')
+        AND NOT (status = 'market' AND kind = 'offer_photo' AND COALESCE(user_id, 0) = 0)""").fetchall()
+    decisions = {(a, b): status for a, b, status, _ in stored}
     aliases = dict(conn.execute("SELECT id, merged_into FROM listings WHERE hidden_reason=? AND merged_into IS NOT NULL",
                                 (MERGED_REPEAT,)))
 
@@ -308,12 +315,6 @@ def _build_groups(conn: sqlite3.Connection):
             lid = aliases[lid]
         return lid
 
-    if aliases:
-        # Прямой вердикт по двум оставшимся карточкам важнее любой связи их прежних версий.
-        for (a, b), status in sorted(decisions.items(), key=lambda item: item[1] not in ("diff", "split")):
-            pair = tuple(sorted((active_id(a), active_id(b))))
-            if pair[0] != pair[1]:
-                decisions.setdefault(pair, status)
     rows = {r["id"]: r for r in conn.execute(f"""SELECT l.id, l.source, l.type, l.deal, l.settlement, l.street, l.house,
         l.complex, l.rooms, l.room_kind, l.floor, l.floors, l.area, l.land, l.photos, l.phones, l.price, l.price_doubt, l.last_seen,
         l.ext_id, l.owner_user_id, l.district, l.repair, l.price_m2, l.first_seen, l.catalog_migrated, l.fragment, l.description,
@@ -325,6 +326,16 @@ def _build_groups(conn: sqlite3.Connection):
              AND CASE WHEN json_valid(l.photos) THEN json_array_length(l.photos) >= 1 ELSE 0 END)
             OR l.id IN (SELECT a FROM dup_pairs WHERE status IN {LINK_TYPES}
                         UNION SELECT b FROM dup_pairs WHERE status IN {LINK_TYPES}))""")}
+    for a, b, status, ai_applied in stored:
+        if status == "market" and ai_applied and a in rows and b in rows and identity_conflict(rows[a], rows[b]):
+            decisions[a, b] = "diff"
+    repeats = _repeat_ids(decisions)
+    if aliases:
+        # Прямой вердикт по двум оставшимся карточкам важнее любой связи их прежних версий.
+        for (a, b), status in sorted(decisions.items(), key=lambda item: item[1] not in ("diff", "split")):
+            pair = tuple(sorted((active_id(a), active_id(b))))
+            if pair[0] != pair[1]:
+                decisions.setdefault(pair, status)
     approved = sorted(((a, b) for (a, b), status in decisions.items() if status in ("repeat", "market")
                        and a in rows and b in rows and rows[a]["deal"] == rows[b]["deal"]),
                       key=lambda pair: (decisions[pair] != "repeat", pair))

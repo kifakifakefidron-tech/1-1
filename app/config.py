@@ -34,6 +34,7 @@ DEEPSEEK_URL = os.getenv("DEEPSEEK_URL", "https://api.deepseek.com/chat/completi
 _DEEPSEEK_OFFICIAL = DEEPSEEK_URL.startswith("https://api.deepseek.com/")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "").strip() or ("deepseek-flash" if _DEEPSEEK_OFFICIAL else "deepseek-chat")
 DEEPSEEK_THINKING = None
+DUP_AI_AUTO_MERGE = _bool("DUP_AI_AUTO_MERGE", False)
 if _DEEPSEEK_OFFICIAL and DEEPSEEK_MODEL in ("deepseek-chat", "deepseek-reasoner", "deepseek-flash"):
     DEEPSEEK_THINKING = "enabled" if DEEPSEEK_MODEL == "deepseek-reasoner" else "disabled"
     DEEPSEEK_MODEL = "deepseek-flash"

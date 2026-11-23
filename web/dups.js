@@ -153,7 +153,8 @@
     const verdict = AI_LABELS[p.ai?.verdict];
     if (verdict) {
       const kept = recommendedKeep(p);
-      const manual = p.ai.verdict === "repeat" ? "Выберите карточку и подтвердите объединение кнопкой 1." : p.ai.manual_reason;
+      const manual = p.ai.manual_reason || (p.ai.verdict === "repeat" && !data.ai_auto_merge
+        ? "Выберите карточку и подтвердите объединение кнопкой 1." : "");
       const confidence = p.ai.confidence == null ? "" : `<small class="dp-ai-confidence">Уверенность модели ${Math.floor(p.ai.confidence * 100)}%</small>`;
       return `<div class="dp-ai ${p.ai.verdict}">${ic("sparkle")}<div class="dp-ai-copy">
         <span class="dp-ai-label">DeepSeek предлагает</span><strong>${verdict}</strong>
@@ -256,6 +257,9 @@
   }
 
   function render() {
+    $("dpLead").textContent = data.ai_auto_merge
+      ? "DeepSeek проверяет все три варианта от 70%. Карточки объединяются после проверки квартиры и контакта."
+      : "DeepSeek применяет решения 2 и 3 от 70%. Объединение по кнопке 1 подтверждает администратор.";
     $("dpTabs").innerHTML = [["open", "Ждут решения", data.counts.open], ["price", "Только цена", data.counts.price],
       ["auto", "Старые автосклейки", data.counts.auto],
       ["done", "История решений", data.counts.done]].map(([k, l, n]) =>

@@ -354,8 +354,10 @@ CREATE TABLE IF NOT EXISTS dup_pairs (
     created_at INTEGER NOT NULL, decided_at INTEGER, user_id INTEGER, UNIQUE (a, b)
 );
 CREATE INDEX IF NOT EXISTS ix_dup_pairs_status ON dup_pairs (status);
+CREATE INDEX IF NOT EXISTS ix_dup_pairs_b ON dup_pairs (b);
 CREATE INDEX IF NOT EXISTS ix_dup_auto_price_keep ON dup_pairs (keep_id, drop_id)
     WHERE status = 'repeat' AND kind = 'auto_price_revision';
+CREATE TABLE IF NOT EXISTS dup_changed (listing_id INTEGER PRIMARY KEY, revision INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE IF NOT EXISTS notes (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, listing_id INTEGER NOT NULL,
     text TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (user_id, listing_id)
@@ -534,6 +536,24 @@ def _migrate(conn: sqlite3.Connection) -> None:
                     raise
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_listings_ext ON listings(ext_id) WHERE ext_id IS NOT NULL")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_listings_merged_into ON listings(merged_into) WHERE merged_into IS NOT NULL")
+    evidence_columns = ("type", "deal", "rooms", "room_kind", "area", "floor", "floors", "land", "complex",
+                        "street", "house", "district", "settlement", "price", "price_doubt", "phones", "phone_roles",
+                        "fragment", "description", "photos", "article", "owner_user_id", "ext_id", "source",
+                        "multi_units", "price_fixed", "admin_fixed", "video_file", "kinescope_url")
+    changes = " OR ".join(f"OLD.{field} IS NOT NEW.{field}" for field in evidence_columns)
+    conn.execute(f"""CREATE TRIGGER IF NOT EXISTS trg_dup_evidence_v1
+                     AFTER UPDATE OF {','.join(evidence_columns)} ON listings WHEN {changes}
+                     BEGIN
+                         UPDATE dup_pairs SET ai=NULL WHERE (a=NEW.id OR b=NEW.id)
+                             AND status='open' AND ai IS NOT NULL;
+                         INSERT INTO dup_changed(listing_id) VALUES (NEW.id)
+                             ON CONFLICT(listing_id) DO UPDATE SET revision=revision+1;
+                     END""")
+    if conn.execute("INSERT OR IGNORE INTO state(key,value) VALUES ('dup_evidence_v2','1')").rowcount:
+        conn.execute("UPDATE dup_pairs SET ai=NULL WHERE status='open' AND COALESCE(user_id,0)=0")
+        conn.execute("""INSERT OR IGNORE INTO dup_changed(listing_id)
+                        SELECT a FROM dup_pairs WHERE status='market' AND COALESCE(user_id,0)=0
+                        AND CASE WHEN json_valid(ai) THEN json_extract(ai,'$.applied') END=1""")
     # Любая смена цены (чаты, фид, правка агента) запоминает прошлую цену
     conn.execute("""CREATE TRIGGER IF NOT EXISTS trg_price_change AFTER UPDATE OF price ON listings
                     WHEN OLD.price IS NOT NULL AND NEW.price IS NOT NULL AND NEW.price != OLD.price

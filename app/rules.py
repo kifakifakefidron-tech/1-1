@@ -743,6 +743,11 @@ _TAIL_RE = re.compile(
 )
 _HEADER_RE = re.compile(r"^[\W_]*(?:продаю|продаются|продажа|в\s+продаже|подборка|актуальн|прайс|варианты|объекты)\b|:\s*$",
                         re.IGNORECASE)
+_COMMON_CONTACT_RE = re.compile(r"\b(?:по\s+всем|для\s+всех|на\s+все|общие\s+контакты)\b", re.IGNORECASE)
+
+
+def _shared_contacts(text: str) -> bool:
+    return bool(len(text) < 300 and _COMMON_CONTACT_RE.search(text) and extract_phones(text))
 
 
 def _is_header(s: str) -> bool:
@@ -803,7 +808,7 @@ def _split_by_lines(text: str) -> list[str]:
     while tail_from > 0 and not _has_price(last[tail_from - 1]):
         tail_from -= 1
     tail = [ln for ln in last[tail_from:] if ln.strip()]
-    common_tail = tail if tail and extract_phones("\n".join(tail)) and len("\n".join(tail)) < 300 else []
+    common_tail = tail if _shared_contacts("\n".join(tail)) else []
     if common_tail:
         merged[-1] = last[:tail_from]
     out = []
@@ -851,7 +856,7 @@ def split_objects(text: str) -> list[str]:
                 current.append(p)
     tail = "\n".join(current).strip()
     # Хвост с телефоном — общие контакты для всех; остальное — продолжение последнего объекта
-    if tail and not (extract_phones(tail) and len(tail) < 300):
+    if tail and not _shared_contacts(tail):
         objects[-1] = objects[-1] + "\n" + tail
         tail = ""
     head = "\n".join(header).strip()

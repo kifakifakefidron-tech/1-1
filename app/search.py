@@ -814,7 +814,8 @@ def listing_detail(conn: sqlite3.Connection, listing_id: int, with_contacts: boo
         SELECT ?
         UNION
         SELECT p.drop_id FROM versions v JOIN dup_pairs p ON p.keep_id=v.id
-        WHERE p.status='repeat' AND p.kind='auto_price_revision' AND p.drop_id IS NOT NULL
+        WHERE p.status='repeat' AND p.drop_id IS NOT NULL AND (p.kind='auto_price_revision'
+               OR CASE WHEN json_valid(p.ai) THEN json_extract(p.ai,'$.applied') END=1)
     )
     SELECT DISTINCT h.ts, h.price FROM versions v JOIN price_history h ON h.listing_id=v.id
     ORDER BY h.ts, h.rowid LIMIT 100""", (listing_id,))]
