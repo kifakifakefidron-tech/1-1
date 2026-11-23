@@ -153,12 +153,13 @@
     const verdict = AI_LABELS[p.ai?.verdict];
     if (verdict) {
       const kept = recommendedKeep(p);
+      const manual = p.ai.verdict === "repeat" ? "Выберите карточку и подтвердите объединение кнопкой 1." : p.ai.manual_reason;
       const confidence = p.ai.confidence == null ? "" : `<small class="dp-ai-confidence">Уверенность модели ${Math.floor(p.ai.confidence * 100)}%</small>`;
       return `<div class="dp-ai ${p.ai.verdict}">${ic("sparkle")}<div class="dp-ai-copy">
         <span class="dp-ai-label">DeepSeek предлагает</span><strong>${verdict}</strong>
         ${kept ? `<small class="dp-ai-fresh">Свежая версия № ${kept} · ${esc(day(p.ai.keep_version_ts))}</small>` : ""}
         ${p.ai.why ? `<small>${esc(p.ai.why)}</small>` : ""}${confidence}
-        ${p.ai.manual_reason ? `<small>Ручная проверка · ${esc(p.ai.manual_reason)}</small>` : ""}
+        ${manual ? `<small>Ручная проверка · ${esc(manual)}</small>` : ""}
       </div></div>`;
     }
     if (!data.ai_enabled) return "";

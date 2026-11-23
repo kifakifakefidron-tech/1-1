@@ -218,6 +218,16 @@ def test_auto_price_respects_existing_decisions_and_manual_corrections(conn):
     ]
 
 
+def test_auto_price_leaves_pairs_waiting_for_manual_merge(conn):
+    old = _price_version(conn, 10, 6900000)
+    fresh = _price_version(conn, 20, 6800000)
+    pid = pair(conn, old, fresh, kind="price_revision")
+    conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps({"verdict": "repeat", "confidence": 0.99}), pid))
+    assert dupreview.scan_price_revisions(conn, apply=True)["merged"] == 0
+    assert tuple(conn.execute("SELECT status,drop_id FROM dup_pairs WHERE id=?", (pid,)).fetchone()) == ("open", None)
+    assert conn.execute("SELECT SUM(is_active) FROM listings").fetchone()[0] == 2
+
+
 def test_model_suggestion_is_cached_and_compared_with_the_admin_verdict(conn, monkeypatch):
     monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
     a, b = listing(conn, "+79000000001"), listing(conn, "+79000000002")
@@ -371,8 +381,8 @@ def test_auto_review_applies_confident_verdicts_and_keeps_manual_cases(conn, mon
     cross_left, cross_right, cross = example(14, different_agents=True)
     market_left, market_right, market = example(15, different_agents=True)
     _, _, diff = example(16)
-    answers = {"11": ("repeat", 0.8), "12": ("repeat", 0.799), "13": ("unsure", 0.99),
-               "14": ("repeat", 0.94), "15": ("market", 0.91), "16": ("diff", 0.85)}
+    answers = {"11": ("repeat", 0.98), "12": ("diff", 0.699), "13": ("unsure", 0.99),
+               "14": ("repeat", 0.94), "15": ("market", 0.70), "16": ("diff", 0.70)}
     calls = []
 
     def model(system, content, max_tokens):
@@ -382,19 +392,20 @@ def test_auto_review_applies_confident_verdicts_and_keeps_manual_cases(conn, mon
         return {"verdict": verdict, "confidence": confidence}
 
     monkeypatch.setattr(llm, "ask_json", model)
-    assert dupreview.ask_ai(conn, repeat)["ai"]["confidence"] == 0.8
-    assert dupreview.auto_review(conn) == {"applied": 3, "manual": 3, "retry": 0}
+    assert dupreview.ask_ai(conn, repeat)["ai"]["confidence"] == 0.98
+    assert dupreview.auto_review(conn) == {"applied": 2, "manual": 3, "retry": 0}
     assert calls == ["11", "16", "15", "14", "13", "12"]
     done = dupreview.pairs(conn, "done")
-    assert done["ai_auto"] == 3
+    assert done["ai_auto"] == 2
     assert {row["id"]: row["status"] for row in done["pairs"] if row["ai_applied"]} == {
-        repeat: "repeat", market: "market", diff: "diff"}
-    assert tuple(conn.execute("SELECT is_active,merged_into FROM listings WHERE id=?", (older,)).fetchone()) == (0, fresh)
-    for left, right in ((cross_left, cross_right), (market_left, market_right)):
+        market: "market", diff: "diff"}
+    for left, right in ((older, fresh), (cross_left, cross_right), (market_left, market_right)):
         assert conn.execute("SELECT SUM(is_active) FROM listings WHERE id IN (?,?)", (left, right)).fetchone()[0] == 2
     manual = {p["id"]: p for p in dupreview.pairs(conn)["pairs"]}
-    assert set(manual) == {low, unsure, cross}
-    assert manual[cross]["ai"]["manual_reason"]
+    assert set(manual) == {repeat, low, unsure, cross}
+    assert manual[repeat]["ai"]["keep_id"] == fresh and not manual[repeat]["ai_applied"]
+    assert dupreview.decide(conn, repeat, "repeat", user_id=1, keep_id=fresh)["ok"]
+    assert tuple(conn.execute("SELECT is_active,merged_into FROM listings WHERE id=?", (older,)).fetchone()) == (0, fresh)
     assert dupreview.decide(conn, repeat, "reopen", user_id=1)["ok"]
     conn.commit()
     assert dupreview.auto_review(conn) == {}
@@ -402,7 +413,7 @@ def test_auto_review_applies_confident_verdicts_and_keeps_manual_cases(conn, mon
     assert dupreview.pairs(conn)["counts"]["open"] == 4
 
 
-def test_auto_review_reuses_legacy_hold_when_advertised_number_is_now_the_sender(conn, monkeypatch):
+def test_manual_review_reuses_legacy_recommendation_when_advertised_number_is_now_the_sender(conn, monkeypatch):
     monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
     main, alternate, forwarder = "+79000000011", "+79000000012", "+79000000013"
     old, fresh = listing(conn, main), listing(conn, alternate)
@@ -427,11 +438,12 @@ def test_auto_review_reuses_legacy_hold_when_advertised_number_is_now_the_sender
     saved = dupreview.ask_ai(conn, pid)["ai"]
     saved["manual_reason"] = "Проверьте контакты и принадлежность объявлений одному агенту."
     conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps(saved), pid))
-    assert dupreview.auto_review(conn) == {"applied": 1, "manual": 0, "retry": 0}
+    assert dupreview.auto_review(conn) == {}
+    assert dupreview.review_ai(conn, pid)["ai"]["keep_id"] == fresh
     assert len(calls) == 1
-    result, = dupreview.pairs(conn, "done")["pairs"]
-    assert (result["keep"], result["status"], result["ai_applied"]) == (fresh, "repeat", True)
-    assert "manual_reason" not in result["ai"]
+    result, = dupreview.pairs(conn)["pairs"]
+    assert (result["status"], result["ai_applied"]) == ("open", False)
+    assert dupreview.decide(conn, pid, "repeat", user_id=1, keep_id=fresh)["ok"]
     survivor = conn.execute("SELECT id,district,phones FROM listings WHERE is_active=1").fetchone()
     assert tuple(survivor) == (fresh, "Яблоновский", json.dumps([alternate]))
 
@@ -459,15 +471,14 @@ def test_auto_review_leaves_overlapping_contacts_with_different_texts_for_review
     saved = dupreview.ask_ai(conn, pid)["ai"]
     saved["manual_reason"] = "Уточните, принадлежат ли контактные номера одному агенту."
     conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps(saved), pid))
-    assert dupreview.auto_review(conn) == {"applied": 0, "manual": 1, "retry": 0}
     assert dupreview.auto_review(conn) == {}
+    assert dupreview.review_ai(conn, pid)["ai"]["verdict"] == "repeat"
     assert len(calls) == 1
     assert conn.execute("SELECT SUM(is_active) FROM listings").fetchone()[0] == 2
-    assert dupreview.pairs(conn)["pairs"][0]["ai"]["manual_reason"] == (
-        "Есть общий номер. Сверьте различия в тексте объявлений.")
+    assert dupreview.pairs(conn)["pairs"][0]["status"] == "open"
 
 
-def test_auto_review_merges_shared_contact_and_matching_text_with_new_price(conn, monkeypatch):
+def test_auto_review_recommends_new_price_with_shared_contact_and_matching_text(conn, monkeypatch):
     monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
     old_extra, new_extra, shared = "+79000000031", "+79000000032", "+79000000033"
     old, fresh = listing(conn, old_extra), listing(conn, new_extra)
@@ -486,18 +497,19 @@ def test_auto_review_merges_shared_contact_and_matching_text_with_new_price(conn
         return {"verdict": "repeat", "confidence": 0.98}
 
     monkeypatch.setattr(llm, "ask_json", model)
-    saved = dupreview.ask_ai(conn, pid)["ai"]
-    saved["manual_reason"] = "Уточните, принадлежат ли контактные номера одному агенту."
-    conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps(saved), pid))
-    assert dupreview.auto_review(conn) == {"applied": 1, "manual": 0, "retry": 0}
+    assert dupreview.auto_review(conn) == {"applied": 0, "manual": 1, "retry": 0}
+    recommended = dupreview.review_ai(conn, pid)["ai"]
+    assert (recommended["verdict"], recommended["keep_id"]) == ("repeat", fresh)
+    assert dupreview.auto_review(conn) == {}
     assert calls == ["совпадают"]
+    assert dupreview.decide(conn, pid, "repeat", user_id=1, keep_id=fresh)["ok"]
     survivor = conn.execute("SELECT id,price,phones FROM listings WHERE is_active=1").fetchone()
     assert tuple(survivor) == (fresh, 6750000, json.dumps([shared, new_extra]))
     result, = dupreview.pairs(conn, "done")["pairs"]
-    assert result["merged"] and result["ai_applied"] and "manual_reason" not in result["ai"]
+    assert result["merged"] and not result["ai_applied"]
 
 
-def test_auto_review_keeps_one_ad_when_ai_suggested_linking_matching_contacts_and_text(conn, monkeypatch):
+def test_auto_review_routes_matching_agent_and_text_to_manual_merge(conn, monkeypatch):
     monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
     a, b = listing(conn, "+79000000041"), listing(conn, "+79000000041")
     conn.execute("UPDATE listings SET phones=? WHERE id=?", (json.dumps(["+79000000041", "+79000000042"]), a))
@@ -506,12 +518,14 @@ def test_auto_review_keeps_one_ad_when_ai_suggested_linking_matching_contacts_an
     pid = pair(conn, a, b)
     monkeypatch.setattr(llm, "ask_json", lambda *args, **kw: {"verdict": "market", "confidence": 0.95})
     decision = dupreview.review_ai(conn, pid)
-    assert decision["applied"] and decision["ai"]["verdict"] == "repeat"
+    assert not decision["applied"] and decision["ai"]["verdict"] == "repeat"
     assert decision["ai"]["model_verdict"] == "market"
-    assert tuple(conn.execute("SELECT status,keep_id,drop_id FROM dup_pairs").fetchone()) == ("repeat", b, a)
+    assert decision["ai"]["keep_id"] == b
+    assert tuple(conn.execute("SELECT status,keep_id,drop_id FROM dup_pairs").fetchone()) == ("open", None, None)
+    assert dupreview.auto_review(conn) == {}
 
 
-def test_auto_review_accepts_verbatim_reposts_from_different_sender_numbers(conn, monkeypatch):
+def test_manual_repeat_keeps_sender_evidence_for_verbatim_reposts(conn, monkeypatch):
     monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
     proposals = []
 
@@ -541,8 +555,8 @@ def test_auto_review_accepts_verbatim_reposts_from_different_sender_numbers(conn
             ai["manual_reason"] = "Уточните, принадлежат ли контактные номера одному агенту."
             conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps(ai), pid))
         result = dupreview.review_ai(conn, pid)
-        assert result["applied"] == (case == "same")
-        assert ("manual_reason" in result["ai"]) == (case != "same")
+        assert not result.get("applied") and result["ai"]["verdict"] == "repeat"
+        assert conn.execute("SELECT status FROM dup_pairs WHERE id=?", (pid,)).fetchone()[0] == "open"
     assert proposals == [True, False, False, False]
 
 
@@ -554,7 +568,7 @@ def test_auto_review_ignores_confident_response_for_changed_listing(conn, monkey
     def model(system, content, max_tokens):
         conn.execute("UPDATE listings SET floor=17 WHERE id=?", (b,))
         conn.commit()
-        return {"verdict": "repeat", "confidence": 0.99}
+        return {"verdict": "diff", "confidence": 0.99}
 
     monkeypatch.setattr(llm, "ask_json", model)
     assert dupreview.review_ai(conn, pid)["stale"]
@@ -572,7 +586,7 @@ def test_backlog_only_reviews_the_initial_queue_and_reuses_previous_results(conn
 
     old = candidate("10", 1)
     recent = candidate("20", 2)
-    low = candidate("30", 3)
+    cached = candidate("30", 3)
     reopened = candidate("40", 4)
     conn.execute("UPDATE dup_pairs SET user_id=1 WHERE id=?", (reopened,))
     calls, new_pairs = [], []
@@ -583,14 +597,14 @@ def test_backlog_only_reviews_the_initial_queue_and_reuses_previous_results(conn
         if house == "20":
             new_pairs.append(candidate("50", 5))
             conn.commit()
-        return {"verdict": "diff", "confidence": {"10": 0.79, "20": 0.8, "30": 0.79}[house]}
+        return {"verdict": "diff", "confidence": {"10": 0.699, "20": 0.70, "30": 0.79}[house]}
 
     monkeypatch.setattr(llm, "ask_json", model)
-    assert dupreview.ask_ai(conn, low)["ai"]["confidence"] == 0.79
-    assert dupreview.review_backlog(conn) == {"total": 2, "applied": 1, "manual": 1, "changed": 0}
+    assert dupreview.ask_ai(conn, cached)["ai"]["confidence"] == 0.79
+    assert dupreview.review_backlog(conn) == {"total": 3, "applied": 2, "manual": 1, "changed": 0}
     assert calls == ["30", "20", "10"]
     assert dict(conn.execute("SELECT id,status FROM dup_pairs")) == {
-        old: "open", recent: "diff", low: "open", reopened: "open", new_pairs[0]: "open"}
+        old: "open", recent: "diff", cached: "diff", reopened: "open", new_pairs[0]: "open"}
     assert conn.execute("SELECT ai FROM dup_pairs WHERE id=?", (new_pairs[0],)).fetchone()[0] is None
 
 
@@ -672,7 +686,7 @@ def test_background_retries_applying_a_saved_decision_when_sqlite_is_busy(tmp_pa
 
         def model(system, content, max_tokens):
             calls.append(content)
-            return {"verdict": "repeat", "confidence": 0.8}
+            return {"verdict": "diff", "confidence": 0.70}
 
         monkeypatch.setattr(llm, "ask_json", model)
         assert dupreview.ask_ai(conn, pid)["ok"]
@@ -687,4 +701,4 @@ def test_background_retries_applying_a_saved_decision_when_sqlite_is_busy(tmp_pa
         monkeypatch.setattr(dupreview.time, "sleep", wait)
         assert dupreview.auto_review(conn) == {"applied": 1, "manual": 0, "retry": 0}
         assert len(calls) == len(waits) == 1
-        assert conn.execute("SELECT status FROM dup_pairs WHERE id=?", (pid,)).fetchone()[0] == "repeat"
+        assert conn.execute("SELECT status FROM dup_pairs WHERE id=?", (pid,)).fetchone()[0] == "diff"

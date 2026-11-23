@@ -37,14 +37,11 @@ PER_ROW = 3
 PRICE_REVISION_SCAN = "dup_price_revision_scan_v2"
 _PRICE_PAIR_SCOPE = "p.kind='price_revision' AND a.price != b.price"
 _AI_VERDICTS = ("repeat", "diff", "market", "unsure")
-AI_AUTO_CONFIDENCE = 0.8
+_AI_AUTO_VERDICTS = ("diff", "market")
+AI_AUTO_CONFIDENCE = 0.7
 _AI_RETRY_AT = "dup_ai_retry_at"
 _AI_RETRY_SECONDS = 300
 _AI_LEASE_SECONDS = 180
-_CONTACT_HOLDS_TO_RECHECK = (
-    "Проверьте контакты и принадлежность объявлений одному агенту.",
-    "Уточните, принадлежат ли контактные номера одному агенту.",
-)
 
 _FLATLIKE = ("flat", "new", "room", "commercial")
 _COLS = ("id, type, deal, rooms, room_kind, floor, floors, area, land, complex, street, house, district, settlement, "
@@ -569,7 +566,7 @@ def _price_revision_groups(conn: sqlite3.Connection):
 
 
 def _has_family_decision(conn: sqlite3.Connection, ids: list[int]) -> bool:
-    """Проверяет решения между карточками с учётом всех уже объединённых версий."""
+    """Проверяет решения и ожидающие подтверждения повторы среди всех версий карточек."""
     slots = ",".join("?" for _ in ids)
     return conn.execute(f"""WITH RECURSIVE family(root,id) AS (
             SELECT id,id FROM listings WHERE id IN ({slots})
@@ -577,7 +574,10 @@ def _has_family_decision(conn: sqlite3.Connection, ids: list[int]) -> bool:
             SELECT f.root,l.id FROM family f JOIN listings l ON l.merged_into=f.id WHERE l.hidden_reason=?
         )
         SELECT 1 FROM dup_pairs p JOIN family a ON a.id=p.a JOIN family b ON b.id=p.b
-        WHERE a.root!=b.root AND (p.status NOT IN ('open','gone') OR COALESCE(p.user_id,0)>0)
+        WHERE a.root!=b.root AND (
+            p.status NOT IN ('open','gone') OR COALESCE(p.user_id,0)>0
+            OR (p.status='open' AND CASE WHEN json_valid(p.ai) THEN json_extract(p.ai,'$.verdict')='repeat' END)
+        )
         LIMIT 1""", (*ids, offers.MERGED_REPEAT)).fetchone() is not None
 
 
@@ -597,7 +597,7 @@ def _apply_price_revisions(conn: sqlite3.Connection, key, members, why: str, now
             return 0
         if len({row["price"] for row in rows}) < 2:
             return 0
-        # Учитываем решения о разных объектах и об отдельных предложениях, включая их архивные версии.
+        # Учитываем принятые решения и пары, по которым ждём подтверждения объединения.
         if _has_family_decision(conn, ids):
             return 0
         timed = sorted(((price_revision_time(conn, row), row) for row in rows),
@@ -1042,41 +1042,16 @@ def ask_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False) -> 
     return {"ok": True, "ai": ai}
 
 
-def _confident(ai: dict) -> bool:
+def _can_auto_apply(ai: dict) -> bool:
     certainty = ai.get("confidence")
-    return (ai.get("verdict") in ("repeat", "diff", "market")
+    return (ai.get("verdict") in _AI_AUTO_VERDICTS and not ai.get("manual_reason")
             and type(certainty) in (float, int) and AI_AUTO_CONFIDENCE <= certainty <= 1)
 
 
-def _requires_manual_review(ai: dict) -> bool:
-    reason = ai.get("manual_reason")
-    return bool(reason and not (ai.get("verdict") == "repeat" and reason in _CONTACT_HOLDS_TO_RECHECK))
-
-
-def _repeat_review_reason(conn, a, b, keep_id, *, cards, agents, text_matches: bool):
-    if a["deal"] != b["deal"]:
-        return "Проверьте тип сделки у двух объявлений."
-    if a["owner_user_id"] and b["owner_user_id"] and a["owner_user_id"] != b["owner_user_id"]:
-        return "У карточек разные владельцы."
-    same_agent = _review_same_agent(*agents)
-    if same_agent is False and not _matching_sender_copy(conn, cards, agents, text_matches=text_matches):
-        return "Сверьте, какие контактные номера относятся к одному агенту."
-    if same_agent and agents[0] != agents[1] and not text_matches:
-        return "Есть общий номер. Сверьте различия в тексте объявлений."
-    archived = b if a["id"] == keep_id else a
-    if (archived["source"] != "chat" or archived["price_fixed"] or archived["owner_edited_at"]
-            or archived["admin_fixed"] or archived["video_file"] or archived["kinescope_url"]):
-        return "У предыдущей карточки есть данные из каталога, видео или ручные правки."
-    if _has_family_decision(conn, [a["id"], b["id"]]):
-        return "По другим версиям этих объявлений уже есть решение."
-    return None
-
-
 def review_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False) -> dict:
-    """Использует сохранённую оценку, затем применяет уверенный ответ к актуальной паре."""
+    """Автоматически применяет уверенные решения о разных объектах или предложениях."""
     result = ask_ai(conn, pid, wait_for_db=wait_for_db)
-    proposed = result.get("ai") or {}
-    if not _confident(proposed) or _requires_manual_review(proposed):
+    if not _can_auto_apply(result.get("ai") or {}):
         return result
     db.flush(conn)
 
@@ -1091,33 +1066,26 @@ def review_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False) 
         cards = [_card(conn, pair["a"]), _card(conn, pair["b"])]
         if not all(card and card["is_active"] for card in cards) or ai.get("signature") != _ai_signature(cards):
             return {"ok": True, "stale": True}
-        if not _confident(ai) or _requires_manual_review(ai):
+        if not _can_auto_apply(ai):
             return {"ok": True, "ai": ai}
-        decision = ai
-        reason = None
-        if ai["verdict"] in ("repeat", "market"):
+        if ai["verdict"] == "market" and _review_text_matches(*cards):
             from . import phonegroups
 
-            a, b = conn.execute("SELECT * FROM listings WHERE id IN (?,?)", (pair["a"], pair["b"])).fetchall()
             phonegroups.refresh(conn)
-            agents = offers.agent_key(a), offers.agent_key(b)
-            text_matches = _review_text_matches(*cards)
-            if ai["verdict"] == "market" and text_matches and _review_same_agent(*agents):
-                decision = {**ai, "verdict": "repeat", "model_verdict": "market",
-                            "why": "Совпали текст объявления и агент."}
-            decision = _with_recommended_keep(decision, cards)
-            if decision["verdict"] == "repeat":
-                reason = _repeat_review_reason(conn, a, b, decision["keep_id"], cards=cards, agents=agents,
-                                               text_matches=text_matches)
-        if not reason:
-            saved = decide(conn, pid, decision["verdict"], keep_id=decision.get("keep_id"))
-            if saved.get("stale"):
-                return {"ok": True, "stale": True}
-            reason = saved.get("error")
+            agents = [offers.agent_key(row) for row in conn.execute(
+                "SELECT id, ext_id, owner_user_id, phones FROM listings WHERE id IN (?,?)", (pair["a"], pair["b"]))]
+            if _review_same_agent(*agents):
+                ai = _with_recommended_keep({**ai, "verdict": "repeat", "model_verdict": "market",
+                                             "why": "Совпали текст объявления и агент."}, cards)
+                conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps(ai, ensure_ascii=False), pid))
+                return {"ok": True, "ai": ai, "applied": False}
+        saved = decide(conn, pid, ai["verdict"])
+        if saved.get("stale"):
+            return {"ok": True, "stale": True}
+        reason = saved.get("error")
         if reason:
-            ai = {**_with_recommended_keep(ai, cards), "manual_reason": reason}
+            ai["manual_reason"] = reason
         else:
-            ai = decision
             ai.pop("manual_reason", None)
             ai["applied"] = True
             conn.execute("""INSERT INTO state(key,value) VALUES ('cache_ver',?)
@@ -1134,15 +1102,14 @@ def _auto_review_ids(conn: sqlite3.Connection, limit: int, *, include_pending: b
         WHERE p.status='open' AND a.is_active=1 AND b.is_active=1 AND COALESCE(p.user_id,0)=0
         AND CASE WHEN NOT json_valid(p.ai) THEN 1
                  WHEN json_extract(p.ai,'$.pending') THEN (? OR COALESCE(json_extract(p.ai,'$.ts'),0)<=?)
-                 WHEN json_extract(p.ai,'$.verdict')='unsure' THEN 0
-                 WHEN json_extract(p.ai,'$.verdict') IN ('repeat','diff','market')
-                   THEN (json_extract(p.ai,'$.manual_reason') IS NULL
-                         OR (json_extract(p.ai,'$.verdict')='repeat' AND json_extract(p.ai,'$.manual_reason') IN (?,?)))
+                 WHEN json_extract(p.ai,'$.verdict') IN ('repeat','unsure') THEN 0
+                 WHEN json_extract(p.ai,'$.verdict') IN (?,?)
+                   THEN json_extract(p.ai,'$.manual_reason') IS NULL
                    AND json_type(p.ai,'$.confidence') IN ('integer','real')
                    AND json_extract(p.ai,'$.confidence') BETWEEN ? AND 1
                  ELSE 1 END
         ORDER BY MAX(a.first_seen,b.first_seen) DESC,p.score DESC,p.id LIMIT ?""",
-        (include_pending, int(time.time()) - _AI_LEASE_SECONDS, *_CONTACT_HOLDS_TO_RECHECK, AI_AUTO_CONFIDENCE, limit))]
+        (include_pending, int(time.time()) - _AI_LEASE_SECONDS, *_AI_AUTO_VERDICTS, AI_AUTO_CONFIDENCE, limit))]
 
 
 def _retry_pause(conn: sqlite3.Connection) -> float:
@@ -1177,7 +1144,7 @@ def review_backlog(conn: sqlite3.Connection) -> dict[str, int]:
         raise RuntimeError("Не задан DEEPSEEK_API_KEY в контейнере worker.")
     pair_ids = _retry_database(lambda: _auto_review_ids(conn, -1, include_pending=True), wait_for_db=True)
     stats = {"total": len(pair_ids), "applied": 0, "manual": 0, "changed": 0}
-    print(f"К авторазбору пар: {len(pair_ids)}. Порог уверенности {AI_AUTO_CONFIDENCE:.0%}.", flush=True)
+    print(f"К проверке пар: {len(pair_ids)}. Авторазбор для кнопок 2 и 3 от {AI_AUTO_CONFIDENCE:.0%}.", flush=True)
     for number, pid in enumerate(pair_ids, 1):
         retried = False
         while True:
