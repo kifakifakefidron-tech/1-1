@@ -1032,14 +1032,22 @@ def _write_review(conn: sqlite3.Connection, operation, *, wait_for_db: bool):
     return _retry_database(write, wait_for_db=wait_for_db)
 
 
-def _current_ai_result(conn, pid, cards, signature):
+def _current_review(ai: dict, signature: str, checked_since: float | None) -> bool:
+    checked = ai.get("ts")
+    return (ai.get("signature") == signature and ai.get("verdict") in _AI_VERDICTS
+            and (checked_since is None or type(checked) in (int, float) and checked >= checked_since))
+
+
+def _current_ai_result(conn, pid, cards, signature, checked_since):
     pair = conn.execute("SELECT status,ai FROM dup_pairs WHERE id=?", (pid,)).fetchone()
     if pair is None or pair["status"] != "open":
         return {"ok": True, "stale": True}
     saved = _read_ai(pair["ai"])
-    if saved.get("signature") == signature and saved.get("verdict") in _AI_VERDICTS:
+    if _current_review(saved, signature, checked_since):
         return {"ok": True, "ai": _with_recommended_keep(saved, cards)}
-    return {"ok": True, "pending": True} if saved.get("pending") else {"ok": True, "stale": True}
+    if saved.get("pending") or checked_since is not None:
+        return {"ok": True, "pending": True}
+    return {"ok": True, "stale": True}
 
 
 _UNIT_NUMBER = re.compile(r"\b(?:квартира|кв\.?|лот)\s*№\s*(\d{1,5})\b", re.IGNORECASE)
@@ -1178,11 +1186,11 @@ def _model_review(conn, cards, signature):
     ai = {"verdict": verdict if verdict in _AI_VERDICTS else "unsure",
           "confidence": confidence if type(confidence) in (int, float) and 0 <= confidence <= 1 else None,
           "why": partner_text(safe(str(res.get("why") or "")))[:400],
-          "ts": int(time.time()), "signature": signature}
+          "ts": time.time(), "signature": signature}
     return _with_recommended_keep(ai, cards)
 
 
-def ask_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False) -> dict:
+def ask_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False, checked_since: float | None = None) -> dict:
     """Рекомендация по открытой паре с сохранением ответа и защитой от повторных запросов."""
     if not config.DEEPSEEK_API_KEY:
         return {"error": "Нейросеть не подключена (нет DEEPSEEK_API_KEY)."}
@@ -1195,27 +1203,31 @@ def ask_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False) -> 
         return {"error": "Эта пара уже снята с разбора.", "stale": True}
     signature = _ai_signature(cards)
     previous = _read_ai(p["ai"])
-    if previous.get("signature") == signature and previous.get("verdict") in _AI_VERDICTS:
+    if _current_review(previous, signature, checked_since):
         return {"ok": True, "ai": _with_recommended_keep(previous, cards)}
     now = int(time.time())
     if (previous.get("pending") and previous.get("signature") == signature
             and isinstance(previous.get("ts"), int) and now - previous["ts"] < _AI_LEASE_SECONDS):
         return {"ok": True, "pending": True}
 
+    restore = previous.get("previous_ai") if previous.get("pending") else p["ai"]
+
     def claim():
-        lease = json.dumps({"pending": True, "ts": int(time.time()), "signature": signature})
+        claim_data = {"pending": True, "ts": int(time.time()), "signature": signature}
+        if restore is not None:
+            claim_data["previous_ai"] = restore
+        lease = json.dumps(claim_data)
         claimed = conn.execute(f"""UPDATE dup_pairs AS p SET ai=? WHERE p.id=? AND p.status='open'
                                   AND p.ai IS ? {_ACTIVE_PAIR}""", (lease, pid, p["ai"])).rowcount
         return lease if claimed else None
 
     lease = _write_review(conn, claim, wait_for_db=wait_for_db)
     if lease is None:
-        return _current_ai_result(conn, pid, cards, signature)
+        return _current_ai_result(conn, pid, cards, signature, checked_since)
 
     try:
         ai = _model_review(conn, cards, signature)
     except llm.LLMError:
-        restore = None if previous.get("pending") else p["ai"]
         _write_review(conn, lambda: conn.execute("UPDATE dup_pairs SET ai=? WHERE id=? AND ai IS ?",
                                                 (restore, pid, lease)), wait_for_db=wait_for_db)
         return {"error": "DeepSeek пока не ответил. Можно повторить запрос.", "retryable": True}
@@ -1223,7 +1235,7 @@ def ask_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False) -> 
     saved = _write_review(conn, lambda: conn.execute("UPDATE dup_pairs SET ai=? WHERE id=? AND ai IS ?",
                                                     (encoded, pid, lease)).rowcount, wait_for_db=wait_for_db)
     if not saved:
-        return _current_ai_result(conn, pid, cards, signature)
+        return _current_ai_result(conn, pid, cards, signature, checked_since)
     return {"ok": True, "ai": ai}
 
 
@@ -1348,9 +1360,9 @@ def _review_guard(conn, cards, ai, *, auto_merge: bool) -> str | None:
     return None
 
 
-def review_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False) -> dict:
+def review_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False, checked_since: float | None = None) -> dict:
     """Перепроверяет данные пары перед применением решения модели."""
-    result = ask_ai(conn, pid, wait_for_db=wait_for_db)
+    result = ask_ai(conn, pid, wait_for_db=wait_for_db, checked_since=checked_since)
     auto_merge = config.DUP_AI_AUTO_MERGE
     if not _can_auto_apply(result.get("ai") or {}, auto_merge=auto_merge):
         return result
@@ -1387,11 +1399,14 @@ def review_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False) 
     return _write_review(conn, apply, wait_for_db=wait_for_db)
 
 
-def _auto_review_ids(conn: sqlite3.Connection, limit: int, *, include_pending: bool = False) -> list[int]:
+def _auto_review_ids(conn: sqlite3.Connection, limit: int, *, include_pending: bool = False,
+                     include_reviewed: bool = False) -> list[int]:
     return [pid for (pid,) in conn.execute("""SELECT p.id FROM dup_pairs p
         JOIN listings a ON a.id=p.a JOIN listings b ON b.id=p.b
-        WHERE p.status='open' AND a.is_active=1 AND b.is_active=1 AND COALESCE(p.user_id,0)=0
-        AND CASE WHEN NOT json_valid(p.ai) THEN 1
+        WHERE p.status='open' AND a.is_active=1 AND b.is_active=1
+        AND CASE WHEN ? THEN 1
+                 WHEN COALESCE(p.user_id,0)!=0 THEN 0
+                 WHEN NOT json_valid(p.ai) THEN 1
                  WHEN json_extract(p.ai,'$.pending') THEN (? OR COALESCE(json_extract(p.ai,'$.ts'),0)<=?)
                   WHEN json_extract(p.ai,'$.verdict')='unsure' THEN 0
                   WHEN json_extract(p.ai,'$.verdict')='repeat' AND NOT ? THEN 0
@@ -1401,7 +1416,7 @@ def _auto_review_ids(conn: sqlite3.Connection, limit: int, *, include_pending: b
                    AND json_extract(p.ai,'$.confidence') BETWEEN ? AND 1
                  ELSE 1 END
         ORDER BY MAX(a.first_seen,b.first_seen) DESC,p.score DESC,p.id LIMIT ?""",
-        (include_pending, int(time.time()) - _AI_LEASE_SECONDS, config.DUP_AI_AUTO_MERGE,
+        (include_reviewed, include_pending, int(time.time()) - _AI_LEASE_SECONDS, config.DUP_AI_AUTO_MERGE,
          *_AI_AUTO_VERDICTS, AI_AUTO_CONFIDENCE, limit))]
 
 
@@ -1431,20 +1446,24 @@ def auto_review(conn: sqlite3.Connection, limit: int = 12, budget_s: float = 12.
     return stats
 
 
-def review_backlog(conn: sqlite3.Connection) -> dict[str, int]:
+def review_backlog(conn: sqlite3.Connection, *, recheck: bool = False) -> dict[str, int]:
     """Разбирает снимок накопленной очереди без захвата пар, появившихся при запуске."""
     if not config.DEEPSEEK_API_KEY:
         raise RuntimeError("Не задан DEEPSEEK_API_KEY в контейнере worker.")
-    pair_ids = _retry_database(lambda: _auto_review_ids(conn, -1, include_pending=True), wait_for_db=True)
+    checked_since = time.time() if recheck else None
+    pair_ids = _retry_database(
+        lambda: _auto_review_ids(conn, -1, include_pending=True, include_reviewed=recheck), wait_for_db=True,
+    )
     stats = {"total": len(pair_ids), "applied": 0, "manual": 0, "changed": 0}
     actions = "1, 2 и 3" if config.DUP_AI_AUTO_MERGE else "2 и 3"
-    print(f"К проверке пар: {len(pair_ids)}. Авторазбор для кнопок {actions} от {AI_AUTO_CONFIDENCE:.0%}.", flush=True)
+    stage = "К повторной проверке" if recheck else "К проверке"
+    print(f"{stage} пар: {len(pair_ids)}. Авторазбор для кнопок {actions} от {AI_AUTO_CONFIDENCE:.0%}.", flush=True)
     for number, pid in enumerate(pair_ids, 1):
         retried = False
         while True:
             while pause := _retry_pause(conn):
                 time.sleep(min(pause, 60))
-            result = review_ai(conn, pid, wait_for_db=True)
+            result = review_ai(conn, pid, wait_for_db=True, checked_since=checked_since)
             if result.get("retryable"):
                 _write_review(conn, lambda: db.set_state(conn, _AI_RETRY_AT, str(time.time() + _AI_RETRY_SECONDS)),
                               wait_for_db=True)
@@ -1561,11 +1580,13 @@ if __name__ == "__main__":
     cli = argparse.ArgumentParser(description="Сравнение объявлений в очереди повторов.")
     mode = cli.add_mutually_exclusive_group()
     mode.add_argument("--backlog", action="store_true", help="один раз разобрать накопившиеся пары через DeepSeek")
+    mode.add_argument("--recheck-open", action="store_true", help="заново оценить все открытые пары через DeepSeek")
     mode.add_argument("--audit", action="store_true", help="проверить выборку накопившихся пар без записи в базу")
     mode.add_argument("--inspect", nargs="+", type=int, metavar="PAIR_ID", help="показать признаки пар без DeepSeek")
     cli.add_argument("--limit", type=int, default=30, help="размер выборки для --audit (по умолчанию 30)")
     args = cli.parse_args()
-    if (args.backlog or args.audit) and not config.DEEPSEEK_API_KEY:
+    backlog = args.backlog or args.recheck_open
+    if (backlog or args.audit) and not config.DEEPSEEK_API_KEY:
         cli.exit(1, "Не задан DEEPSEEK_API_KEY в контейнере worker.\n")
     if args.audit or args.inspect:
         if args.limit < 1:
@@ -1576,10 +1597,10 @@ if __name__ == "__main__":
             report = inspect_review_pairs(source, args.inspect) if args.inspect else audit_backlog(source, args.limit)
         print(json.dumps(report, ensure_ascii=False, indent=2))
         cli.exit(int(bool(args.audit and report["model_errors"])))
-    c = _retry_database(db.get, wait_for_db=True) if args.backlog else db.get()
-    if args.backlog:
+    c = _retry_database(db.get, wait_for_db=True) if backlog else db.get()
+    if backlog:
         try:
-            report = review_backlog(c)
+            report = review_backlog(c, recheck=args.recheck_open)
         except RuntimeError as error:
             cli.exit(1, f"{error} Сохранённые решения уже применены.\n")
         print(f"Готово. Автоматически: {report['applied']} из {report['total']}. "

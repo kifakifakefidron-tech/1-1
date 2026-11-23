@@ -806,6 +806,97 @@ def test_backlog_only_reviews_the_initial_queue_and_reuses_previous_results(conn
     assert conn.execute("SELECT ai FROM dup_pairs WHERE id=?", (new_pairs[0],)).fetchone()[0] is None
 
 
+def test_recheck_open_refreshes_held_pairs_and_respects_current_evidence(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    monkeypatch.setattr(config, "DUP_AI_AUTO_MERGE", True)
+    clock = [1000.25]
+    monkeypatch.setattr(dupreview.time, "time", lambda: clock[0])
+
+    def candidate(house, first_seen=1):
+        a, b = listing(conn), listing(conn, "+79000000002")
+        conn.execute("UPDATE listings SET house=?,first_seen=? WHERE id IN (?,?)", (house, first_seen, a, b))
+        return a, b, pair(conn, a, b)
+
+    older, fresh, repeat = _confirmed_versions(conn)
+    _, _, weak = candidate("61")
+    _, _, manual = candidate("63")
+    inactive, _, archived = candidate("65")
+    _, _, decided = candidate("67")
+    conn.execute("UPDATE listings SET is_active=0 WHERE id=?", (inactive,))
+    conn.execute("UPDATE dup_pairs SET status='diff' WHERE id=?", (decided,))
+    conn.execute("INSERT INTO users(id,created) VALUES (1,1)")
+    conn.execute("UPDATE dup_pairs SET user_id=1 WHERE id=?", (manual,))
+
+    monkeypatch.setattr(llm, "ask_json", lambda *args, **kwargs: {"verdict": "unsure", "confidence": 0.5})
+    for pid in (repeat, weak, manual):
+        assert dupreview.ask_ai(conn, pid)["ai"]["verdict"] == "unsure"
+    assert not dupreview._auto_review_ids(conn, 10)
+    _, original = conn.execute("SELECT id,ai FROM dup_pairs WHERE id=?", (repeat,)).fetchone()
+    original = json.loads(original)
+    original.update(verdict="repeat", confidence=0.97, manual_reason="Нужно подтвердить, что это одна квартира.")
+    conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps(original), repeat))
+    conn.commit()
+
+    calls, arrived = [], []
+
+    def model(system, content, max_tokens):
+        house = json.loads(content)["объявления"][0]["house"]
+        calls.append(house)
+        if house == "59":
+            arrived.append(candidate("69", first_seen=10)[2])
+            conn.commit()
+            return {"verdict": "repeat", "confidence": 0.95}
+        if house == "61":
+            return {"verdict": "market", "confidence": 0.98}
+        return {"verdict": "diff", "confidence": 0.99}
+
+    clock[0] += 0.5
+    monkeypatch.setattr(llm, "ask_json", model)
+    assert dupreview.review_backlog(conn, recheck=True) == {"total": 3, "applied": 1, "manual": 2, "changed": 0}
+    assert calls == ["59", "61", "63"]
+    statuses = dict(conn.execute("SELECT id,status FROM dup_pairs"))
+    assert statuses == {repeat: "repeat", weak: "open", manual: "open", archived: "open",
+                        decided: "diff", arrived[0]: "open"}
+    assert conn.execute("SELECT merged_into FROM listings WHERE id=?", (older,)).fetchone()[0] == fresh
+    ai = dict(conn.execute("SELECT id,ai FROM dup_pairs"))
+    assert json.loads(ai[weak])["manual_reason"]
+    assert json.loads(ai[manual])["verdict"] == "diff"
+    assert ai[arrived[0]] is None
+
+
+def test_recheck_retry_preserves_the_previous_recommendation(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    clock = [1000.25]
+    monkeypatch.setattr(dupreview.time, "time", lambda: clock[0])
+    pid = pair(conn, listing(conn), listing(conn))
+    monkeypatch.setattr(llm, "ask_json", lambda *args, **kwargs: {"verdict": "unsure", "confidence": 0.5})
+    previous = dupreview.ask_ai(conn, pid)["ai"]
+    stored = conn.execute("SELECT ai FROM dup_pairs WHERE id=?", (pid,)).fetchone()[0]
+    clock[0] += 1
+
+    def unavailable(*args, **kwargs):
+        lease = json.loads(conn.execute("SELECT ai FROM dup_pairs WHERE id=?", (pid,)).fetchone()[0])
+        assert lease["pending"] and lease["previous_ai"] == stored
+        raise llm.LLMError("timeout")
+
+    monkeypatch.setattr(llm, "ask_json", unavailable)
+    assert dupreview.ask_ai(conn, pid, checked_since=clock[0])["retryable"]
+    assert conn.execute("SELECT ai FROM dup_pairs WHERE id=?", (pid,)).fetchone()[0] == stored
+    assert dupreview.ask_ai(conn, pid)["ai"] == previous
+
+    calls = []
+
+    def answer(*args, **kwargs):
+        calls.append(1)
+        return {"verdict": "diff", "confidence": 0.8}
+
+    monkeypatch.setattr(llm, "ask_json", answer)
+    result = dupreview.ask_ai(conn, pid, checked_since=clock[0])
+    assert result["ai"]["verdict"] == "diff"
+    assert dupreview.ask_ai(conn, pid, checked_since=clock[0]) == result
+    assert len(calls) == 1
+
+
 def test_backlog_waits_for_worker_and_retries_after_failed_request(conn, monkeypatch):
     monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
     a, b = listing(conn), listing(conn)
