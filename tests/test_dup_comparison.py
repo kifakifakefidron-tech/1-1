@@ -109,19 +109,61 @@ def test_read_only_audit_estimates_backlog_without_writing(conn, monkeypatch):
     _, _, pid = _confirmed_versions(conn)
     a, b = listing(conn), listing(conn, "+79000000002")
     weak = pair(conn, a, b, kind="offer_review")
+    c, d = listing(conn), listing(conn, "+79000000002")
+    conn.execute("UPDATE listings SET house='61' WHERE id IN (?,?)", (c, d))
+    unknown = pair(conn, c, d, kind="offer_review")
 
     def answer(system, payload, max_tokens):
-        shared = json.loads(payload)["совпали номера прямо в текстах"]
+        evidence = json.loads(payload)
+        if evidence["объявления"][0]["house"] == "61":
+            return {"object": "same", "agent": "unknown", "confidence": 0.72, "why": "Нужно проверить агентство."}
+        shared = evidence["совпали номера прямо в текстах"]
         return {"object": "same", "agent": "same" if shared else "different", "confidence": 0.99}
 
     monkeypatch.setattr(llm, "ask_json", answer)
     conn.commit()
     conn.execute("PRAGMA query_only=ON")
     report = dupreview.audit_backlog(conn, 10)
-    assert report["would_apply"] == {"repeat": 1, "diff": 0, "market": 0} and report["held"] == 1
-    assert {item["id"] for item in report["pairs"]} == {pid, weak}
-    assert conn.execute("SELECT COUNT(*) FROM dup_pairs WHERE status='open' AND ai IS NULL").fetchone()[0] == 2
-    assert conn.execute("SELECT SUM(is_active) FROM listings").fetchone()[0] == 4
+    assert report["would_apply"] == {"repeat": 1, "diff": 0, "market": 0} and report["held"] == 2
+    assert report["model_decisions"] == {"repeat": 1, "diff": 0, "market": 1, "unsure": 1}
+    assert report["held_by_reason"]["Модель не выбрала вариант."] == 1
+    assert {item["id"] for item in report["pairs"]} == {pid, weak, unknown}
+    assert next(item for item in report["pairs"] if item["id"] == unknown)["model_reason"] == "Нужно проверить агентство."
+    assert conn.execute("SELECT COUNT(*) FROM dup_pairs WHERE status='open' AND ai IS NULL").fetchone()[0] == 3
+    assert conn.execute("SELECT SUM(is_active) FROM listings").fetchone()[0] == 6
+
+
+def test_repeat_accepts_same_number_when_sender_is_the_saved_contact(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    monkeypatch.setattr(config, "DUP_AI_AUTO_MERGE", True)
+    monkeypatch.setattr(llm, "ask_json", lambda *args, **kwargs: {
+        "object": "same", "agent": "same", "confidence": 0.95})
+    old, fresh, pid = _confirmed_versions(conn)
+    fragment = conn.execute("SELECT fragment FROM listings WHERE id=?", (fresh,)).fetchone()[0]
+    conn.execute("UPDATE listings SET fragment=?,phone_roles=? WHERE id=?",
+                 (fragment.rsplit("\n", 1)[0], json.dumps({"+79000000001": "sender"}), fresh))
+    result, = dupreview.inspect_review_pairs(conn, [pid])
+    assert result["text_matches"] and result["confirmed_contact"] and result["property_evidence"]
+    assert not result["shared_number_in_both_texts"] and result["sender_used_as_contact"] == [False, True]
+    assert result["hold_if_repeat"] is None and dupreview.review_ai(conn, pid)["applied"]
+    assert conn.execute("SELECT merged_into FROM listings WHERE id=?", (old,)).fetchone()[0] == fresh
+
+
+def test_repeat_cannot_treat_forwarder_as_owner_when_advertised_contacts_differ(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    monkeypatch.setattr(config, "DUP_AI_AUTO_MERGE", True)
+    monkeypatch.setattr(llm, "ask_json", lambda *args, **kwargs: {
+        "object": "same", "agent": "same", "confidence": 0.99})
+    old, fresh, pid = _confirmed_versions(conn)
+    forwarder = "+79000000003"
+    for lid, contact in ((old, "+79000000001"), (fresh, "+79000000002")):
+        conn.execute("""UPDATE listings SET phones=?,phone_roles=?,fragment=replace(fragment,?,?) WHERE id=?""",
+                     (json.dumps([contact, forwarder]), json.dumps({contact: "text", forwarder: "sender"}),
+                      "+79000000001", contact, lid))
+    result, = dupreview.inspect_review_pairs(conn, [pid])
+    assert result["text_matches"] and not result["confirmed_contact"] and result["property_evidence"]
+    assert result["hold_if_repeat"] == "Нужно подтвердить общий контакт агента."
+    assert not dupreview.review_ai(conn, pid)["applied"]
 
 
 

@@ -1066,11 +1066,18 @@ def _matching_sender_copy(conn, cards, agents, *, text_matches: bool) -> bool:
     return accounts <= 1
 
 
-def _shared_public_numbers(cards):
+def _shared_review_phones(cards, *, allow_sender: bool = False) -> bool:
     from . import phonegroups
+    from .rules import normalize_phone
 
-    contacts = [phonegroups.canon_set(card["literal_phones"]) & offers.contact_keys(card) for card in cards]
-    return contacts[0] & contacts[1]
+    contacts = []
+    for card in cards:
+        stored = phonegroups.canon_set(filter(None, map(normalize_phone, card["phones"])))
+        if allow_sender and card["sender_only_contacts"]:
+            contacts.append(stored)
+        else:
+            contacts.append(phonegroups.canon_set(card["literal_phones"]) & stored)
+    return bool(contacts[0] & contacts[1])
 
 
 def _alternatives(conn, cards):
@@ -1114,7 +1121,7 @@ def _model_review(conn, cards, signature):
     payload = {
         "объявления": [describe(card) for card in cards],
         "контакты карточек": relation, "один отправитель": bool(senders[0] & senders[1]),
-        "совпали номера прямо в текстах": bool(_shared_public_numbers(cards)),
+        "совпали номера прямо в текстах": _shared_review_phones(cards),
         "совпал весь исходный текст, номера взяты только у отправителей": sender_copy,
         "разница площади в м²": offers.review_area_delta(cards[0]["area"], cards[1]["area"]),
         "совпавших фото": len(offers._photo_keys(json.dumps(cards[0]["photos"])) & offers._photo_keys(json.dumps(cards[1]["photos"]))),
@@ -1243,6 +1250,12 @@ def _competing_version(conn, cards) -> bool:
     return False
 
 
+def _repeat_contact_confirmed(cards, agents) -> bool:
+    if _review_same_agent(*agents) is not True:
+        return False
+    return agents[0][0] == "account" or _shared_review_phones(cards, allow_sender=_review_text_matches(*cards))
+
+
 def _review_guard(conn, cards, ai, *, auto_merge: bool) -> str | None:
     from . import phonegroups
 
@@ -1274,9 +1287,10 @@ def _review_guard(conn, cards, ai, *, auto_merge: bool) -> str | None:
                or card["admin_fixed"] or card["owner_edited_at"] or card["sold_at"] or card["video_file"]
                or card["kinescope_url"] for card in cards):
             return "Есть правки, отдельный источник, видео или данные, которые нужно проверить перед слиянием."
-        verified_contact = (same_agent is True and (agents[0][0] == "account" or _shared_public_numbers(cards)))
-        if not verified_contact or not _same_unit_proof(a, b, for_repeat=True):
-            return "Для слияния нужны подтверждённые квартира и контакт агента."
+        if not _repeat_contact_confirmed(cards, agents):
+            return "Нужно подтвердить общий контакт агента."
+        if not _same_unit_proof(a, b, for_repeat=True):
+            return "Нужно подтвердить, что это одна квартира."
         if _competing_version(conn, cards):
             return "Есть другая карточка этого агента, которая тоже подходит к сообщению."
 
@@ -1426,7 +1440,8 @@ def audit_backlog(conn: sqlite3.Connection, limit: int) -> dict:
     )
     SELECT * FROM pending ORDER BY sample,recent DESC,id LIMIT ?""", (limit,)).fetchall()
     report = {"sample": len(pairs), "would_apply": {"repeat": 0, "diff": 0, "market": 0},
-              "held": 0, "changed": 0, "model_errors": 0, "pairs": []}
+              "held": 0, "changed": 0, "model_errors": 0, "model_decisions": dict.fromkeys(_AI_VERDICTS, 0),
+              "held_by_reason": {}, "pairs": []}
     for pair in pairs:
         cards = [_card(conn, pair[key]) for key in ("a", "b")]
         active = all(card and card["is_active"] for card in cards)
@@ -1445,15 +1460,56 @@ def audit_backlog(conn: sqlite3.Connection, limit: int) -> dict:
         if not active:
             report["changed"] += 1
             continue
-        held = (_review_guard(conn, cards, ai, auto_merge=True) if _can_auto_apply(ai, auto_merge=True)
-                else "Недостаточно данных или уверенность ниже порога.")
+        report["model_decisions"][ai["verdict"]] += 1
+        model_reason = ai["why"]
+        if ai["verdict"] == "unsure":
+            held = "Модель не выбрала вариант."
+        elif ai["confidence"] is None:
+            held = "Модель не указала корректную уверенность."
+        elif not _can_auto_apply(ai, auto_merge=True):
+            held = f"Уверенность ниже {AI_AUTO_CONFIDENCE:.0%}."
+        else:
+            held = _review_guard(conn, cards, ai, auto_merge=True)
         if held:
             report["held"] += 1
+            reasons = report["held_by_reason"]
+            reasons[held] = reasons.get(held, 0) + 1
         else:
             report["would_apply"][ai["verdict"]] += 1
         report["pairs"].append({"id": pair["id"], "listings": [pair["a"], pair["b"]], "kind": pair["kind"],
                                 "previous": _read_ai(pair["ai"]).get("verdict"), "decision": ai["verdict"],
-                                "confidence": ai["confidence"], "keep_id": ai.get("keep_id"), "reason": held or ai["why"]})
+                                "confidence": ai["confidence"], "keep_id": ai.get("keep_id"), "reason": held or ai["why"],
+                                "model_reason": model_reason})
+    return report
+
+
+def inspect_review_pairs(conn: sqlite3.Connection, pair_ids: list[int]) -> list[dict]:
+    """Показывает основания проверки пары без запросов к модели."""
+    from . import phonegroups
+
+    phonegroups.refresh(conn)
+    report = []
+    for pid in dict.fromkeys(pair_ids):
+        pair = conn.execute("SELECT a,b,status,ai FROM dup_pairs WHERE id=?", (pid,)).fetchone()
+        if not pair:
+            report.append({"id": pid, "reason": "Пара отсутствует в базе."})
+            continue
+        cards = [_card(conn, pair[key]) for key in ("a", "b")]
+        result = {"id": pid, "status": pair["status"], "listings": [pair["a"], pair["b"]],
+                  "saved_verdict": _read_ai(pair["ai"]).get("verdict")}
+        if not all(card and card["is_active"] for card in cards) or pair["status"] != "open":
+            report.append(result)
+            continue
+        agents = [offers.agent_key(card) for card in cards]
+        result.update({
+            "text_matches": _review_text_matches(*cards),
+            "shared_number_in_both_texts": _shared_review_phones(cards),
+            "sender_used_as_contact": [card["sender_only_contacts"] for card in cards],
+            "confirmed_contact": _repeat_contact_confirmed(cards, agents),
+            "property_evidence": _same_unit_proof(*cards, for_repeat=True),
+            "hold_if_repeat": _review_guard(conn, cards, {"verdict": "repeat"}, auto_merge=True),
+        })
+        report.append(result)
     return report
 
 
@@ -1466,19 +1522,20 @@ if __name__ == "__main__":
     mode = cli.add_mutually_exclusive_group()
     mode.add_argument("--backlog", action="store_true", help="один раз разобрать накопившиеся пары через DeepSeek")
     mode.add_argument("--audit", action="store_true", help="проверить выборку накопившихся пар без записи в базу")
+    mode.add_argument("--inspect", nargs="+", type=int, metavar="PAIR_ID", help="показать признаки пар без DeepSeek")
     cli.add_argument("--limit", type=int, default=30, help="размер выборки для --audit (по умолчанию 30)")
     args = cli.parse_args()
     if (args.backlog or args.audit) and not config.DEEPSEEK_API_KEY:
         cli.exit(1, "Не задан DEEPSEEK_API_KEY в контейнере worker.\n")
-    if args.audit:
+    if args.audit or args.inspect:
         if args.limit < 1:
             cli.error("--limit должен быть больше 0")
         uri = Path(config.DB_PATH).resolve().as_uri() + "?mode=ro"
         with closing(sqlite3.connect(uri, uri=True, timeout=30)) as source:
             source.row_factory = sqlite3.Row
-            report = audit_backlog(source, args.limit)
+            report = inspect_review_pairs(source, args.inspect) if args.inspect else audit_backlog(source, args.limit)
         print(json.dumps(report, ensure_ascii=False, indent=2))
-        cli.exit(int(bool(report["model_errors"])))
+        cli.exit(int(bool(args.audit and report["model_errors"])))
     c = _retry_database(db.get, wait_for_db=True) if args.backlog else db.get()
     if args.backlog:
         try:
