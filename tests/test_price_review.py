@@ -1,7 +1,7 @@
 import json
 import time
 
-from app import accounts, agent, brain, hooks, ingest, llm, pricefix, search
+from app import accounts, agent, brain, hooks, ingest, llm, p0fix, pricefix, search
 
 
 def doubtful(conn, text, price):
@@ -56,3 +56,29 @@ def test_agents_correct_price_without_teaching_global_rules(conn):
     assert agent.edit_listing(conn, user, lid, {"price": "5,6"})[0]
     assert tuple(conn.execute("SELECT price,price_doubt FROM listings WHERE id=?", (lid,)).fetchone()) == (5_600_000, None)
     assert conn.execute("SELECT COUNT(*) FROM learned_rules WHERE kind IN ('frag_price','price_notation')").fetchone()[0] == 0
+
+
+def test_text_price_mismatch_enters_queue_and_reopens_when_amount_changes(conn):
+    lid = doubtful(conn, "Продам 2-к квартиру 52 м². ЖК Мозаика, ул. Тургенева 50.\nЦена 5 700 000 ₽", 5_400_000)
+    archived = doubtful(conn, "Продам дом 110 м², ул. Красная 30.\nЦена 8 500 000 ₽", 8_000_000)
+    conn.execute("UPDATE listings SET is_active=0 WHERE id=?", (archived,))
+    assert brain.counts(conn)["price"] == 1  # Объект с двумя причинами учитывается один раз.
+    conn.execute("UPDATE listings SET price_doubt=NULL, district=NULL, complex=NULL, street=NULL, settlement=NULL WHERE id=?", (lid,))
+    conn.commit()
+
+    assert brain.counts(conn)["price"] == 1
+    examples = p0fix.prices_report(conn)
+    assert examples["mismatch"] == 1
+    assert examples["examples"][0]["id"] == lid
+    assert examples["examples"][0]["text"] == 5_700_000
+    assert p0fix.price_gap(5_000_000, "Цена 5 150 000 ₽", "sale") is None
+
+    assert ingest.set_price(conn, lid, 5_400_000, user_id=42)["ok"]
+    assert brain.counts(conn)["price"] == p0fix.prices_report(conn)["mismatch"] == 0
+    conn.execute("UPDATE listings SET description=? WHERE id=?", ("Цена 5 900 000 ₽", lid))
+    conn.commit()
+    assert brain.counts(conn)["price"] == p0fix.prices_report(conn)["mismatch"] == 1
+    assert p0fix.prices_report(conn)["examples"][0]["text"] == 5_900_000
+
+    assert ingest.set_price(conn, lid, 5_900_000, user_id=42)["ok"]
+    assert brain.counts(conn)["price"] == p0fix.prices_report(conn)["mismatch"] == 0

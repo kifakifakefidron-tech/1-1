@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
-from . import autolearn, districtmap, learning
+from . import autolearn, districtmap, learning, p0fix
 
 # точный дом (справочник, фид, ваши правки) — надёжно, не проверяем; сомнительно — соседний дом, улица, центр ЖК/района
 _AUTO_GEO = "('feed-cx', 'map-cx', 'geocoder-cx', 'map-district', 'osm-near', 'osm-street', 'osm-corner', 'osm-landmark')"
@@ -62,8 +62,8 @@ QUEUES: list[dict] = [
      "hint": "Сервис применяет сохранённый ответ нейросети. Остаток очереди уменьшается в фоне.",
      "where": "l.parse_dispute IS NOT NULL AND l.admin_fixed = 0"},
     {"key": "price", "mode": "price", "label": "Сомнительные цены",
-     "hint": "Сверьте цену с исходным объявлением. Подтверждённая сумма появится в карточке.",
-     "where": "l.price_doubt = 1", "base": "l.is_active = 1"},
+     "hint": "Проверьте сомнительные суммы и расхождения цены карточки с текстом объявления.",
+     "where": f"(l.price_doubt = 1 OR {p0fix.PENDING_PRICE_GAP} IS NOT NULL)", "base": "l.is_active = 1"},
     {"key": "nodistrict", "mode": "place", "label": "Без района",
      "hint": "Не находятся фильтром по району",
      "where": "l.district IS NULL AND l.settlement IS NULL AND l.admin_fixed = 0 AND l.place_conflict IS NULL"},

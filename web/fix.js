@@ -64,8 +64,10 @@
   async function fetchItem(id) {
     const q = new URLSearchParams({ mode, kind });
     if (id) q.set("id", id);
+    // Цена может снова потребовать проверки после обновления объявления.
+    const exclude = kind === "price" ? ss.skipped : [...ss.done, ...ss.skipped, ...(item ? [item.id] : [])];
     const r = id ? await call(`/api/admin/fix?${q}`)
-      : await call(`/api/admin/fix?${q}`, { exclude: [...ss.done, ...ss.skipped, ...(item ? [item.id] : [])] });
+      : await call(`/api/admin/fix?${q}`, { exclude });
     if (r.status === 403 || r.status === 401) { $("fxDenied").hidden = false; return null; }
     if (!r.ok) {   // 17.11: не молчим — пишем, что именно сломалось (код ответа сервера)
       const msg = r.data.detail || `Не получилось загрузить (ответ сервера ${r.status || "нет"})`;
@@ -138,6 +140,13 @@
       return;
     }
     $("fxTitle").textContent = it.title;
+    const comparedPrice = mode === "price" && it.text_price != null;
+    $("fxPriceCompare").hidden = !comparedPrice;
+    $("fxPrice").hidden = comparedPrice;
+    if (comparedPrice) {
+      $("fxCardPrice").textContent = `${it.price.toLocaleString("ru-RU")} ₽`;
+      $("fxTextPrice").textContent = `${it.text_price.toLocaleString("ru-RU")} ₽`;
+    }
     $("fxPrice").textContent = mode === "price"
       ? (it.price ? `Разобрано: ${it.price.toLocaleString("ru-RU")} ₽` : "Сумма не распознана")
       : price(it.price, it.deal);

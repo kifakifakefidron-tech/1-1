@@ -12,6 +12,10 @@
 .fx-head img { width: 96px; height: 72px; object-fit: cover; border-radius: 12px; flex: 0 0 auto; }
 .fx-head h1 { font: 600 22px/1.2 var(--head); margin: 0 0 4px; }
 .fx-price { font: 600 20px var(--head); }
+.fx-price-compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 14px 0 0; }
+.fx-price-compare > div { padding: 9px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--chip); }
+.fx-price-compare dt { color: var(--ink-2); font-size: 13px; }
+.fx-price-compare dd { margin: 3px 0 0; font: 600 clamp(15px, 4vw, 23px)/1.2 var(--head); font-variant-numeric: tabular-nums; }
 .fx-now { color: var(--ink-2); font-size: 14px; margin-top: 4px; }
 .fx-now b { color: var(--ink); }
 .fx-text { white-space: pre-wrap; word-break: break-word; font: 14px/1.55 var(--body); color: var(--ink-2); background: rgba(0, 0, 0, .12);

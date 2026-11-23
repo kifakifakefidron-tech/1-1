@@ -11,12 +11,15 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
+from functools import lru_cache
 
 from . import db, parser, rules
 
 PRICE_GAP = 0.03
+PENDING_PRICE_GAP = "pending_price_gap(l.price, l.description, l.deal, l.price_gap_reviewed)"
 
 
+@lru_cache(maxsize=20000)
 def text_price(description: str | None, deal: str) -> int | None:
     """Цена, которая написана в тексте объявления (как её понял бы разбор)."""
     return rules.extract_price(description or "", deal) if description else None
@@ -24,10 +27,22 @@ def text_price(description: str | None, deal: str) -> int | None:
 
 def price_gap(price: int | None, description: str | None, deal: str) -> int | None:
     """Цена из текста, если она отличается от цены карточки больше чем на 3 %; иначе None."""
-    tp = text_price(description, deal)
-    if not tp or not price:
+    if not price:
         return None
-    return tp if abs(tp - price) / price > PRICE_GAP else None
+    tp = text_price(description, deal)
+    return tp if tp and abs(tp - price) / price > PRICE_GAP else None
+
+
+def price_review_key(price: int, description: str | None, deal: str) -> str | None:
+    text_amount = price_gap(price, description, deal)
+    return f"{deal}:{price}:{text_amount}" if text_amount is not None else None
+
+
+def pending_price_gap(price: int | None, description: str | None, deal: str, reviewed: str | None) -> int | None:
+    text_amount = price_gap(price, description, deal)
+    if text_amount is None or reviewed == f"{deal}:{price}:{text_amount}":
+        return None
+    return text_amount
 
 
 def phones_report(conn: sqlite3.Connection, apply: bool = False, examples: int = 15) -> dict:
@@ -61,9 +76,9 @@ def phones_report(conn: sqlite3.Connection, apply: bool = False, examples: int =
 def prices_report(conn: sqlite3.Connection, examples: int = 30) -> dict:
     out = []
     n = 0
-    for r in conn.execute("""SELECT id, title, complex, price, deal, description FROM listings
+    for r in conn.execute("""SELECT id, title, complex, price, deal, description, price_gap_reviewed FROM listings
                              WHERE is_active = 1 AND price IS NOT NULL ORDER BY last_seen DESC"""):
-        tp = price_gap(r["price"], r["description"], r["deal"])
+        tp = pending_price_gap(r["price"], r["description"], r["deal"], r["price_gap_reviewed"])
         if tp:
             n += 1
             if len(out) < examples:

@@ -82,8 +82,9 @@
         card(day(o.feed_synced), "фид СТРЕЛ обновлён"),
       ]),
       sec("Автоматические проверки", [
-        ...(o.p0_report ? [card(o.p0_report.phones, "номеров вырезано из описаний"),
-          card(o.p0_report.prices, "цена в карточке ≠ цене в тексте", { warn: o.p0_report.prices > 0 })] : []),
+        ...(o.p0_report?.phones != null ? [card(o.p0_report.phones, "номеров вырезано из описаний")] : []),
+        ...(o.p0_report ? [card(o.p0_report.prices, "цена в карточке ≠ цене в тексте",
+          { warn: o.p0_report.prices > 0, href: "/fix?kind=price" })] : []),
         ...(o.cx_report ? [card(o.cx_report.listings, `объектов: одно название ЖК (групп ${o.cx_report.groups})`)] : []),
         ...(o.geo_daily ? [card((o.geo_daily.rules || 0), "ошибочных правил отключено сегодня")] : []),
         ...(o.geo_cleanup ? [card((o.geo_cleanup.rules || 0) + (o.geo_cleanup.aliases || 0), "плохих правил отключено (уборка)"),
@@ -92,8 +93,8 @@
           card(o.price_report.text, "цен вернули к цене из текста"), card(o.price_report.doubt, "цен «под вопросом»")] : []),
       ]),
     ].join("") + (o.p0_report && o.p0_report.price_examples.length ? `<details class="adm-p0"><summary>Цена в карточке ≠ цене в тексте —
-      ${o.p0_report.prices} (проверьте и поправьте цену в окне объекта)</summary><ul>${o.p0_report.price_examples.map((e) =>
-        `<li><a href="/?open=${e.id}" target="_blank">${esc(e.title)}</a> — в карточке ${esc(Number(e.card).toLocaleString("ru-RU"))} ₽,
+      ${o.p0_report.prices}</summary><p><a href="/fix?kind=price">Открыть «Сомнительные цены»</a></p><ul>${o.p0_report.price_examples.map((e) =>
+        `<li><a href="/fix?kind=price&amp;id=${e.id}">${esc(e.title)}</a> — в карточке ${esc(Number(e.card).toLocaleString("ru-RU"))} ₽,
         в тексте ${esc(Number(e.text).toLocaleString("ru-RU"))} ₽</li>`).join("")}</ul></details>` : "")
       + (o.price_report && o.price_report.examples.length ? `<details class="adm-p0"><summary>Проверка цен: что поменяли
       (каждую правку можно откатить в окне объекта → «История правок»)</summary><ul>${o.price_report.examples.map((e) =>

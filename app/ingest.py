@@ -900,6 +900,8 @@ def set_fields(conn: sqlite3.Connection, listing_id: int, fields: dict, user_id:
 
 def set_price(conn: sqlite3.Connection, listing_id: int, price: int, user_id: int | None = None) -> dict:
     """Админ исправил цену: сохранить, запомнить ошибочную (её больше не принимаем) и выучить для этого текста."""
+    from .p0fix import price_review_key
+
     r = conn.execute("SELECT * FROM listings WHERE id = ?", (listing_id,)).fetchone()
     if r is None:
         return {"error": "не найдено"}
@@ -915,8 +917,10 @@ def set_price(conn: sqlite3.Connection, listing_id: int, price: int, user_id: in
             pass   # старая запись о споре не должна блокировать исправление цены
     # 24.10: правка админа снимает «Цена уточняется» (price_doubt) — раньше плашка висела и после правки
     conn.execute("""UPDATE listings SET price = ?, price_m2 = ?, price_fixed = 1, price_doubt = NULL, parse_dispute = ?,
+                    price_gap_reviewed = ?,
                     price_wrong = CASE WHEN ? != ? THEN ? ELSE price_wrong END WHERE id = ?""",
                  (price, _price_m2(price, r["area"]), dispute_data,
+                  price_review_key(price, r["description"], r["deal"]),
                   old or 0, price, old, listing_id))
     if user_id:
         conn.execute("INSERT INTO listing_edits (listing_id, user_id, ts, field, old, new) VALUES (?,?,?,?,?,?)",

@@ -24,7 +24,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import (accounts, agent, autolearn, callcheck, bankrates, brain, buyers, clients, dashboard, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
-               dupreview, listing_video, market, notify, payments, picks, planner, region, reqexport, search, settings, stats, tg, wappi, widgets, worklog)
+               dupreview, listing_video, market, notify, p0fix, payments, picks, planner, region, reqexport, search, settings, stats, tg, wappi, widgets, worklog)
 from .branding import partner_text
 from .rules import TYPE_LABELS
 
@@ -1413,6 +1413,10 @@ def api_admin_overview(request: Request, body: dict | None = None):
     conn = db.get()
     one = lambda sql, *p: conn.execute(sql, p).fetchone()[0]  # noqa: E731
     now = int(time.time())
+    prices = p0fix.prices_report(conn, examples=40)
+    p0_report = (json.loads(db.get_state(conn, "p0_report") or "null") or {}) | {
+        "prices": prices["mismatch"], "price_examples": prices["examples"],
+    }
     return JSONResponse({
         "listings": one(f"SELECT COUNT(*) FROM listings l WHERE {_VISIBLE}"),
         "life": __import__("app.lifecheck", fromlist=["report"]).report(conn, now),
@@ -1441,7 +1445,7 @@ def api_admin_overview(request: Request, body: dict | None = None):
         "optouts": one("SELECT COUNT(*) FROM optout_phones"),
         "wappi_enabled": config.WAPPI_ENABLED, "payments": payments.available(),
         "price": config.SUB_PRICE, "period_days": config.SUB_DAYS,
-        "p0_report": json.loads(db.get_state(conn, "p0_report") or "null"),
+        "p0_report": p0_report,
         "cx_report": json.loads(db.get_state(conn, "cx_norm_report") or "null"),
         "price_report": json.loads(db.get_state(conn, "price_fix_report") or "null"),
         "geo_cleanup": json.loads(db.get_state(conn, "geo_cleanup_report") or "null"),
@@ -2542,7 +2546,9 @@ def api_admin_place(request: Request, body: dict | None = None):
         price = _parse_admin_price(body.get("price"), row["deal"])
         if price is None:
             return _err("Цена не распознана. Пишите «3,2» (млн) или «3200000».")
-        if price != row["price"] or row["price_doubt"]:
+        if price != row["price"] or row["price_doubt"] or p0fix.pending_price_gap(
+            row["price"], row["description"], row["deal"], row["price_gap_reviewed"],
+        ) is not None:
             ingest.set_price(conn, lid, price, user["id"])
             learned = learned + [f"цена → {_price_text(price, row['deal'])}"]
     d = {**dict(row), "complex": cx, "district": district}
@@ -2641,8 +2647,13 @@ def _fix_item(conn, lid: int, *, price_only: bool = False) -> dict | None:
     r = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
     if r is None:
         return None
-    text = ((r["description"] if price_only and r["source"] != "chat" else None)
-            or r["fragment"] or r["description"] or "")[:2000]
+    text_price = p0fix.pending_price_gap(r["price"], r["description"], r["deal"], r["price_gap_reviewed"]) if price_only else None
+    text = (r["fragment"] or r["description"] or "")[:2000]
+    if price_only and r["description"]:
+        if text_price is not None:
+            text = r["description"]
+        elif r["source"] != "chat":
+            text = r["description"][:2000]
     photos = json.loads(r["photos"] or "[]")
     S = _fix_safe
     item = {k: r[k] for k in ("id", "title", "price", "deal", "type", "rooms", "area", "floor", "floors", "complex",
@@ -2654,7 +2665,7 @@ def _fix_item(conn, lid: int, *, price_only: bool = False) -> dict | None:
         "extra_districts": json.loads(r["extra_districts"] or "[]"),
     }
     if price_only:
-        return item
+        return item | {"text_price": text_price}
     return item | {
         "suggest": S("подсказки районов", lambda: _fix_suggest(conn, r, text), {"districts": [], "complexes": []}),
         "learned": S("выученное", lambda: [label for _, label in geocode.learn_keys(r)], []),
@@ -3081,7 +3092,6 @@ def _admin_fix(request: Request, body: dict | None = None):
         hit = districtmap.district_at(conn, lat, lon)
         return JSONResponse({"district": hit[0] if hit and hit[1] == "district" else None,
                              "complex": districtmap.complex_at(conn, lat, lon)})
-    left = conn.execute(f"SELECT COUNT(*) FROM listings l WHERE {visible} AND {where}").fetchone()[0]
     exclude = {int(x) for x in q.get("exclude", "").split(",") if x.strip().isdigit()}
     if request.method == "POST":   # разобранные/пропущенные — в теле запроса, не в адресе (длина адреса ограничена)
         exclude |= {int(x) for x in ((body or {}).get("exclude") or []) if str(x).isdigit()}
@@ -3114,7 +3124,8 @@ def _admin_fix(request: Request, body: dict | None = None):
     complexes = [] if mode == "price" else sorted({c.name for _, c in geo._complexes()} | {r[0] for r in conn.execute(
         "SELECT DISTINCT complex FROM listings WHERE complex IS NOT NULL AND is_active = 1")},
         key=lambda x: x.lower().replace("ё", "е"))
-    return JSONResponse({"item": item, "group": group, "left": left, "mode": mode, "kind": kind, "counts": brain.counts(conn),
+    counts = brain.counts(conn)
+    return JSONResponse({"item": item, "group": group, "left": counts[kind], "mode": mode, "kind": kind, "counts": counts,
                          "queues": [{"key": x["key"], "label": x["label"], "hint": x["hint"], "mode": x["mode"]}
                                     for x in brain.QUEUES],
                          "districts": geo.all_district_names(), "complexes": complexes})

@@ -468,6 +468,7 @@ MIGRATIONS = [
     ("listings", "phone_roles", "TEXT"),       # {"+7…": "text" | "sender"} — номер в тексте / прислал в чат
     ("listings", "multi_units", "INTEGER"),
     ("listings", "price_doubt", "INTEGER"),
+    ("listings", "price_gap_reviewed", "TEXT"),
     ("users", "consent_at", "INTEGER"),       # когда дал согласие на обработку ПДн (галочка при входе, документ /consent)
     ("users", "consent_ver", "TEXT"),         # редакция документа согласия (POLICY_DATE)
     ("client_items", "question", "TEXT"),     # последний вопрос клиента из подборки (ответ «нравится» не трогает)    # цена «под вопросом» (pricefix): вне сортировок/фильтров по цене    # «этажи 2 и 6» — в посте несколько квартир (ТЗ «админка-гео» P4.0.2)
@@ -669,8 +670,9 @@ def connect(path: str | None = None) -> sqlite3.Connection:
         Path(p).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(p, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    from . import geo  # noqa: PLC0415 — ключ ЖК для фильтра (разные написания одного ЖК)
+    from . import geo, p0fix  # noqa: PLC0415
     conn.create_function("cxkey", 1, geo.complex_key, deterministic=True)
+    conn.create_function("pending_price_gap", 4, p0fix.pending_price_gap, deterministic=True)
     # Таблицы и обновления базы проверяем один раз на процесс, а не на каждое соединение
     # (у сайта десятки потоков — раньше каждый новый поток прогонял всю схему и брал базу на запись)
     with _ready_lock:
