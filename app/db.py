@@ -560,6 +560,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
                         AND CASE WHEN json_valid(ai) THEN json_extract(ai,'$.verdict')='repeat'
                             AND json_extract(ai,'$.manual_reason')=? END""",
                      ("Для слияния нужны подтверждённые квартира и контакт агента.",))
+    if conn.execute("INSERT OR IGNORE INTO state(key,value) VALUES ('dup_repeat_details_v1','1')").rowcount:
+        conn.execute("""UPDATE dup_pairs SET ai=json_remove(ai,'$.manual_reason')
+                        WHERE status='open' AND COALESCE(user_id,0)=0
+                        AND CASE WHEN json_valid(ai) THEN json_extract(ai,'$.verdict')='repeat'
+                            AND json_extract(ai,'$.manual_reason') IN (?, ?) END""",
+                     ("Нужно подтвердить общий контакт агента.", "Нужно подтвердить, что это одна квартира."))
     # Любая смена цены (чаты, фид, правка агента) запоминает прошлую цену
     conn.execute("""CREATE TRIGGER IF NOT EXISTS trg_price_change AFTER UPDATE OF price ON listings
                     WHEN OLD.price IS NOT NULL AND NEW.price IS NOT NULL AND NEW.price != OLD.price

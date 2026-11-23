@@ -166,6 +166,54 @@ def test_repeat_cannot_treat_forwarder_as_owner_when_advertised_contacts_differ(
     assert not dupreview.review_ai(conn, pid)["applied"]
 
 
+def test_repeat_checks_recorded_contact_and_omitted_unit_details(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    monkeypatch.setattr(config, "DUP_AI_AUTO_MERGE", True)
+    monkeypatch.setattr(llm, "ask_json", lambda *args, **kwargs: {
+        "object": "same", "agent": "same", "confidence": 0.95})
+    phone = "+79000000001"
+    old, fresh = listing(conn, phone), listing(conn, phone)
+    pid = pair(conn, old, fresh)
+    start = "Двухкомнатная квартира\nДомбайская 59\nПлощадь 54 м²\nЭтаж 16\n"
+    body = "Хороший ремонт\nМебель и техника остаются\nВходная дверь заменена\nБалкон с ремонтом\nЦена 6 800 000 рублей"
+    for lid, fragment in ((old, start + "Подъезд 3\nКвартира 106\n" + body), (fresh, start + body)):
+        conn.execute("UPDATE listings SET fragment=?,phone_roles=?,first_seen=? WHERE id=?",
+                     (fragment, json.dumps({phone: "text"}), lid, lid))
+    first, = dupreview.inspect_review_pairs(conn, [pid])
+    assert first["text_matches"] and first["property_evidence"] and not first["confirmed_contact"]
+    for lid in (old, fresh):
+        message_id = ingest.add_message(conn, source="wa", profile_id="test", chat_id="property",
+                                        msg_id=str(lid), sender=phone, text=start + body, ts=lid)
+        conn.execute("INSERT INTO listing_events(listing_id,message_id,ts) VALUES (?,?,?)", (lid, message_id, lid))
+    second, = dupreview.inspect_review_pairs(conn, [pid])
+    assert second["recorded_contact_matches_sender"] == [True, True]
+    assert second["confirmed_contact"] and second["hold_if_repeat"] is None
+
+    other = listing(conn, phone)
+    conn.execute("UPDATE listings SET fragment=? WHERE id=?",
+                 (start + "Подъезд 3\nКвартира 107\n" + body, other))
+    pair(conn, fresh, other)
+    different = pair(conn, old, other)
+    blocked, distinct = dupreview.inspect_review_pairs(conn, [pid, different])
+    assert blocked["hold_if_repeat"] == "Есть другая карточка этого агента, которая тоже подходит к сообщению."
+    assert distinct["hold_if_repeat"] == "Есть расхождение в характеристиках квартиры. Проверьте исходные объявления."
+    conn.execute("UPDATE listings SET is_active=0 WHERE id=?", (other,))
+    cached = dupreview.ask_ai(conn, pid)["ai"]
+    cached["manual_reason"] = "Нужно подтвердить общий контакт агента."
+    conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps(cached), pid))
+    assert pid not in dupreview._auto_review_ids(conn, -1)
+    conn.execute("DELETE FROM state WHERE key='dup_repeat_details_v1'")
+    db._migrate(conn)
+    assert pid in dupreview._auto_review_ids(conn, -1)
+
+    def unexpected_call(*args, **kwargs):
+        raise AssertionError("The cached recommendation should be reused")
+
+    monkeypatch.setattr(llm, "ask_json", unexpected_call)
+    assert dupreview.review_ai(conn, pid)["applied"]
+    assert conn.execute("SELECT merged_into FROM listings WHERE id=?", (old,)).fetchone()[0] == fresh
+
+
 
 def test_queue_starts_from_first_publication_even_if_old_listing_was_refreshed(conn):
     a, b, c, d, e = [listing(conn) for _ in range(5)]

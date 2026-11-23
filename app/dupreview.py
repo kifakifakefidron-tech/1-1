@@ -788,7 +788,8 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
     text = (r["description"] or r["fragment"] or "") if catalog else (r["fragment"] or r["description"] or "")
     # Для каталога берём текст объявления, служебный фрагмент нужен для географии.
     from .rules import find_phones
-    text_ph = list(dict.fromkeys(p[2] for p in find_phones(text)))
+    literal_phones = list(dict.fromkeys(p[2] for p in find_phones(text)))
+    text_ph = literal_phones
     try:
         roles = json.loads(r["phone_roles"] or "{}") if "phone_roles" in r.keys() else {}
     except (TypeError, ValueError):
@@ -801,6 +802,7 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
         ph = normalize_phone(str(raw).split("@")[0])
         if ph and ph not in sender:
             sender.append(ph)
+    only_history_sender = sender[0] if len(sender) == 1 else None
     sender += [ph for ph, role in roles.items() if role == "sender" and ph not in sender]
     # 10.11 (Артём: «иногда номера вообще никакие не показываются»): номер мог быть не в куске текста объекта, а в общей
     # шапке/подвале «портянки» (разбор всё равно привязал его к объекту — колонка phones), а сообщение — уже удалено
@@ -811,6 +813,10 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
         card_ph = []
     sender_only_contacts = (r["source"] == "chat" and bool(card_ph) and not text_ph
                             and all(roles.get(phone) == "sender" for phone in card_ph))
+    contact_matches_history_sender = bool(
+        r["source"] == "chat" and not text_ph and len(card_ph) == 1 and only_history_sender
+        and roles.get(card_ph[0]) == "text" and normalize_phone(card_ph[0]) == only_history_sender
+    )
     text_from = "text"
     if not text_ph:
         text_ph = [p for p in card_ph if roles.get(p) != "sender" and p not in sender]
@@ -831,8 +837,8 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
     version_ts = price_revision_time(conn, r) if r["source"] == "chat" else r["last_seen"]
     return {"text_from": text_from, "sender_name": who,"id": r["id"], "title": r["title"], "text_phones": [_pretty(x) for x in text_ph], "raw_phones": text_ph + sender,
             "sender_phones": [_pretty(x) for x in sender], "type": r["type"], "deal": r["deal"], "price": r["price"],
-            "sender_only_contacts": sender_only_contacts,
-            "literal_phones": [match[2] for match in find_phones(text)],
+            "sender_only_contacts": sender_only_contacts, "contact_matches_history_sender": contact_matches_history_sender,
+            "literal_phones": literal_phones,
             **{key: r[key] for key in ("source", "ext_id", "article", "owner_user_id", "price_doubt", "price_fixed",
                                        "owner_edited_at", "admin_fixed", "multi_units", "sold_at", "video_file",
                                        "kinescope_url", "phone_roles")},
@@ -1036,12 +1042,47 @@ def _current_ai_result(conn, pid, cards, signature):
     return {"ok": True, "pending": True} if saved.get("pending") else {"ok": True, "stale": True}
 
 
+_UNIT_NUMBER = re.compile(r"\b(?:квартира|кв\.?|лот)\s*№\s*(\d{1,5})\b", re.IGNORECASE)
+_DETAIL_LINE = re.compile(
+    r"[^\w\n]*(?P<kind>квартира|подъезд)\s*(?:№\s*|\s+)(?P<number>\d{1,5})[^\w\n]*", re.IGNORECASE
+)
+
+
+def _version_text(text):
+    body, details = [], defaultdict(set)
+    for line in text.splitlines():
+        if match := _DETAIL_LINE.fullmatch(line.strip()):
+            details[match["kind"].casefold()].add(match["number"])
+        else:
+            body.append(line)
+    return "\n".join(body), details
+
+
+def _different_unit_details(a, b) -> bool:
+    number_a, number_b = _unit_number(a), _unit_number(b)
+    if number_a and number_b and number_a != number_b:
+        return True
+    entrance_a = _version_text(a["text"] or "")[1].get("подъезд")
+    entrance_b = _version_text(b["text"] or "")[1].get("подъезд")
+    return bool(entrance_a and entrance_b and entrance_a.isdisjoint(entrance_b))
+
+
 def _review_text_matches(a, b) -> bool:
     from .parser import strip_phones
 
     if a["deal"] != b["deal"] or offers.property_type(a["type"]) != offers.property_type(b["type"]) or _contra(a, b):
         return False
     left, right = (strip_phones(card["text"] or "") for card in (a, b))
+    if _different_unit_details(a, b):
+        return False
+    body_a, details_a = _version_text(left)
+    body_b, details_b = _version_text(right)
+    for key in details_a.keys() | details_b.keys():
+        values = details_a[key] | details_b[key]
+        if len(values) > 1:
+            return False
+    if details_a or details_b:
+        left, right = body_a, body_b
     if (left_words := words(left)) and left_words == words(right):
         return True
     left_key = price_revision_key(left, a["deal"], a["price"])
@@ -1073,14 +1114,14 @@ def _shared_review_phones(cards, *, allow_sender: bool = False) -> bool:
     contacts = []
     for card in cards:
         stored = phonegroups.canon_set(filter(None, map(normalize_phone, card["phones"])))
-        if allow_sender and card["sender_only_contacts"]:
+        if allow_sender and (card["sender_only_contacts"] or card["contact_matches_history_sender"]):
             contacts.append(stored)
         else:
             contacts.append(phonegroups.canon_set(card["literal_phones"]) & stored)
     return bool(contacts[0] & contacts[1])
 
 
-def _alternatives(conn, cards):
+def _alternatives(conn, cards, limit=3):
     a, b = (card["id"] for card in cards)
     return conn.execute("""WITH related(other, score, kind) AS (
             SELECT b, score, status FROM dup_pairs WHERE a IN (?,?) AND b NOT IN (?,?) AND status IN ('open','market')
@@ -1090,8 +1131,8 @@ def _alternatives(conn, cards):
         SELECT l.id,l.settlement,l.street,l.house,l.floor,l.area,l.price,l.fragment
         FROM related r JOIN listings l ON l.id=r.other
         WHERE l.is_active=1 GROUP BY r.other
-        ORDER BY MAX(r.kind='market') DESC, MAX(r.score) DESC, l.first_seen DESC LIMIT 3""",
-        (a, b, a, b, a, b, a, b)).fetchall()
+        ORDER BY MAX(r.kind='market') DESC, MAX(r.score) DESC, l.first_seen DESC LIMIT ?""",
+        (a, b, a, b, a, b, a, b, limit)).fetchall()
 
 
 def _model_review(conn, cards, signature):
@@ -1193,11 +1234,9 @@ def _can_auto_apply(ai: dict, *, auto_merge: bool) -> bool:
             and type(certainty) in (float, int) and AI_AUTO_CONFIDENCE <= certainty <= 1)
 
 
-_UNIT_NUMBER = re.compile(r"\b(?:квартира|кв\.?|лот)\s*№\s*(\d{1,5})\b", re.IGNORECASE)
-
-
 def _unit_number(card):
-    numbers = set(_UNIT_NUMBER.findall(card["text"] or ""))
+    text = card["text"] or ""
+    numbers = _version_text(text)[1].get("квартира", set()) | set(_UNIT_NUMBER.findall(text))
     return next(iter(numbers)) if len(numbers) == 1 else None
 
 
@@ -1237,7 +1276,7 @@ def _excluded_family_join(conn, left_ids, right_ids, *, repeat: bool) -> bool:
 
 def _competing_version(conn, cards) -> bool:
     a, b = cards
-    alternatives = _alternatives(conn, cards)
+    alternatives = _alternatives(conn, cards, limit=-1)
     for row in alternatives:
         other = _card(conn, row["id"])
         if not other or _review_same_agent(offers.agent_key(a), offers.agent_key(other)) is not True:
@@ -1245,6 +1284,7 @@ def _competing_version(conn, cards) -> bool:
         for incoming, existing in ((a, b), (b, a)):
             if _review_text_matches(incoming, other) and (
                     offers.identity_conflict(existing, other)
+                    or _different_unit_details(existing, other)
                     or _excluded_family_join(conn, [existing["id"]], [other["id"]], repeat=True)):
                 return True
     return False
@@ -1269,8 +1309,7 @@ def _review_guard(conn, cards, ai, *, auto_merge: bool) -> str | None:
     verdict = ai["verdict"]
     if verdict == "repeat" and not auto_merge:
         return "Подтвердите объединение кнопкой 1."
-    unit_a, unit_b = _unit_number(a), _unit_number(b)
-    conflict = offers.identity_conflict(a, b) or bool(unit_a and unit_b and unit_a != unit_b)
+    conflict = offers.identity_conflict(a, b) or _different_unit_details(a, b)
     if verdict == "diff":
         if auto_merge and not conflict and _same_unit_proof(a, b, for_repeat=same_agent is True):
             return "Есть подтверждения, что объявления относятся к одной квартире."
@@ -1505,6 +1544,7 @@ def inspect_review_pairs(conn: sqlite3.Connection, pair_ids: list[int]) -> list[
             "text_matches": _review_text_matches(*cards),
             "shared_number_in_both_texts": _shared_review_phones(cards),
             "sender_used_as_contact": [card["sender_only_contacts"] for card in cards],
+            "recorded_contact_matches_sender": [card["contact_matches_history_sender"] for card in cards],
             "confirmed_contact": _repeat_contact_confirmed(cards, agents),
             "property_evidence": _same_unit_proof(*cards, for_repeat=True),
             "hold_if_repeat": _review_guard(conn, cards, {"verdict": "repeat"}, auto_merge=True),
