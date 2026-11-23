@@ -2333,7 +2333,7 @@
     if (rail.dataset.offers !== signature) {
       rail.innerHTML = offers.map((offer, i) => `<button type="button"
         class="offer-price${offer.matches ? "" : " outside"}" data-offer-id="${offer.id}" aria-pressed="false">
-        <span class="offer-source">${offer.site ? "СТРЕЛЫ" : `Агент ${i + 1}`}</span>
+        <span class="offer-source">${offer.site ? "СТРЕЛЫ" : offer.contact_unknown ? "Контакт уточняется" : `Агент ${i + 1}`}</span>
         <b>${esc(offer.price == null ? "Цена уточняется" : fmtPrice(offer.price, deal))}</b>
         ${offer.matches ? "" : '<small class="offer-outside">Вне фильтров</small>'}</button>`).join("");
       rail.dataset.offers = signature;

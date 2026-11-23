@@ -36,8 +36,8 @@ SIM_MIN = 0.8
 PER_ROW = 3
 PRICE_REVISION_SCAN = "dup_price_revision_scan_v2"
 _PRICE_PAIR_SCOPE = "p.kind='price_revision' AND a.price != b.price"
-_AI_VERDICTS = ("repeat", "diff", "market", "unsure")
-_AI_AUTO_VERDICTS = ("diff", "market")
+_AI_VERDICTS = ("repeat", "diff", "market", "linked", "unsure")
+_AI_AUTO_VERDICTS = ("diff", "market", "linked")
 AI_AUTO_CONFIDENCE = 0.7
 _AI_REVIEW_VERSION = 2
 _CONTACT_HOLD = "Нужно подтвердить общий контакт агента."
@@ -319,11 +319,11 @@ def decide(conn: sqlite3.Connection, pid: int, verdict: str, user_id: int = 0, k
             return error
         saved = conn.execute("""UPDATE dup_pairs SET status='open', decided_at=NULL, user_id=?, keep_id=NULL, drop_id=NULL, undo=NULL,
                               kind=CASE WHEN kind='auto_price_revision' THEN 'price_revision' ELSE kind END
-                              WHERE id=? AND status IN ('diff','market','repeat')""", (user_id, pid))
+                              WHERE id=? AND status IN ('diff','market','repeat','linked')""", (user_id, pid))
         if saved.rowcount:
             return {"ok": True, "status": "open"}
-    elif verdict in ("repeat", "market", "diff"):
-        if verdict in ("repeat", "market"):
+    elif verdict in ("repeat", "market", "diff") or (verdict == "linked" and not user_id):
+        if verdict in offers.LINK_STATUSES:
             from . import phonegroups
             rows = conn.execute(f"""SELECT l.id, l.phones, l.ext_id, l.owner_user_id, l.deal, l.photos, l.seen_count
                 FROM dup_pairs p JOIN listings l ON l.id IN (p.a,p.b)
@@ -341,7 +341,7 @@ def decide(conn: sqlite3.Connection, pid: int, verdict: str, user_id: int = 0, k
             if a["deal"] != b["deal"]:
                 return {"ok": False, "error": "У объявлений разные типы сделки. Проверьте продажу и аренду."}
             phonegroups.refresh(conn)
-            if offers.agent_key(a) == offers.agent_key(b):
+            if verdict == "market" and offers.agent_key(a) == offers.agent_key(b):
                 return {"ok": False, "error": "У обеих карточек один агент. Для версий объявления используйте кнопку 1."}
         _discard_stale_ai(conn, pid)
         saved = conn.execute(f"""UPDATE dup_pairs AS p SET status=?, decided_at=?, user_id=?
@@ -766,14 +766,15 @@ def open_count(conn: sqlite3.Connection) -> int:
 def stats(conn: sqlite3.Connection) -> list[dict]:
     """По видам пар: сколько раз вы сказали «один объект» / «разные» (и разделили склейку сервиса)."""
     rows = conn.execute("SELECT kind, status, COUNT(*) FROM dup_pairs GROUP BY kind, status").fetchall()
-    by: dict[str, dict] = {k: dict.fromkeys(("same", "diff", "auto", "open", "market", "repeat"), 0) for k in KINDS}
+    statuses = ("same", "diff", "auto", "open", *offers.LINK_STATUSES)
+    by: dict[str, dict] = {k: dict.fromkeys(statuses, 0) for k in KINDS}
     for kind, st, n in rows:
-        d = by.setdefault(kind, dict.fromkeys(("same", "diff", "auto", "open", "market", "repeat"), 0))
+        d = by.setdefault(kind, dict.fromkeys(statuses, 0))
         key = "diff" if st == "split" else st
         if key in d:
             d[key] += n
     return [{"kind": k, "label": KINDS.get(k, k), **d,
-             "decided": d["market"] + d["repeat"] + d["same"] + d["diff"]}
+             "decided": sum(d[s] for s in (*offers.LINK_STATUSES, "same", "diff"))}
             for k, d in by.items() if any(d.values())]
 
 
@@ -890,11 +891,11 @@ def _queue_data(conn: sqlite3.Connection) -> dict:
         FROM dup_pairs WHERE user_id>0 AND status IN ('repeat','diff','market')
     ) SELECT COUNT(*),COALESCE(SUM(verdict=proposed),0) FROM reviewed
         WHERE proposed IN ('repeat','diff','market')""").fetchone()
-    auto_ai = conn.execute("""SELECT COUNT(*) FROM dup_pairs WHERE status IN ('repeat','diff','market')
+    auto_ai = conn.execute("""SELECT COUNT(*) FROM dup_pairs WHERE status IN ('repeat','diff','market','linked')
         AND COALESCE(user_id,0)=0 AND CASE WHEN json_valid(ai) THEN json_extract(ai,'$.applied')=1 END""").fetchone()[0]
     return {"phone_groups": phonegroups.listing(conn), "counts": {"open": open_count(conn),
             "price": price_open, "auto": counts.get("auto", 0),
-            "done": sum(counts.get(k, 0) for k in ("same", "diff", "split", "market", "repeat"))},
+            "done": sum(counts.get(k, 0) for k in ("same", "diff", "split", *offers.LINK_STATUSES))},
             "price_scan_ready": db.get_state(conn, PRICE_REVISION_SCAN) is not None,
             "price_auto": price_auto,
             "ai_review": {"compared": compared, "agreed": agreed}, "ai_auto": auto_ai,
@@ -921,7 +922,7 @@ def _pair_details(p, a, b):
 def pairs(conn: sqlite3.Connection, status: str = "open", limit: int = 30, offset: int = 0,
           skip: list[int] | None = None) -> dict:
     # 26.10 («database is locked»): только чтение — раньше здесь была запись (tidy), и база ждала, пока посчитаются карточки
-    st = {"auto": ("auto",), "done": ("same", "diff", "split", "market", "repeat")}.get(status, ("open",))
+    st = {"auto": ("auto",), "done": ("same", "diff", "split", *offers.LINK_STATUSES)}.get(status, ("open",))
     source = "dup_pairs p"
     scope = f"p.status IN ({','.join('?' * len(st))})"
     params = list(st)
@@ -966,6 +967,10 @@ _AI_SYSTEM = f"""Сравни два объявления о недвижимо�
 Если совпадает контакт и текст объявления, в том числе при обновлении цены, это версии одного объявления.
 Полностью одинаковый исходный текст с разными номерами только у отправителей может быть повтором одного агента.
 Если есть другие подходящие карточки, сравни признаки, по которым можно отличить их от этой пары.
+Ответ о квартире не зависит от ответа об агенте. Например, совпавший номер квартиры в том же доме позволяет
+ответить object=same, agent=unknown, если контакта нет. Если сервис сообщает «контакты карточек: неясно»,
+оставь agent=unknown. Проставь уверенность по выбранному действию
+(для same с неизвестным агентом — по совпадению квартиры). Сверь факты, подтверждённые сервисом.
 Верни JSON {{"object":"same" | "different" | "unknown", "agent":"same" | "different" | "unknown",
              "confidence": число от 0 до 1, "why": "короткое объяснение по-русски"}}.
 Выбирай unknown для каждого вопроса, по которому недостаточно данных. Когда объекты разные, укажи конкретное различие.
@@ -1141,9 +1146,9 @@ def _shared_review_phones(cards, *, allow_sender: bool = False) -> bool:
 def _alternatives(conn, cards, limit=3):
     a, b = (card["id"] for card in cards)
     return conn.execute("""WITH related(other, score, kind) AS (
-            SELECT b, score, status FROM dup_pairs WHERE a IN (?,?) AND b NOT IN (?,?) AND status IN ('open','market')
+            SELECT b, score, status FROM dup_pairs WHERE a IN (?,?) AND b NOT IN (?,?) AND status IN ('open','market','linked')
             UNION ALL
-            SELECT a, score, status FROM dup_pairs WHERE b IN (?,?) AND a NOT IN (?,?) AND status IN ('open','market')
+            SELECT a, score, status FROM dup_pairs WHERE b IN (?,?) AND a NOT IN (?,?) AND status IN ('open','market','linked')
         )
         SELECT l.id,l.settlement,l.street,l.house,l.floor,l.area,l.price,l.fragment
         FROM related r JOIN listings l ON l.id=r.other
@@ -1181,6 +1186,10 @@ def _model_review(conn, cards, signature):
         "контакты карточек": relation, "один отправитель": bool(senders[0] & senders[1]),
         "совпали номера прямо в текстах": _shared_review_phones(cards),
         "совпал весь исходный текст, номера взяты только у отправителей": sender_copy,
+        "сервис подтвердил совпадение квартиры по проверяемым признакам": (
+            not offers.identity_conflict(*cards) and not _different_unit_details(*cards)
+            and _same_unit_proof(*cards, for_repeat=False, allow_copy=True)
+        ),
         "разница площади в м²": offers.review_area_delta(cards[0]["area"], cards[1]["area"]),
         "совпавших фото": len(offers._photo_keys(json.dumps(cards[0]["photos"])) & offers._photo_keys(json.dumps(cards[1]["photos"]))),
         "другие возможные совпадения": [{**dict(row), "fragment": safe(row["fragment"])[:650]}
@@ -1188,15 +1197,33 @@ def _model_review(conn, cards, signature):
     }
     res = llm.ask_json(_AI_SYSTEM, json.dumps(payload, ensure_ascii=False), max_tokens=550)
     verdict, confidence = res.get("verdict"), res.get("confidence")
-    if "object" in res:
-        verdict = "diff" if res["object"] == "different" else "unsure"
-        if res["object"] == "same" and res.get("agent") in ("same", "different"):
-            verdict = "repeat" if res["agent"] == "same" else "market"
+    physical, agent = res.get("object"), res.get("agent")
+    if same_agent is None or agent not in ("same", "different"):
+        agent = "unknown"
+    if physical == "different":
+        verdict = "diff"
+    elif physical == "same":
+        verdict = {"same": "repeat", "different": "market", "unknown": "linked"}[agent]
+    elif "object" in res:
+        verdict = "unsure"
     ai = {"verdict": verdict if verdict in _AI_VERDICTS else "unsure",
+          "object": physical if physical in ("same", "different") else "unknown",
+          "agent": agent,
           "confidence": confidence if type(confidence) in (int, float) and 0 <= confidence <= 1 else None,
           "why": partner_text(safe(str(res.get("why") or "")))[:400],
           "ts": time.time(), "signature": signature}
     return _with_recommended_keep(ai, cards)
+
+
+_LEGACY_PROPERTY_REVIEW = f"""json_extract(p.ai,'$.verdict')='unsure'
+    AND json_extract(p.ai,'$.object') IS NULL
+    AND json_type(p.ai,'$.confidence') IN ('integer','real')
+    AND json_extract(p.ai,'$.confidence') BETWEEN {AI_AUTO_CONFIDENCE} AND 1
+    AND a.deal=b.deal AND a.type IN ('flat','new') AND b.type IN ('flat','new')
+    AND a.street=b.street AND a.house=b.house AND a.floor=b.floor AND a.rooms=b.rooms
+    AND ABS(a.area-b.area)<={offers.REVIEW_AREA_TOLERANCE_M2}
+    AND ((a.source='chat' AND COALESCE(a.phones,'[]')='[]' AND a.owner_user_id IS NULL)
+      OR (b.source='chat' AND COALESCE(b.phones,'[]')='[]' AND b.owner_user_id IS NULL))"""
 
 
 def ask_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False, checked_since: float | None = None) -> dict:
@@ -1213,7 +1240,12 @@ def ask_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False, che
     signature = _ai_signature(cards)
     previous = _read_ai(p["ai"])
     if _current_review(previous, signature, checked_since):
-        return {"ok": True, "ai": _with_recommended_keep(previous, cards)}
+        revisit = (previous.get("verdict") == "unsure" and previous.get("object") is None and conn.execute(
+            f"""SELECT 1 FROM dup_pairs p JOIN listings a ON a.id=p.a JOIN listings b ON b.id=p.b
+                WHERE p.id=? AND CASE WHEN json_valid(p.ai) THEN {_LEGACY_PROPERTY_REVIEW} END""", (pid,),
+        ).fetchone())
+        if not revisit:
+            return {"ok": True, "ai": _with_recommended_keep(previous, cards)}
     now = int(time.time())
     if (previous.get("pending") and previous.get("signature") == signature
             and isinstance(previous.get("ts"), int) and now - previous["ts"] < _AI_LEASE_SECONDS):
@@ -1264,7 +1296,35 @@ def _unit_number(card):
     return next(iter(numbers)) if len(numbers) == 1 else None
 
 
-def _same_unit_proof(a, b, *, for_repeat: bool) -> bool:
+_AREA_BREAKDOWN = re.compile(r"\bплощадь\s*[:–—-]?\s*\d+(?:[.,]\d+)?\s*/\s*\d+(?:[.,]\d+)?\s*/\s*\d+(?:[.,]\d+)?", re.I)
+
+
+def _property_copy_key(card) -> str | None:
+    from .parser import strip_phones
+    from .rules import normalize_digits, explicit_price_span
+
+    text = normalize_digits(strip_phones(card["text"] or ""))
+    if not _AREA_BREAKDOWN.search(text):
+        return None
+    span = explicit_price_span(text, card["deal"])
+    if not span or span[0] != card["price"]:
+        return None
+    _, start, end = span
+    lines = (text[:start] + text[end:]).strip().splitlines()
+    if not lines:
+        return None
+    complex_name = words(card["complex"])
+    district = f"район {words(card['district'])}"
+    base_complex = re.sub(r"\s+\d+$", "", complex_name)
+    if card["district"] and words(lines[0]) in {district, f"{district} {base_complex}"}:
+        lines = lines[1:]
+    core = f" {words(' '.join(lines))} "
+    if complex_name:
+        core = core.replace(f" жк {complex_name} ", " ")
+    return core.strip() if len(core.split()) >= 12 else None
+
+
+def _same_unit_proof(a, b, *, for_repeat: bool, allow_copy: bool = False) -> bool:
     street, house = offers.street_key(a["street"]), offers.house_key(a["house"])
     same_building = (street and house and street == offers.street_key(b["street"])
                      and house == offers.house_key(b["house"]))
@@ -1280,6 +1340,10 @@ def _same_unit_proof(a, b, *, for_repeat: bool) -> bool:
     photos_a, photos_b = (offers._photo_keys(json.dumps(card["photos"])) for card in (a, b))
     if len(photos_a & photos_b) >= 2:
         return True
+    if allow_copy and a["price"] and a["price"] == b["price"] and not (a["price_doubt"] or b["price_doubt"]):
+        key = _property_copy_key(a)
+        if key and key == _property_copy_key(b):
+            return True
     return for_repeat and _review_text_matches(a, b) and min(len(words(card["text"]).split()) for card in (a, b)) >= 12
 
 
@@ -1327,15 +1391,15 @@ def _review_guard(conn, cards, ai, *, auto_merge: bool) -> str | None:
     phonegroups.refresh(conn)
     agents = [offers.agent_key(card) for card in cards]
     same_agent = _review_same_agent(*agents)
-    if (ai["verdict"] == "market" and same_agent is True and _review_text_matches(a, b)):
-        ai.update(_with_recommended_keep({**ai, "verdict": "repeat", "model_verdict": "market",
+    if ai["verdict"] in ("market", "linked") and same_agent is True and _review_text_matches(a, b):
+        ai.update(_with_recommended_keep({**ai, "verdict": "repeat", "model_verdict": ai["verdict"],
                                           "why": "Совпали текст объявления и агент."}, cards))
     verdict = ai["verdict"]
     if verdict == "repeat" and not auto_merge:
         return "Подтвердите объединение кнопкой 1."
     conflict = offers.identity_conflict(a, b) or _different_unit_details(a, b)
     if verdict == "diff":
-        if auto_merge and not conflict and _same_unit_proof(a, b, for_repeat=same_agent is True):
+        if auto_merge and not conflict and _same_unit_proof(a, b, for_repeat=same_agent is True, allow_copy=True):
             return "Есть подтверждения, что объявления относятся к одной квартире."
         return None
     if conflict:
@@ -1345,6 +1409,11 @@ def _review_guard(conn, cards, ai, *, auto_merge: bool) -> str | None:
             return "Контакты принадлежат одному агенту. Для версий объявления используйте кнопку 1."
         if auto_merge and (same_agent is None or not _same_unit_proof(a, b, for_repeat=False)):
             return "Нужны подтверждения квартиры и самостоятельных предложений обоих агентов."
+    if verdict == "linked":
+        if same_agent is True:
+            return "Агент известен. Для объединения версий нужно совпадение текста и контакта."
+        if any(card["multi_units"] for card in cards) or not _same_unit_proof(a, b, for_repeat=False, allow_copy=True):
+            return "Нужно подтвердить квартиру по её номеру, фотографиям или совпадающему подробному описанию."
     if verdict == "repeat":
         if any(card["source"] != "chat" or card["ext_id"] or card["multi_units"] or card["price_doubt"] or card["price_fixed"]
                or card["admin_fixed"] or card["owner_edited_at"] or card["sold_at"] or card["video_file"]
@@ -1360,7 +1429,7 @@ def _review_guard(conn, cards, ai, *, auto_merge: bool) -> str | None:
     left, right = (a["id"], b["id"])
     if _excluded_family_join(conn, [left], [right], repeat=verdict == "repeat"):
         return "Связь противоречит решению по другой версии объявления."
-    if auto_merge and conn.execute("""SELECT 1 FROM dup_pairs WHERE status='market'
+    if (auto_merge or verdict == "linked") and conn.execute("""SELECT 1 FROM dup_pairs WHERE status IN ('market','linked')
                                       AND (a IN (?,?) OR b IN (?,?)) LIMIT 1""", (left, right, left, right)).fetchone():
         groups = offers.groups(conn)
         left_group = groups.get(left, (a,))
@@ -1416,16 +1485,16 @@ def review_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False, 
 
 def _auto_review_ids(conn: sqlite3.Connection, limit: int, *, include_pending: bool = False,
                      include_reviewed: bool = False) -> list[int]:
-    return [pid for (pid,) in conn.execute("""SELECT p.id FROM dup_pairs p
+    return [pid for (pid,) in conn.execute(f"""SELECT p.id FROM dup_pairs p
         JOIN listings a ON a.id=p.a JOIN listings b ON b.id=p.b
         WHERE p.status='open' AND a.is_active=1 AND b.is_active=1
         AND CASE WHEN ? THEN 1
                  WHEN COALESCE(p.user_id,0)!=0 THEN 0
                  WHEN NOT json_valid(p.ai) THEN 1
                  WHEN json_extract(p.ai,'$.pending') THEN (? OR COALESCE(json_extract(p.ai,'$.ts'),0)<=?)
-                  WHEN json_extract(p.ai,'$.verdict')='unsure' THEN 0
+                  WHEN json_extract(p.ai,'$.verdict')='unsure' THEN {_LEGACY_PROPERTY_REVIEW}
                   WHEN json_extract(p.ai,'$.verdict')='repeat' AND NOT ? THEN 0
-                  WHEN json_extract(p.ai,'$.verdict') IN (?,?,'repeat')
+                  WHEN json_extract(p.ai,'$.verdict') IN (?,?,?,'repeat')
                    THEN (json_extract(p.ai,'$.manual_reason') IS NULL
                      OR (json_extract(p.ai,'$.verdict')='repeat' AND json_extract(p.ai,'$.manual_reason')=?
                          AND json_extract(p.ai,'$.contact_review_version') IS NOT ?))
@@ -1472,9 +1541,9 @@ def review_backlog(conn: sqlite3.Connection, *, recheck: bool = False) -> dict[s
         lambda: _auto_review_ids(conn, -1, include_pending=True, include_reviewed=recheck), wait_for_db=True,
     )
     stats = {"total": len(pair_ids), "applied": 0, "manual": 0, "changed": 0}
-    actions = "1, 2 и 3" if config.DUP_AI_AUTO_MERGE else "2 и 3"
     stage = "К повторной проверке" if recheck else "К проверке"
-    print(f"{stage} пар: {len(pair_ids)}. Авторазбор для кнопок {actions} от {AI_AUTO_CONFIDENCE:.0%}.", flush=True)
+    merge = "Слияние версий включено." if config.DUP_AI_AUTO_MERGE else "Слияние версий подтверждает администратор."
+    print(f"{stage} пар: {len(pair_ids)}. Порог авторазбора {AI_AUTO_CONFIDENCE:.0%}. {merge}", flush=True)
     for number, pid in enumerate(pair_ids, 1):
         retried = False
         while True:
@@ -1514,7 +1583,7 @@ def audit_backlog(conn: sqlite3.Connection, limit: int) -> dict:
         WHERE p.status='open' AND a.is_active=1 AND b.is_active=1 AND COALESCE(p.user_id,0)=0
     )
     SELECT * FROM pending ORDER BY sample,recent DESC,id LIMIT ?""", (limit,)).fetchall()
-    report = {"sample": len(pairs), "would_apply": {"repeat": 0, "diff": 0, "market": 0},
+    report = {"sample": len(pairs), "would_apply": dict.fromkeys(("repeat", *_AI_AUTO_VERDICTS), 0),
               "held": 0, "changed": 0, "model_errors": 0, "model_decisions": dict.fromkeys(_AI_VERDICTS, 0),
               "held_by_reason": {}, "pairs": []}
     for pair in pairs:

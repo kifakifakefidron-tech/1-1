@@ -14,7 +14,8 @@ from .textnorm import words
 
 
 CHAT_PHOTO = re.compile(r"/photos/\d+/([a-f0-9]{16})\.[a-z0-9]+$")
-LINK_TYPES = "('market','repeat')"
+LINK_STATUSES = ("market", "repeat", "linked")
+LINK_TYPES = str(LINK_STATUSES)
 MERGED_REPEAT = "dup_repeat"
 REVIEW_AREA_TOLERANCE_M2 = 2
 MATCH_FIELDS = ("id, type, deal, rooms, room_kind, area, land, floor, floors, complex, street, house, "
@@ -301,10 +302,10 @@ def first_publication(rows, archived: dict) -> tuple[int, int, int]:
 
 def _build_groups(conn: sqlite3.Connection):
     """Автоматические группы требуют попарного совпадения. Для подтверждённых пар допустима связь через общее предложение."""
-    stored = conn.execute("""
+    stored = conn.execute(f"""
         SELECT a, b, status, CASE WHEN user_id IS NULL OR user_id=0 THEN
             CASE WHEN json_valid(ai) THEN json_extract(ai,'$.applied') END END AS ai_applied
-        FROM dup_pairs WHERE status IN ('market', 'repeat', 'diff', 'split')
+        FROM dup_pairs WHERE (status IN {LINK_TYPES} OR status IN ('diff','split'))
         AND NOT (status = 'market' AND kind = 'offer_photo' AND COALESCE(user_id, 0) = 0)""").fetchall()
     decisions = {(a, b): status for a, b, status, _ in stored}
     aliases = dict(conn.execute("SELECT id, merged_into FROM listings WHERE hidden_reason=? AND merged_into IS NOT NULL",
@@ -327,7 +328,7 @@ def _build_groups(conn: sqlite3.Connection):
             OR l.id IN (SELECT a FROM dup_pairs WHERE status IN {LINK_TYPES}
                         UNION SELECT b FROM dup_pairs WHERE status IN {LINK_TYPES}))""")}
     for a, b, status, ai_applied in stored:
-        if status == "market" and ai_applied and a in rows and b in rows and identity_conflict(rows[a], rows[b]):
+        if status in ("market", "linked") and ai_applied and a in rows and b in rows and identity_conflict(rows[a], rows[b]):
             decisions[a, b] = "diff"
     repeats = _repeat_ids(decisions)
     if aliases:
@@ -336,9 +337,9 @@ def _build_groups(conn: sqlite3.Connection):
             pair = tuple(sorted((active_id(a), active_id(b))))
             if pair[0] != pair[1]:
                 decisions.setdefault(pair, status)
-    approved = sorted(((a, b) for (a, b), status in decisions.items() if status in ("repeat", "market")
+    approved = sorted(((a, b) for (a, b), status in decisions.items() if status in LINK_STATUSES
                        and a in rows and b in rows and rows[a]["deal"] == rows[b]["deal"]),
-                      key=lambda pair: (decisions[pair] != "repeat", pair))
+                      key=lambda pair: (decisions[pair] == "linked", decisions[pair] != "repeat", pair))
     pairs = set(approved)
     buckets = defaultdict(list)
     photo_addresses = defaultdict(set)
@@ -385,7 +386,8 @@ def _build_groups(conn: sqlite3.Connection):
     manual_groups = set()
     for a, b in approved + sorted(pairs.difference(approved)):
         left, right = linked.get(a, (a,)), linked.get(b, (b,))
-        confirmed = decisions.get((a, b)) in ("repeat", "market") or left in manual_groups or right in manual_groups
+        status = decisions.get((a, b))
+        confirmed = status != "linked" and (status in ("repeat", "market") or left in manual_groups or right in manual_groups)
         if left != right and all(consistent(i, j, confirmed) for i in left for j in right):
             group = tuple(sorted(left + right))
             linked.update(dict.fromkeys(group, group))
@@ -432,8 +434,9 @@ def summary(group, matching: set[int] | None = None) -> dict:
     offers = [{"id": r["id"], "price": known_price(r), "last_seen": r["last_seen"],
                "source_label": PARTNER_NAME if is_site(r) else None,
                "site": is_site(r),
-               "confirmed_at": r["confirmed_at"], "matches": matching is None or r["id"] in matching} for r in group]
-    offers.sort(key=lambda offer: (not offer["site"], not offer["matches"]))
+               "confirmed_at": r["confirmed_at"], "matches": matching is None or r["id"] in matching,
+               **({"contact_unknown": True} if agent_key(r)[0] == "listing" else {})} for r in group]
+    offers.sort(key=lambda offer: (not offer["site"], not offer["matches"], offer.get("contact_unknown", False)))
     prices = [offer["price"] for offer in offers if offer["matches"] and offer["price"] is not None]
     return {"offers": offers, "matching": sum(offer["matches"] for offer in offers),
             "min_price": min(prices, default=None), "price_range": bool(prices and min(prices) != max(prices))}

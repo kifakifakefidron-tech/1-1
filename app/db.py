@@ -348,6 +348,7 @@ CREATE TABLE IF NOT EXISTS auto_reviews (
 -- status: open — ждёт админа; same — админ склеил; diff — админ: разные (больше не спрашиваем, сами не склеиваем);
 -- auto — склеил сервис; split — склейку разделили (= разные); gone — одной карточки уже нет на сайте;
 -- repeat — версии объявления одного агента; market — один объект с предложениями разных агентов
+-- linked — одна квартира, принадлежность одного из предложений не установлена
 CREATE TABLE IF NOT EXISTS dup_pairs (
     id INTEGER PRIMARY KEY, a INTEGER NOT NULL, b INTEGER NOT NULL, kind TEXT NOT NULL, score REAL, why TEXT,
     status TEXT NOT NULL DEFAULT 'open', keep_id INTEGER, drop_id INTEGER, undo TEXT, ai TEXT,
@@ -549,6 +550,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
                              AND status='open' AND ai IS NOT NULL;
                          INSERT INTO dup_changed(listing_id) VALUES (NEW.id)
                              ON CONFLICT(listing_id) DO UPDATE SET revision=revision+1;
+                     END""")
+    conn.execute(f"""CREATE TRIGGER IF NOT EXISTS trg_dup_link_evidence_v1
+                     AFTER UPDATE OF {','.join(evidence_columns)} ON listings WHEN {changes}
+                     BEGIN
+                         UPDATE dup_pairs SET status='open',ai=NULL,decided_at=NULL
+                             WHERE (a=NEW.id OR b=NEW.id) AND status='linked' AND COALESCE(user_id,0)=0;
                      END""")
     if conn.execute("INSERT OR IGNORE INTO state(key,value) VALUES ('dup_evidence_v2','1')").rowcount:
         conn.execute("UPDATE dup_pairs SET ai=NULL WHERE status='open' AND COALESCE(user_id,0)=0")

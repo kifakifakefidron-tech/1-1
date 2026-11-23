@@ -20,7 +20,8 @@
   const comparing = () => tab === "open" || tab === "price";
   const AI_LABELS = {
     repeat: "1 · Один объект", diff: "2 · Разные объекты",
-    market: "3 · Один объект, разные агенты", unsure: "Недостаточно данных",
+    market: "3 · Один объект, разные агенты",
+    linked: "Один объект · агент уточняется", unsure: "Недостаточно данных",
   };
 
   async function call(url, body) {
@@ -228,7 +229,8 @@
   }
 
   const STATUS = { auto: "Старые автосклейки", same: "Вы: один объект", diff: "Вы: разные", split: "Разделено",
-    repeat: "Версии одного объявления", market: "Один объект · разные агенты" };
+    repeat: "Версии одного объявления", market: "Один объект · разные агенты",
+    linked: "Один объект · агент уточняется" };
   function listHTML() {
     if (!pairs.length) return `<p class="dp-empty">${tab === "auto" ? "Сервис пока ничего не склеивал сам." : "Решений пока нет."}</p>`;
     return `<div class="dp-list">${pairs.map((p) => {
@@ -246,19 +248,20 @@
         ${p.ai?.verdict ? `<small>${p.ai_applied ? `${esc(AI_LABELS[p.ai.verdict])} · ${Math.floor(p.ai.confidence * 100)}%`
           : `DeepSeek предлагал ${esc(AI_LABELS[p.ai.verdict])}`}</small>` : ""}</div>
       ${["auto", "same"].includes(p.status) ? `<button type="button" class="pill light" data-split="${p.id}">Разделить</button>`
-        : ["diff", "market", "repeat"].includes(p.status) ? `<button type="button" class="pill light" data-reopen="${p.id}">${p.merged ? "Отменить объединение" : "Вернуть в очередь"}</button>` : ""}
+        : ["diff", "market", "repeat", "linked"].includes(p.status) ? `<button type="button" class="pill light" data-reopen="${p.id}">${p.merged ? "Отменить объединение" : "Вернуть в очередь"}</button>` : ""}
     </div>`;
     }).join("")}</div>`;
   }
 
   function statsHTML(stats) {
     return stats.map((s) => `<div class="dp-stat"><strong>${esc(s.label)}</strong>
-      <small>Версии ${n0(s.repeat)} · разные агенты ${n0(s.market)} · разные объекты ${n0(s.diff)} · ждут решения ${n0(s.open)}</small></div>`).join("");
+      <small>Версии ${n0(s.repeat)} · разные агенты ${n0(s.market)}${s.linked ? ` · агент уточняется ${n0(s.linked)}` : ""}
+        · разные объекты ${n0(s.diff)} · ждут решения ${n0(s.open)}</small></div>`).join("");
   }
 
   function render() {
     $("dpLead").textContent = data.ai_auto_merge
-      ? "DeepSeek проверяет все три варианта от 70%. Карточки объединяются после проверки квартиры и контакта."
+      ? "DeepSeek разбирает пары от 70%. Если квартира подтверждена, а агент уточняется, сервис связывает объявления."
       : "DeepSeek применяет решения 2 и 3 от 70%. Объединение по кнопке 1 подтверждает администратор.";
     $("dpTabs").innerHTML = [["open", "Ждут решения", data.counts.open], ["price", "Только цена", data.counts.price],
       ["auto", "Старые автосклейки", data.counts.auto],

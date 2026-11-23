@@ -124,13 +124,100 @@ def test_read_only_audit_estimates_backlog_without_writing(conn, monkeypatch):
     conn.commit()
     conn.execute("PRAGMA query_only=ON")
     report = dupreview.audit_backlog(conn, 10)
-    assert report["would_apply"] == {"repeat": 1, "diff": 0, "market": 0} and report["held"] == 2
-    assert report["model_decisions"] == {"repeat": 1, "diff": 0, "market": 1, "unsure": 1}
-    assert report["held_by_reason"]["Модель не выбрала вариант."] == 1
+    assert report["would_apply"] == {"repeat": 1, "diff": 0, "market": 0, "linked": 0} and report["held"] == 2
+    assert report["model_decisions"] == {"repeat": 1, "diff": 0, "market": 1, "linked": 1, "unsure": 0}
+    assert report["held_by_reason"]["Нужно подтвердить квартиру по её номеру, фотографиям или совпадающему подробному описанию."] == 1
     assert {item["id"] for item in report["pairs"]} == {pid, weak, unknown}
     assert next(item for item in report["pairs"] if item["id"] == unknown)["model_reason"] == "Нужно проверить агентство."
     assert conn.execute("SELECT COUNT(*) FROM dup_pairs WHERE status='open' AND ai IS NULL").fetchone()[0] == 3
     assert conn.execute("SELECT SUM(is_active) FROM listings").fetchone()[0] == 6
+
+
+def _offers_with_an_unknown_contact(conn, *, detail="Предчистовая отделка. Вид на Догма-Парк"):
+    a, b = listing(conn), listing(conn)
+    first = ("● Ивана Беличенко 103 ЖК Самолет 5\n▸2 к.кв.     14/16 МК\nПлощадь: 51/28/11м\n"
+             "Цена: 6 450 000₽\nПредчистовая отделка. Вид на Догма-Парк")
+    second = ("Район Западный Обход. Самолет\n● Ивана Беличенко 103\n▸2 к.кв.     14/16 МК ЖК Самолет 5\n"
+              f"Площадь: 51/28/11м\nЦена: 6.450.000\n{detail}")
+    conn.execute("""UPDATE listings SET area=51,floor=14,floors=16,street='Ивана Беличенко',house='103',
+                    district='Западный обход',complex='Самолет 5',price=6450000 WHERE id IN (?,?)""", (a, b))
+    conn.execute("UPDATE listings SET fragment=?,photos=? WHERE id=?",
+                 (first, json.dumps(["https://example.test/known.jpg"]), a))
+    conn.execute("UPDATE listings SET fragment=?,phones='[]',last_seen=30,photos=? WHERE id=?",
+                 (second, json.dumps(["https://example.test/unknown.jpg"]), b))
+    return a, b, pair(conn, a, b, kind="offer_review")
+
+
+def test_partial_model_answer_links_known_property_and_revisits_legacy_unsure(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    monkeypatch.setattr(config, "DUP_AI_AUTO_MERGE", True)
+    a, b, pid = _offers_with_an_unknown_contact(conn)
+    details = "SELECT id, is_active, price, phones, photos FROM listings ORDER BY id"
+    before = [tuple(r) for r in conn.execute(details)]
+    old = {"verdict": "unsure", "confidence": 0.95, "why": "Совпадает квартира. Агент неизвестен.",
+           "signature": dupreview._ai_signature([dupreview._card(conn, lid) for lid in (a, b)])}
+    conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps(old), pid))
+    calls = []
+
+    def model(system, content, max_tokens):
+        payload = json.loads(content)
+        assert payload["сервис подтвердил совпадение квартиры по проверяемым признакам"]
+        assert payload["контакты карточек"] == "неясно"
+        calls.append(1)
+        return {"object": "same", "agent": "unknown", "confidence": 0.95}
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    assert dupreview.review_backlog(conn) == {"total": 1, "applied": 1, "manual": 0, "changed": 0}
+    assert [tuple(r) for r in conn.execute(details)] == before and calls == [1]
+    history = dupreview.pairs(conn, "done")
+    item, = history["pairs"]
+    assert item["status"] == item["ai"]["verdict"] == "linked" and item["ai_applied"]
+    assert (item["ai"]["object"], item["ai"]["agent"], history["ai_auto"]) == ("same", "unknown", 1)
+    assert history["counts"]["open"] == 0 and history["counts"]["done"] == 1
+    assert history["stats"][0]["linked"] == 1
+    summary = offers.summary(offers.groups(conn)[a])
+    assert [offer["id"] for offer in summary["offers"]] == [a, b]
+    assert summary["offers"][1]["contact_unknown"] is True
+
+    conn.execute("UPDATE listings SET floor=15 WHERE id=?", (b,))
+    assert not offers.groups(conn)
+    assert conn.execute("SELECT status,ai FROM dup_pairs WHERE id=?", (pid,)).fetchone()[:] == ("open", None)
+
+
+def test_unknown_agent_does_not_link_similar_flats_or_override_manual_decisions(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    monkeypatch.setattr(config, "DUP_AI_AUTO_MERGE", True)
+    a, b, pid = _offers_with_an_unknown_contact(conn, detail="С ремонтом. Вид во двор.")
+    monkeypatch.setattr(llm, "ask_json", lambda *args, **kwargs: {
+        "object": "same", "agent": "unknown", "confidence": 0.99})
+    result = dupreview.review_ai(conn, pid)
+    assert not result["applied"] and result["ai"]["manual_reason"]
+    assert dupreview._auto_review_ids(conn, -1) == []
+    assert not offers.groups(conn)
+
+    conn.execute("UPDATE listings SET fragment=replace(fragment,'С ремонтом. Вид во двор.',"
+                 "'Предчистовая отделка. Вид на Догма-Парк') WHERE id=?", (b,))
+    assert dupreview.review_ai(conn, pid)["applied"]
+    assert dupreview.decide(conn, pid, "reopen", user_id=1)["ok"]
+    assert not offers.groups(conn) and not dupreview.review_ai(conn, pid).get("applied")
+    assert dupreview.open_count(conn) == 1
+
+
+def test_review_trusts_verified_contacts_and_checks_conflicting_property_evidence(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    monkeypatch.setattr(config, "DUP_AI_AUTO_MERGE", True)
+    a, b, pid = _offers_with_an_unknown_contact(conn)
+    answer = {"object": "different", "agent": "different", "confidence": 0.98}
+    monkeypatch.setattr(llm, "ask_json", lambda *args, **kwargs: answer)
+    result = dupreview.review_ai(conn, pid)
+    assert not result["applied"] and result["ai"]["manual_reason"].startswith("Есть подтверждения")
+    assert dupreview.open_count(conn) == 1
+
+    conn.execute("UPDATE dup_pairs SET ai=NULL WHERE id=?", (pid,))
+    answer["object"] = "same"
+    result = dupreview.review_ai(conn, pid)
+    assert result["applied"] and result["ai"]["verdict"] == "linked" and result["ai"]["agent"] == "unknown"
+    assert conn.execute("SELECT COUNT(*) FROM listings WHERE id IN (?,?) AND is_active=1", (a, b)).fetchone()[0] == 2
 
 
 def test_repeat_accepts_same_number_when_sender_is_the_saved_contact(conn, monkeypatch):
