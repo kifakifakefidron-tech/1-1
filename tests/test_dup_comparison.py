@@ -274,15 +274,15 @@ def test_price_only_repeat_with_context_contact_reuses_saved_model_verdict(conn,
     assert decision["merged"] and decision["ai_applied"]
 
 
-def test_contact_hold_is_revisited_once_when_common_sender_is_unrelated(conn, monkeypatch):
+def test_contact_hold_is_revisited_once_when_all_numbers_differ(conn, monkeypatch):
     monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
     monkeypatch.setattr(config, "DUP_AI_AUTO_MERGE", True)
-    declared, sender = "+79000000054", "+79000000055"
+    declared, sender, other_sender = "+79000000054", "+79000000055", "+79000000056"
     old, fresh, pid = _confirmed_versions(conn)
-    for lid, phone, role in ((old, declared, "text"), (fresh, sender, "sender")):
+    for lid, phone, sending_number in ((old, declared, other_sender), (fresh, sender, sender)):
         text = conn.execute("SELECT fragment FROM listings WHERE id=?", (lid,)).fetchone()[0]
         conn.execute("UPDATE listings SET phones=?,phone_roles=?,fragment=? WHERE id=?",
-                     (json.dumps([phone]), json.dumps({phone: role, sender: "sender"}),
+                     (json.dumps([phone]), json.dumps({phone: "text", sending_number: "sender"}),
                       text.rsplit("\n", 1)[0], lid))
     calls = []
 
@@ -293,27 +293,108 @@ def test_contact_hold_is_revisited_once_when_common_sender_is_unrelated(conn, mo
     monkeypatch.setattr(llm, "ask_json", model)
     ai = dupreview.ask_ai(conn, pid)["ai"]
     ai["manual_reason"] = "Нужно подтвердить общий контакт агента."
+    ai["contact_review_version"] = 1
     conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps(ai), pid))
     assert dupreview.auto_review(conn) == {"applied": 0, "manual": 1, "retry": 0}
     assert dupreview.auto_review(conn) == {}
     assert len(calls) == 1 and dupreview.open_count(conn) == 1
 
 
-def test_repeat_cannot_treat_forwarder_as_owner_when_advertised_contacts_differ(conn, monkeypatch):
+def test_repeat_accepts_same_chat_sender_with_different_advertised_numbers(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    monkeypatch.setattr(config, "DUP_AI_AUTO_MERGE", True)
+
+    def model(system, content, max_tokens):
+        payload = json.loads(content)
+        assert payload["один отправитель"] and payload["есть общий номер в двух карточках"]
+        assert payload["контакты карточек"] == "совпадают"
+        assert not payload["совпали номера прямо в текстах"]
+        assert not payload["номер объявления совпал с отправителем другой карточки"]
+        assert "79000000003" not in content
+        return {"object": "same", "agent": "different", "confidence": 0.99}
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    old, fresh, pid = _confirmed_versions(conn)
+    for lid, contact in ((old, "+79000000001"), (fresh, "+79000000002")):
+        conn.execute("""UPDATE listings SET phones=?,phone_roles=?,fragment=replace(fragment,?,?) WHERE id=?""",
+                     (json.dumps([contact]), json.dumps({contact: "text"}), "+79000000001", contact, lid))
+        message = ingest.add_message(conn, source="wa", profile_id="test", chat_id="sale", msg_id=str(lid),
+                                     sender="79000000003@c.us", text="Повтор объявления", ts=lid)
+        conn.execute("INSERT INTO listing_events(listing_id,message_id,ts) VALUES (?,?,?)", (lid, message, lid))
+    result, = dupreview.inspect_review_pairs(conn, [pid])
+    assert result["text_matches"] and result["confirmed_contact"] and result["property_evidence"]
+    assert result["shared_number_in_review"] and result["hold_if_repeat"] is None
+    decision = dupreview.review_ai(conn, pid)
+    assert decision["applied"] and decision["ai"]["agent"] == "same"
+    survivor = conn.execute("SELECT id,price,phones FROM listings WHERE is_active=1").fetchone()
+    assert tuple(survivor) == (fresh, 6700000, json.dumps(["+79000000002"]))
+
+
+def test_advertised_number_can_match_sender_on_either_card(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    monkeypatch.setattr(config, "DUP_AI_AUTO_MERGE", True)
+    calls = []
+
+    def model(system, content, max_tokens):
+        payload = json.loads(content)
+        assert payload["контакты карточек"] == "совпадают"
+        assert payload["номер объявления совпал с отправителем другой карточки"]
+        assert not payload["один отправитель"] and not payload["совпали номера прямо в текстах"]
+        calls.append(payload)
+        return {"object": "same", "agent": "unknown", "confidence": 0.96}
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    for sender_on_fresh in (True, False):
+        old, fresh, pid = _confirmed_versions(conn)
+        sender_card, advertised_card = (fresh, old) if sender_on_fresh else (old, fresh)
+        conn.execute("UPDATE listings SET fragment=replace(fragment,?,?) WHERE id=?",
+                     ("+79000000001", "8 (900) 000-00-01", advertised_card))
+        conn.execute("UPDATE listings SET fragment=replace(fragment,?,?),phones=?,phone_roles=? WHERE id=?",
+                     ("+79000000001", "+79000000007", '["+79000000007"]',
+                      '{"+79000000007":"text","+79000000001":"sender"}', sender_card))
+        assert dupreview.review_ai(conn, pid)["applied"]
+        kept = conn.execute("SELECT price,phones FROM listings WHERE id=? AND is_active=1", (fresh,)).fetchone()
+        assert tuple(kept) == (6700000, '["+79000000007"]' if sender_on_fresh else '["+79000000001"]')
+        assert conn.execute("SELECT merged_into FROM listings WHERE id=?", (old,)).fetchone()[0] == fresh
+    assert len(calls) == 2
+
+
+def test_backlog_reuses_saved_review_for_a_newly_recognized_contact(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    monkeypatch.setattr(config, "DUP_AI_AUTO_MERGE", True)
+
+    def model(*args, **kwargs):
+        raise AssertionError("Готовую оценку квартиры можно применить без нового запроса.")
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    old, fresh, pid = _confirmed_versions(conn)
+    conn.execute("UPDATE listings SET fragment=replace(fragment,?,?),phones=?,phone_roles=? WHERE id=?",
+                 ("+79000000001", "+79000000009", '["+79000000009"]',
+                  '{"+79000000009":"text","+79000000001":"sender"}', fresh))
+    cards = [dupreview._card(conn, lid) for lid in (old, fresh)]
+    saved = {"verdict": "market", "object": "same", "agent": "different", "confidence": 0.95,
+             "manual_reason": "Нужны подтверждения квартиры и самостоятельных предложений обоих агентов.",
+             "signature": dupreview._ai_signature(cards), "contact_review_version": 1}
+    conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps(saved), pid))
+    assert dupreview.review_backlog(conn) == {"total": 1, "applied": 1, "manual": 0, "changed": 0}
+    decided, = dupreview.pairs(conn, "done")["pairs"]
+    assert decided["ai_applied"] and decided["ai"]["verdict"] == "repeat" and decided["keep"] == fresh
+    assert decided["ai"]["agent"] == "same" and dupreview.auto_review(conn) == {}
+
+
+def test_shared_sender_does_not_override_different_apartments(conn, monkeypatch):
     monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
     monkeypatch.setattr(config, "DUP_AI_AUTO_MERGE", True)
     monkeypatch.setattr(llm, "ask_json", lambda *args, **kwargs: {
         "object": "same", "agent": "same", "confidence": 0.99})
     old, fresh, pid = _confirmed_versions(conn)
-    forwarder = "+79000000003"
-    for lid, contact in ((old, "+79000000001"), (fresh, "+79000000002")):
-        conn.execute("""UPDATE listings SET phones=?,phone_roles=?,fragment=replace(fragment,?,?) WHERE id=?""",
-                     (json.dumps([contact, forwarder]), json.dumps({contact: "text", forwarder: "sender"}),
-                      "+79000000001", contact, lid))
-    result, = dupreview.inspect_review_pairs(conn, [pid])
-    assert result["text_matches"] and not result["confirmed_contact"] and result["property_evidence"]
-    assert result["hold_if_repeat"] == "Нужно подтвердить общий контакт агента."
-    assert not dupreview.review_ai(conn, pid)["applied"]
+    conn.execute("UPDATE listings SET fragment=replace(fragment,?,?),phones=?,phone_roles=?,floor=17 WHERE id=?",
+                 ("+79000000001", "+79000000009", '["+79000000009"]',
+                  '{"+79000000009":"text","+79000000001":"sender"}', fresh))
+    result = dupreview.review_ai(conn, pid)
+    assert not result["applied"] and result["ai"]["manual_reason"].startswith("Есть расхождение")
+    assert dupreview.open_count(conn) == 1
+    assert conn.execute("SELECT COUNT(*) FROM listings WHERE id IN (?,?) AND is_active=1", (old, fresh)).fetchone()[0] == 2
 
 
 def test_repeat_checks_recorded_contact_and_omitted_unit_details(conn, monkeypatch):
@@ -330,7 +411,8 @@ def test_repeat_checks_recorded_contact_and_omitted_unit_details(conn, monkeypat
         conn.execute("UPDATE listings SET fragment=?,phone_roles=?,first_seen=? WHERE id=?",
                      (fragment, json.dumps({phone: "text"}), lid, lid))
     first, = dupreview.inspect_review_pairs(conn, [pid])
-    assert first["text_matches"] and first["property_evidence"] and not first["confirmed_contact"]
+    assert first["text_matches"] and first["property_evidence"] and first["confirmed_contact"]
+    assert first["recorded_contact_matches_sender"] == [False, False]
     for lid in (old, fresh):
         message_id = ingest.add_message(conn, source="wa", profile_id="test", chat_id="property",
                                         msg_id=str(lid), sender=phone, text=start + body, ts=lid)

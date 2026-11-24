@@ -41,7 +41,10 @@ _AI_AUTO_VERDICTS = ("diff", "market", "linked")
 AI_AUTO_CONFIDENCE = 0.7
 _AI_REVIEW_VERSION = 2
 _CONTACT_HOLD = "Нужно подтвердить общий контакт агента."
-_CONTACT_REVIEW_VERSION = 1
+_MARKET_HOLD = "Нужны подтверждения квартиры и самостоятельных предложений обоих агентов."
+_LINKED_HOLD = "Нужно подтвердить квартиру по её номеру, фотографиям или совпадающему подробному описанию."
+_CONTACT_HOLDS = (_CONTACT_HOLD, _MARKET_HOLD, _LINKED_HOLD)
+_CONTACT_REVIEW_VERSION = 2
 _AI_RETRY_AT = "dup_ai_retry_at"
 _AI_RETRY_SECONDS = 300
 _AI_LEASE_SECONDS = 180
@@ -963,7 +966,10 @@ _AI_SYSTEM = f"""Сравни два объявления о недвижимо�
 Одинаковая планировка, один ЖК, один отправитель или типовое фото сами по себе не доказывают, что квартира одна.
 Разница площади до {offers.REVIEW_AREA_TOLERANCE_M2} м² включительно допустима из-за округления и сама по себе не означает, что объекты разные.
 Разная цена может быть обычным обновлением. Сумма в ДКП, комиссия и задаток не заменяют цену объявления.
-Отличай номер в тексте объекта от номера переславшего. Разные контакты не доказывают, что квартиры разные.
+Для одной пары общий номер подтверждает одного агента. Сервис сравнивает номера объявлений и отправителей
+между карточками, в том числе номер в объявлении одной карточки с отправителем другой.
+Если есть общий номер в двух карточках, укажи agent=same при совпадении объекта. Сам объект проверь отдельно.
+Разные контакты не доказывают, что квартиры разные.
 Если совпадает контакт и текст объявления, в том числе при обновлении цены, это версии одного объявления.
 Полностью одинаковый исходный текст с разными номерами только у отправителей может быть повтором одного агента.
 Если есть другие подходящие карточки, сравни признаки, по которым можно отличить их от этой пары.
@@ -1106,7 +1112,21 @@ def _review_text_matches(a, b) -> bool:
     return left_key is not None and left_key == price_revision_key(right, b["deal"], b["price"])
 
 
-def _review_same_agent(left, right) -> bool | None:
+def _review_numbers(numbers) -> set[str]:
+    from . import phonegroups
+    from .rules import normalize_phone
+
+    return phonegroups.canon_set(filter(None, map(normalize_phone, numbers)))
+
+
+def _shared_review_phone(cards) -> bool:
+    a, b = cards
+    return bool(_review_numbers(a["raw_phones"]) & _review_numbers(b["raw_phones"]))
+
+
+def _review_same_agent(left, right, *, shared_phone: bool) -> bool | None:
+    if shared_phone:
+        return True
     if left[0] == "listing" or right[0] == "listing":
         return None
     return left == right or (left[0] == right[0] == "phones" and not left[1].isdisjoint(right[1]))
@@ -1122,25 +1142,6 @@ def _matching_sender_copy(conn, cards, agents, *, text_matches: bool) -> bool:
     accounts = conn.execute(f"""SELECT COUNT(DISTINCT user_id) FROM agent_phones
         WHERE phone IN ({','.join('?' * len(phones))}) AND verified_at > 0""", tuple(phones)).fetchone()[0]
     return accounts <= 1
-
-
-def _shared_review_phones(cards, *, allow_sender: bool = False) -> bool:
-    from . import phonegroups
-    from .rules import normalize_phone
-
-    contacts = []
-    for card in cards:
-        stored = phonegroups.canon_set(filter(None, map(normalize_phone, card["phones"])))
-        direct = phonegroups.canon_set(card["literal_phones"]) & stored
-        inherited = set()
-        if allow_sender and (card["sender_only_contacts"] or card["contact_matches_history_sender"]):
-            direct |= stored
-        if allow_sender:
-            inherited = phonegroups.canon_set(filter(None, map(normalize_phone, card["inherited_phones"])))
-        contacts.append((direct, inherited))
-    (direct_a, inherited_a), (direct_b, inherited_b) = contacts
-    # Номер из общей части сообщения подтверждается контактом или отправителем другой версии.
-    return bool(direct_a & (direct_b | inherited_b) or inherited_a & direct_b)
 
 
 def _alternatives(conn, cards, limit=3):
@@ -1159,15 +1160,18 @@ def _alternatives(conn, cards, limit=3):
 
 def _model_review(conn, cards, signature):
     from . import llm, parser, phonegroups
-    from .rules import explicit_price_span, normalize_phone
+    from .rules import explicit_price_span
 
     phonegroups.refresh(conn)
     agents = [offers.agent_key(card) for card in cards]
-    same_agent = _review_same_agent(*agents)
+    shared_phone = _shared_review_phone(cards)
+    same_agent = _review_same_agent(*agents, shared_phone=shared_phone)
     relation = {True: "совпадают", False: "различаются", None: "неясно"}[same_agent]
     sender_copy = same_agent is False and _matching_sender_copy(
         conn, cards, agents, text_matches=_review_text_matches(*cards))
-    senders = [phonegroups.canon_set(filter(None, map(normalize_phone, c["sender_phones"]))) for c in cards]
+    sender_a, sender_b = (_review_numbers(card["sender_phones"]) for card in cards)
+    contact_a, contact_b = (_review_numbers(card["text_phones"]) for card in cards)
+    literal_a, literal_b = (_review_numbers(card["literal_phones"]) for card in cards)
 
     def safe(text):
         return parser.mask_names(parser.strip_phones(text or ""))
@@ -1183,8 +1187,11 @@ def _model_review(conn, cards, signature):
 
     payload = {
         "объявления": [describe(card) for card in cards],
-        "контакты карточек": relation, "один отправитель": bool(senders[0] & senders[1]),
-        "совпали номера прямо в текстах": _shared_review_phones(cards),
+        "контакты карточек": relation,
+        "есть общий номер в двух карточках": shared_phone,
+        "один отправитель": bool(sender_a & sender_b),
+        "номер объявления совпал с отправителем другой карточки": bool((contact_a & sender_b) or (contact_b & sender_a)),
+        "совпали номера прямо в текстах": bool(literal_a & literal_b),
         "совпал весь исходный текст, номера взяты только у отправителей": sender_copy,
         "сервис подтвердил совпадение квартиры по проверяемым признакам": (
             not offers.identity_conflict(*cards) and not _different_unit_details(*cards)
@@ -1198,7 +1205,9 @@ def _model_review(conn, cards, signature):
     res = llm.ask_json(_AI_SYSTEM, json.dumps(payload, ensure_ascii=False), max_tokens=550)
     verdict, confidence = res.get("verdict"), res.get("confidence")
     physical, agent = res.get("object"), res.get("agent")
-    if same_agent is None or agent not in ("same", "different"):
+    if shared_phone:
+        agent = "same"
+    elif same_agent is None or agent not in ("same", "different"):
         agent = "unknown"
     if physical == "different":
         verdict = "diff"
@@ -1285,7 +1294,7 @@ def _can_auto_apply(ai: dict, *, auto_merge: bool) -> bool:
     repeat = ai.get("verdict") == "repeat"
     allowed = ai.get("verdict") in _AI_AUTO_VERDICTS or (auto_merge and repeat)
     reason = ai.get("manual_reason")
-    recheck_contact = repeat and reason == _CONTACT_HOLD and ai.get("contact_review_version") != _CONTACT_REVIEW_VERSION
+    recheck_contact = reason in _CONTACT_HOLDS and ai.get("contact_review_version") != _CONTACT_REVIEW_VERSION
     return (allowed and (not reason or recheck_contact)
             and type(certainty) in (float, int) and AI_AUTO_CONFIDENCE <= certainty <= 1)
 
@@ -1367,10 +1376,13 @@ def _competing_version(conn, cards) -> bool:
     alternatives = _alternatives(conn, cards, limit=-1)
     for row in alternatives:
         other = _card(conn, row["id"])
-        if not other or _review_same_agent(offers.agent_key(a), offers.agent_key(other)) is not True:
+        if not other:
             continue
+        other_agent = offers.agent_key(other)
         for incoming, existing in ((a, b), (b, a)):
-            if _review_text_matches(incoming, other) and (
+            same_agent = _review_same_agent(offers.agent_key(incoming), other_agent,
+                                            shared_phone=_shared_review_phone((incoming, other)))
+            if same_agent is True and _review_text_matches(incoming, other) and (
                     offers.identity_conflict(existing, other)
                     or _different_unit_details(existing, other)
                     or _excluded_family_join(conn, [existing["id"]], [other["id"]], repeat=True)):
@@ -1378,10 +1390,8 @@ def _competing_version(conn, cards) -> bool:
     return False
 
 
-def _repeat_contact_confirmed(cards, agents) -> bool:
-    if _review_same_agent(*agents) is not True:
-        return False
-    return agents[0][0] == "account" or _shared_review_phones(cards, allow_sender=_review_text_matches(*cards))
+def _repeat_contact_confirmed(agents, *, shared_phone: bool) -> bool:
+    return shared_phone or (agents[0][0] == "account" and agents[0] == agents[1])
 
 
 def _review_guard(conn, cards, ai, *, auto_merge: bool) -> str | None:
@@ -1390,7 +1400,10 @@ def _review_guard(conn, cards, ai, *, auto_merge: bool) -> str | None:
     a, b = cards
     phonegroups.refresh(conn)
     agents = [offers.agent_key(card) for card in cards]
-    same_agent = _review_same_agent(*agents)
+    shared_phone = _shared_review_phone(cards)
+    same_agent = _review_same_agent(*agents, shared_phone=shared_phone)
+    if shared_phone:
+        ai["agent"] = "same"
     if ai["verdict"] in ("market", "linked") and same_agent is True and _review_text_matches(a, b):
         ai.update(_with_recommended_keep({**ai, "verdict": "repeat", "model_verdict": ai["verdict"],
                                           "why": "Совпали текст объявления и агент."}, cards))
@@ -1408,18 +1421,18 @@ def _review_guard(conn, cards, ai, *, auto_merge: bool) -> str | None:
         if same_agent is True:
             return "Контакты принадлежат одному агенту. Для версий объявления используйте кнопку 1."
         if auto_merge and (same_agent is None or not _same_unit_proof(a, b, for_repeat=False)):
-            return "Нужны подтверждения квартиры и самостоятельных предложений обоих агентов."
+            return _MARKET_HOLD
     if verdict == "linked":
         if same_agent is True:
             return "Агент известен. Для объединения версий нужно совпадение текста и контакта."
         if any(card["multi_units"] for card in cards) or not _same_unit_proof(a, b, for_repeat=False, allow_copy=True):
-            return "Нужно подтвердить квартиру по её номеру, фотографиям или совпадающему подробному описанию."
+            return _LINKED_HOLD
     if verdict == "repeat":
         if any(card["source"] != "chat" or card["ext_id"] or card["multi_units"] or card["price_doubt"] or card["price_fixed"]
                or card["admin_fixed"] or card["owner_edited_at"] or card["sold_at"] or card["video_file"]
                or card["kinescope_url"] for card in cards):
             return "Есть правки, отдельный источник, видео или данные, которые нужно проверить перед слиянием."
-        if not _repeat_contact_confirmed(cards, agents):
+        if not _repeat_contact_confirmed(agents, shared_phone=shared_phone):
             return _CONTACT_HOLD
         if not _same_unit_proof(a, b, for_repeat=True):
             return "Нужно подтвердить, что это одна квартира."
@@ -1469,7 +1482,7 @@ def review_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False, 
         reason = saved.get("error")
         if reason and (ai["verdict"] != "repeat" or auto_merge):
             ai["manual_reason"] = reason
-            if reason == _CONTACT_HOLD:
+            if reason in _CONTACT_HOLDS:
                 ai["contact_review_version"] = _CONTACT_REVIEW_VERSION
         elif not reason:
             ai.pop("manual_reason", None)
@@ -1496,14 +1509,14 @@ def _auto_review_ids(conn: sqlite3.Connection, limit: int, *, include_pending: b
                   WHEN json_extract(p.ai,'$.verdict')='repeat' AND NOT ? THEN 0
                   WHEN json_extract(p.ai,'$.verdict') IN (?,?,?,'repeat')
                    THEN (json_extract(p.ai,'$.manual_reason') IS NULL
-                     OR (json_extract(p.ai,'$.verdict')='repeat' AND json_extract(p.ai,'$.manual_reason')=?
+                     OR (json_extract(p.ai,'$.manual_reason') IN ({','.join('?' for _ in _CONTACT_HOLDS)})
                          AND json_extract(p.ai,'$.contact_review_version') IS NOT ?))
                    AND json_type(p.ai,'$.confidence') IN ('integer','real')
                    AND json_extract(p.ai,'$.confidence') BETWEEN ? AND 1
                  ELSE 1 END
         ORDER BY MAX(a.first_seen,b.first_seen) DESC,p.score DESC,p.id LIMIT ?""",
         (include_reviewed, include_pending, int(time.time()) - _AI_LEASE_SECONDS, config.DUP_AI_AUTO_MERGE,
-         *_AI_AUTO_VERDICTS, _CONTACT_HOLD, _CONTACT_REVIEW_VERSION, AI_AUTO_CONFIDENCE, limit))]
+         *_AI_AUTO_VERDICTS, *_CONTACT_HOLDS, _CONTACT_REVIEW_VERSION, AI_AUTO_CONFIDENCE, limit))]
 
 
 def _retry_pause(conn: sqlite3.Connection) -> float:
@@ -1645,12 +1658,15 @@ def inspect_review_pairs(conn: sqlite3.Connection, pair_ids: list[int]) -> list[
             report.append(result)
             continue
         agents = [offers.agent_key(card) for card in cards]
+        shared_phone = _shared_review_phone(cards)
+        a, b = cards
         result.update({
             "text_matches": _review_text_matches(*cards),
-            "shared_number_in_both_texts": _shared_review_phones(cards),
+            "shared_number_in_both_texts": bool(_review_numbers(a["literal_phones"]) & _review_numbers(b["literal_phones"])),
+            "shared_number_in_review": shared_phone,
             "sender_used_as_contact": [card["sender_only_contacts"] for card in cards],
             "recorded_contact_matches_sender": [card["contact_matches_history_sender"] for card in cards],
-            "confirmed_contact": _repeat_contact_confirmed(cards, agents),
+            "confirmed_contact": _repeat_contact_confirmed(agents, shared_phone=shared_phone),
             "property_evidence": _same_unit_proof(*cards, for_repeat=True),
             "hold_if_repeat": _review_guard(conn, cards, {"verdict": "repeat"}, auto_merge=True),
         })
