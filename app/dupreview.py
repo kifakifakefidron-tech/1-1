@@ -31,20 +31,18 @@ KINDS = {
     "applet_unit": "Один объект по исходной записи каталога",
     "feed_article": "Совпали артикул и контакт партнёра",
     "offer_peer": "Оба объявления связаны с третьим",
+    "manual_unlink": "Разъединено из карточки",
 }
 SIM_MIN = 0.8
 PER_ROW = 3
 PRICE_REVISION_SCAN = "dup_price_revision_scan_v2"
 _PRICE_PAIR_SCOPE = "p.kind='price_revision' AND a.price != b.price"
-_AI_VERDICTS = ("repeat", "diff", "market", "linked", "unsure")
-_AI_AUTO_VERDICTS = ("diff", "market", "linked")
+_AI_ACTIONS = ("repeat", "diff", "market", "linked")
+_AI_VERDICTS = (*_AI_ACTIONS, "unsure")
+_UNCONFIRMED = "unconfirmed"
+_REVIEWED = ("same", "diff", "split", _UNCONFIRMED, *offers.LINK_STATUSES)
 AI_AUTO_CONFIDENCE = 0.7
 _AI_REVIEW_VERSION = 2
-_CONTACT_HOLD = "Нужно подтвердить общий контакт агента."
-_MARKET_HOLD = "Нужны подтверждения квартиры и самостоятельных предложений обоих агентов."
-_LINKED_HOLD = "Нужно подтвердить квартиру по её номеру, фотографиям или совпадающему подробному описанию."
-_CONTACT_HOLDS = (_CONTACT_HOLD, _MARKET_HOLD, _LINKED_HOLD)
-_CONTACT_REVIEW_VERSION = 2
 _AI_RETRY_AT = "dup_ai_retry_at"
 _AI_RETRY_SECONDS = 300
 _AI_LEASE_SECONDS = 180
@@ -257,7 +255,7 @@ def _merge_repeat(conn, pid, keep, drop, user_id):
     try:
         added = _merge_photos(keep, drop)
     except OSError:
-        return {"ok": False, "error": "Не удалось перенести фотографии. Попробуйте ещё раз."}
+        return {"ok": False, "error": "Не удалось перенести фотографии."}
     k, d = keep["id"], drop["id"]
     now = int(time.time())
     undo = {"photos": added, "owner_before": keep["owner_user_id"],
@@ -313,6 +311,60 @@ def _reopen_repeat(conn, pair):
     return None
 
 
+def latest_merge(conn: sqlite3.Connection, lid: int) -> dict | None:
+    """Следующее объединение, которое можно отменить для открытой карточки."""
+    row = conn.execute("""SELECT p.id,p.status,d.id AS listing_id,d.price,d.price_doubt,d.deal
+        FROM dup_pairs p JOIN listings d ON d.id=p.drop_id JOIN listings k ON k.id=p.keep_id
+        WHERE p.keep_id=? AND k.is_active=1 AND p.drop_id IS NOT NULL AND p.undo IS NOT NULL
+          AND json_valid(p.undo) AND d.is_active=0
+          AND ((p.status='repeat' AND d.hidden_reason=? AND d.merged_into=k.id)
+            OR (p.status IN ('auto','same') AND d.hidden_reason='dup_same'
+                AND (d.merged_into IS NULL OR d.merged_into=k.id)))
+        ORDER BY (p.status='repeat') DESC,
+                 json_array_length(p.undo,'$.previous') DESC,
+                 p.decided_at DESC,p.id DESC LIMIT 1""", (lid, offers.MERGED_REPEAT)).fetchone()
+    if row:
+        return {"id": row["id"], "status": row["status"], "listing_id": row["listing_id"],
+                "price": offers.known_price(row), "deal": row["deal"]}
+    return None
+
+
+def undo_card_merge(conn: sqlite3.Connection, lid: int, pid: int, user_id: int) -> dict:
+    merge = latest_merge(conn, lid)
+    if not merge or merge["id"] != pid:
+        return {"ok": False, "stale": True, "error": "Объединение уже изменилось. Обновите карточку."}
+    if merge["status"] == "repeat":
+        result = decide(conn, pid, "reopen", user_id)
+        if not result["ok"]:
+            return result
+    elif not split(conn, pid, user_id):
+        return {"ok": False, "stale": True, "error": "Объединение уже изменилось. Обновите карточку."}
+    conn.execute("""UPDATE dup_pairs SET status='split',kind='manual_unlink',decided_at=?,user_id=? WHERE id=?""",
+                 (int(time.time()), user_id, pid))
+    return {"ok": True, "status": "split", "listing_id": merge["listing_id"]}
+
+
+def detach_offer(conn: sqlite3.Connection, lid: int, user_id: int) -> dict:
+    """Отделяет открытое предложение от остальных, включая связи по фотографиям."""
+    row = conn.execute("SELECT * FROM listings WHERE id=? AND is_active=1", (lid,)).fetchone()
+    group = offers.for_listing(conn, row) if row else None
+    if not group:
+        return {"ok": False, "stale": True, "error": "Связанные предложения уже изменились. Обновите карточку."}
+    reps = offers.representatives(group, set())
+    lead = reps[lid]["id"]
+    detached = [oid for oid, rep in reps.items() if rep["id"] == lead]
+    remaining = [oid for oid, rep in reps.items() if rep["id"] != lead]
+    if not remaining:
+        return {"ok": False, "stale": True, "error": "В карточке больше нет других предложений."}
+    now = int(time.time())
+    conn.executemany("""INSERT INTO dup_pairs(a,b,kind,status,created_at,decided_at,user_id)
+                        VALUES (?,?,'manual_unlink','split',?,?,?)
+                        ON CONFLICT(a,b) DO UPDATE SET kind=excluded.kind,status=excluded.status,why=NULL,
+                            keep_id=NULL,drop_id=NULL,undo=NULL,decided_at=excluded.decided_at,user_id=excluded.user_id""",
+                     ((*_pair_key(a, b), now, now, user_id) for a in detached for b in remaining))
+    return {"ok": True, "status": "split", "listing_id": lead}
+
+
 def decide(conn: sqlite3.Connection, pid: int, verdict: str, user_id: int = 0, keep_id: int | None = None) -> dict:
     """Сохраняет решение по паре и объединяет версии одного объявления."""
     verdict = "repeat" if verdict == "same" else verdict
@@ -322,10 +374,11 @@ def decide(conn: sqlite3.Connection, pid: int, verdict: str, user_id: int = 0, k
             return error
         saved = conn.execute("""UPDATE dup_pairs SET status='open', decided_at=NULL, user_id=?, keep_id=NULL, drop_id=NULL, undo=NULL,
                               kind=CASE WHEN kind='auto_price_revision' THEN 'price_revision' ELSE kind END
-                              WHERE id=? AND status IN ('diff','market','repeat','linked')""", (user_id, pid))
+                              WHERE id=? AND (status IN ('diff','market','repeat','linked','unconfirmed')
+                                  OR (status='split' AND kind='manual_unlink'))""", (user_id, pid))
         if saved.rowcount:
             return {"ok": True, "status": "open"}
-    elif verdict in ("repeat", "market", "diff") or (verdict == "linked" and not user_id):
+    elif verdict in ("repeat", "market", "diff") or (verdict in ("linked", _UNCONFIRMED) and not user_id):
         if verdict in offers.LINK_STATUSES:
             from . import phonegroups
             rows = conn.execute(f"""SELECT l.id, l.phones, l.ext_id, l.owner_user_id, l.deal, l.photos, l.seen_count
@@ -767,17 +820,17 @@ def open_count(conn: sqlite3.Connection) -> int:
 
 
 def stats(conn: sqlite3.Connection) -> list[dict]:
-    """По видам пар: сколько раз вы сказали «один объект» / «разные» (и разделили склейку сервиса)."""
+    """Количество решений и открытых пар по каждой причине проверки."""
     rows = conn.execute("SELECT kind, status, COUNT(*) FROM dup_pairs GROUP BY kind, status").fetchall()
-    statuses = ("same", "diff", "auto", "open", *offers.LINK_STATUSES)
+    statuses = ("same", "diff", "split", _UNCONFIRMED, "auto", "open", *offers.LINK_STATUSES)
     by: dict[str, dict] = {k: dict.fromkeys(statuses, 0) for k in KINDS}
     for kind, st, n in rows:
         d = by.setdefault(kind, dict.fromkeys(statuses, 0))
-        key = "diff" if st == "split" else st
+        key = "diff" if st == "split" and kind != "manual_unlink" else st
         if key in d:
             d[key] += n
     return [{"kind": k, "label": KINDS.get(k, k), **d,
-             "decided": sum(d[s] for s in (*offers.LINK_STATUSES, "same", "diff"))}
+             "decided": sum(d[s] for s in _REVIEWED)}
             for k, d in by.items() if any(d.values())]
 
 
@@ -898,12 +951,12 @@ def _queue_data(conn: sqlite3.Connection) -> dict:
         AND COALESCE(user_id,0)=0 AND CASE WHEN json_valid(ai) THEN json_extract(ai,'$.applied')=1 END""").fetchone()[0]
     return {"phone_groups": phonegroups.listing(conn), "counts": {"open": open_count(conn),
             "price": price_open, "auto": counts.get("auto", 0),
-            "done": sum(counts.get(k, 0) for k in ("same", "diff", "split", *offers.LINK_STATUSES))},
+            "done": sum(counts.get(k, 0) for k in _REVIEWED)},
             "price_scan_ready": db.get_state(conn, PRICE_REVISION_SCAN) is not None,
             "price_auto": price_auto,
             "ai_review": {"compared": compared, "agreed": agreed}, "ai_auto": auto_ai,
             "stats": stats(conn), "ai_enabled": bool(config.DEEPSEEK_API_KEY),
-            "ai_auto_merge": config.DUP_AI_AUTO_MERGE}
+            "ai_auto_merge": True, "ai_unconfirmed": counts.get(_UNCONFIRMED, 0)}
 
 
 def _pair_details(p, a, b):
@@ -917,6 +970,7 @@ def _pair_details(p, a, b):
             "why": json.loads(p["why"] or "[]"), "status": p["status"], "score": p["score"],
             "ai": ai if ai.get("verdict") in _AI_VERDICTS else None, "decided_at": p["decided_at"],
             "ai_applied": bool(ai.get("applied") and p["status"] == ai.get("verdict") and not p["user_id"]),
+            "manual_override": p["status"] == "open" and bool(p["user_id"]),
             "area_in_tolerance": area_delta is not None and 0 < area_delta <= offers.REVIEW_AREA_TOLERANCE_M2,
             "shared_photos": len(offers._photo_keys(json.dumps(a["photos"])) &
                                  offers._photo_keys(json.dumps(b["photos"])))}
@@ -925,7 +979,7 @@ def _pair_details(p, a, b):
 def pairs(conn: sqlite3.Connection, status: str = "open", limit: int = 30, offset: int = 0,
           skip: list[int] | None = None) -> dict:
     # 26.10 («database is locked»): только чтение — раньше здесь была запись (tidy), и база ждала, пока посчитаются карточки
-    st = {"auto": ("auto",), "done": ("same", "diff", "split", *offers.LINK_STATUSES)}.get(status, ("open",))
+    st = {"auto": ("auto",), "done": _REVIEWED}.get(status, ("open",))
     source = "dup_pairs p"
     scope = f"p.status IN ({','.join('?' * len(st))})"
     params = list(st)
@@ -1205,6 +1259,8 @@ def _model_review(conn, cards, signature):
     res = llm.ask_json(_AI_SYSTEM, json.dumps(payload, ensure_ascii=False), max_tokens=550)
     verdict, confidence = res.get("verdict"), res.get("confidence")
     physical, agent = res.get("object"), res.get("agent")
+    if physical not in ("same", "different", "unknown") and verdict not in _AI_VERDICTS:
+        raise llm.LLMError("В ответе отсутствует решение по паре.")
     if shared_phone:
         agent = "same"
     elif same_agent is None or agent not in ("same", "different"):
@@ -1287,16 +1343,6 @@ def ask_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False, che
     if not saved:
         return _current_ai_result(conn, pid, cards, signature, checked_since)
     return {"ok": True, "ai": ai}
-
-
-def _can_auto_apply(ai: dict, *, auto_merge: bool) -> bool:
-    certainty = ai.get("confidence")
-    repeat = ai.get("verdict") == "repeat"
-    allowed = ai.get("verdict") in _AI_AUTO_VERDICTS or (auto_merge and repeat)
-    reason = ai.get("manual_reason")
-    recheck_contact = reason in _CONTACT_HOLDS and ai.get("contact_review_version") != _CONTACT_REVIEW_VERSION
-    return (allowed and (not reason or recheck_contact)
-            and type(certainty) in (float, int) and AI_AUTO_CONFIDENCE <= certainty <= 1)
 
 
 def _unit_number(card):
@@ -1394,7 +1440,7 @@ def _repeat_contact_confirmed(agents, *, shared_phone: bool) -> bool:
     return shared_phone or (agents[0][0] == "account" and agents[0] == agents[1])
 
 
-def _review_guard(conn, cards, ai, *, auto_merge: bool) -> str | None:
+def _review_guard(conn, cards, ai) -> str | None:
     from . import phonegroups
 
     a, b = cards
@@ -1408,32 +1454,30 @@ def _review_guard(conn, cards, ai, *, auto_merge: bool) -> str | None:
         ai.update(_with_recommended_keep({**ai, "verdict": "repeat", "model_verdict": ai["verdict"],
                                           "why": "Совпали текст объявления и агент."}, cards))
     verdict = ai["verdict"]
-    if verdict == "repeat" and not auto_merge:
-        return "Подтвердите объединение кнопкой 1."
     conflict = offers.identity_conflict(a, b) or _different_unit_details(a, b)
     if verdict == "diff":
-        if auto_merge and not conflict and _same_unit_proof(a, b, for_repeat=same_agent is True, allow_copy=True):
+        if not conflict and _same_unit_proof(a, b, for_repeat=same_agent is True, allow_copy=True):
             return "Есть подтверждения, что объявления относятся к одной квартире."
         return None
     if conflict:
-        return "Есть расхождение в характеристиках квартиры. Проверьте исходные объявления."
+        return "Есть расхождение в характеристиках квартиры."
     if verdict == "market":
         if same_agent is True:
-            return "Контакты принадлежат одному агенту. Для версий объявления используйте кнопку 1."
-        if auto_merge and (same_agent is None or not _same_unit_proof(a, b, for_repeat=False)):
-            return _MARKET_HOLD
+            return "Агент один, совпадение версий объявления не подтверждено."
+        if same_agent is None or not _same_unit_proof(a, b, for_repeat=False):
+            return "Нужны подтверждения квартиры и самостоятельных предложений обоих агентов."
     if verdict == "linked":
         if same_agent is True:
             return "Агент известен. Для объединения версий нужно совпадение текста и контакта."
         if any(card["multi_units"] for card in cards) or not _same_unit_proof(a, b, for_repeat=False, allow_copy=True):
-            return _LINKED_HOLD
+            return "Нужно подтвердить квартиру по её номеру, фотографиям или совпадающему подробному описанию."
     if verdict == "repeat":
         if any(card["source"] != "chat" or card["ext_id"] or card["multi_units"] or card["price_doubt"] or card["price_fixed"]
                or card["admin_fixed"] or card["owner_edited_at"] or card["sold_at"] or card["video_file"]
                or card["kinescope_url"] for card in cards):
-            return "Есть правки, отдельный источник, видео или данные, которые нужно проверить перед слиянием."
+            return "Слияние может затронуть правки, отдельный источник, цену или видео."
         if not _repeat_contact_confirmed(agents, shared_phone=shared_phone):
-            return _CONTACT_HOLD
+            return "Нужно подтвердить общий контакт агента."
         if not _same_unit_proof(a, b, for_repeat=True):
             return "Нужно подтвердить, что это одна квартира."
         if _competing_version(conn, cards):
@@ -1442,7 +1486,7 @@ def _review_guard(conn, cards, ai, *, auto_merge: bool) -> str | None:
     left, right = (a["id"], b["id"])
     if _excluded_family_join(conn, [left], [right], repeat=verdict == "repeat"):
         return "Связь противоречит решению по другой версии объявления."
-    if (auto_merge or verdict == "linked") and conn.execute("""SELECT 1 FROM dup_pairs WHERE status IN ('market','linked')
+    if conn.execute("""SELECT 1 FROM dup_pairs WHERE status IN ('market','linked')
                                       AND (a IN (?,?) OR b IN (?,?)) LIMIT 1""", (left, right, left, right)).fetchone():
         groups = offers.groups(conn)
         left_group = groups.get(left, (a,))
@@ -1454,11 +1498,21 @@ def _review_guard(conn, cards, ai, *, auto_merge: bool) -> str | None:
     return None
 
 
+def _review_reason(conn, cards, ai) -> str | None:
+    if ai["verdict"] == "unsure":
+        return "DeepSeek не определил, одна ли это квартира."
+    certainty = ai.get("confidence")
+    if type(certainty) not in (float, int) or not 0 <= certainty <= 1:
+        return "DeepSeek не указал уверенность."
+    if certainty < AI_AUTO_CONFIDENCE:
+        return f"Уверенность DeepSeek ниже {AI_AUTO_CONFIDENCE:.0%}."
+    return _review_guard(conn, cards, ai)
+
+
 def review_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False, checked_since: float | None = None) -> dict:
     """Перепроверяет данные пары перед применением решения модели."""
     result = ask_ai(conn, pid, wait_for_db=wait_for_db, checked_since=checked_since)
-    auto_merge = config.DUP_AI_AUTO_MERGE
-    if not _can_auto_apply(result.get("ai") or {}, auto_merge=auto_merge):
+    if not result.get("ai"):
         return result
     db.flush(conn)
 
@@ -1473,50 +1527,44 @@ def review_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False, 
         cards = [_card(conn, pair["a"]), _card(conn, pair["b"])]
         if not all(card and card["is_active"] for card in cards) or ai.get("signature") != _ai_signature(cards):
             return {"ok": True, "stale": True}
-        if not _can_auto_apply(ai, auto_merge=auto_merge):
-            return {"ok": True, "ai": ai}
-        reason = _review_guard(conn, cards, ai, auto_merge=auto_merge)
-        saved = {"error": reason} if reason else decide(conn, pid, ai["verdict"], keep_id=ai.get("keep_id"))
+        if ai.get("verdict") not in _AI_VERDICTS:
+            return {"ok": True, "pending": bool(ai.get("pending"))}
+        ai = _with_recommended_keep(ai, cards)
+        reason = _review_reason(conn, cards, ai)
+        verdict = _UNCONFIRMED if reason else ai["verdict"]
+        saved = decide(conn, pid, verdict, keep_id=ai.get("keep_id"))
         if saved.get("stale"):
             return {"ok": True, "stale": True}
-        reason = saved.get("error")
-        if reason and (ai["verdict"] != "repeat" or auto_merge):
-            ai["manual_reason"] = reason
-            if reason in _CONTACT_HOLDS:
-                ai["contact_review_version"] = _CONTACT_REVIEW_VERSION
-        elif not reason:
-            ai.pop("manual_reason", None)
-            ai.pop("contact_review_version", None)
-            ai["applied"] = True
+        if not saved["ok"]:
+            reason = saved["error"]
+            verdict = _UNCONFIRMED
+            if not decide(conn, pid, verdict)["ok"]:
+                return {"ok": True, "stale": True}
+        ai.pop("manual_reason", None)
+        ai.pop("contact_review_version", None)
+        ai["applied"] = not reason
+        if reason:
+            ai["closure_reason"] = reason
+        else:
+            ai.pop("closure_reason", None)
             conn.execute("""INSERT INTO state(key,value) VALUES ('cache_ver',?)
                             ON CONFLICT(key) DO UPDATE SET value=excluded.value""", (str(time.time()),))
         conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps(ai, ensure_ascii=False), pid))
-        return {"ok": True, "ai": ai, "applied": not reason}
+        return {"ok": True, "ai": ai, "applied": not reason, "status": verdict}
 
     return _write_review(conn, apply, wait_for_db=wait_for_db)
 
 
-def _auto_review_ids(conn: sqlite3.Connection, limit: int, *, include_pending: bool = False,
-                     include_reviewed: bool = False) -> list[int]:
-    return [pid for (pid,) in conn.execute(f"""SELECT p.id FROM dup_pairs p
+def _auto_review_ids(conn: sqlite3.Connection, limit: int, *, include_pending: bool = False) -> list[int]:
+    return [pid for (pid,) in conn.execute("""SELECT p.id FROM dup_pairs p
         JOIN listings a ON a.id=p.a JOIN listings b ON b.id=p.b
         WHERE p.status='open' AND a.is_active=1 AND b.is_active=1
-        AND CASE WHEN ? THEN 1
-                 WHEN COALESCE(p.user_id,0)!=0 THEN 0
-                 WHEN NOT json_valid(p.ai) THEN 1
-                 WHEN json_extract(p.ai,'$.pending') THEN (? OR COALESCE(json_extract(p.ai,'$.ts'),0)<=?)
-                  WHEN json_extract(p.ai,'$.verdict')='unsure' THEN {_LEGACY_PROPERTY_REVIEW}
-                  WHEN json_extract(p.ai,'$.verdict')='repeat' AND NOT ? THEN 0
-                  WHEN json_extract(p.ai,'$.verdict') IN (?,?,?,'repeat')
-                   THEN (json_extract(p.ai,'$.manual_reason') IS NULL
-                     OR (json_extract(p.ai,'$.manual_reason') IN ({','.join('?' for _ in _CONTACT_HOLDS)})
-                         AND json_extract(p.ai,'$.contact_review_version') IS NOT ?))
-                   AND json_type(p.ai,'$.confidence') IN ('integer','real')
-                   AND json_extract(p.ai,'$.confidence') BETWEEN ? AND 1
+        AND COALESCE(p.user_id,0)=0
+        AND CASE WHEN ? OR NOT json_valid(p.ai) THEN 1
+                 WHEN json_extract(p.ai,'$.pending') THEN COALESCE(json_extract(p.ai,'$.ts'),0)<=?
                  ELSE 1 END
         ORDER BY MAX(a.first_seen,b.first_seen) DESC,p.score DESC,p.id LIMIT ?""",
-        (include_reviewed, include_pending, int(time.time()) - _AI_LEASE_SECONDS, config.DUP_AI_AUTO_MERGE,
-         *_AI_AUTO_VERDICTS, *_CONTACT_HOLDS, _CONTACT_REVIEW_VERSION, AI_AUTO_CONFIDENCE, limit))]
+        (include_pending, int(time.time()) - _AI_LEASE_SECONDS, limit))]
 
 
 def _retry_pause(conn: sqlite3.Connection) -> float:
@@ -1524,14 +1572,14 @@ def _retry_pause(conn: sqlite3.Connection) -> float:
 
 
 def auto_review(conn: sqlite3.Connection, limit: int = 12, budget_s: float = 12.0) -> dict:
-    """Проверяет открытые пары в фоне, начиная со свежих. Слабые оценки остаются в очереди."""
+    """Проверяет открытые пары в фоне, начиная со свежих."""
     if not config.DEEPSEEK_API_KEY or _retry_pause(conn):
         return {}
     pair_ids = _auto_review_ids(conn, limit)
     if not pair_ids:
         return {}
     deadline = time.monotonic() + budget_s
-    stats = {"applied": 0, "manual": 0, "retry": 0}
+    stats = {"applied": 0, "unconfirmed": 0, "retry": 0}
     for pid in pair_ids:
         if time.monotonic() >= deadline:
             break
@@ -1540,8 +1588,10 @@ def auto_review(conn: sqlite3.Connection, limit: int = 12, budget_s: float = 12.
             db.set_state(conn, _AI_RETRY_AT, str(time.time() + _AI_RETRY_SECONDS))
             stats["retry"] += 1
             break
-        if result.get("ai"):
-            stats["applied" if result.get("applied") else "manual"] += 1
+        if result.get("applied"):
+            stats["applied"] += 1
+        elif result.get("status") == _UNCONFIRMED:
+            stats["unconfirmed"] += 1
     return stats
 
 
@@ -1551,12 +1601,11 @@ def review_backlog(conn: sqlite3.Connection, *, recheck: bool = False) -> dict[s
         raise RuntimeError("Не задан DEEPSEEK_API_KEY в контейнере worker.")
     checked_since = time.time() if recheck else None
     pair_ids = _retry_database(
-        lambda: _auto_review_ids(conn, -1, include_pending=True, include_reviewed=recheck), wait_for_db=True,
+        lambda: _auto_review_ids(conn, -1, include_pending=True), wait_for_db=True,
     )
-    stats = {"total": len(pair_ids), "applied": 0, "manual": 0, "changed": 0}
+    stats = {"total": len(pair_ids), "applied": 0, "unconfirmed": 0, "changed": 0}
     stage = "К повторной проверке" if recheck else "К проверке"
-    merge = "Слияние версий включено." if config.DUP_AI_AUTO_MERGE else "Слияние версий подтверждает администратор."
-    print(f"{stage} пар: {len(pair_ids)}. Порог авторазбора {AI_AUTO_CONFIDENCE:.0%}. {merge}", flush=True)
+    print(f"{stage} {len(pair_ids)} пар. Порог применения решений DeepSeek {AI_AUTO_CONFIDENCE:.0%}.", flush=True)
     for number, pid in enumerate(pair_ids, 1):
         retried = False
         while True:
@@ -1567,19 +1616,20 @@ def review_backlog(conn: sqlite3.Connection, *, recheck: bool = False) -> dict[s
                 _write_review(conn, lambda: db.set_state(conn, _AI_RETRY_AT, str(time.time() + _AI_RETRY_SECONDS)),
                               wait_for_db=True)
                 if retried:
-                    raise RuntimeError(f"DeepSeek снова не ответил. Проверено {number - 1} из {len(pair_ids)} пар.")
+                    raise RuntimeError(f"{result['error']} Проверено {number - 1} из {len(pair_ids)} пар.")
                 retried = True
-                print("DeepSeek временно недоступен. Повтор через 5 минут.", flush=True)
+                print(f"{result['error']} Повтор через 5 минут.", flush=True)
                 continue
             if result.get("pending"):
                 time.sleep(3)
                 continue
             break
-        status = "applied" if result.get("applied") else "manual" if result.get("ai") else "changed"
+        status = "applied" if result.get("applied") else (
+            "unconfirmed" if result.get("status") == _UNCONFIRMED else "changed")
         stats[status] += 1
         if number % 25 == 0:
-            print(f"Проверено {number} из {len(pair_ids)}. Автоматически: {stats['applied']}, "
-                  f"вручную: {stats['manual']}, пары уже изменились: {stats['changed']}.", flush=True)
+            print(f"Проверено {number} из {len(pair_ids)}. Применено решений {stats['applied']}, "
+                  f"оставлено раздельно {stats['unconfirmed']}, изменилось пар {stats['changed']}.", flush=True)
     return stats
 
 
@@ -1596,7 +1646,7 @@ def audit_backlog(conn: sqlite3.Connection, limit: int) -> dict:
         WHERE p.status='open' AND a.is_active=1 AND b.is_active=1 AND COALESCE(p.user_id,0)=0
     )
     SELECT * FROM pending ORDER BY sample,recent DESC,id LIMIT ?""", (limit,)).fetchall()
-    report = {"sample": len(pairs), "would_apply": dict.fromkeys(("repeat", *_AI_AUTO_VERDICTS), 0),
+    report = {"sample": len(pairs), "would_apply": dict.fromkeys(_AI_ACTIONS, 0),
               "held": 0, "changed": 0, "model_errors": 0, "model_decisions": dict.fromkeys(_AI_VERDICTS, 0),
               "held_by_reason": {}, "pairs": []}
     for pair in pairs:
@@ -1619,14 +1669,7 @@ def audit_backlog(conn: sqlite3.Connection, limit: int) -> dict:
             continue
         report["model_decisions"][ai["verdict"]] += 1
         model_reason = ai["why"]
-        if ai["verdict"] == "unsure":
-            held = "Модель не выбрала вариант."
-        elif ai["confidence"] is None:
-            held = "Модель не указала корректную уверенность."
-        elif not _can_auto_apply(ai, auto_merge=True):
-            held = f"Уверенность ниже {AI_AUTO_CONFIDENCE:.0%}."
-        else:
-            held = _review_guard(conn, cards, ai, auto_merge=True)
+        held = _review_reason(conn, cards, ai)
         if held:
             report["held"] += 1
             reasons = report["held_by_reason"]
@@ -1634,7 +1677,8 @@ def audit_backlog(conn: sqlite3.Connection, limit: int) -> dict:
         else:
             report["would_apply"][ai["verdict"]] += 1
         report["pairs"].append({"id": pair["id"], "listings": [pair["a"], pair["b"]], "kind": pair["kind"],
-                                "previous": _read_ai(pair["ai"]).get("verdict"), "decision": ai["verdict"],
+                                "previous": _read_ai(pair["ai"]).get("verdict"),
+                                "decision": _UNCONFIRMED if held else ai["verdict"],
                                 "confidence": ai["confidence"], "keep_id": ai.get("keep_id"), "reason": held or ai["why"],
                                 "model_reason": model_reason})
     return report
@@ -1668,7 +1712,7 @@ def inspect_review_pairs(conn: sqlite3.Connection, pair_ids: list[int]) -> list[
             "recorded_contact_matches_sender": [card["contact_matches_history_sender"] for card in cards],
             "confirmed_contact": _repeat_contact_confirmed(agents, shared_phone=shared_phone),
             "property_evidence": _same_unit_proof(*cards, for_repeat=True),
-            "hold_if_repeat": _review_guard(conn, cards, {"verdict": "repeat"}, auto_merge=True),
+            "hold_if_repeat": _review_guard(conn, cards, {"verdict": "repeat"}),
         })
         report.append(result)
     return report
@@ -1705,9 +1749,9 @@ if __name__ == "__main__":
             report = review_backlog(c, recheck=args.recheck_open)
         except RuntimeError as error:
             cli.exit(1, f"{error} Сохранённые решения уже применены.\n")
-        print(f"Готово. Автоматически: {report['applied']} из {report['total']}. "
-              f"Оставлено вручную: {report['manual']}. Пары уже изменились: {report['changed']}. "
-              f"Всего открытых пар сейчас: {open_count(c)}.")
+        print(f"Готово. Решений DeepSeek применено {report['applied']} из {report['total']}. "
+              f"Оставлено раздельно {report['unconfirmed']}. Изменилось пар {report['changed']}. "
+              f"Открытых пар сейчас {open_count(c)}.")
     else:
         print(scan(c, budget_s=600))
         print("в очереди:", open_count(c))

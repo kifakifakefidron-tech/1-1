@@ -344,11 +344,12 @@ CREATE TABLE IF NOT EXISTS auto_reviews (
     listing_id INTEGER NOT NULL, src TEXT NOT NULL, ok INTEGER NOT NULL, ts INTEGER NOT NULL,
     PRIMARY KEY (listing_id, src)
 );
--- 24.10 (Артём: «сомневается — в спорные, решу сам и обучу»): пары «возможно, один объект» (app/dupreview.py).
--- status: open — ждёт админа; same — админ склеил; diff — админ: разные (больше не спрашиваем, сами не склеиваем);
+-- Пары «возможно, один объект» (app/dupreview.py).
+-- status: open — в очереди; same — админ склеил; diff — разные объекты;
 -- auto — склеил сервис; split — склейку разделили (= разные); gone — одной карточки уже нет на сайте;
 -- repeat — версии объявления одного агента; market — один объект с предложениями разных агентов
 -- linked — одна квартира, принадлежность одного из предложений не установлена
+-- unconfirmed — оставлены раздельно до появления новых данных
 CREATE TABLE IF NOT EXISTS dup_pairs (
     id INTEGER PRIMARY KEY, a INTEGER NOT NULL, b INTEGER NOT NULL, kind TEXT NOT NULL, score REAL, why TEXT,
     status TEXT NOT NULL DEFAULT 'open', keep_id INTEGER, drop_id INTEGER, undo TEXT, ai TEXT,
@@ -356,6 +357,8 @@ CREATE TABLE IF NOT EXISTS dup_pairs (
 );
 CREATE INDEX IF NOT EXISTS ix_dup_pairs_status ON dup_pairs (status);
 CREATE INDEX IF NOT EXISTS ix_dup_pairs_b ON dup_pairs (b);
+CREATE INDEX IF NOT EXISTS ix_dup_pairs_undo_keep ON dup_pairs (keep_id)
+    WHERE drop_id IS NOT NULL AND undo IS NOT NULL;
 CREATE INDEX IF NOT EXISTS ix_dup_auto_price_keep ON dup_pairs (keep_id, drop_id)
     WHERE status = 'repeat' AND kind = 'auto_price_revision';
 CREATE TABLE IF NOT EXISTS dup_changed (listing_id INTEGER PRIMARY KEY, revision INTEGER NOT NULL DEFAULT 1);
@@ -551,12 +554,28 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          INSERT INTO dup_changed(listing_id) VALUES (NEW.id)
                              ON CONFLICT(listing_id) DO UPDATE SET revision=revision+1;
                      END""")
-    conn.execute(f"""CREATE TRIGGER IF NOT EXISTS trg_dup_link_evidence_v1
+    conn.execute(f"""CREATE TRIGGER IF NOT EXISTS trg_dup_review_evidence_v1
                      AFTER UPDATE OF {','.join(evidence_columns)} ON listings WHEN {changes}
                      BEGIN
                          UPDATE dup_pairs SET status='open',ai=NULL,decided_at=NULL
-                             WHERE (a=NEW.id OR b=NEW.id) AND status='linked' AND COALESCE(user_id,0)=0;
+                             WHERE (a=NEW.id OR b=NEW.id) AND status IN ('linked','unconfirmed')
+                               AND COALESCE(user_id,0)=0;
                      END""")
+    conn.execute("DROP TRIGGER IF EXISTS trg_dup_link_evidence_v1")
+    # У быстрого репоста отправитель может появиться только в истории сообщений.
+    conn.execute("""CREATE TRIGGER IF NOT EXISTS trg_dup_unconfirmed_sender_v1
+                    AFTER INSERT ON listing_events WHEN NEW.message_id IS NOT NULL
+                    BEGIN
+                        UPDATE dup_pairs SET status='open',decided_at=NULL
+                        WHERE (a=NEW.listing_id OR b=NEW.listing_id)
+                          AND status='unconfirmed' AND COALESCE(user_id,0)=0
+                          AND EXISTS (SELECT 1 FROM messages WHERE id=NEW.message_id AND sender<>'')
+                          AND (SELECT sender FROM messages WHERE id=NEW.message_id) NOT IN (
+                              SELECT m.sender FROM listing_events e JOIN messages m ON m.id=e.message_id
+                              WHERE e.listing_id=NEW.listing_id AND e.id<>NEW.id AND m.sender<>''
+                              ORDER BY e.ts DESC LIMIT 20
+                          );
+                    END""")
     if conn.execute("INSERT OR IGNORE INTO state(key,value) VALUES ('dup_evidence_v2','1')").rowcount:
         conn.execute("UPDATE dup_pairs SET ai=NULL WHERE status='open' AND COALESCE(user_id,0)=0")
         conn.execute("""INSERT OR IGNORE INTO dup_changed(listing_id)

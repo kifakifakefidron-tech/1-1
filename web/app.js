@@ -1382,6 +1382,15 @@
         <button type="button" data-photo-del="${esc(u)}" data-id="${o.id}" aria-label="Удалить фото" title="Удалить фото">${ic("trash")}</button></span>`).join("")}</div></section>` : "";
     const adminCms = cms.length ? `<section class="adm-s adm-cms"><p class="adm-sh">Жалобы на объект <small>${cmNew.length ? `новых: ${cmNew.length} — объект на сайте, пока вы не решите` : "все разобраны"}</small></p>
       ${cms.map((c) => cmItemHTML(c, o.id)).join("")}</section>` : "";
+    const merge = o.admin_last_merge;
+    const canDetach = o.offer_group?.offers.length > 1;
+    const adminSeparate = admin && !o.loading && (canDetach || merge)
+      ? `<section class="adm-s"><p class="adm-sh">Разъединить карточки</p><div class="adm-grid">
+        ${canDetach ? admTile(`data-card-separate="detach_offer" data-id="${o.id}"`, "swap",
+          "Отделить это предложение", `Объявление № ${o.id} станет отдельной карточкой`) : ""}
+        ${merge ? admTile(`data-card-separate="undo_merge" data-id="${o.id}" data-pair="${merge.id}"`, "history",
+          `Вернуть карточку № ${merge.listing_id}`, `Отменить последнее слияние · ${esc(fmtPrice(merge.price, merge.deal))}`) : ""}
+      </div></section>` : "";
     const adminBody = admin ? `<div class="adm-box">${adminCms}
       <section class="adm-s"><p class="adm-sh">Исправить</p><div class="adm-grid">
         ${admTile(`data-place-edit="${o.id}"`, "edit", `Все характеристики${o.admin_fixed ? " ✓" : ""}`, "тип, цена, площадь, этаж, адрес, ЖК, район, ремонт")}
@@ -1390,6 +1399,7 @@
           : o.geo_status === "manual" ? admTile(`data-geo-on="${o.id}"`, "map", "Вернуть на карту", "сервис снова найдёт точку по адресу") : ""}
         ${admTile(`data-admin-act="deal" data-deal="${o.deal === "rent" ? "sale" : "rent"}" data-id="${o.id}"`, "swap", o.deal === "rent" ? "Перенести в продажу" : "Перенести в аренду", "сервис запомнит для этого текста")}
       </div></section>
+      ${adminSeparate}
       ${adminPhotos}
       <section class="adm-s"><p class="adm-sh">История правок <small>что, кем и когда — неверное можно откатить</small></p>
         <div class="dv-ed-list" id="dvEd${o.id}" data-hist-auto="${o.id}"><p class="note">Загружаем…</p></div></section>
@@ -1604,6 +1614,35 @@
       toast(deal === "rent" ? "⇄ Перенесено в аренду" : "⇄ Перенесено в продажу", 2400);
       openDetail(id);
       refresh();
+    }
+  }
+
+  async function separateCard(button) {
+    if (button.disabled) return;
+    const id = Number(button.dataset.id);
+    const action = button.dataset.cardSeparate;
+    const undo = action === "undo_merge";
+    if (!confirm(undo ? "Отменить последнее слияние и вернуть вторую карточку?"
+      : "Показать это предложение отдельной карточкой?")) return;
+    button.disabled = true;
+    const request = detailRequest;
+    const body = undo ? { action, pair_id: Number(button.dataset.pair) } : { action };
+    const r = await call(`/api/admin/listings/${id}/action`, body);
+    button.disabled = false;
+    if (!r.ok) {
+      toast(r.data.detail || "Не удалось разъединить карточки");
+      return;
+    }
+    toast(undo ? "Карточки разъединены" : "Предложение отделено");
+    refresh();
+    if (request !== detailRequest || !$("detail").open) return;
+    await openDetail(id);
+    if (openedId !== id || !$("detail").open) return;
+    const panel = $("detailBody").querySelector(".dv-acc.admin");
+    if (panel) {
+      panel.open = true;
+      panel.querySelector("summary")?.focus({ preventScroll: true });
+      panel.scrollIntoView({ block: "nearest" });
     }
   }
 
@@ -2913,6 +2952,7 @@
     if (t.hasAttribute("data-desc-more")) { const box = t.closest(".dv-desc"); box.classList.toggle("clamp");
         t.textContent = box.classList.contains("clamp") ? "Читать полностью" : "Свернуть"; return; }
       if (t.dataset.adminAct) { adminAction(Number(t.dataset.id), t.dataset.adminAct, t.dataset.deal); return; }
+      if (t.dataset.cardSeparate) { separateCard(t); return; }
       if (t.dataset.banPhone) { banPhone(t.dataset.banPhone); return; }
       if (t.dataset.pickOpen) { openPicks(Number(t.dataset.pickOpen)); return; }
       if (t.dataset.copyRef) { share(t.dataset.copyRef, "1+1 — поиск объектов Краснодара"); return; }

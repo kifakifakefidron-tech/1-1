@@ -775,6 +775,8 @@ def api_listing(request: Request, body: dict | None = None):
         "SELECT 1 FROM favorites WHERE user_id = ? AND listing_id = ?", (user["id"], lid)).fetchone())
     if user and user["is_admin"]:   # 02.11: жалобы на объект — прямо в блоке «Админ» окна объекта
         d["complaints"] = complaints_list(conn, "c.listing_id = ?", (lid,), 20)
+        if row["is_active"] and (merge := dupreview.latest_merge(conn, lid)):
+            d["admin_last_merge"] = merge
     return JSONResponse(d)
 
 
@@ -2905,7 +2907,7 @@ def districts_map_page(request: Request, body: dict | None = None):
 
 
 def api_admin_listing_action(request: Request, body: dict | None = None):
-    """Админ: {action: delete | restore | deal | price}. delete — навсегда (тот же текст/объект не вернётся)."""
+    """Действия администратора над объявлением, включая разделение карточек."""
     from .ingest import _reindex, make_search_text, make_title
     admin_user, err = _need_admin(request)
     if err:
@@ -2927,6 +2929,16 @@ def api_admin_listing_action(request: Request, body: dict | None = None):
         res = {"ok": True}
     elif act == "photo":   # убрать одно фото у объекта (и не возвращать его из фида/чатов)
         res = ingest.remove_photo(conn, lid, str(body.get("url") or ""))
+    elif act in ("detach_offer", "undo_merge"):
+        pid = body.get("pair_id")
+        if act == "undo_merge" and (type(pid) is not int or pid <= 0):
+            return _err("Не указано объединение.")
+        with conn:
+            conn.execute("BEGIN IMMEDIATE")
+            res = (dupreview.undo_card_merge(conn, lid, pid, admin_user["id"]) if act == "undo_merge"
+                   else dupreview.detach_offer(conn, lid, admin_user["id"]))
+        if not res["ok"]:
+            return _err(res.get("error") or "Карточка уже изменилась.", 409 if res.get("stale") else 400)
     elif act == "deal" and body.get("deal") in ("sale", "rent"):
         r = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
         if r is None:

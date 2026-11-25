@@ -154,14 +154,12 @@
     const verdict = AI_LABELS[p.ai?.verdict];
     if (verdict) {
       const kept = recommendedKeep(p);
-      const manual = p.ai.manual_reason || (p.ai.verdict === "repeat" && !data.ai_auto_merge
-        ? "Выберите карточку и подтвердите объединение кнопкой 1." : "");
       const confidence = p.ai.confidence == null ? "" : `<small class="dp-ai-confidence">Уверенность модели ${Math.floor(p.ai.confidence * 100)}%</small>`;
       return `<div class="dp-ai ${p.ai.verdict}">${ic("sparkle")}<div class="dp-ai-copy">
         <span class="dp-ai-label">DeepSeek предлагает</span><strong>${verdict}</strong>
         ${kept ? `<small class="dp-ai-fresh">Свежая версия № ${kept} · ${esc(day(p.ai.keep_version_ts))}</small>` : ""}
         ${p.ai.why ? `<small>${esc(p.ai.why)}</small>` : ""}${confidence}
-        ${manual ? `<small>Ручная проверка · ${esc(manual)}</small>` : ""}
+        ${p.manual_override ? "<small>Администратор вернул пару на ручную проверку.</small>" : ""}
       </div></div>`;
     }
     if (!data.ai_enabled) return "";
@@ -183,8 +181,9 @@
       result = await call("/api/admin/dups", { id: p.id, ai: true });
     }
     aiInFlight = false;
-    if (current() && (result.data.applied || result.data.stale)) {
-      if (result.data.applied) toast("DeepSeek разобрал пару автоматически");
+    if (current() && (result.data.status || result.data.stale)) {
+      if (result.data.status) toast(result.data.status === "unconfirmed"
+        ? "Карточки оставлены раздельно" : "DeepSeek разобрал пару автоматически");
       return load(true);
     }
     if (result.data.ai) {
@@ -230,25 +229,29 @@
 
   const STATUS = { auto: "Старые автосклейки", same: "Вы: один объект", diff: "Вы: разные", split: "Разделено",
     repeat: "Версии одного объявления", market: "Один объект · разные агенты",
-    linked: "Один объект · агент уточняется" };
+    linked: "Один объект · агент уточняется", unconfirmed: "Оставлено раздельно" };
   function listHTML() {
     if (!pairs.length) return `<p class="dp-empty">${tab === "auto" ? "Сервис пока ничего не склеивал сам." : "Решений пока нет."}</p>`;
     return `<div class="dp-list">${pairs.map((p) => {
       const kept = p.keep === p.b.id ? p.b : p.a;
       const archived = kept === p.a ? p.b : p.a;
       const autoPrice = p.kind === "auto_price_revision";
+      const caption = autoPrice ? day(p.decided_at)
+        : [p.kind_label, (p.why || []).slice(0, 3).join(", "), day(p.decided_at)].filter(Boolean).join(" · ");
       const label = p.ai_applied ? "Решение DeepSeek"
         : autoPrice ? "Цена обновлена автоматически" : p.merged ? "Объединено" : STATUS[p.status] || p.status;
       return `<div class="dp-row${autoPrice ? " dp-row-price" : ""}" data-pid="${p.id}">
       <span class="mark">${esc(label)}</span>
       <div class="dp-row-t"><a href="/?open=${kept.id}">${esc(kept.title)}</a>
-        <small>${autoPrice ? "" : `${esc(p.kind_label)} · ${esc((p.why || []).slice(0, 3).join(", "))} · `}${esc(day(p.decided_at))}</small>
+        <small>${esc(caption)}</small>
         <small>${autoPrice ? `№ ${archived.id} ${esc(mln(archived.price, archived.deal))} → № ${kept.id} ${esc(mln(kept.price, kept.deal))}`
           : `№ ${p.a.id} ${esc(mln(p.a.price, p.a.deal))} · № ${p.b.id} ${esc(mln(p.b.price, p.b.deal))}`}</small>
+        ${p.status === "unconfirmed" && p.ai?.closure_reason ? `<small>${esc(p.ai.closure_reason)}</small>` : ""}
         ${p.ai?.verdict ? `<small>${p.ai_applied ? `${esc(AI_LABELS[p.ai.verdict])} · ${Math.floor(p.ai.confidence * 100)}%`
           : `DeepSeek предлагал ${esc(AI_LABELS[p.ai.verdict])}`}</small>` : ""}</div>
       ${["auto", "same"].includes(p.status) ? `<button type="button" class="pill light" data-split="${p.id}">Разделить</button>`
-        : ["diff", "market", "repeat", "linked"].includes(p.status) ? `<button type="button" class="pill light" data-reopen="${p.id}">${p.merged ? "Отменить объединение" : "Вернуть в очередь"}</button>` : ""}
+        : (["diff", "market", "repeat", "linked", "unconfirmed"].includes(p.status) || p.kind === "manual_unlink")
+          ? `<button type="button" class="pill light" data-reopen="${p.id}">${p.merged ? "Отменить объединение" : "Проверить вручную"}</button>` : ""}
     </div>`;
     }).join("")}</div>`;
   }
@@ -256,14 +259,16 @@
   function statsHTML(stats) {
     return stats.map((s) => `<div class="dp-stat"><strong>${esc(s.label)}</strong>
       <small>Версии ${n0(s.repeat)} · разные агенты ${n0(s.market)}${s.linked ? ` · агент уточняется ${n0(s.linked)}` : ""}
-        · разные объекты ${n0(s.diff)} · ждут решения ${n0(s.open)}</small></div>`).join("");
+        · разные объекты ${n0(s.diff)}${s.unconfirmed ? ` · раздельно ${n0(s.unconfirmed)}` : ""}
+        ${s.split ? ` · разъединено ${n0(s.split)}` : ""}
+        · в очереди ${n0(s.open)}</small></div>`).join("");
   }
 
   function render() {
-    $("dpLead").textContent = data.ai_auto_merge
-      ? "DeepSeek разбирает пары от 70%. Если квартира подтверждена, а агент уточняется, сервис связывает объявления."
-      : "DeepSeek применяет решения 2 и 3 от 70%. Объединение по кнопке 1 подтверждает администратор.";
-    $("dpTabs").innerHTML = [["open", "Ждут решения", data.counts.open], ["price", "Только цена", data.counts.price],
+    $("dpLead").textContent = data.ai_enabled
+      ? "DeepSeek проверяет пары в фоне. При уверенности от 70% сервис применяет подтверждённые решения. Когда данных мало, обе карточки остаются в выдаче."
+      : "Авторазбор ждёт подключения DeepSeek.";
+    $("dpTabs").innerHTML = [["open", "В очереди", data.counts.open], ["price", "Только цена", data.counts.price],
       ["auto", "Старые автосклейки", data.counts.auto],
       ["done", "История решений", data.counts.done]].map(([k, l, n]) =>
       `<button type="button" class="chip${tab === k ? " on" : ""}" data-tab="${k}">${l} <b>${n0(n)}</b></button>`).join("");
@@ -273,7 +278,7 @@
     $("dpStats").innerHTML = statsHTML(data.stats || []);
     const review = data.ai_review;
     $("dpAiStats").textContent = [
-      data.ai_enabled ? `DeepSeek разобрал автоматически ${n0(data.ai_auto || 0)} пар.` : "",
+      data.ai_enabled ? `Решения DeepSeek · ${n0(data.ai_auto)} применено · ${n0(data.ai_unconfirmed)} оставлено раздельно.` : "",
       review?.compared ? `Рекомендации совпали с вашими решениями в ${n0(review.agreed)} из ${n0(review.compared)} пар.` : "",
     ].filter(Boolean).join(" ");
     if (!document.activeElement || document.activeElement.id !== "dpGIn") $("dpGroups").innerHTML = groupsHTML(data.phone_groups || []);
@@ -378,7 +383,7 @@
       busy = true;
       const r = await call("/api/admin/dups", { id: Number(t.dataset.reopen), verdict: "reopen" });
       busy = false;
-      toast(r.ok ? "Пара снова в очереди" : r.data.error || "Статус пары уже изменился");
+      toast(r.ok ? "Пара открыта для ручной проверки" : r.data.error || "Статус пары уже изменился");
       return load();
     }
   });

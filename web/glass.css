@@ -1290,8 +1290,11 @@ summary { transition: color .2s var(--m-out); }
 .dv3 .dv-pass-acts > *:active { transform: scale(.98); }
 .dv3 .dv-pass-wrap .dv-site { margin-top: 2px; border-top: 0; }
 @media (max-width: 400px) {
+  .dv3 .dv-contacts.dv-pass-wrap { grid-template-columns: minmax(0, 1fr); }
   .dv3 .dv-pass .dv-phone-num { font-size: 21px; }
-  .dv3 .dv-pass-acts > * { font-size: 13.5px; gap: 6px; }
+  .dv3 .dv-pass-acts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dv3 .dv-pass-acts.one { grid-template-columns: minmax(0, 1fr); }
+  .dv3 .dv-pass-acts > * { font-size: 13.5px; gap: 6px; padding-inline: 6px; white-space: normal; text-align: center; }
 }
 /* Быстрый показ и разделы карточки */
 .dv3 { --dv-control-line: #e9d7aa32; --dv-control-gold: #e8d3a0; --dv-control-muted: #c1cec0; --dv-control-mint: #c2eccf; }

@@ -290,8 +290,9 @@ def sync(conn: sqlite3.Connection, body: bytes, now: int | None = None) -> dict:
                                 VALUES (?,?,'applet_row','market',?)""", (*sorted((lid, slava_id)), now))
         unit_pairs = {pair for ids in units.values() for pair in combinations(sorted(ids), 2)}
         conn.executemany("""INSERT INTO dup_pairs(a,b,kind,status,created_at) VALUES (?,?,'applet_unit','market',?)
-                            ON CONFLICT(a,b) DO UPDATE SET kind=excluded.kind,status='market'
-                            WHERE COALESCE(dup_pairs.user_id,0)=0 AND (dup_pairs.status='open'
+                            ON CONFLICT(a,b) DO UPDATE SET kind=excluded.kind,status='market',ai=NULL,
+                                decided_at=NULL,user_id=NULL
+                            WHERE COALESCE(dup_pairs.user_id,0)=0 AND (dup_pairs.status IN ('open','unconfirmed')
                                 OR (dup_pairs.kind='applet_unit' AND dup_pairs.status='gone'))""",
                          ((a, b, now) for a, b in sorted(unit_pairs)))
         refresh_groups = bool(unit_pairs)
