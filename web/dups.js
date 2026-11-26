@@ -23,6 +23,8 @@
     market: "3 · Один объект, разные агенты",
     linked: "Один объект · агент уточняется", unsure: "Недостаточно данных",
   };
+  const AI_EVIDENCE_LABELS = { address: "Адрес", unit: "Номер квартиры", floor: "Этаж", area: "Площадь",
+    land: "Участок", price: "Цена", layout: "Планировка", view: "Вид из окон", condition: "Состояние", equipment: "Оснащение" };
 
   async function call(url, body) {
     const opts = { credentials: "same-origin", method: body ? "POST" : "GET" };
@@ -150,6 +152,16 @@
     return lid === p.a.id || lid === p.b.id ? lid : null;
   }
 
+  function evidenceHTML(ai) {
+    const citations = (ai?.evidence || []).filter(({ kind, left_line, right_line }) =>
+      Object.hasOwn(AI_EVIDENCE_LABELS, kind) && Number.isInteger(left_line) && Number.isInteger(right_line));
+    if (!citations.length) return "";
+    const source = (id, line, quote) => `<small><span>№ ${esc(id)} · строка ${esc(line)}</span> ${esc(quote)}</small>`;
+    return `<details class="dp-evidence"><summary>Строки объявлений</summary><ul>${citations.map((e) => `
+      <li><b>${AI_EVIDENCE_LABELS[e.kind]}</b>
+        ${source(e.left_id, e.left_line, e.left)}${source(e.right_id, e.right_line, e.right)}</li>`).join("")}</ul></details>`;
+  }
+
   function aiHTML(p) {
     const verdict = AI_LABELS[p.ai?.verdict];
     if (verdict) {
@@ -158,7 +170,7 @@
       return `<div class="dp-ai ${p.ai.verdict}">${ic("sparkle")}<div class="dp-ai-copy">
         <span class="dp-ai-label">DeepSeek предлагает</span><strong>${verdict}</strong>
         ${kept ? `<small class="dp-ai-fresh">Свежая версия № ${kept} · ${esc(day(p.ai.keep_version_ts))}</small>` : ""}
-        ${p.ai.why ? `<small>${esc(p.ai.why)}</small>` : ""}${confidence}
+        ${p.ai.why ? `<small>${esc(p.ai.why)}</small>` : ""}${confidence}${evidenceHTML(p.ai)}
         ${p.manual_override ? "<small>Администратор вернул пару на ручную проверку.</small>" : ""}
       </div></div>`;
     }
@@ -248,7 +260,7 @@
           : `№ ${p.a.id} ${esc(mln(p.a.price, p.a.deal))} · № ${p.b.id} ${esc(mln(p.b.price, p.b.deal))}`}</small>
         ${p.status === "unconfirmed" && p.ai?.closure_reason ? `<small>${esc(p.ai.closure_reason)}</small>` : ""}
         ${p.ai?.verdict ? `<small>${p.ai_applied ? `${esc(AI_LABELS[p.ai.verdict])} · ${Math.floor(p.ai.confidence * 100)}%`
-          : `DeepSeek предлагал ${esc(AI_LABELS[p.ai.verdict])}`}</small>` : ""}</div>
+          : `DeepSeek предлагал ${esc(AI_LABELS[p.ai.verdict])}`}</small>` : ""}${evidenceHTML(p.ai)}</div>
       ${["auto", "same"].includes(p.status) ? `<button type="button" class="pill light" data-split="${p.id}">Разделить</button>`
         : (["diff", "market", "repeat", "linked", "unconfirmed"].includes(p.status) || p.kind === "manual_unlink")
           ? `<button type="button" class="pill light" data-reopen="${p.id}">${p.merged ? "Отменить объединение" : "Проверить вручную"}</button>` : ""}

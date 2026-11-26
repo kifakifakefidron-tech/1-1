@@ -336,17 +336,21 @@ def test_model_can_prove_a_match_using_both_source_descriptions(conn, monkeypatc
     assert not dupreview._same_offer_property(*(dupreview._card(conn, lid) for lid in (a, b)))
 
     def answer(system, payload, max_tokens):
-        assert "дословная цитата" in system
-        assert all("house" not in card for card in json.loads(payload)["объявления"])
+        assert '"left_line":7' in system
+        cards = json.loads(payload)["объявления"]
+        assert all("house" not in card for card in cards)
+        assert all(card["text"].startswith("1| Район парка Краснодар Аверкиева, 4\n2| ") for card in cards)
         return {"object": "same", "agent": "different", "confidence": 0.90, "evidence": [
-            {"kind": "address", "left": "Аверкиева, 4", "right": "Аверкиева, 4"},
-            {"kind": "condition", "left": "ремонт в ванной и комнате, коридор под ремонт",
-             "right": "В ванной ремонт свежий, коридор требует отделки"},
+            {"kind": "address", "left_line": 1, "right_line": 1, "left": "Аверкиева, 4", "right": "Аверкиева, 4"},
+            {"kind": "condition", "left_line": 3, "right_line": 3},
         ]}
 
     monkeypatch.setattr(llm, "ask_json", answer)
     result = dupreview.review_ai(conn, pid)
     assert result["applied"] and result["status"] == "market" and len(result["ai"]["evidence"]) == 2
+    detail = result["ai"]["evidence"][1]
+    assert (detail["left_id"], detail["right_id"], detail["left_line"], detail["right_line"]) == (a, b, 3, 3)
+    assert detail["left"] == "Новый ремонт в ванной и комнате, коридор под ремонт"
     assert {item["id"]: item["price"] for item in offers.groups(conn)[a]} == {a: 7800000, b: 7850000}
 
 
@@ -354,20 +358,85 @@ def test_model_cannot_borrow_address_from_an_alternative_or_ignore_a_source_conf
     monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
     a, b, pid = _cards_with_address_in_the_description(conn, second_house=8)
     answer = {"object": "same", "agent": "different", "confidence": 0.99, "evidence": [
-        {"kind": "address", "left": "Аверкиева, 4", "right": "Аверкиева, 4"},
-        {"kind": "condition", "left": "ремонт в ванной и комнате, коридор под ремонт",
-         "right": "В ванной ремонт свежий, коридор требует отделки"},
-        {"kind": [], "left": "район", "right": "район"},
+        {"kind": "address", "left_line": 1, "right_line": 1, "left": "Аверкиева, 4", "right": "Аверкиева, 4"},
+        {"kind": "condition", "left_line": 3, "right_line": 3},
+        {"kind": "address", "left_line": 1, "right_line": 2, "left": "Аверкиева, 4", "right": "Аверкиева, 8"},
+        {"kind": "condition", "left_line": True, "right_line": 99},
     ]}
     monkeypatch.setattr(llm, "ask_json", lambda *args, **kwargs: answer)
     outcome = dupreview.review_ai(conn, pid)
     assert outcome["status"] == "unconfirmed" and len(outcome["ai"]["evidence"]) == 1
     assert dupreview.decide(conn, pid, "reopen")["ok"]
     answer["evidence"][0]["right"] = "Аверкиева, 8"
-    outcome = dupreview.review_ai(conn, pid, checked_since=dupreview.time.time())
+    outcome = dupreview.review_ai(conn, pid, checked_since=outcome["ai"]["ts"] + 0.000001)
     assert outcome["status"] == "unconfirmed"
     assert outcome["ai"]["closure_reason"] == "Есть расхождение в характеристиках квартиры."
     assert not offers.groups(conn)
+
+
+def test_numbered_source_citation_cannot_drop_part_of_the_house_number():
+    first, second = "Аверкиева, 4/2", "Аверкиева, 4, корпус 3"
+    texts = [dupreview._numbered_review_text(text) for text in (first, second)]
+    cards = [{"id": 1, "text": first}, {"id": 2, "text": second}]
+    for left, right in [("Аверкиева, 4", second), (first, "Аверкиева, 4"), (first, "Аверкиева, 4, корпус")]:
+        assert not dupreview._grounded_quotes([{"kind": "address", "left_line": 1, "right_line": 1,
+                                               "left": left, "right": right}], cards, texts)
+    trimmed = dupreview._numbered_review_text("Описание\n" + "а" * 2982 + "\nАверкиева, 48")
+    assert trimmed.startswith("1| Описание\n2| ") and "Аверкиева" not in trimmed
+
+
+def test_fact_comparison_exposes_source_discrepancies_without_changing_card_data(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    a, b, pid = _cards_with_address_in_the_description(conn)
+    first = "Студия 20,1 м²\nул. Школьная, 55, корпус 2\n18 этаж из 19\nДКП 3 млн\nЦена 4 000 000 ₽"
+    second = "Студия 22 м²\n18 этаж из 19\nКвартира № 27\nЦена 4 200 000 ₽"
+    conn.execute("UPDATE listings SET street='Школьная',floor=18,floors=19,rooms=0 WHERE id IN (?,?)", (a, b))
+    conn.execute("UPDATE listings SET fragment=?,area=21.5,price=4100000,house='55' WHERE id=?", (first, a))
+    conn.execute("UPDATE listings SET fragment=?,area=22,price=4200000,house='55 к2' WHERE id=?", (second, b))
+    other = listing(conn)
+    conn.execute("UPDATE listings SET floor=2,fragment='Текст альтернативы, который модели передавать не нужно' WHERE id=?", (other,))
+    pair(conn, a, other)
+
+    def answer(system, content, max_tokens):
+        payload = json.loads(content)
+        table = payload["сверка"]
+        assert table["поля карточек"]["этаж"] == [18, 18, "совпало"]
+        assert table["поля карточек"]["комнаты"] == [0, 0, "совпало"]
+        assert table["распознано в исходниках"]["площадь, м²"] == [20.1, 22, "разница 1.9 м², в пределах допуска"]
+        assert table["распознано в исходниках"]["номер квартиры"] == [None, 27, "только B"]
+        assert table["расхождения [в карточке, в исходнике]"] == {
+            "A": {"дом и корпус": ["55", "55к2"], "площадь, м²": [21.5, 20.1], "цена, ₽": [4100000, 4000000]},
+        }
+        assert payload["альтернатива"]["id"] == other
+        assert payload["альтернатива"]["расхождения [в объявлении, в альтернативе]"]["A"]["этаж"] == [18, 2]
+        assert "Текст альтернативы" not in content
+        return {"object": "unknown", "agent": "unknown", "confidence": 0.5, "evidence": [
+            {"kind": "area", "left_line": 1, "right_line": 1},
+        ]}
+
+    monkeypatch.setattr(llm, "ask_json", answer)
+    outcome = dupreview.ask_ai(conn, pid)
+    assert outcome["ai"]["evidence"][0]["left"] == "Студия 20,1 м²"
+    assert conn.execute("SELECT area,price,house FROM listings WHERE id=?", (a,)).fetchone()[:] == (21.5, 4100000, "55")
+
+
+def test_review_keeps_verified_legacy_quotes_for_saved_responses(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    a, b, pid = _cards_with_address_in_the_description(conn)
+    cards = [dupreview._card(conn, lid) for lid in (a, b)]
+    ai = {"verdict": "market", "object": "same", "agent": "different", "confidence": 0.95,
+          "signature": dupreview._ai_signature(cards), "evidence_version": 1, "evidence": [
+              {"kind": "address", "left": "Аверкиева, 4", "right": "Аверкиева, 4"},
+              {"kind": "condition", "left": "ремонт в ванной и комнате, коридор под ремонт",
+               "right": "В ванной ремонт свежий, коридор требует отделки"},
+          ]}
+    conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps(ai), pid))
+
+    def unexpected_call(*args, **kwargs):
+        raise AssertionError("Используем сохранённый ответ.")
+
+    monkeypatch.setattr(llm, "ask_json", unexpected_call)
+    assert dupreview.review_ai(conn, pid)["status"] == "market"
 
 
 def test_refresh_backlog_reconsiders_closed_pairs_and_resumes_without_new_calls(conn, monkeypatch):
