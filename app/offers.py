@@ -81,8 +81,8 @@ _STREET_PREFIX = re.compile(r"^(?:ул(?:ица)?|проспект|пр-кт|п�
 _CORPUS_SUFFIX = re.compile(r"(?<=\d)к\d{1,3}$")
 _UNIT_NUMBER = re.compile(r"\b(?:квартира|кв\.?|лот)\s*№\s*(\d{1,5})\b(?![.,/]\d)", re.IGNORECASE)
 _BARE_UNIT = re.compile(
-    r"(?:^[^\w\n]*|[,;][ \t]*)(?:кв\.[ \t]*|(?:кв|квартира)[ \t]+)(\d{1,5})"
-    r"(?=[ \t]*(?:$|[,;.!](?![ \t]*\d)))", re.IGNORECASE
+    r"(?:^[^\w\n]*|[,;][^\S\r\n]*)(?:кв\.[^\S\r\n]*|(?:кв|квартира)[^\S\r\n]+)(\d{1,5})"
+    r"(?=[^\S\r\n]*(?:$|[,;.!](?![^\S\r\n]*\d)))", re.IGNORECASE
 )
 _DETAIL_LINE = re.compile(
     r"[^\w\n]*(?P<kind>квартира|подъезд|кв\.?)\s*(?:№\s*|\s+)(?P<number>\d{1,5})[^\w\n]*", re.IGNORECASE
@@ -393,7 +393,8 @@ def _build_groups(conn: sqlite3.Connection):
         SELECT a, b, status, CASE WHEN user_id IS NULL OR user_id=0 THEN
             CASE WHEN json_valid(ai) THEN json_extract(ai,'$.applied') END END AS ai_applied
         FROM dup_pairs WHERE (status IN {LINK_TYPES} OR status IN ('diff','split'))
-        AND NOT (status = 'market' AND kind = 'offer_photo' AND COALESCE(user_id, 0) = 0)""").fetchall()
+        AND NOT (status = 'market' AND kind = 'offer_photo' AND COALESCE(user_id,0)=0
+                 AND COALESCE(CASE WHEN json_valid(ai) THEN json_extract(ai,'$.applied') END,0)=0)""").fetchall()
     decisions = {(a, b): status for a, b, status, _ in stored}
     aliases = dict(conn.execute("SELECT id, merged_into FROM listings WHERE hidden_reason=? AND merged_into IS NOT NULL",
                                 (MERGED_REPEAT,)))
@@ -460,7 +461,7 @@ def _build_groups(conn: sqlite3.Connection):
         pair = min(a, b), max(a, b)
         if pair in pairs:
             return True
-        if not confirmed or pair in decisions:
+        if not confirmed or pair in decisions or identity_conflict(rows[a], rows[b]):
             return False
         if same_unit_details(rows[a], rows[b]):
             return True

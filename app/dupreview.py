@@ -39,7 +39,8 @@ PRICE_REVISION_SCAN = "dup_price_revision_scan_v2"
 _PRICE_PAIR_SCOPE = "p.kind='price_revision' AND a.price != b.price"
 _AI_ACTIONS = ("repeat", "diff", "market", "linked")
 _AI_VERDICTS = (*_AI_ACTIONS, "unsure")
-_RECHECK_VERDICTS = ("repeat", "market", "linked")
+_OFFER_VERDICTS = ("market", "linked")
+_RECHECK_VERDICTS = ("repeat", *_OFFER_VERDICTS)
 _UNCONFIRMED = "unconfirmed"
 _REVIEWED = ("same", "diff", "split", _UNCONFIRMED, *offers.LINK_STATUSES)
 AI_AUTO_CONFIDENCE = 0.7
@@ -1028,6 +1029,8 @@ _AI_SYSTEM = f"""Сравни два объявления о недвижимо�
 между карточками, в том числе номер в объявлении одной карточки с отправителем другой.
 Если есть общий номер в двух карточках, укажи agent=same при совпадении объекта. Сам объект проверь отдельно.
 Разные контакты не доказывают, что квартиры разные.
+При совпадении квартиры и двух разных контактах, привязанных к предложениям, укажи agent=different.
+Различай номера для связи по объявлению и номера людей, которые только переслали сообщение.
 Если совпадает контакт и текст объявления, в том числе при обновлении цены, это версии одного объявления.
 Полностью одинаковый исходный текст с разными номерами только у отправителей может быть повтором одного агента.
 Если есть другие подходящие карточки, сравни признаки, по которым можно отличить их от этой пары.
@@ -1175,11 +1178,11 @@ def _review_same_agent(left, right, *, shared_phone: bool) -> bool | None:
     return left == right or (left[0] == right[0] == "phones" and not left[1].isdisjoint(right[1]))
 
 
-def _matching_sender_copy(conn, cards, agents, *, text_matches: bool) -> bool:
+def _matching_sender_copy(conn, cards, agents) -> bool:
     a, b = cards
-    if (not text_matches or not a["text"] or a["text"] != b["text"]
+    if (not a["text"] or a["text"] != b["text"]
             or not (a["sender_only_contacts"] and b["sender_only_contacts"])
-            or agents[0][0] != "phones" or agents[1][0] != "phones"):
+            or agents[0][0] != "phones" or agents[1][0] != "phones" or not _review_text_matches(a, b)):
         return False
     phones = set(a["phones"]) | set(b["phones"])
     accounts = conn.execute(f"""SELECT COUNT(DISTINCT user_id) FROM agent_phones
@@ -1211,8 +1214,7 @@ def _model_review(conn, cards, signature):
     same_agent = _review_same_agent(*agents, shared_phone=shared_phone)
     relation = {True: "совпадают", False: "различаются", None: "неясно"}[same_agent]
     matching_text = _review_text_matches(*cards)
-    sender_copy = same_agent is False and _matching_sender_copy(
-        conn, cards, agents, text_matches=matching_text)
+    sender_copy = same_agent is False and _matching_sender_copy(conn, cards, agents)
     sender_a, sender_b = (_review_numbers(card["sender_phones"]) for card in cards)
     contact_a, contact_b = (_review_numbers(card["text_phones"]) for card in cards)
     literal_a, literal_b = (_review_numbers(card["literal_phones"]) for card in cards)
@@ -1397,6 +1399,51 @@ def _same_unit_proof(a, b, *, for_repeat: bool, allow_copy: bool = False) -> boo
     return detailed_copy
 
 
+_OFFER_TEMPLATE_WORD = re.compile(
+    r"(?:адрес|улиц\w*|жилой|комплекс|район|дом|корп\w*|квартир\w*|комнат\w*|студи\w*|"
+    r"евро|мини|этаж\w*|площад\w*|метр\w*|ремонт\w*|мебел\w*|техник\w*|хорош\w*|нов\w*|"
+    r"цена|стоимость|рубл\w*|млн|тыс|дкп|сумма|вся|весь|все|без|обремен\w*|заклад\w*|"
+    r"прода\w*|объект\w*|контакт\w*|показ\w*|телефон\w*|фото|видео|номер\w*|просмотр\w*)"
+)
+
+
+@functools.lru_cache(maxsize=4096)
+def _offer_description_words(text, location):
+    from .parser import strip_phones
+
+    place_words = set(words(" ".join(value for value in location if value)).split())
+    return tuple(word for word in words(strip_phones(text)).split()
+                 if len(word) > 2 and not word.isdecimal()
+                 and word not in place_words and not _OFFER_TEMPLATE_WORD.fullmatch(word))
+
+
+def _same_offer_property(a, b) -> bool:
+    """Подтверждение одного объекта для связи предложений из разных объявлений."""
+    if a["multi_units"] or b["multi_units"]:
+        return False
+    if _same_unit_proof(a, b, for_repeat=False, allow_copy=True):
+        return True
+    if (a["floor"] is None or a["floor"] != b["floor"] or a["rooms"] is None or a["rooms"] != b["rooms"]
+            or offers.review_area_close(a["area"], b["area"]) is not True):
+        return False
+    street_a, house_a, _ = offers.review_address(a)
+    street_b, house_b, _ = offers.review_address(b)
+    same_building = bool(street_a and house_a and (street_a, house_a) == (street_b, house_b))
+    if not same_building:
+        complex_a, complex_b = (_cxk(card["complex"]) for card in (a, b))
+        if not (complex_a and complex_a == complex_b and a["area"] == b["area"]
+                and ((street_a and house_a) or (street_b and house_b))):
+            return False
+    left, right = (_offer_description_words(card["text"] or "", tuple(card[k] for k in
+                   ("street", "complex", "district", "settlement"))) for card in (a, b))
+    common = set(left) & set(right)
+    if len(common) < (4 if same_building else 5):
+        return False
+    comparison = difflib.SequenceMatcher(None, left, right, autojunk=False)
+    return (comparison.find_longest_match().size >= 5
+            or (same_building and comparison.ratio() >= SIM_MIN))
+
+
 def _excluded_family_join(conn, left_ids, right_ids, *, repeat: bool) -> bool:
     left, right = ",".join("?" for _ in left_ids), ",".join("?" for _ in right_ids)
     blocked = "('diff','split','market')" if repeat else "('diff','split')"
@@ -1444,7 +1491,7 @@ def _review_guard(conn, cards, ai) -> str | None:
     same_agent = _review_same_agent(*agents, shared_phone=shared_phone)
     if shared_phone:
         ai["agent"] = "same"
-    if ai["verdict"] in ("market", "linked") and same_agent is True and _review_text_matches(a, b):
+    if ai["verdict"] in _OFFER_VERDICTS and same_agent is True and _review_text_matches(a, b):
         ai.update(_with_recommended_keep({**ai, "verdict": "repeat", "model_verdict": ai["verdict"],
                                           "why": "Совпали текст объявления и агент."}, cards))
     verdict = ai["verdict"]
@@ -1455,15 +1502,12 @@ def _review_guard(conn, cards, ai) -> str | None:
         return None
     if conflict:
         return "Есть расхождение в характеристиках квартиры."
-    if verdict == "market":
+    if verdict in _OFFER_VERDICTS:
         if same_agent is True:
             return "Агент один, совпадение версий объявления не подтверждено."
-        if same_agent is None or not _same_unit_proof(a, b, for_repeat=False):
-            return "Нужны подтверждения квартиры и самостоятельных предложений обоих агентов."
-    if verdict == "linked":
-        if same_agent is True:
-            return "Агент известен. Для объединения версий нужно совпадение текста и контакта."
-        if any(card["multi_units"] for card in cards) or not _same_unit_proof(a, b, for_repeat=False, allow_copy=True):
+        if not _same_offer_property(a, b):
+            if verdict == "market":
+                return "Нужны подтверждения квартиры и самостоятельных предложений обоих агентов."
             return "Нужно подтвердить квартиру по её номеру, фотографиям или совпадающему подробному описанию."
     if verdict == "repeat":
         if any(card["source"] != "chat" or card["ext_id"] or card["multi_units"] or card["price_doubt"] or card["price_fixed"]
@@ -1489,6 +1533,12 @@ def _review_guard(conn, cards, ai) -> str | None:
             return "Есть противоречие с одним из уже связанных предложений."
         if _excluded_family_join(conn, [x["id"] for x in left_group], [y["id"] for y in right_group], repeat=False):
             return "В группах есть предложения, которые уже признаны разными объектами."
+    if verdict in _OFFER_VERDICTS:
+        separate_agents = same_agent is False and not _matching_sender_copy(conn, cards, agents)
+        action, agent = ("market", "different") if separate_agents else ("linked", "unknown")
+        if action != verdict:
+            ai.setdefault("model_verdict", verdict)
+        ai.update(verdict=action, agent=agent)
     return None
 
 
