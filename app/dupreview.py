@@ -1481,7 +1481,7 @@ def _repeat_contact_confirmed(agents, *, shared_phone: bool) -> bool:
     return shared_phone or (agents[0][0] == "account" and agents[0] == agents[1])
 
 
-def _review_guard(conn, cards, ai) -> str | None:
+def _review_guard(conn, cards, ai, *, load_groups=None) -> str | None:
     from . import phonegroups
 
     a, b = cards
@@ -1526,7 +1526,7 @@ def _review_guard(conn, cards, ai) -> str | None:
         return "Связь противоречит решению по другой версии объявления."
     if conn.execute("""SELECT 1 FROM dup_pairs WHERE status IN ('market','linked')
                                       AND (a IN (?,?) OR b IN (?,?)) LIMIT 1""", (left, right, left, right)).fetchone():
-        groups = offers.groups(conn)
+        groups = load_groups() if load_groups is not None else offers.groups(conn)
         left_group = groups.get(left, (a,))
         right_group = groups.get(right, (b,))
         if any(offers.identity_conflict(x, y) for x in left_group for y in right_group if x["id"] != y["id"]):
@@ -1542,7 +1542,7 @@ def _review_guard(conn, cards, ai) -> str | None:
     return None
 
 
-def _review_reason(conn, cards, ai) -> str | None:
+def _review_reason(conn, cards, ai, *, load_groups=None) -> str | None:
     if ai["verdict"] == "unsure":
         return "DeepSeek не определил, одна ли это квартира."
     certainty = ai.get("confidence")
@@ -1550,7 +1550,7 @@ def _review_reason(conn, cards, ai) -> str | None:
         return "DeepSeek не указал уверенность."
     if certainty < AI_AUTO_CONFIDENCE:
         return f"Уверенность DeepSeek ниже {AI_AUTO_CONFIDENCE:.0%}."
-    return _review_guard(conn, cards, ai)
+    return _review_guard(conn, cards, ai, load_groups=load_groups)
 
 
 def _save_ai_decision(conn, pid, ai, reason):
@@ -1602,6 +1602,13 @@ def review_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False, 
     return _write_review(conn, apply, wait_for_db=wait_for_db)
 
 
+def _saved_review_cards(conn, pair, ai):
+    cards = [_card(conn, lid) for lid in (pair["a"], pair["b"])]
+    if all(card and card["is_active"] for card in cards) and ai.get("signature") == _ai_signature(cards):
+        return cards
+    return None
+
+
 def _check_unconfirmed(conn, pid):
     pair = conn.execute(f"""SELECT p.a,p.b,p.ai FROM dup_pairs p WHERE p.id=? AND p.status=?
                            AND COALESCE(p.user_id,0)=0 {_ACTIVE_PAIR}""", (pid, _UNCONFIRMED)).fetchone()
@@ -1610,11 +1617,19 @@ def _check_unconfirmed(conn, pid):
     ai = _read_ai(pair["ai"])
     if ai.get("applied") or ai.get("verdict") not in _RECHECK_VERDICTS:
         return None, None
-    cards = [_card(conn, lid) for lid in (pair["a"], pair["b"])]
-    if not all(card and card["is_active"] for card in cards) or ai.get("signature") != _ai_signature(cards):
+    cards = _saved_review_cards(conn, pair, ai)
+    if cards is None:
         return None, None
     ai = _with_recommended_keep(ai, cards)
     return ai, _review_reason(conn, cards, ai)
+
+
+def _apply_saved_review(conn, pid, ai):
+    conn.execute("UPDATE dup_pairs SET status='open' WHERE id=?", (pid,))
+    result = _save_ai_decision(conn, pid, ai, None)
+    if not result.get("applied"):
+        conn.rollback()
+    return result
 
 
 def _apply_unconfirmed(conn, pid):
@@ -1622,10 +1637,8 @@ def _apply_unconfirmed(conn, pid):
     ai, reason = _check_unconfirmed(conn, pid)
     if ai is None or reason:
         return ai, reason
-    conn.execute("UPDATE dup_pairs SET status='open' WHERE id=?", (pid,))
-    result = _save_ai_decision(conn, pid, ai, None)
+    result = _apply_saved_review(conn, pid, ai)
     if not result.get("applied"):
-        conn.rollback()
         if result.get("stale"):
             return None, None
         return ai, result["ai"]["closure_reason"]
@@ -1660,6 +1673,97 @@ def recheck_unconfirmed(conn: sqlite3.Connection, *, apply: bool = False, limit:
                 report["examples"].append({"id": pid, "decision": ai["verdict"], "keep_id": ai.get("keep_id")})
         if apply and index % 100 == 0:
             print(f"Проверено {index} из {len(ids)}. Применено {sum(counts.values())}.", flush=True)
+    return report
+
+
+def _check_recent_review(conn, entry, *, load_groups=None):
+    pid, status, decided_at = entry
+    row = conn.execute("""SELECT a,b,ai,drop_id FROM dup_pairs WHERE id=? AND status=? AND decided_at=?
+                           AND COALESCE(user_id,0)=0""", (pid, status, decided_at)).fetchone()
+    if not row:
+        return "stale", None, None
+    ai = _read_ai(row["ai"])
+    verdict = ai.get("verdict")
+    confirmed = status != _UNCONFIRMED
+    if verdict not in _AI_VERDICTS or bool(ai.get("applied")) != confirmed or (confirmed and verdict != status):
+        return "stale", None, None
+    if status == "repeat" and row["drop_id"] is not None:
+        return "already_merged", None, None
+    cards = _saved_review_cards(conn, row, ai)
+    if cards is None:
+        return "stale", None, None
+    ai = _with_recommended_keep(ai, cards)
+    reason = _review_reason(conn, cards, ai, load_groups=load_groups)
+    if status == _UNCONFIRMED:
+        return ("held" if reason else "apply"), ai, reason
+    if reason:
+        return "needs_review", ai, reason
+    if ai["verdict"] == status:
+        return "unchanged", ai, None
+    if status in _OFFER_VERDICTS and ai["verdict"] in _OFFER_VERDICTS:
+        return "apply", ai, None
+    return "needs_review", ai, "Проверка предлагает изменить уже применённое решение по карточкам."
+
+
+def _apply_recent_review(conn, entry):
+    conn.execute("BEGIN IMMEDIATE")
+    outcome, ai, reason = _check_recent_review(conn, entry)
+    if outcome != "apply":
+        return outcome, ai, reason
+    result = _apply_saved_review(conn, entry[0], ai)
+    if result.get("applied"):
+        return "apply", ai, None
+    if result.get("stale"):
+        return "stale", None, None
+    return ("held" if entry[1] == _UNCONFIRMED else "needs_review"), ai, result["ai"]["closure_reason"]
+
+
+_RECENT_REVIEW_STATUSES = (_UNCONFIRMED, *_AI_ACTIONS)
+
+
+def recheck_recent(conn: sqlite3.Connection, hours: int, *, apply: bool = False, limit: int | None = None) -> dict:
+    """Перепроверяет автоматические решения по времени их принятия."""
+    until = int(time.time())
+    since = until - hours * 3600
+    entries = conn.execute(f"""SELECT id,status,decided_at FROM dup_pairs
+        WHERE status IN {_RECENT_REVIEW_STATUSES} AND decided_at BETWEEN ? AND ?
+          AND COALESCE(user_id,0)=0 AND ai IS NOT NULL
+        ORDER BY decided_at DESC,id DESC LIMIT ?""", (since, until, -1 if limit is None else limit)).fetchall()
+    counts = dict.fromkeys(_AI_ACTIONS, 0)
+    report = {"hours": hours, "since_ts": since, "until_ts": until, "checked": len(entries),
+              "previous": dict.fromkeys(_RECENT_REVIEW_STATUSES, 0), "applied" if apply else "would_apply": counts,
+              "held": 0, "held_by_reason": {}, "unchanged": 0, "already_merged": 0,
+              "needs_review": 0, "needs_review_by_reason": {}, "stale": 0, "examples": []}
+    if apply:
+        db.flush(conn)
+        print(f"Автоматических решений за {hours} ч к перепроверке: {len(entries)}.", flush=True)
+
+    @functools.lru_cache(maxsize=1)
+    def groups_at_version(database_version, changes):
+        return offers.groups(conn)
+
+    def load_groups():
+        # data_version учитывает изменения других процессов, total_changes — записи этого прохода.
+        version = conn.execute("PRAGMA data_version").fetchone()[0]
+        return groups_at_version(version, conn.total_changes)
+
+    for index, entry in enumerate(entries, start=1):
+        pid, previous, _ = entry
+        report["previous"][previous] += 1
+        outcome, ai, reason = _check_recent_review(conn, entry, load_groups=load_groups)
+        if apply and outcome == "apply":
+            outcome, ai, reason = _write_review(conn, lambda: _apply_recent_review(conn, entry), wait_for_db=True)
+        if outcome == "apply":
+            counts[ai["verdict"]] += 1
+        else:
+            report[outcome] += 1
+            if reason:
+                reasons = report[f"{outcome}_by_reason"]
+                reasons[reason] = reasons.get(reason, 0) + 1
+        if outcome in ("apply", "needs_review") and len(report["examples"]) < 10:
+            report["examples"].append({"id": pid, "previous": previous, "decision": ai["verdict"], "reason": reason})
+        if apply and index % 100 == 0:
+            print(f"Проверено {index} из {len(entries)}. Применено {sum(counts.values())}.", flush=True)
     return report
 
 
@@ -1838,15 +1942,20 @@ if __name__ == "__main__":
     mode.add_argument("--audit", action="store_true", help="проверить выборку накопившихся пар без записи в базу")
     mode.add_argument("--audit-unconfirmed", action="store_true", help="проверить сохранённые решения по закрытым парам без записи")
     mode.add_argument("--recheck-unconfirmed", action="store_true", help="применить подтверждённые решения по закрытым парам")
+    mode.add_argument("--audit-recent", type=int, metavar="HOURS", help="перепроверить автоматические решения за указанное число часов")
+    mode.add_argument("--recheck-recent", type=int, metavar="HOURS", help="применить уточнения к автоматическим решениям за указанное число часов")
     mode.add_argument("--inspect", nargs="+", type=int, metavar="PAIR_ID", help="показать признаки пар без DeepSeek")
     cli.add_argument("--limit", type=int, help="максимум пар для аудита или перепроверки закрытых пар")
     args = cli.parse_args()
     if args.limit is not None and args.limit < 1:
         cli.error("--limit должен быть больше 0")
+    recent_hours = args.audit_recent if args.audit_recent is not None else args.recheck_recent
+    if recent_hours is not None and recent_hours < 1:
+        cli.error("Период перепроверки должен быть больше 0 часов")
     backlog = args.backlog or args.recheck_open
     if (backlog or args.audit) and not config.DEEPSEEK_API_KEY:
         cli.exit(1, "Не задан DEEPSEEK_API_KEY в контейнере worker.\n")
-    if args.audit or args.inspect or args.audit_unconfirmed:
+    if args.audit or args.inspect or args.audit_unconfirmed or args.audit_recent is not None:
         uri = Path(config.DB_PATH).resolve().as_uri() + "?mode=ro"
         with closing(sqlite3.connect(uri, uri=True, timeout=30)) as source:
             source.row_factory = sqlite3.Row
@@ -1854,12 +1963,16 @@ if __name__ == "__main__":
                 report = inspect_review_pairs(source, args.inspect)
             elif args.audit_unconfirmed:
                 report = recheck_unconfirmed(source, limit=args.limit)
+            elif args.audit_recent is not None:
+                report = recheck_recent(source, args.audit_recent, limit=args.limit)
             else:
                 report = audit_backlog(source, args.limit or 30)
         print(json.dumps(report, ensure_ascii=False, indent=2))
         cli.exit(int(bool(args.audit and report["model_errors"])))
-    c = _retry_database(db.get, wait_for_db=True) if backlog or args.recheck_unconfirmed else db.get()
-    if args.recheck_unconfirmed:
+    c = _retry_database(db.get, wait_for_db=True) if backlog or args.recheck_unconfirmed or recent_hours else db.get()
+    if args.recheck_recent is not None:
+        print(json.dumps(recheck_recent(c, args.recheck_recent, apply=True, limit=args.limit), ensure_ascii=False, indent=2))
+    elif args.recheck_unconfirmed:
         print(json.dumps(recheck_unconfirmed(c, apply=True, limit=args.limit), ensure_ascii=False, indent=2))
     elif backlog:
         try:

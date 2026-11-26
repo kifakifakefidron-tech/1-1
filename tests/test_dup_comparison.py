@@ -188,6 +188,85 @@ def test_recheck_saved_reviews_audits_and_applies_without_model_requests(conn, m
     assert dupreview.recheck_unconfirmed(conn)["would_apply"] == {"repeat": 0, "market": 0, "linked": 0}
 
 
+def test_recent_review_uses_decision_dates_and_updates_offer_statuses(conn, monkeypatch):
+    now = int(dupreview.time.time())
+    since = now - 48 * 3600
+    monkeypatch.setattr(dupreview.time, "time", lambda: now)
+
+    def record(house, decided_at, *, status="unconfirmed", verdict="linked", unit=350, confidence=0.97):
+        a, b, pid = _address_versions(conn, building=f"{house}/6", unit=unit, other_phone="+79000000002")
+        _save_unconfirmed_review(conn, pid, verdict, confidence)
+        conn.execute("UPDATE dup_pairs SET status=?,decided_at=?,ai=json_set(ai,'$.applied',?) WHERE id=?",
+                     (status, decided_at, status != "unconfirmed", pid))
+        return a, b, pid
+
+    _, _, held = record(31, now)
+    _, _, linked = record(32, since, status="linked")
+    _, _, older = record(33, since - 1)
+    _, _, future = record(34, now + 1)
+    _, _, manual = record(35, now)
+    conn.execute("UPDATE dup_pairs SET user_id=1 WHERE id=?", (manual,))
+    _, _, different = record(36, now, status="diff", verdict="diff", unit=351)
+    _, _, questionable = record(37, now, status="diff", verdict="diff")
+    _, _, weak = record(38, now, confidence=0.69)
+    a, b, merged = _confirmed_versions(conn)
+    _save_unconfirmed_review(conn, merged)
+    conn.execute("UPDATE dup_pairs SET status='open' WHERE id=?", (merged,))
+    assert dupreview.decide(conn, merged, "repeat", keep_id=b)["ok"]
+    conn.execute("UPDATE dup_pairs SET ai=json_set(ai,'$.applied',1) WHERE id=?", (merged,))
+    _, _, stale = record(39, now, status="linked")
+    conn.execute("UPDATE dup_pairs SET ai=json_set(ai,'$.signature','old') WHERE id=?", (stale,))
+    _, _, market = record(40, now, status="market", verdict="market")
+    conn.commit()
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("Rechecking saved decisions requires no model requests")
+
+    monkeypatch.setattr(llm, "ask_json", unexpected)
+    previous_pairs = conn.execute("SELECT * FROM dup_pairs ORDER BY id").fetchall()
+    previous_listings = conn.execute("SELECT * FROM listings ORDER BY id").fetchall()
+    conn.execute("PRAGMA query_only=ON")
+    audit = dupreview.recheck_recent(conn, 48)
+    assert (audit["since_ts"], audit["until_ts"], audit["checked"]) == (since, now, 8)
+    assert audit["previous"] == {"unconfirmed": 2, "repeat": 1, "diff": 2, "market": 1, "linked": 2}
+    assert audit["would_apply"] == {"repeat": 0, "diff": 0, "market": 2, "linked": 0}
+    assert (audit["held"], audit["unchanged"], audit["already_merged"], audit["needs_review"], audit["stale"]) == (
+        1, 2, 1, 1, 1)
+    assert conn.execute("SELECT * FROM dup_pairs ORDER BY id").fetchall() == previous_pairs
+    conn.execute("PRAGMA query_only=OFF")
+    applied = dupreview.recheck_recent(conn, 48, apply=True)
+    assert applied["applied"] == audit["would_apply"]
+    assert applied["needs_review_by_reason"] == {"Есть подтверждения, что объявления относятся к одной квартире.": 1}
+    assert dict(conn.execute("SELECT id,status FROM dup_pairs")) == {
+        held: "market", linked: "market", older: "unconfirmed", future: "unconfirmed", manual: "unconfirmed",
+        different: "diff", questionable: "diff", weak: "unconfirmed", merged: "repeat", stale: "linked", market: "market",
+    }
+    assert conn.execute("SELECT merged_into FROM listings WHERE id=?", (a,)).fetchone()[0] == b
+    assert conn.execute("SELECT * FROM listings ORDER BY id").fetchall() == previous_listings
+    assert not any(dupreview.recheck_recent(conn, 48)["would_apply"].values())
+
+
+def test_recent_review_skips_newer_admin_decision_during_replay(conn, monkeypatch):
+    now = int(dupreview.time.time())
+    a, b, pid = _address_versions(conn, other_phone="+79000000002")
+    _save_unconfirmed_review(conn, pid, "market")
+    conn.execute("UPDATE dup_pairs SET decided_at=? WHERE id=?", (now, pid))
+    conn.commit()
+    write = dupreview._write_review
+
+    def with_admin_update(conn, operation, *, wait_for_db):
+        conn.execute("UPDATE dup_pairs SET status='diff',user_id=1 WHERE id=?", (pid,))
+        conn.commit()
+        return write(conn, operation, wait_for_db=wait_for_db)
+
+    monkeypatch.setattr(dupreview, "_write_review", with_admin_update)
+    report = dupreview.recheck_recent(conn, 48, apply=True)
+    assert report["checked"] == report["stale"] == 1
+    assert not any(report["applied"].values())
+    assert conn.execute("SELECT status,user_id FROM dup_pairs WHERE id=?", (pid,)).fetchone()[:] == ("diff", 1)
+    assert a not in offers.groups(conn) and b not in offers.groups(conn)
+
+
 def test_market_accepts_detailed_description_and_keeps_each_offer(conn, monkeypatch):
     monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
     old, fresh = listing(conn), listing(conn, "+79000000002")
