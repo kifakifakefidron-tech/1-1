@@ -842,7 +842,7 @@ def stats(conn: sqlite3.Connection) -> list[dict]:
             for k, d in by.items() if any(d.values())]
 
 
-def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
+def _card(conn: sqlite3.Connection, lid: int, *, include_history: bool = True) -> dict | None:
     r = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
     if r is None:
         return None
@@ -850,7 +850,7 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
             for t in ("favorites", "client_items", "collection_items")}
     chat = conn.execute("""SELECT m.chat_name FROM listing_events e JOIN messages m ON m.id = e.message_id
                            WHERE e.listing_id = ? AND COALESCE(m.chat_name, '') != '' ORDER BY e.ts DESC LIMIT 1""",
-                        (lid,)).fetchone() if _has_col(conn, "listing_events", "message_id") else None
+                        (lid,)).fetchone() if include_history and _has_col(conn, "listing_events", "message_id") else None
     catalog = (r["ext_id"] or "").startswith(applet.PREFIX)
     text = (r["description"] or r["fragment"] or "") if catalog else (r["fragment"] or r["description"] or "")
     # Для каталога берём текст объявления, служебный фрагмент нужен для географии.
@@ -864,8 +864,10 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
     # 25.10 (Артём): «номер, который отправил, тоже нужен рядом» — кто прислал последнее сообщение об объекте (и раньше, если другие)
     from .rules import normalize_phone
     sender = []
-    for (raw,) in conn.execute("""SELECT m.sender FROM listing_events e JOIN messages m ON m.id = e.message_id
-                                  WHERE e.listing_id = ? AND COALESCE(m.sender, '') != '' ORDER BY e.ts DESC LIMIT 20""", (lid,)):
+    history = conn.execute("""SELECT m.sender FROM listing_events e JOIN messages m ON m.id = e.message_id
+                              WHERE e.listing_id = ? AND COALESCE(m.sender, '') != '' ORDER BY e.ts DESC LIMIT 20""",
+                           (lid,)) if include_history else ()
+    for (raw,) in history:
         ph = normalize_phone(str(raw).split("@")[0])
         if ph and ph not in sender:
             sender.append(ph)
@@ -893,7 +895,7 @@ def _card(conn: sqlite3.Connection, lid: int) -> dict | None:
     if not text_ph and not sender and card_ph:
         sender, text_from = list(card_ph), None
     who = None
-    if not sender:   # номера отправителя нет — хотя бы имя, как в чате
+    if include_history and not sender:   # номера отправителя нет — хотя бы имя, как в чате
         w = conn.execute("""SELECT m.sender_name, m.sender FROM listing_events e JOIN messages m ON m.id = e.message_id
                             WHERE e.listing_id = ? AND (COALESCE(m.sender_name, '') != '' OR COALESCE(m.sender, '') != '')
                             ORDER BY e.ts DESC LIMIT 1""", (lid,)).fetchone()

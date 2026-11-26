@@ -267,6 +267,74 @@ def test_recent_review_skips_newer_admin_decision_during_replay(conn, monkeypatc
     assert a not in offers.groups(conn) and b not in offers.groups(conn)
 
 
+def test_fresh_recent_audit_includes_manual_and_merged_pairs_and_resumes(conn, monkeypatch, tmp_path):
+    from tools import audit_recent_dups
+
+    now = 2000000
+    clock = [now]
+    monkeypatch.setattr(audit_recent_dups.time, "time", lambda: clock[0])
+    monkeypatch.setattr(audit_recent_dups.time, "sleep", lambda seconds: None)
+    conn.execute("INSERT INTO users(id,created) VALUES (1,1)")
+
+    def record(house, when, status, user=0):
+        a, b, pid = _address_versions(conn, building=f"{house}/6", other_phone="+79000000002")
+        conn.execute("UPDATE dup_pairs SET status=?,decided_at=?,user_id=? WHERE id=?", (status, when, user, pid))
+        return a, b, pid
+
+    a, b, merged = record(41, now, "open")
+    conn.execute("UPDATE listings SET photos=? WHERE id=?", ('["https://example.test/first.jpg"]', a))
+    message = ingest.add_message(conn, source="wa", profile_id="test", chat_id="sale", msg_id="merge-audit",
+                                 sender="79000000001@c.us", text="Объявление", ts=now - 50)
+    conn.execute("INSERT INTO listing_events(listing_id,message_id,ts) VALUES (?,?,?)", (a, message, now - 50))
+    assert dupreview.decide(conn, merged, "repeat", user_id=1, keep_id=b)["ok"]
+    _, _, manual = record(42, now - 2, "diff", user=1)
+    _, _, held = record(43, now - 48 * 3600, "unconfirmed")
+    _, _, old = record(44, now - 48 * 3600 - 1, "market")
+    _, _, open_pair = record(45, now, "open")
+    gone, _, unavailable = record(46, now - 4, "split", user=1)
+    conn.execute("DELETE FROM listings WHERE id=?", (gone,))
+    conn.commit()
+    conn.execute("PRAGMA query_only=ON")
+    prior = conn.execute("SELECT * FROM dup_pairs ORDER BY id").fetchall()
+    previous_cards = conn.execute("SELECT * FROM listings ORDER BY id").fetchall()
+    calls = []
+    disconnected = [True]
+
+    def model(system, content, max_tokens):
+        payload = json.loads(content)
+        cards = payload["объявления"]
+        house = cards[0]["house"]
+        calls.append(house)
+        assert "сверка" in payload and cards[0]["text"].startswith("1| ")
+        if house == "41/6":
+            assert not payload["есть общий номер в двух карточках"] and not payload["совпавших фото"]
+        if house == "42/6" and disconnected[0]:
+            raise llm.LLMError("Временный сбой")
+        return {"object": "same", "agent": "different", "confidence": 0.69 if house == "43/6" else 0.98}
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    path = tmp_path / "audit.jsonl"
+    with path.open("a+", encoding="utf-8") as report:
+        first = audit_recent_dups.audit(conn, report, 48)
+        report.write('{"id":')
+    assert (first["total"], first["reviewed"], first["remaining"], first["unavailable"]) == (4, 2, 1, 1)
+    assert calls == ["41/6", "42/6", "42/6", "42/6", "43/6"]
+    disconnected[0] = False
+    clock[0] += 72 * 3600
+    with path.open("a+", encoding="utf-8") as report:
+        finished = audit_recent_dups.audit(conn, report, 48)
+    assert finished["until_ts"] == now and finished["remaining"] == 0 and finished["reviewed"] == 3
+    assert finished["prior_status_by_new_recommendation"] == {
+        "repeat": {"market": 1}, "diff": {"market": 1}, "unconfirmed": {"unsure": 1}}
+    header, *rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert {entry["id"] for entry in header["pairs"]} == {merged, manual, held, unavailable}
+    assert all(entry["id"] not in (old, open_pair) for entry in rows)
+    assert rows[0]["without_transferred_details"] and rows[0]["manual"]
+    assert calls == ["41/6", "42/6", "42/6", "42/6", "43/6", "42/6"]
+    assert conn.execute("SELECT * FROM dup_pairs ORDER BY id").fetchall() == prior
+    assert conn.execute("SELECT * FROM listings ORDER BY id").fetchall() == previous_cards
+
+
 def test_market_accepts_detailed_description_and_keeps_each_offer(conn, monkeypatch):
     monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
     old, fresh = listing(conn), listing(conn, "+79000000002")
