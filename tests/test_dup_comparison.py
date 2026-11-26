@@ -295,6 +295,126 @@ def test_market_accepts_detailed_description_and_keeps_each_offer(conn, monkeypa
     assert {item["id"] for item in offers.groups(conn)[old]} == {old, fresh}
 
 
+def test_fresh_review_merges_land_reposts_with_a_new_price(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    old, fresh = listing(conn), listing(conn)
+    original = ("Сочи, ул. Фабрициуса. Участок 18,6 сотки, ИЖС, собственность. "
+                "Небольшой уклон, закрытая территория, асфальтированная подъездная дорога. "
+                "Все коммуникации рядом, есть канализация. ГПЗУ на руках, под три коттеджа.")
+    conn.execute("""UPDATE listings SET type='land',rooms=NULL,floor=NULL,area=NULL,
+                    land=18.6,street='Фабрициуса',settlement='Сочи',house=NULL WHERE id IN (?,?)""", (old, fresh))
+    conn.execute("UPDATE listings SET fragment=?,price=40000000,last_seen=50 WHERE id=?",
+                 (original + "\nЦена 40 000 000 рублей", old))
+    conn.execute("UPDATE listings SET fragment=?,price=35000000,first_seen=20,last_seen=20 WHERE id=?",
+                 (original + "\nЦена 35 000 000 рублей", fresh))
+    pid = pair(conn, old, fresh, kind="text")
+    _save_unconfirmed_review(conn, pid, "repeat", 0.95)
+    monkeypatch.setattr(llm, "ask_json", lambda *args, **kwargs: {
+        "object": "same", "agent": "same", "confidence": 0.95, "evidence": []})
+    result = dupreview.review_ai(conn, pid, refresh=True)
+    assert result["applied"] and result["ai"]["keep_id"] == fresh
+    assert tuple(conn.execute("SELECT id,price FROM listings WHERE is_active=1").fetchone()) == (fresh, 35000000)
+    assert conn.execute("SELECT merged_into FROM listings WHERE id=?", (old,)).fetchone()[0] == fresh
+
+
+def _cards_with_address_in_the_description(conn, *, second_house=4):
+    a, b = listing(conn), listing(conn, "+79000000002")
+    first = ("Район парка Краснодар Аверкиева, 4\n3к этаж 7/16 78.0 м²\n"
+             "Новый ремонт в ванной и комнате, коридор под ремонт\nЦена 7 800 000 ₽")
+    second = (f"Район парка Краснодар Аверкиева, {second_house}\n3к этаж 7/16 78.2 м²\n"
+              "В ванной ремонт свежий, коридор требует отделки\nЦена 7 850 000 ₽")
+    conn.execute("""UPDATE listings SET street=NULL,house=NULL,area=78,rooms=3,floor=7,floors=16,
+                    complex='Восточно-Кругликовский' WHERE id IN (?,?)""", (a, b))
+    conn.execute("UPDATE listings SET fragment=?,price=7800000 WHERE id=?", (first, a))
+    conn.execute("UPDATE listings SET fragment=?,area=78.2,price=7850000 WHERE id=?", (second, b))
+    return a, b, pair(conn, a, b, kind="offer_review")
+
+
+def test_model_can_prove_a_match_using_both_source_descriptions(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    a, b, pid = _cards_with_address_in_the_description(conn)
+    assert not dupreview._same_offer_property(*(dupreview._card(conn, lid) for lid in (a, b)))
+
+    def answer(system, payload, max_tokens):
+        assert "дословная цитата" in system
+        assert all("house" not in card for card in json.loads(payload)["объявления"])
+        return {"object": "same", "agent": "different", "confidence": 0.90, "evidence": [
+            {"kind": "address", "left": "Аверкиева, 4", "right": "Аверкиева, 4"},
+            {"kind": "condition", "left": "ремонт в ванной и комнате, коридор под ремонт",
+             "right": "В ванной ремонт свежий, коридор требует отделки"},
+        ]}
+
+    monkeypatch.setattr(llm, "ask_json", answer)
+    result = dupreview.review_ai(conn, pid)
+    assert result["applied"] and result["status"] == "market" and len(result["ai"]["evidence"]) == 2
+    assert {item["id"]: item["price"] for item in offers.groups(conn)[a]} == {a: 7800000, b: 7850000}
+
+
+def test_model_cannot_borrow_address_from_an_alternative_or_ignore_a_source_conflict(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    a, b, pid = _cards_with_address_in_the_description(conn, second_house=8)
+    answer = {"object": "same", "agent": "different", "confidence": 0.99, "evidence": [
+        {"kind": "address", "left": "Аверкиева, 4", "right": "Аверкиева, 4"},
+        {"kind": "condition", "left": "ремонт в ванной и комнате, коридор под ремонт",
+         "right": "В ванной ремонт свежий, коридор требует отделки"},
+        {"kind": [], "left": "район", "right": "район"},
+    ]}
+    monkeypatch.setattr(llm, "ask_json", lambda *args, **kwargs: answer)
+    outcome = dupreview.review_ai(conn, pid)
+    assert outcome["status"] == "unconfirmed" and len(outcome["ai"]["evidence"]) == 1
+    assert dupreview.decide(conn, pid, "reopen")["ok"]
+    answer["evidence"][0]["right"] = "Аверкиева, 8"
+    outcome = dupreview.review_ai(conn, pid, checked_since=dupreview.time.time())
+    assert outcome["status"] == "unconfirmed"
+    assert outcome["ai"]["closure_reason"] == "Есть расхождение в характеристиках квартиры."
+    assert not offers.groups(conn)
+
+
+def test_refresh_backlog_reconsiders_closed_pairs_and_resumes_without_new_calls(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    _, _, linked = _address_versions(conn, building="35/6", other_phone="+79000000002")
+    _save_unconfirmed_review(conn, linked, "unsure", 0.50)
+    old, fresh, separate = _address_versions(conn, building="36/6", other_phone="+79000000002")
+    conn.execute("UPDATE listings SET fragment='',house='36/6к2' WHERE id IN (?,?)", (old, fresh))
+    _, _, manual = _address_versions(conn, building="37/6", other_phone="+79000000002")
+    assert dupreview.decide(conn, manual, "diff", user_id=1)["ok"]
+    inactive, _, gone = _address_versions(conn, building="38/6", other_phone="+79000000002")
+    _save_unconfirmed_review(conn, gone, "market")
+    conn.execute("UPDATE listings SET is_active=0 WHERE id=?", (inactive,))
+    request_count = []
+
+    def answer(system, payload, max_tokens):
+        description = json.loads(payload)["объявления"][0]
+        request_count.append(description["house"])
+        return {"object": "same" if description["house"] == "35/6" else "different", "agent": "different",
+                "confidence": 0.97, "evidence": []}
+
+    monkeypatch.setattr(llm, "ask_json", answer)
+    result = dupreview.review_backlog(conn, refresh=True)
+    assert (result["total"], result["applied"], result["unconfirmed"]) == (2, 1, 1)
+    assert result["by_decision"] == {"repeat": 0, "diff": 0, "market": 1, "linked": 0}
+    assert result["held_by_reason"] == {"DeepSeek не подтвердил конкретное расхождение между объектами.": 1}
+    assert dict(conn.execute("SELECT id,status FROM dup_pairs")) == {
+        linked: "market", separate: "unconfirmed", manual: "diff", gone: "unconfirmed",
+    }
+    assert dupreview.review_backlog(conn, refresh=True)["already_checked"] == 1
+    assert request_count == ["35/6", "36/6к2"]
+
+
+def test_refresh_returns_saved_decision_after_a_model_timeout(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    _, _, pid = _address_versions(conn, other_phone="+79000000002")
+    _save_unconfirmed_review(conn, pid, "market")
+    previous = conn.execute("SELECT * FROM dup_pairs WHERE id=?", (pid,)).fetchone()
+
+    def timeout(*args, **kwargs):
+        raise llm.LLMError("timeout")
+
+    monkeypatch.setattr(llm, "ask_json", timeout)
+    assert dupreview.review_ai(conn, pid, refresh=True)["retryable"]
+    assert conn.execute("SELECT * FROM dup_pairs WHERE id=?", (pid,)).fetchone() == previous
+
+
 def test_confident_market_with_generic_template_stays_separate(conn, monkeypatch):
     monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
     first, second = listing(conn), listing(conn, "+79000000002")
