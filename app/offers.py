@@ -71,9 +71,90 @@ def street_key(value):
 @lru_cache(maxsize=4096)
 def house_key(value):
     house = (value or "").casefold()
-    house = re.sub(r"(?<=\d)\s*(?:корпус|корп\.?|к\.)\s*(?=\d)", "к", house)
+    house = re.sub(r"(?<=\d)\s*,?\s*(?:корпус|корп\.?|к\.?)\s*(?=\d)", "к", house)
     house = re.sub(r"(?<=\d)\s*(?:строение|стр\.?)\s*(?=\d)", "стр", house)
     return re.sub(r"\s+", "", house)
+
+
+_ADDRESS_LABEL = re.compile(r"^адрес\s*:\s*", re.IGNORECASE)
+_STREET_PREFIX = re.compile(r"^(?:ул(?:ица)?|проспект|пр-кт|пер(?:еулок)?|проезд|бульвар|б-р|шоссе)\b", re.IGNORECASE)
+_CORPUS_SUFFIX = re.compile(r"(?<=\d)к\d{1,3}$")
+_UNIT_NUMBER = re.compile(r"\b(?:квартира|кв\.?|лот)\s*№\s*(\d{1,5})\b(?![.,/]\d)", re.IGNORECASE)
+_BARE_UNIT = re.compile(
+    r"(?:^[^\w\n]*|[,;][ \t]*)(?:кв\.[ \t]*|(?:кв|квартира)[ \t]+)(\d{1,5})"
+    r"(?=[ \t]*(?:$|[,;.!](?![ \t]*\d)))", re.IGNORECASE
+)
+_DETAIL_LINE = re.compile(
+    r"[^\w\n]*(?P<kind>квартира|подъезд|кв\.?)\s*(?:№\s*|\s+)(?P<number>\d{1,5})[^\w\n]*", re.IGNORECASE
+)
+
+
+@lru_cache(maxsize=4096)
+def _review_address(street, house, text):
+    street, house = street_key(street), house_key(house)
+    observed = set()
+    for line in text.splitlines():
+        line = re.sub(r"^[^\w]+", "", line)
+        label = _ADDRESS_LABEL.match(line)
+        address = line[label.end():] if label else line
+        prefixed = _STREET_PREFIX.match(address)
+        known_street = street and words(address).startswith(f"{street} ")
+        if not (label or prefixed or known_street):
+            continue
+        name, number = rules.extract_street(address)
+        if not number and not prefixed:
+            name, number = rules.extract_street(f"ул. {address}")
+        if name and number:
+            observed.add((street_key(name), house_key(number)))
+    if len(observed) != 1:
+        return street, house, len(observed) > 1
+    stated_street, stated_house = observed.pop()
+    if _different(street, stated_street):
+        return street, house, True
+    if not house or house == _CORPUS_SUFFIX.sub("", stated_house):
+        house = stated_house
+    conflict = house != stated_house and stated_house != _CORPUS_SUFFIX.sub("", house)
+    return street or stated_street, house, conflict
+
+
+def _listing_text(row):
+    keys = row.keys()
+    if "text" in keys:
+        return row["text"] or ""
+    return (
+        (row["fragment"] if "fragment" in keys else None)
+        or (row["description"] if "description" in keys else None)
+        or ""
+    )
+
+
+def review_address(row):
+    """Адрес и признак противоречия между карточкой и исходным текстом."""
+    return _review_address(row["street"], row["house"], _listing_text(row))
+
+
+@lru_cache(maxsize=4096)
+def review_text_details(text):
+    body, units, entrances = [], set(), set()
+    for line in text.splitlines():
+        if match := _DETAIL_LINE.fullmatch(line):
+            (entrances if match["kind"].casefold() == "подъезд" else units).add(int(match["number"]))
+        else:
+            units.update(map(int, _UNIT_NUMBER.findall(line)))
+            units.update(map(int, _BARE_UNIT.findall(line)))
+            body.append(line)
+    return "\n".join(body), frozenset(units), frozenset(entrances)
+
+
+def unit_number(row):
+    _, units, _ = review_text_details(_listing_text(row))
+    return next(iter(units)) if len(units) == 1 else None
+
+
+def _unit_details_conflict(a, b):
+    _, units_a, entrances_a = review_text_details(_listing_text(a))
+    _, units_b, entrances_b = review_text_details(_listing_text(b))
+    return len(units_a | units_b) > 1 or len(entrances_a | entrances_b) > 1
 
 
 def place_keys(row):
@@ -97,11 +178,12 @@ def review_area_close(a, b) -> bool | None:
     return delta <= REVIEW_AREA_TOLERANCE_M2 if delta is not None else None
 
 
-def _conflicts(a, b, place_a, place_b, *, for_review: bool = False):
+def _conflicts(a, b, place_a, place_b, *, for_review: bool = False, houses=None):
     close_area = (review_area_close(a["area"], b["area"]) if for_review
                   else dedupe._close(a["area"], b["area"], 0.03, 2))
+    house_a, house_b = houses if houses is not None else (house_key(a["house"]), house_key(b["house"]))
     return (any(_different(x, y) for x, y in zip(place_a, place_b))
-            or _different(house_key(a["house"]), house_key(b["house"]))
+             or _different(house_a, house_b)
             or _different(words(a["settlement"]), words(b["settlement"]))
             or _different(a["room_kind"], b["room_kind"])
             or any(a[k] is not None and b[k] is not None and a[k] != b[k]
@@ -111,8 +193,13 @@ def _conflicts(a, b, place_a, place_b, *, for_review: bool = False):
 
 
 def identity_conflict(a, b) -> bool:
-    return (a["deal"] != b["deal"] or property_type(a["type"]) != property_type(b["type"])
-            or _conflicts(a, b, place_keys(a), place_keys(b), for_review=True))
+    if a["deal"] != b["deal"] or property_type(a["type"]) != property_type(b["type"]):
+        return True
+    street_a, house_a, conflict_a = review_address(a)
+    street_b, house_b, conflict_b = review_address(b)
+    return conflict_a or conflict_b or _unit_details_conflict(a, b) or _conflicts(
+        a, b, (geo.complex_key(a["complex"]), street_a), (geo.complex_key(b["complex"]), street_b),
+        for_review=True, houses=(house_a, house_b))
 
 
 def similar_signals(a, b, place_a, place_b):

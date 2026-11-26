@@ -14,10 +14,10 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-from . import applet, config, db, geo, offers
+from . import applet, config, db, geo, offers, rules
 from .branding import partner_text
 from .dedupe import _close, _house_eq, price_revision_key, price_revision_time, text_twin
-from .textnorm import words
+from .textnorm import norm, words
 
 KINDS = {
     "price_revision": "Одинаковый текст · разная цена",
@@ -39,6 +39,7 @@ PRICE_REVISION_SCAN = "dup_price_revision_scan_v2"
 _PRICE_PAIR_SCOPE = "p.kind='price_revision' AND a.price != b.price"
 _AI_ACTIONS = ("repeat", "diff", "market", "linked")
 _AI_VERDICTS = (*_AI_ACTIONS, "unsure")
+_RECHECK_VERDICTS = ("repeat", "market", "linked")
 _UNCONFIRMED = "unconfirmed"
 _REVIEWED = ("same", "diff", "split", _UNCONFIRMED, *offers.LINK_STATUSES)
 AI_AUTO_CONFIDENCE = 0.7
@@ -117,7 +118,10 @@ def _contra(a, b) -> str | None:
     if _close(a["land"], b["land"], 0.04, 0.3) is False:
         return "участок"
     if _house_eq(a["house"], b["house"]) is False:
-        return "дом"
+        _, house_a, conflict_a = offers.review_address(a)
+        _, house_b, conflict_b = offers.review_address(b)
+        if conflict_a or conflict_b or house_a != house_b:
+            return "дом"
     if a["complex"] and b["complex"] and _cxk(a["complex"]) != _cxk(b["complex"]):
         return "ЖК"
     if a["street"] and b["street"] and words(a["street"]) != words(b["street"]):
@@ -1119,51 +1123,36 @@ def _current_ai_result(conn, pid, cards, signature, checked_since):
     return {"ok": True, "stale": True}
 
 
-_UNIT_NUMBER = re.compile(r"\b(?:квартира|кв\.?|лот)\s*№\s*(\d{1,5})\b", re.IGNORECASE)
-_DETAIL_LINE = re.compile(
-    r"[^\w\n]*(?P<kind>квартира|подъезд)\s*(?:№\s*|\s+)(?P<number>\d{1,5})[^\w\n]*", re.IGNORECASE
-)
+_PRICE_NOTICES = {"снижение цены", "цена снижена", "новая цена"}
+_PRICE_LINE_LABELS = {"", "цена", "стоимость", "новая цена"}
 
 
-def _version_text(text):
-    body, details = [], defaultdict(set)
-    for line in text.splitlines():
-        if match := _DETAIL_LINE.fullmatch(line.strip()):
-            details[match["kind"].casefold()].add(match["number"])
-        else:
-            body.append(line)
-    return "\n".join(body), details
-
-
-def _different_unit_details(a, b) -> bool:
-    number_a, number_b = _unit_number(a), _unit_number(b)
-    if number_a and number_b and number_a != number_b:
-        return True
-    entrance_a = _version_text(a["text"] or "")[1].get("подъезд")
-    entrance_b = _version_text(b["text"] or "")[1].get("подъезд")
-    return bool(entrance_a and entrance_b and entrance_a.isdisjoint(entrance_b))
+@functools.lru_cache(maxsize=4096)
+def _review_price_key(text, deal, price):
+    text = rules.normalize_digits("\n".join(line for line in text.splitlines() if words(line) not in _PRICE_NOTICES))
+    span = rules.explicit_price_span(text, deal)
+    if not span or span[0] != price:
+        return None
+    _, start, end = span
+    before, after = text[:start], text[end:]
+    leading, _, label = before.rpartition("\n")
+    tail, _, following = after.partition("\n")
+    if words(label) in _PRICE_LINE_LABELS and not words(tail):
+        body = norm(f"{leading}\n{following}")
+        return ("line", body) if len(words(body).split()) >= 12 else None
+    return (norm(before), norm(after)) if len(words(f"{before} {after}").split()) >= 12 else None
 
 
 def _review_text_matches(a, b) -> bool:
     from .parser import strip_phones
 
-    if a["deal"] != b["deal"] or offers.property_type(a["type"]) != offers.property_type(b["type"]) or _contra(a, b):
+    if offers.identity_conflict(a, b):
         return False
-    left, right = (strip_phones(card["text"] or "") for card in (a, b))
-    if _different_unit_details(a, b):
-        return False
-    body_a, details_a = _version_text(left)
-    body_b, details_b = _version_text(right)
-    for key in details_a.keys() | details_b.keys():
-        values = details_a[key] | details_b[key]
-        if len(values) > 1:
-            return False
-    if details_a or details_b:
-        left, right = body_a, body_b
-    if (left_words := words(left)) and left_words == words(right):
+    left, right = (offers.review_text_details(strip_phones(card["text"] or ""))[0] for card in (a, b))
+    if a["price"] == b["price"] and (left_words := words(left)) and left_words == words(right):
         return True
-    left_key = price_revision_key(left, a["deal"], a["price"])
-    return left_key is not None and left_key == price_revision_key(right, b["deal"], b["price"])
+    left_key = _review_price_key(left, a["deal"], a["price"])
+    return left_key is not None and left_key == _review_price_key(right, b["deal"], b["price"])
 
 
 def _review_numbers(numbers) -> set[str]:
@@ -1221,8 +1210,9 @@ def _model_review(conn, cards, signature):
     shared_phone = _shared_review_phone(cards)
     same_agent = _review_same_agent(*agents, shared_phone=shared_phone)
     relation = {True: "совпадают", False: "различаются", None: "неясно"}[same_agent]
+    matching_text = _review_text_matches(*cards)
     sender_copy = same_agent is False and _matching_sender_copy(
-        conn, cards, agents, text_matches=_review_text_matches(*cards))
+        conn, cards, agents, text_matches=matching_text)
     sender_a, sender_b = (_review_numbers(card["sender_phones"]) for card in cards)
     contact_a, contact_b = (_review_numbers(card["text_phones"]) for card in cards)
     literal_a, literal_b = (_review_numbers(card["literal_phones"]) for card in cards)
@@ -1234,7 +1224,10 @@ def _model_review(conn, cards, signature):
         fields = {key: card[key] for key in _AI_FIELDS if card[key] not in (None, "")}
         text = card["text"] or ""
         price_span = explicit_price_span(text, card["deal"])
+        _, house, address_conflict = offers.review_address(card)
         return {**fields, "text": safe(text)[:3000], "источник": card["source"],
+                "номер дома с корпусом": (house or None) if not address_conflict else None,
+                "номер квартиры в тексте": offers.unit_number(card),
                 "артикул": card["article"], "цена подтверждена в тексте": bool(price_span and price_span[0] == card["price"]),
                 "контакт прямо в тексте": bool(card["literal_phones"]),
                 "несколько объектов в одном тексте": bool(card["multi_units"])}
@@ -1246,9 +1239,10 @@ def _model_review(conn, cards, signature):
         "один отправитель": bool(sender_a & sender_b),
         "номер объявления совпал с отправителем другой карточки": bool((contact_a & sender_b) or (contact_b & sender_a)),
         "совпали номера прямо в текстах": bool(literal_a & literal_b),
+        "совпало описание с учётом изменения цены": matching_text,
         "совпал весь исходный текст, номера взяты только у отправителей": sender_copy,
         "сервис подтвердил совпадение квартиры по проверяемым признакам": (
-            not offers.identity_conflict(*cards) and not _different_unit_details(*cards)
+            not offers.identity_conflict(*cards)
             and _same_unit_proof(*cards, for_repeat=False, allow_copy=True)
         ),
         "разница площади в м²": offers.review_area_delta(cards[0]["area"], cards[1]["area"]),
@@ -1345,12 +1339,6 @@ def ask_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False, che
     return {"ok": True, "ai": ai}
 
 
-def _unit_number(card):
-    text = card["text"] or ""
-    numbers = _version_text(text)[1].get("квартира", set()) | set(_UNIT_NUMBER.findall(text))
-    return next(iter(numbers)) if len(numbers) == 1 else None
-
-
 _AREA_BREAKDOWN = re.compile(r"\bплощадь\s*[:–—-]?\s*\d+(?:[.,]\d+)?\s*/\s*\d+(?:[.,]\d+)?\s*/\s*\d+(?:[.,]\d+)?", re.I)
 
 
@@ -1380,26 +1368,33 @@ def _property_copy_key(card) -> str | None:
 
 
 def _same_unit_proof(a, b, *, for_repeat: bool, allow_copy: bool = False) -> bool:
-    street, house = offers.street_key(a["street"]), offers.house_key(a["house"])
-    same_building = (street and house and street == offers.street_key(b["street"])
-                     and house == offers.house_key(b["house"]))
-    if not same_building:
+    street_a, house_a, conflict_a = offers.review_address(a)
+    street_b, house_b, conflict_b = offers.review_address(b)
+    if conflict_a or conflict_b:
         return False
-    if (unit := _unit_number(a)) and unit == _unit_number(b):
+    same_street = bool(street_a and street_a == street_b)
+    same_building = same_street and bool(house_a and house_a == house_b)
+    if same_building and (unit := offers.unit_number(a)) and unit == offers.unit_number(b):
         return True
     both_detailed = (a["floor"] is not None and a["floor"] == b["floor"]
                      and a["rooms"] is not None and a["rooms"] == b["rooms"]
                      and offers.review_area_close(a["area"], b["area"]) is True)
     if not both_detailed:
         return False
+    detailed_copy = (for_repeat and min(len(words(card["text"]).split()) for card in (a, b)) >= 12
+                     and _review_text_matches(a, b))
     photos_a, photos_b = (offers._photo_keys(json.dumps(card["photos"])) for card in (a, b))
     if len(photos_a & photos_b) >= 2:
-        return True
+        complex_a, complex_b = (geo.complex_key(card["complex"]) for card in (a, b))
+        same_place = same_street or bool(complex_a and complex_a == complex_b)
+        return same_building or (detailed_copy and same_place)
+    if not same_building:
+        return False
     if allow_copy and a["price"] and a["price"] == b["price"] and not (a["price_doubt"] or b["price_doubt"]):
         key = _property_copy_key(a)
         if key and key == _property_copy_key(b):
             return True
-    return for_repeat and _review_text_matches(a, b) and min(len(words(card["text"]).split()) for card in (a, b)) >= 12
+    return detailed_copy
 
 
 def _excluded_family_join(conn, left_ids, right_ids, *, repeat: bool) -> bool:
@@ -1430,7 +1425,6 @@ def _competing_version(conn, cards) -> bool:
                                             shared_phone=_shared_review_phone((incoming, other)))
             if same_agent is True and _review_text_matches(incoming, other) and (
                     offers.identity_conflict(existing, other)
-                    or _different_unit_details(existing, other)
                     or _excluded_family_join(conn, [existing["id"]], [other["id"]], repeat=True)):
                 return True
     return False
@@ -1454,7 +1448,7 @@ def _review_guard(conn, cards, ai) -> str | None:
         ai.update(_with_recommended_keep({**ai, "verdict": "repeat", "model_verdict": ai["verdict"],
                                           "why": "Совпали текст объявления и агент."}, cards))
     verdict = ai["verdict"]
-    conflict = offers.identity_conflict(a, b) or _different_unit_details(a, b)
+    conflict = offers.identity_conflict(a, b)
     if verdict == "diff":
         if not conflict and _same_unit_proof(a, b, for_repeat=same_agent is True, allow_copy=True):
             return "Есть подтверждения, что объявления относятся к одной квартире."
@@ -1509,6 +1503,29 @@ def _review_reason(conn, cards, ai) -> str | None:
     return _review_guard(conn, cards, ai)
 
 
+def _save_ai_decision(conn, pid, ai, reason):
+    verdict = _UNCONFIRMED if reason else ai["verdict"]
+    saved = decide(conn, pid, verdict, keep_id=ai.get("keep_id"))
+    if saved.get("stale"):
+        return {"ok": True, "stale": True}
+    if not saved["ok"]:
+        reason = saved["error"]
+        verdict = _UNCONFIRMED
+        if not decide(conn, pid, verdict)["ok"]:
+            return {"ok": True, "stale": True}
+    ai.pop("manual_reason", None)
+    ai.pop("contact_review_version", None)
+    ai["applied"] = not reason
+    if reason:
+        ai["closure_reason"] = reason
+    else:
+        ai.pop("closure_reason", None)
+        conn.execute("""INSERT INTO state(key,value) VALUES ('cache_ver',?)
+                        ON CONFLICT(key) DO UPDATE SET value=excluded.value""", (str(time.time()),))
+    conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps(ai, ensure_ascii=False), pid))
+    return {"ok": True, "ai": ai, "applied": not reason, "status": verdict}
+
+
 def review_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False, checked_since: float | None = None) -> dict:
     """Перепроверяет данные пары перед применением решения модели."""
     result = ask_ai(conn, pid, wait_for_db=wait_for_db, checked_since=checked_since)
@@ -1530,29 +1547,70 @@ def review_ai(conn: sqlite3.Connection, pid: int, *, wait_for_db: bool = False, 
         if ai.get("verdict") not in _AI_VERDICTS:
             return {"ok": True, "pending": bool(ai.get("pending"))}
         ai = _with_recommended_keep(ai, cards)
-        reason = _review_reason(conn, cards, ai)
-        verdict = _UNCONFIRMED if reason else ai["verdict"]
-        saved = decide(conn, pid, verdict, keep_id=ai.get("keep_id"))
-        if saved.get("stale"):
-            return {"ok": True, "stale": True}
-        if not saved["ok"]:
-            reason = saved["error"]
-            verdict = _UNCONFIRMED
-            if not decide(conn, pid, verdict)["ok"]:
-                return {"ok": True, "stale": True}
-        ai.pop("manual_reason", None)
-        ai.pop("contact_review_version", None)
-        ai["applied"] = not reason
-        if reason:
-            ai["closure_reason"] = reason
-        else:
-            ai.pop("closure_reason", None)
-            conn.execute("""INSERT INTO state(key,value) VALUES ('cache_ver',?)
-                            ON CONFLICT(key) DO UPDATE SET value=excluded.value""", (str(time.time()),))
-        conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps(ai, ensure_ascii=False), pid))
-        return {"ok": True, "ai": ai, "applied": not reason, "status": verdict}
+        return _save_ai_decision(conn, pid, ai, _review_reason(conn, cards, ai))
 
     return _write_review(conn, apply, wait_for_db=wait_for_db)
+
+
+def _check_unconfirmed(conn, pid):
+    pair = conn.execute(f"""SELECT p.a,p.b,p.ai FROM dup_pairs p WHERE p.id=? AND p.status=?
+                           AND COALESCE(p.user_id,0)=0 {_ACTIVE_PAIR}""", (pid, _UNCONFIRMED)).fetchone()
+    if not pair:
+        return None, None
+    ai = _read_ai(pair["ai"])
+    if ai.get("applied") or ai.get("verdict") not in _RECHECK_VERDICTS:
+        return None, None
+    cards = [_card(conn, lid) for lid in (pair["a"], pair["b"])]
+    if not all(card and card["is_active"] for card in cards) or ai.get("signature") != _ai_signature(cards):
+        return None, None
+    ai = _with_recommended_keep(ai, cards)
+    return ai, _review_reason(conn, cards, ai)
+
+
+def _apply_unconfirmed(conn, pid):
+    conn.execute("BEGIN IMMEDIATE")
+    ai, reason = _check_unconfirmed(conn, pid)
+    if ai is None or reason:
+        return ai, reason
+    conn.execute("UPDATE dup_pairs SET status='open' WHERE id=?", (pid,))
+    result = _save_ai_decision(conn, pid, ai, None)
+    if not result.get("applied"):
+        conn.rollback()
+        if result.get("stale"):
+            return None, None
+        return ai, result["ai"]["closure_reason"]
+    return ai, None
+
+
+def recheck_unconfirmed(conn: sqlite3.Connection, *, apply: bool = False, limit: int | None = None) -> dict:
+    """Перепроверяет сохранённые рекомендации об одном объекте без запросов к DeepSeek."""
+    ids = [pid for (pid,) in conn.execute(f"""SELECT p.id FROM dup_pairs p
+        WHERE p.status=? AND COALESCE(p.user_id,0)=0 {_ACTIVE_PAIR}
+        AND CASE WHEN json_valid(p.ai) THEN json_extract(p.ai,'$.verdict') IN {_RECHECK_VERDICTS} END
+        ORDER BY p.decided_at DESC,p.id DESC LIMIT ?""", (_UNCONFIRMED, -1 if limit is None else limit))]
+    counts = dict.fromkeys(_RECHECK_VERDICTS, 0)
+    report = {"checked": len(ids), "applied" if apply else "would_apply": counts,
+              "held": 0, "changed": 0, "held_by_reason": {}, "examples": []}
+    if apply:
+        db.flush(conn)
+        print(f"Ранее оставлено раздельно пар к перепроверке: {len(ids)}. Сохранённые ответы DeepSeek.", flush=True)
+    for index, pid in enumerate(ids, start=1):
+        ai, reason = _check_unconfirmed(conn, pid)
+        if apply and ai is not None and not reason:
+            ai, reason = _write_review(conn, lambda: _apply_unconfirmed(conn, pid), wait_for_db=True)
+        if ai is None:
+            report["changed"] += 1
+        elif reason:
+            report["held"] += 1
+            reasons = report["held_by_reason"]
+            reasons[reason] = reasons.get(reason, 0) + 1
+        else:
+            counts[ai["verdict"]] += 1
+            if len(report["examples"]) < 10:
+                report["examples"].append({"id": pid, "decision": ai["verdict"], "keep_id": ai.get("keep_id")})
+        if apply and index % 100 == 0:
+            print(f"Проверено {index} из {len(ids)}. Применено {sum(counts.values())}.", flush=True)
+    return report
 
 
 def _auto_review_ids(conn: sqlite3.Connection, limit: int, *, include_pending: bool = False) -> list[int]:
@@ -1728,23 +1786,32 @@ if __name__ == "__main__":
     mode.add_argument("--backlog", action="store_true", help="один раз разобрать накопившиеся пары через DeepSeek")
     mode.add_argument("--recheck-open", action="store_true", help="заново оценить все открытые пары через DeepSeek")
     mode.add_argument("--audit", action="store_true", help="проверить выборку накопившихся пар без записи в базу")
+    mode.add_argument("--audit-unconfirmed", action="store_true", help="проверить сохранённые решения по закрытым парам без записи")
+    mode.add_argument("--recheck-unconfirmed", action="store_true", help="применить подтверждённые решения по закрытым парам")
     mode.add_argument("--inspect", nargs="+", type=int, metavar="PAIR_ID", help="показать признаки пар без DeepSeek")
-    cli.add_argument("--limit", type=int, default=30, help="размер выборки для --audit (по умолчанию 30)")
+    cli.add_argument("--limit", type=int, help="максимум пар для аудита или перепроверки закрытых пар")
     args = cli.parse_args()
+    if args.limit is not None and args.limit < 1:
+        cli.error("--limit должен быть больше 0")
     backlog = args.backlog or args.recheck_open
     if (backlog or args.audit) and not config.DEEPSEEK_API_KEY:
         cli.exit(1, "Не задан DEEPSEEK_API_KEY в контейнере worker.\n")
-    if args.audit or args.inspect:
-        if args.limit < 1:
-            cli.error("--limit должен быть больше 0")
+    if args.audit or args.inspect or args.audit_unconfirmed:
         uri = Path(config.DB_PATH).resolve().as_uri() + "?mode=ro"
         with closing(sqlite3.connect(uri, uri=True, timeout=30)) as source:
             source.row_factory = sqlite3.Row
-            report = inspect_review_pairs(source, args.inspect) if args.inspect else audit_backlog(source, args.limit)
+            if args.inspect:
+                report = inspect_review_pairs(source, args.inspect)
+            elif args.audit_unconfirmed:
+                report = recheck_unconfirmed(source, limit=args.limit)
+            else:
+                report = audit_backlog(source, args.limit or 30)
         print(json.dumps(report, ensure_ascii=False, indent=2))
         cli.exit(int(bool(args.audit and report["model_errors"])))
-    c = _retry_database(db.get, wait_for_db=True) if backlog else db.get()
-    if backlog:
+    c = _retry_database(db.get, wait_for_db=True) if backlog or args.recheck_unconfirmed else db.get()
+    if args.recheck_unconfirmed:
+        print(json.dumps(recheck_unconfirmed(c, apply=True, limit=args.limit), ensure_ascii=False, indent=2))
+    elif backlog:
         try:
             report = review_backlog(c, recheck=args.recheck_open)
         except RuntimeError as error:

@@ -1,7 +1,7 @@
 import json
 from contextlib import closing
 
-from app import accounts, config, db, dedupe, dupreview, ingest, llm, offers, parser, phonegroups, picks, repeat_refs, search
+from app import accounts, config, db, dedupe, dupreview, ingest, llm, offers, parser, phonegroups, picks, repeat_refs, rules, search
 
 
 def listing(conn, phone="+79000000001"):
@@ -77,6 +77,144 @@ def _confirmed_versions(conn):
     conn.execute("UPDATE listings SET fragment=?,price=6700000,first_seen=5,last_seen=5 WHERE id=?",
                  (text + "Цена 6 700 000 рублей\nТел. +79000000001", newer))
     return older, newer, pair(conn, older, newer)
+
+
+def _address_versions(conn, *, building="30/6", unit=350, other_phone="+79000000001"):
+    old, fresh = listing(conn), listing(conn, other_phone)
+    body = ("ЖК Лучший\nМини-2к.кв.,\n18/19 этаж, S=46 кв.м.\n"
+            "Ул. Ростовское шоссе д. {house}, кв. {unit}, сейф по запросу\n"
+            "Новый ремонт, мебель, техника\nРазбивка 4900\n")
+    first = body.format(house=f"{building}к2", unit=350) + "Цена: 7 400 000"
+    second = "‼️Снижение цены‼️\nЦена: 7 300 000\n" + body.format(house=f"{building}, корп. 2", unit=unit)
+    conn.execute("""UPDATE listings SET street='Ростовское шоссе',house=?,complex='Лучший',
+                    area=46,floor=18,floors=19 WHERE id IN (?,?)""", (building, old, fresh))
+    conn.execute("UPDATE listings SET fragment=?,price=7400000,last_seen=50 WHERE id=?", (first, old))
+    conn.execute("UPDATE listings SET fragment=?,house=?,price=7300000,first_seen=20,last_seen=20 WHERE id=?",
+                 (second, f"{building}к2", fresh))
+    return old, fresh, pair(conn, old, fresh, kind="text")
+
+
+def test_review_extracts_unit_and_corpus_from_original_description(conn, monkeypatch):
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
+    old, fresh, pid = _address_versions(conn)
+
+    def model(system, payload, max_tokens):
+        cards = json.loads(payload)["объявления"]
+        assert all(c["номер квартиры в тексте"] == 350 and c["номер дома с корпусом"] == "30/6к2" for c in cards)
+        return {"object": "same", "agent": "same", "confidence": 0.97}
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    saved = dupreview.review_ai(conn, pid)
+    assert saved["applied"] and saved["ai"]["keep_id"] == fresh
+    assert conn.execute("SELECT merged_into FROM listings WHERE id=?", (old,)).fetchone()[0] == fresh
+    assert conn.execute("SELECT price FROM listings WHERE id=?", (fresh,)).fetchone()[0] == 7300000
+    assert rules.extract_street("ул. Ивана Беличенко 86, Корп. 12") == ("Ивана Беличенко", "86к12")
+    assert rules.extract_street("Ростовское шоссе д. 30/6, корпус 12") == ("Ростовское", "30/6к12")
+    for text in ("кв. 46 м²", "кв. 18/19 этаж", "кв. 36,7 м2", "кв. 18 этаж", "1 к.кв. 54"):
+        assert offers.unit_number({"text": text}) is None, text
+
+
+def test_different_unit_or_corpus_blocks_automatic_merge(conn):
+    old, fresh, _ = _address_versions(conn, unit=351)
+    cards = [dupreview._card(conn, lid) for lid in (old, fresh)]
+    assert offers.identity_conflict(*cards)
+    a, b = cards
+    b["text"] = b["text"].replace("кв. 351", "кв. 350").replace("корп. 2", "корп. 12")
+    b["house"] = "30/6к12"
+    assert offers.identity_conflict(a, b)
+    assert dupreview._review_guard(conn, cards, {"verdict": "repeat"}) == "Есть расхождение в характеристиках квартиры."
+    assert dupreview._review_guard(conn, cards, {"verdict": "diff"}) is None
+
+
+def test_review_compares_copy_excluding_proven_price_and_price_notice(conn):
+    old, fresh, _ = _confirmed_versions(conn)
+    a, b = (dupreview._card(conn, lid) for lid in (old, fresh))
+    stem = a["text"].split("\n")[0] + "\nСумма в ДКП 5 000 000 ₽\n"
+    a["text"] = stem + "Цена 6 800 000 рублей"
+    b["text"] = "‼️Цена снижена‼️\nНовая цена: 6 700 000 ₽\n" + stem
+    assert dupreview._review_text_matches(a, b)
+    incomplete = [dict(card, house=None) for card in (a, b)]
+    for card in incomplete:
+        card["text"] = card["text"].replace("Домбайская 59.", "Домбайская.")
+    assert not dupreview._same_unit_proof(*incomplete, for_repeat=True)
+    for card, directory in zip(incomplete, (1, 2)):
+        card["photos"] = [f"/photos/{directory}/{letter * 16}.jpg" for letter in ("a", "b")]
+    assert dupreview._same_unit_proof(*incomplete, for_repeat=True)
+    assert not dupreview._same_unit_proof(*incomplete, for_repeat=False)
+    b["text"] = b["text"].replace("5 000 000", "5 100 000")
+    assert not dupreview._review_text_matches(a, b)
+
+
+def _save_unconfirmed_review(conn, pid, verdict="repeat", confidence=0.97):
+    ids = conn.execute("SELECT a,b FROM dup_pairs WHERE id=?", (pid,)).fetchone()
+    cards = [dupreview._card(conn, lid) for lid in ids]
+    ai = {"verdict": verdict, "confidence": confidence, "applied": False,
+          "signature": dupreview._ai_signature(cards), "closure_reason": "Нужно подтвердить, что это одна квартира."}
+    conn.execute("UPDATE dup_pairs SET status='unconfirmed',decided_at=15,ai=? WHERE id=?", (json.dumps(ai), pid))
+
+
+def test_recheck_saved_reviews_audits_and_applies_without_model_requests(conn, monkeypatch):
+    def unexpected_call(*args, **kwargs):
+        raise AssertionError("Saved recommendations require no model requests")
+
+    monkeypatch.setattr(llm, "ask_json", unexpected_call)
+    old, fresh, repeat = _address_versions(conn)
+    one, two, market = _address_versions(conn, building="31/6", other_phone="+79000000002")
+    _, _, mismatch = _address_versions(conn, building="32/6", unit=351)
+    _, _, low_confidence = _address_versions(conn, building="33/6")
+    _, _, changed = _address_versions(conn, building="34/6")
+    _, manually_split, manual = _address_versions(conn, building="35/6")
+    assert dupreview.decide(conn, manual, "diff", user_id=1)["ok"]
+    for pid, verdict, confidence in ((repeat, "repeat", 0.97), (market, "market", 0.96),
+                                     (mismatch, "repeat", 0.99), (low_confidence, "repeat", 0.69),
+                                     (changed, "repeat", 0.96)):
+        _save_unconfirmed_review(conn, pid, verdict, confidence)
+    conn.execute("UPDATE dup_pairs SET ai=json_set(ai,'$.signature','old') WHERE id=?", (changed,))
+    conn.commit()
+    initial = list(conn.execute("SELECT * FROM dup_pairs ORDER BY id"))
+    conn.execute("PRAGMA query_only=ON")
+    audit = dupreview.recheck_unconfirmed(conn)
+    assert audit["checked"] == 5 and audit["would_apply"] == {"repeat": 1, "market": 1, "linked": 0}
+    assert audit["held"] == 2 and audit["changed"] == 1
+    assert list(conn.execute("SELECT * FROM dup_pairs ORDER BY id")) == initial
+    conn.execute("PRAGMA query_only=OFF")
+    result = dupreview.recheck_unconfirmed(conn, apply=True)
+    assert result["applied"] == audit["would_apply"] and result["held_by_reason"] == audit["held_by_reason"]
+    assert conn.execute("SELECT merged_into FROM listings WHERE id=?", (old,)).fetchone()[0] == fresh
+    group = offers.groups(conn)[one]
+    assert {row["id"] for row in group} == {one, two}
+    assert conn.execute("SELECT status,user_id FROM dup_pairs WHERE id=?", (manual,)).fetchone()[:] == ("diff", 1)
+    assert conn.execute("SELECT is_active FROM listings WHERE id=?", (manually_split,)).fetchone()[0]
+    assert dupreview.recheck_unconfirmed(conn)["would_apply"] == {"repeat": 0, "market": 0, "linked": 0}
+
+
+def test_recheck_saved_review_preserves_an_admin_decision_on_another_version(conn):
+    old, fresh, pid = _address_versions(conn)
+    archived = listing(conn)
+    earlier = pair(conn, archived, fresh)
+    assert dupreview.decide(conn, earlier, "diff", user_id=1)["ok"]
+    conn.execute("UPDATE listings SET is_active=0,hidden_reason=?,merged_into=? WHERE id=?",
+                 (offers.MERGED_REPEAT, old, archived))
+    _save_unconfirmed_review(conn, pid)
+    report = dupreview.recheck_unconfirmed(conn, apply=True)
+    assert report["applied"]["repeat"] == 0
+    assert report["held_by_reason"] == {"Связь противоречит решению по другой версии объявления.": 1}
+    assert conn.execute("SELECT status FROM dup_pairs WHERE id=?", (pid,)).fetchone()[0] == "unconfirmed"
+
+
+def test_recheck_rolls_back_reopening_if_photos_cannot_be_moved(conn, monkeypatch):
+    old, fresh, pid = _address_versions(conn)
+    _save_unconfirmed_review(conn, pid)
+    state = conn.execute("SELECT * FROM dup_pairs WHERE id=?", (pid,)).fetchone()
+
+    def unavailable(*args):
+        raise OSError("photo storage unavailable")
+
+    monkeypatch.setattr(dupreview, "_merge_photos", unavailable)
+    report = dupreview.recheck_unconfirmed(conn, apply=True)
+    assert report["held_by_reason"] == {"Не удалось перенести фотографии.": 1}
+    assert conn.execute("SELECT * FROM dup_pairs WHERE id=?", (pid,)).fetchone() == state
+    assert conn.execute("SELECT SUM(is_active) FROM listings WHERE id IN (?,?)", (old, fresh)).fetchone()[0] == 2
 
 
 def test_safe_automatic_repeat_undo_restores_refs_and_keeps_later_reactions(conn, monkeypatch):

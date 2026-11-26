@@ -496,10 +496,13 @@ def extract_phones(text: str) -> list[str]:
 
 
 # ─── адрес ─────────────────────────────────────────────────────────────────
+_HOUSE_NUMBER = r"\d{1,4}(?:[ \t]?[а-яА-Я](?![а-яА-Я\d]))?(?:/\d{1,3})?"
+_HOUSE_CORPUS = r"(?:[ \t]*,?[ \t]*(?i:корпус|корп\.?|к\.?)[ \t]*(?P<corpus>\d{1,3})(?!\d|[/.]\d))?"
 _STREET_RE = re.compile(
-    r"(?:\bул(?:ица)?\.?|\bпр(?:-?к?т|оспект)\.?|\bпер(?:еулок)?\.?|\bб-?р\.?|\bбульвар|\bпроезд|\bшоссе)\s*"
+    r"(?i:\bул(?:ица)?\.?|\bпр(?:-?к?т|оспект)\.?|\bпер(?:еулок)?\.?|\bб-?р\.?|\bбульвар|\bпроезд|\bшоссе)\s*"
     r"(?P<name>[А-ЯЁA-Z0-9][\wЁё.\- ]{2,40}?)"
-    r"(?:\s*,?\s*(?:\bд\.?\s*)?(?P<house>\d{1,4}\s?[а-яА-Я]?(?:/\d{1,3})?(?:\s?к(?:орп)?\.?\s?\d)?))?(?=[,.;:\n)]|\s{2}|$|\s+\(|\s+(?i:эт|жк|д\b|район|мкр|\d+\s*[кк]))",
+    rf"(?:[ \t]*,?[ \t]*(?:(?i:\bд)\.?[ \t]*)?(?P<house>{_HOUSE_NUMBER}){_HOUSE_CORPUS})?"
+    r"(?=[,.;:\n)]|\s{2}|$|\s+\(|\s+(?i:эт|жк|д\b|район|мкр|\d+\s*[кк]))",
 )
 
 
@@ -508,16 +511,23 @@ _STREET_RE = re.compile(
 _STREET_POST_RE = re.compile(
     r"(?:^|(?<=[\s,:;(]))(?P<name>[А-ЯЁ][а-яё]+(?:[\s-][А-ЯЁа-яё][а-яё]+){0,2}?)\s+"
     r"(?:улица|ул\.?|переулок|пер\.?|проезд|пр-д|проспект|пр-кт|бульвар|б-р|шоссе|тупик)(?![а-яё])"
-    r"(?:[ \t]*,?[ \t]*(?:д\.?[ \t]*)?(?P<house>\d{1,4}(?:[ \t]?[а-яА-Я](?![а-яё\d]))?(?:/\d{1,3})?(?:[ \t]?к(?:орп)?\.?[ \t]?\d)?))?",
+    rf"(?:[ \t]*,?[ \t]*(?:(?i:д)\.?[ \t]*)?(?P<house>{_HOUSE_NUMBER}){_HOUSE_CORPUS})?",
 )
 _POST_NAME_END = re.compile(r"(?:ая|яя|ой|ий|ый|ое|ее|ин|ын|ов|ев|ёв|ова|ева|ёва|ина|ына|ского|цкого|ых|их|ого|его|ая)$", re.IGNORECASE)
+
+
+def _street_house(match: re.Match) -> str | None:
+    number = match["house"]
+    if number and (corpus := match["corpus"]):
+        number += f"к{corpus}"
+    return re.sub(r"\s+", "", number) if number else None
 
 
 def _street_postfix(text: str) -> tuple[str | None, str | None]:
     for m in _STREET_POST_RE.finditer(text):
         name = re.sub(r"\s+", " ", m.group("name")).strip(" .-")
         if len(name) >= 3 and _POST_NAME_END.search(name.split()[-1]):
-            return name, (m.group("house") or "").replace(" ", "") or None
+            return name, _street_house(m)
     return None, None
 
 
@@ -529,10 +539,9 @@ def extract_street(text: str) -> tuple[str | None, str | None]:
     if not m or (pm and pm.start() < m.start()):
         return _street_postfix(text)
     name = re.sub(r"\s+", " ", m.group("name")).strip(" .-")
-    house = (m.group("house") or "").replace(" ", "") or None
     if len(name) < 3:
         return None, None
-    return name, house
+    return name, _street_house(m)
 
 
 # ─── тип, сделка, запрос ───────────────────────────────────────────────────
