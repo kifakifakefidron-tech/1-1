@@ -55,6 +55,8 @@ def _house_eq(a: str | None, b: str | None) -> bool | None:
 
 _PRICE_WORDS = {"млн", "тыс", "т", "р", "руб", "рублей", "тр", "миллиона", "миллионов", "миллион", "тысяч"}
 _PRICE_BEFORE = {"цена", "цены", "стоимость", "за"}
+_PRICE_NOTICES = {"снижение цены", "цена снижена", "новая цена"}
+_PRICE_LINE_LABELS = {"", "цена", "стоимость", "новая цена"}
 _GROUPED_NUMBER = re.compile(r"(?<!\d)\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?!\d)")
 
 
@@ -70,6 +72,15 @@ def _words_list(text: str) -> tuple:
     return tuple(words(text).split())
 
 
+def has_price_notice(text: str) -> bool:
+    return any(words(line) in _PRICE_NOTICES for line in text.splitlines())
+
+
+@functools.lru_cache(maxsize=8192)
+def strip_price_notices(text: str) -> str:
+    return "\n".join(line for line in text.splitlines() if words(line) not in _PRICE_NOTICES)
+
+
 def text_twin(a: str | None, b: str | None, short_ok: bool = False) -> bool:
     """Фрагменты совпадают слово в слово, кроме нескольких чисел (и слов вроде «млн»): цену поменяли, остальное — то же.
     short_ok — короткий текст («ЖК Абрикосово, евро-2, 6 млн») тоже, если вызывающий проверил место и цену."""
@@ -77,6 +88,7 @@ def text_twin(a: str | None, b: str | None, short_ok: bool = False) -> bool:
     # 24.10j (Артём): дубль — если совпадают номера В ТЕКСТЕ (кто переслал — неважно). Номера — часть текста: другой номер в тексте —
     # другой агент, отдельная карточка; номеров нет в обоих — совпадает сам текст
     from .phonegroups import canon_set   # 25.10: номера одного агента (phonegroups) — один номер
+    a, b = strip_price_notices(a or ""), strip_price_notices(b or "")
     la, lb = len(_words_list(a or "")), len(_words_list(b or ""))
     if min(la, lb) < (4 if short_ok else 12) or abs(la - lb) > 8:   # 26.10: коротко или длина сильно разная — дальше не считаем
         return False
@@ -112,14 +124,19 @@ def text_twin(a: str | None, b: str | None, short_ok: bool = False) -> bool:
 @functools.lru_cache(maxsize=8192)
 def price_revision_key(fragment: str, deal: str, price: int | None) -> tuple[str, str] | None:
     """Сопоставимая подпись, если подтверждена ровно одна цена объекта."""
-    text = rules.normalize_digits(fragment)
+    text = rules.normalize_digits(strip_price_notices(fragment))
     span = rules.explicit_price_span(text, deal)
     if not span or span[0] != price:
         return None
     _, start, end = span
-    before, after = norm(text[:start]), norm(text[end:])
+    before, after = text[:start], text[end:]
+    leading, _, label = before.rpartition("\n")
+    tail, _, following = after.partition("\n")
+    if words(label) in _PRICE_LINE_LABELS and not words(tail):
+        body = norm(f"{leading}\n{following}")
+        return ("line", body) if len(words(body).split()) >= 12 else None
     if len(words(f"{before} {after}").split()) >= 12:
-        return before, after
+        return norm(before), norm(after)
     return None
 
 
@@ -139,19 +156,23 @@ def is_price_revision(fragment: str, price: int | None, row: sqlite3.Row) -> boo
 
 def same_object(o: ParsedObject, row: sqlite3.Row) -> tuple[bool, str]:
     """Решение «это тот же объект» + причина (для отладки)."""
+    from . import offers
+
     rooms = None if o.rooms is None or row["rooms"] is None else o.rooms == row["rooms"]
     floor = None if o.floor is None or row["floor"] is None else o.floor == row["floor"]
-    area = _close(o.area, row["area"], 0.03, 1.5)
+    area = _close(o.area, row["area"], 0, 2)
     land = _close(o.land, row["land"], 0.04, 0.3)
-    street = _eq(o.street, row["street"])
-    house = _house_eq(o.house, row["house"])
+    street_a, street_b = offers.street_key(o.street), offers.street_key(row["street"])
+    house_a, house_b = offers.house_key(o.house), offers.house_key(row["house"])
+    street = street_a == street_b if street_a and street_b else None
+    house = house_a == house_b if house_a and house_b else None
     cx = _eq(o.complex, row["complex"])
     district = _eq(o.district, row["district"])
     settlement = _eq(o.settlement, row["settlement"])
     from .phonegroups import canon_set
     phones_row = canon_set(json.loads(row["phones"] or "[]"))
     phones_new = canon_set(o.phones)
-    if phones_row != phones_new:
+    if phones_row != phones_new and phones_row.isdisjoint(phones_new):
         return False, "другой агент"
 
     for field, result in (("комнаты", rooms), ("этаж", floor), ("площадь", area), ("участок", land),
@@ -160,12 +181,20 @@ def same_object(o: ParsedObject, row: sqlite3.Row) -> tuple[bool, str]:
         if result is False:
             return False, f"разные: {field}"
 
+    if (phones_row & phones_new and o.type in ("flat", "new", "room") and floor
+            and ((street and house and area) or (cx and rooms and o.area and o.area == row["area"]))
+            and (phones_row == phones_new or (row["source"] == "chat" and not row["owner_user_id"]))):
+        if is_price_revision(o.fragment, o.price, row):
+            return True, PRICE_REVISION_MATCH
+        if (street and house and o.price == row["price"] and not row["price_doubt"]
+                and (has_price_notice(o.fragment) or has_price_notice(row["fragment"] or ""))):
+            key = price_revision_key(o.fragment, o.deal, o.price)
+            if key is not None and key == price_revision_key(row["fragment"] or "", row["deal"], row["price"]):
+                return True, "тот же текст с пометкой об изменении цены"
+    if phones_row != phones_new:
+        return False, "другой агент"
     if o.article and o.article == row["article"] and phones_row:
         return True, "тот же артикул и контакт"
-    if (phones_row and o.type in ("flat", "new", "room") and ((street and house) or cx)
-            and rooms and floor and o.area and o.area == row["area"]
-            and is_price_revision(o.fragment, o.price, row)):
-        return True, PRICE_REVISION_MATCH
     if text_twin(o.fragment, row["fragment"]):
         return True, "тот же текст, другая цена"
     detailed = (street and house) or (rooms and floor and area)

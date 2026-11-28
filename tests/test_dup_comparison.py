@@ -335,6 +335,79 @@ def test_fresh_recent_audit_includes_manual_and_merged_pairs_and_resumes(conn, m
     assert conn.execute("SELECT * FROM listings ORDER BY id").fetchall() == previous_cards
 
 
+def test_return_recent_ai_decisions_restores_nested_merges_and_prioritizes_fresh_decisions(conn, monkeypatch):
+    from tools import restore_dup_reviews
+
+    now = 2000000
+    monkeypatch.setattr(dupreview.time, "time", lambda: now)
+    a, b, inner = _confirmed_versions(conn)
+    keeper = listing(conn)
+    outer = pair(conn, b, keeper)
+    # Одинаковое время, обратный порядок идентификаторов в результате выборки.
+    conn.execute("UPDATE dup_pairs SET id=100 WHERE id=?", (inner,))
+    inner = 100
+    assert dupreview.decide(conn, inner, "repeat", keep_id=b)["ok"]
+    assert dupreview.decide(conn, outer, "repeat", keep_id=keeper)["ok"]
+
+    def resolved(when, verdict, *, user=0):
+        x, y, pid = _confirmed_versions(conn)
+        assert dupreview.decide(conn, pid, verdict, user_id=user)["ok"]
+        conn.execute("UPDATE dup_pairs SET decided_at=? WHERE id=?", (when, pid))
+        return x, y, pid
+
+    _, _, recent = resolved(now - 1, "diff")
+    _, _, old = resolved(now - 72 * 3600 - 1, "diff")
+    _, _, manual = resolved(now, "diff", user=9)
+    x, y, new_pair = _confirmed_versions(conn)
+    conn.execute("UPDATE listings SET first_seen=? WHERE id IN (?,?)", (now, x, y))
+    for pid, verdict in ((inner, "repeat"), (outer, "repeat"), (recent, "diff"), (old, "diff"), (manual, "diff")):
+        conn.execute("UPDATE dup_pairs SET ai=? WHERE id=?", (json.dumps({"verdict": verdict, "applied": True}), pid))
+
+    result = restore_dup_reviews.restore(conn, 72, until=now)
+    assert result["selected"] == 3 and result["returned"] == {"repeat": 2, "diff": 1} and not result["blocked"]
+    assert [conn.execute("SELECT is_active FROM listings WHERE id=?", (lid,)).fetchone()[0] for lid in (a,b,keeper)] == [1,1,1]
+    order = [row["id"] for row in dupreview.pairs(conn)["pairs"]]
+    assert set(order[:2]) == {inner, outer} and order[2:] == [recent, new_pair]
+    assert conn.execute("SELECT status FROM dup_pairs WHERE id=?", (old,)).fetchone()[0] == "diff"
+    assert conn.execute("SELECT status,user_id FROM dup_pairs WHERE id=?", (manual,)).fetchone()[:] == ("diff", 9)
+    saved = conn.execute("SELECT snapshot FROM dup_review_actions WHERE pair_id=? AND action='returned'", (inner,)).fetchone()
+    assert json.loads(saved[0])["undo"] and json.loads(saved[0])["decided_at"] == now
+    feedback = conn.execute("SELECT snapshot FROM dup_review_actions WHERE pair_id=? AND action='manual'", (manual,)).fetchone()
+    assert json.loads(feedback[0])["listings"][0]["text"].startswith("1| ")
+    assert restore_dup_reviews.restore(conn, 72, until=now)["selected"] == 0
+
+
+def test_exact_repeat_with_price_notice_and_no_room_count(conn):
+    a, b = listing(conn), listing(conn)
+    body = ("Ул. 40 лет Победы, 146/5\n4 этаж\n39 м2 по выписке\n"
+            "Свежий ремонт, мебель и техника, просторная застеклённая лоджия, санузел в плитке.\n")
+    conn.execute("""UPDATE listings SET rooms=NULL,street='40 лет Победы',house='146/5',
+                    area=39,floor=4,price=5800000,settlement='Краснодар' WHERE id IN (?,?)""", (a,b))
+    conn.execute("UPDATE listings SET fragment=?,photos=? WHERE id=?",
+                 (body + "Цена 5 800 000 ₽", json.dumps([f"/photos/{a}/a1b2c3d4e5f6a789.jpg"]), a))
+    conn.execute("UPDATE listings SET fragment=?,photos=?,first_seen=20,street='Имени 40-летия Победы' WHERE id=?",
+                 ("Снижение цены\nНовая цена 5 800 000 ₽\n" + body,
+                  json.dumps([f"/photos/{b}/a1b2c3d4e5f6a789.jpg"]), b))
+    assert {item["id"] for item in offers.groups(conn)[a]} == {a, b}
+    assert not offers.photo_matches(conn)  # одно предложение агента не записываем как предложения двух агентов
+    card = conn.execute("SELECT * FROM listings WHERE id=?", (a,)).fetchone()
+    assert offers.for_listing(conn, card)
+    # Другая цена при том же тексте и одном общем контакте обновляет существующее объявление.
+    changed_price = "Снижение цены\nЦена 5 700 000 ₽\n" + body
+    updated = parser.ParsedObject(type="flat", deal="sale", street="40 лет Победы", house="146/5",
+                                  district=None, complex=None, settlement="Краснодар", rooms=None, land=None, floors=None,
+                                  floor=4, area=39, price=5700000, phones=["+79000000001", "+79000000002"],
+                                  fragment=changed_price, description=changed_price)
+    assert dedupe.same_object(updated, card) == (True, dedupe.PRICE_REVISION_MATCH)
+    # У уже опубликованной точной пары оставляем свежую версию и историю объединения.
+    assert dupreview.scan_price_revisions(conn, apply=True, since=100)["merged"] == 0
+    assert dupreview.scan_price_revisions(conn, apply=True)["merged"] == 1
+    assert conn.execute("SELECT merged_into FROM listings WHERE id=?", (a,)).fetchone()[0] == b
+    assert conn.execute("SELECT kind,status FROM dup_pairs").fetchone()[:] == ("auto_exact_repeat", "repeat")
+    assert ingest.save_object(conn, updated, None, 30)[0] == b
+    assert conn.execute("SELECT id,price FROM listings WHERE is_active=1").fetchone()[:] == (b, 5700000)
+
+
 def test_market_accepts_detailed_description_and_keeps_each_offer(conn, monkeypatch):
     monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
     old, fresh = listing(conn), listing(conn, "+79000000002")

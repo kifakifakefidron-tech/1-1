@@ -353,8 +353,13 @@ CREATE TABLE IF NOT EXISTS auto_reviews (
 CREATE TABLE IF NOT EXISTS dup_pairs (
     id INTEGER PRIMARY KEY, a INTEGER NOT NULL, b INTEGER NOT NULL, kind TEXT NOT NULL, score REAL, why TEXT,
     status TEXT NOT NULL DEFAULT 'open', keep_id INTEGER, drop_id INTEGER, undo TEXT, ai TEXT,
-    created_at INTEGER NOT NULL, decided_at INTEGER, user_id INTEGER, UNIQUE (a, b)
+    created_at INTEGER NOT NULL, decided_at INTEGER, user_id INTEGER, returned_decision_at INTEGER, UNIQUE (a, b)
 );
+CREATE TABLE IF NOT EXISTS dup_review_actions (
+    id INTEGER PRIMARY KEY, pair_id INTEGER NOT NULL, ts INTEGER NOT NULL, user_id INTEGER,
+    action TEXT NOT NULL, decision TEXT NOT NULL, keep_id INTEGER, snapshot TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_dup_review_actions_pair ON dup_review_actions (pair_id, id);
 CREATE INDEX IF NOT EXISTS ix_dup_pairs_status ON dup_pairs (status);
 CREATE INDEX IF NOT EXISTS ix_dup_pairs_b ON dup_pairs (b);
 CREATE INDEX IF NOT EXISTS ix_dup_pairs_undo_keep ON dup_pairs (keep_id)
@@ -470,6 +475,7 @@ MIGRATIONS = [
     ("clients", "wishes", "TEXT"),                 # JSON: типы, площадь, этаж, ЖК, состояние, обременение, оплата, срок, допуск
     ("clients", "stage_manual", "INTEGER NOT NULL DEFAULT 0"),   # этап двигали руками — сервис сам не двигает   # уникальные открытия клиентом (устройство в день)
     ("listings", "phone_roles", "TEXT"),       # {"+7…": "text" | "sender"} — номер в тексте / прислал в чат
+    ("dup_pairs", "returned_decision_at", "INTEGER"),
     ("listings", "multi_units", "INTEGER"),
     ("listings", "price_doubt", "INTEGER"),
     ("listings", "price_gap_reviewed", "TEXT"),

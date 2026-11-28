@@ -206,8 +206,7 @@ def tick(conn) -> dict:
         conn.rollback()
         log.exception("перепроверка похожих предложений не прошла")
     try:
-        ai_duplicates = dupreview.auto_review(conn)
-        if ai_duplicates:
+        if config.DUP_AI_AUTO and (ai_duplicates := dupreview.auto_review(conn)):
             stats["dup_ai"] = ai_duplicates
     except Exception:  # noqa: BLE001
         conn.rollback()

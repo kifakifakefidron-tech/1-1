@@ -3347,7 +3347,8 @@ def api_admin_dups(request: Request, body: dict | None = None):
         except (TypeError, ValueError):
             return _err("Нет пары")
         if b.get("ai"):
-            return JSONResponse(dupreview.review_ai(conn, pid))
+            suggest = dupreview.review_ai if config.DUP_AI_AUTO else dupreview.ask_ai
+            return JSONResponse(suggest(conn, pid))
         if b.get("split"):
             ok = dupreview.split(conn, pid, user["id"])
         else:

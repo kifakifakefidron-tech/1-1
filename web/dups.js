@@ -176,6 +176,9 @@
     }
     if (!data.ai_enabled) return "";
     const error = aiErrors.get(p.id);
+    if (!data.ai_auto_merge && !aiInFlight && !error) {
+      return `<button type="button" class="chip dp-askai" data-ai="${p.id}">${ic("sparkle")} Подсказка DeepSeek</button>`;
+    }
     return `<div class="dp-ai">${ic("sparkle")}<div class="dp-ai-copy"><span>${error ? esc(error) : "DeepSeek сравнивает карточки…"}</span>
       ${error ? `<button type="button" class="chip dp-askai" data-ai="${p.id}">Повторить запрос</button>` : ""}</div></div>`;
   }
@@ -214,7 +217,7 @@
         if (input) input.checked = true;
       }
     }
-    if (!current() && comparing()) requestAI(pairs[0]);
+    if (!current() && comparing() && data.ai_auto_merge) requestAI(pairs[0]);
   }
 
   // ─── «Один агент — несколько номеров» ───
@@ -277,9 +280,9 @@
   }
 
   function render() {
-    $("dpLead").textContent = data.ai_enabled
-      ? "DeepSeek проверяет пары в фоне. При уверенности от 70% сервис применяет подтверждённые решения. Когда данных мало, обе карточки остаются в выдаче."
-      : "Авторазбор ждёт подключения DeepSeek.";
+    $("dpLead").textContent = data.ai_auto_merge && data.ai_enabled
+      ? "DeepSeek проверяет пары в фоне и применяет подтверждённые решения."
+      : "Ваши решения сохраняются для обучения на примерах.";
     $("dpTabs").innerHTML = [["open", "В очереди", data.counts.open], ["price", "Только цена", data.counts.price],
       ["auto", "Старые автосклейки", data.counts.auto],
       ["done", "История решений", data.counts.done]].map(([k, l, n]) =>
@@ -335,7 +338,7 @@
     data = r.data;
     pairs = data.pairs || [];
     render();
-    if (comparing()) requestAI(pairs[0]);
+    if (comparing() && data.ai_auto_merge) requestAI(pairs[0]);
     if (next && comparing() && pairs.length) $("dpBody").querySelector(".dp-pair").scrollIntoView({ block: "start" });
   }
 

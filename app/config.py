@@ -30,6 +30,7 @@ DB_PATH = os.getenv("DB_PATH", str(Path(__file__).resolve().parent.parent / "dat
 
 # DeepSeek
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
+DUP_AI_AUTO = _bool("DUP_AI_AUTO", False)
 DEEPSEEK_URL = os.getenv("DEEPSEEK_URL", "https://api.deepseek.com/chat/completions").strip()
 _DEEPSEEK_OFFICIAL = DEEPSEEK_URL.startswith("https://api.deepseek.com/")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "").strip() or ("deepseek-flash" if _DEEPSEEK_OFFICIAL else "deepseek-chat")

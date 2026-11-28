@@ -64,8 +64,10 @@ def property_type(value):
 
 @lru_cache(maxsize=4096)
 def street_key(value):
-    return " ".join(re.sub(r"\b(?:ул|улица|пр кт|проспект|пер|переулок|проезд|бульвар|б р|шоссе)\b",
-                           " ", words(value)).split())
+    from .osmaddr import street_key as address_street_key
+
+    # В карточках встречаются обе формы «40 лет Победы» и «Имени 40-летия Победы».
+    return re.sub(r"\b(\d+) летия\b", r"\1 лет", address_street_key(value))
 
 
 @lru_cache(maxsize=4096)
@@ -236,6 +238,13 @@ def _address_key(row):
     return row["deal"], words(row["settlement"]), street, house, row["rooms"], row["floor"], row["area"]
 
 
+def _photo_address_key(row):
+    house, street = house_key(row["house"]), street_key(row["street"])
+    if row["type"] in ("flat", "new") and street and house and row["area"] and row["floor"] is not None:
+        return row["deal"], words(row["settlement"]), street, house, row["floor"], row["area"]
+    return None
+
+
 def same_unit_details(a, b):
     key = _address_key(a)
     return key is not None and key == _address_key(b) and not _conflicts(a, b, place_keys(a), place_keys(b))
@@ -246,12 +255,20 @@ def _property_text(raw):
     return rules.remove_phones(raw or "")
 
 
-def _matching_photos(a, b, shared, single_photo):
+def _matching_photos(a, b, shared, single_photo, *, exact=False):
     trusted = shared & single_photo
-    if len(trusted) >= 2:
-        return True
     if not trusted:
         return False
+    if exact or a["rooms"] is None or b["rooms"] is None:
+        ta, tb = (dedupe.strip_price_notices(_property_text(row["fragment"] or row["description"])) for row in (a, b))
+        if min(len(words(ta).split()), len(words(tb).split())) < 12:
+            return False
+        if words(ta) == words(tb):
+            return True
+        price_key = dedupe.price_revision_key(ta, a["deal"], known_price(a))
+        return price_key is not None and price_key == dedupe.price_revision_key(tb, b["deal"], known_price(b))
+    if len(trusted) >= 2:
+        return True
     ta = _property_text(a["fragment"] or a["description"])
     tb = _property_text(b["fragment"] or b["description"])
     return min(len(words(ta).split()), len(words(tb).split())) >= 20 and dedupe.text_twin(ta, tb)
@@ -434,7 +451,7 @@ def _build_groups(conn: sqlite3.Connection):
     places = {lid: place_keys(row) for lid, row in rows.items()}
     phonegroups.refresh(conn)
     for lid, row in rows.items():
-        key = _address_key(row)
+        key = _photo_address_key(row)
         if key is None:
             continue
         photos = _photo_keys(row["photos"])
@@ -447,9 +464,11 @@ def _build_groups(conn: sqlite3.Connection):
     for members in buckets.values():
         for (a, photos_a, phones_a), (b, photos_b, phones_b) in combinations(members, 2):
             pair = (min(a, b), max(a, b))
-            if pair not in decisions and not phones_a & phones_b \
-                    and not _conflicts(rows[a], rows[b], places[a], places[b]) \
-                    and _matching_photos(rows[a], rows[b], photos_a & photos_b, single_photo):
+            same_contact = bool(phones_a & phones_b)
+            if same_contact and (phones_a != phones_b or agent_key(rows[a]) != agent_key(rows[b])):
+                continue
+            if pair not in decisions and not identity_conflict(rows[a], rows[b]) \
+                    and _matching_photos(rows[a], rows[b], photos_a & photos_b, single_photo, exact=same_contact):
                 pairs.add(pair)
 
     def family(lid):
@@ -481,7 +500,8 @@ def _build_groups(conn: sqlite3.Connection):
             linked.update(dict.fromkeys(group, group))
             if confirmed:
                 manual_groups.add(group)
-    auto = {(a, b) for a, b in pairs.difference(approved) if a in linked and linked[a] == linked.get(b)}
+    auto = {(a, b) for a, b in pairs.difference(approved) if a in linked and linked[a] == linked.get(b)
+            and contact_keys(rows[a]).isdisjoint(contact_keys(rows[b]))}
     return rows, set(linked.values()), auto, repeats
 
 
@@ -508,12 +528,12 @@ def for_listing(conn: sqlite3.Connection, row: sqlite3.Row, hide_user: int | Non
     if conn.execute(f"SELECT 1 FROM dup_pairs WHERE status IN {LINK_TYPES} AND (a = ? OR b = ?)", (lid, lid)).fetchone():
         return groups(conn, hide_user).get(lid)
     photos = _photo_keys(row["photos"])
-    if photos and _address_key(row) is not None:
+    if photos and _photo_address_key(row) is not None:
         shared = " OR ".join("instr(photos, ?) > 0" for _ in photos)
         if conn.execute(f"""SELECT 1 FROM listings WHERE is_active = 1 AND id != ?
-            AND type IN ('flat', 'new') AND deal = ? AND rooms = ? AND floor = ? AND area = ?
+            AND type IN ('flat', 'new') AND deal = ? AND floor = ? AND area = ?
             AND street IS NOT NULL AND house IS NOT NULL AND ({shared}) LIMIT 1""",
-            (lid, row["deal"], row["rooms"], row["floor"], row["area"], *photos)).fetchone():
+            (lid, row["deal"], row["floor"], row["area"], *photos)).fetchone():
             return groups(conn, hide_user).get(lid)
     return None
 

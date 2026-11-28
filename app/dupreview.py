@@ -16,12 +16,13 @@ from pathlib import Path
 
 from . import applet, config, db, geo, offers, rules
 from .branding import partner_text
-from .dedupe import _close, _house_eq, price_revision_key, price_revision_time, text_twin
-from .textnorm import norm, words
+from .dedupe import _close, _house_eq, has_price_notice, price_revision_key, price_revision_time, strip_price_notices, text_twin
+from .textnorm import words
 
 KINDS = {
     "price_revision": "Одинаковый текст · разная цена",
     "auto_price_revision": "Цена обновлена автоматически",
+    "auto_exact_repeat": "Версии объявления объединены автоматически",
     "text": "Тот же текст, другая цена",
     "agent": "Тот же агент, место, комнаты и этаж",
     "similar": "Текст похож, номера те же",
@@ -72,7 +73,7 @@ def _places(r) -> set[str]:
     if r["complex"]:
         out.add("cx:" + _cxk(r["complex"]))
     if r["street"]:
-        out.add("st:" + words(r["street"]))
+        out.add("st:" + offers.street_key(r["street"]))
     if r["settlement"] and not out:
         out.add("pl:" + words(r["settlement"]))
     return out
@@ -128,7 +129,7 @@ def _contra(a, b) -> str | None:
             return "дом"
     if a["complex"] and b["complex"] and _cxk(a["complex"]) != _cxk(b["complex"]):
         return "ЖК"
-    if a["street"] and b["street"] and words(a["street"]) != words(b["street"]):
+    if a["street"] and b["street"] and offers.street_key(a["street"]) != offers.street_key(b["street"]):
         return "улица"
     return None
 
@@ -272,8 +273,8 @@ def _merge_repeat(conn, pid, keep, drop, user_id):
         "SELECT id FROM listing_events WHERE listing_id=?", (d,))],
         "previous": [r[0] for r in conn.execute(
             "SELECT id FROM dup_pairs WHERE status='repeat' AND keep_id=? AND drop_id IS NOT NULL", (k,))]}
-    conn.execute("""UPDATE dup_pairs SET status='repeat', keep_id=?, drop_id=?, undo=?, decided_at=?, user_id=?
-                    WHERE id=?""", (k, d, json.dumps(undo), now, user_id, pid))
+    conn.execute("""UPDATE dup_pairs SET status='repeat', keep_id=?, drop_id=?, undo=?, decided_at=?, returned_decision_at=NULL, user_id=?
+                              WHERE id=?""", (k, d, json.dumps(undo), now, user_id, pid))
     conn.execute("""UPDATE listings SET is_active=0, hidden_reason=?, merged_into=? WHERE id=?""",
                  (offers.MERGED_REPEAT, k, d))
     conn.execute("UPDATE listings SET photos=?, seen_count=seen_count+?, owner_user_id=COALESCE(owner_user_id,?) WHERE id=?",
@@ -373,15 +374,52 @@ def detach_offer(conn: sqlite3.Connection, lid: int, user_id: int) -> dict:
     return {"ok": True, "status": "split", "listing_id": lead}
 
 
+def record_review_action(conn, pid, action, decision, snapshot, *, user_id=None, keep_id=None):
+    conn.execute("""INSERT INTO dup_review_actions(pair_id,ts,user_id,action,decision,keep_id,snapshot)
+                    VALUES (?,?,?,?,?,?,?)""",
+                 (pid, int(time.time()), user_id, action, decision, keep_id, json.dumps(snapshot, ensure_ascii=False)))
+
+
+def _decision_snapshot(conn, pid, verdict):
+    from . import phonegroups
+
+    pair = conn.execute("SELECT a,b,status,ai,kind,decided_at FROM dup_pairs WHERE id=?", (pid,)).fetchone()
+    if not pair:
+        return None
+    snapshot = dict(pair)
+    snapshot["ai"] = _read_ai(snapshot["ai"])
+    if pair["status"] == "open" and verdict in ("repeat", "market", "diff"):
+        cards = [_card(conn, pair[field]) for field in ("a", "b")]
+        if all(cards):
+            phonegroups.refresh(conn)
+            texts = [_numbered_review_text(card["text"]) for card in cards]
+            snapshot.update(comparison=_review_comparison(cards, texts), shared_contact=_shared_review_phone(cards),
+                            shared_photos=len(offers._photo_keys(cards[0]["photos"]) & offers._photo_keys(cards[1]["photos"])),
+                            shared_sender=bool(_review_numbers(cards[0]["sender_phones"]) &
+                                               _review_numbers(cards[1]["sender_phones"])),
+                            listings=[{"id": card["id"], "source": card["source"], "text": text,
+                                       "version_ts": card["version_ts"]} for card, text in zip(cards, texts)])
+    return snapshot
+
+
 def decide(conn: sqlite3.Connection, pid: int, verdict: str, user_id: int = 0, keep_id: int | None = None) -> dict:
-    """Сохраняет решение по паре и объединяет версии одного объявления."""
     verdict = "repeat" if verdict == "same" else verdict
+    snapshot = _decision_snapshot(conn, pid, verdict) if user_id and verdict in ("repeat", "market", "diff", "reopen") else None
+    result = _decide(conn, pid, verdict, user_id, keep_id)
+    if result["ok"] and snapshot is not None:
+        record_review_action(conn, pid, "manual", verdict, snapshot, user_id=user_id, keep_id=result.get("keep_id"))
+    return result
+
+
+def _decide(conn: sqlite3.Connection, pid: int, verdict: str, user_id: int, keep_id: int | None) -> dict:
+    """Сохраняет решение по паре и объединяет версии одного объявления."""
     if verdict == "reopen":
         pair = conn.execute("SELECT * FROM dup_pairs WHERE id=? AND status='repeat' AND drop_id IS NOT NULL", (pid,)).fetchone()
         if pair and (error := _reopen_repeat(conn, pair)):
             return error
-        saved = conn.execute("""UPDATE dup_pairs SET status='open', decided_at=NULL, user_id=?, keep_id=NULL, drop_id=NULL, undo=NULL,
-                              kind=CASE WHEN kind='auto_price_revision' THEN 'price_revision' ELSE kind END
+        saved = conn.execute("""UPDATE dup_pairs SET status='open', decided_at=NULL, returned_decision_at=NULL, user_id=?, keep_id=NULL, drop_id=NULL, undo=NULL,
+                              kind=CASE WHEN kind='auto_price_revision' THEN 'price_revision'
+                                        WHEN kind='auto_exact_repeat' THEN 'text' ELSE kind END
                               WHERE id=? AND (status IN ('diff','market','repeat','linked','unconfirmed')
                                   OR (status='split' AND kind='manual_unlink'))""", (user_id, pid))
         if saved.rowcount:
@@ -408,7 +446,7 @@ def decide(conn: sqlite3.Connection, pid: int, verdict: str, user_id: int = 0, k
             if verdict == "market" and offers.agent_key(a) == offers.agent_key(b):
                 return {"ok": False, "error": "У обеих карточек один агент. Для версий объявления используйте кнопку 1."}
         _discard_stale_ai(conn, pid)
-        saved = conn.execute(f"""UPDATE dup_pairs AS p SET status=?, decided_at=?, user_id=?
+        saved = conn.execute(f"""UPDATE dup_pairs AS p SET status=?, decided_at=?, returned_decision_at=NULL, user_id=?
                                 WHERE p.id=? AND p.status='open' {_ACTIVE_PAIR}""",
                              (verdict, int(time.time()), user_id, pid))
         if saved.rowcount:
@@ -701,6 +739,7 @@ def _price_revision_groups(conn: sqlite3.Connection):
 
     phonegroups.refresh(conn)
     groups = defaultdict(list)
+    noted = set()
     checked = 0
     rows = conn.execute("""SELECT id, type, deal, phones, owner_user_id, fragment, price, rooms, room_kind,
         area, land, floor, floors, street, house, complex, settlement
@@ -710,7 +749,9 @@ def _price_revision_groups(conn: sqlite3.Connection):
         checked += 1
         if key := _price_revision_group_key(row):
             groups[key].append((row["id"], row["price"]))
-    return checked, groups
+            if row["street"] and row["house"] and row["floor"] is not None and row["area"] and has_price_notice(row["fragment"]):
+                noted.add(key)
+    return checked, groups, noted
 
 
 def _has_family_decision(conn: sqlite3.Connection, ids: list[int]) -> bool:
@@ -743,8 +784,15 @@ def _apply_price_revisions(conn: sqlite3.Connection, key, members, why: str, now
             or row["kinescope_url"] or _price_revision_group_key(row) != key for row in rows
         ):
             return 0
-        if len({row["price"] for row in rows}) < 2:
-            return 0
+        changed_price = len({row["price"] for row in rows}) > 1
+        if not changed_price:
+            if not any(row["street"] and row["house"] and row["floor"] is not None
+                       and row["area"] and has_price_notice(row["fragment"] or "") for row in rows):
+                return 0
+            units = {offers.unit_number(row) for row in rows}
+            shared_photos = set.intersection(*(offers._photo_keys(row["photos"]) for row in rows))
+            if not shared_photos and (len(units) != 1 or None in units):
+                return 0
         # Учитываем принятые решения и пары, по которым ждём подтверждения объединения.
         if _has_family_decision(conn, ids):
             return 0
@@ -756,12 +804,13 @@ def _apply_price_revisions(conn: sqlite3.Connection, key, members, why: str, now
         if any(abs(b["price"] - a["price"]) > a["price"] * MERGE_MAX_JUMP
                for (_, a), (_, b) in zip(timed, timed[1:])):
             return 0
+        kind = "auto_price_revision" if changed_price else "auto_exact_repeat"
         for _, drop in timed[:-1]:
             a, b = _pair_key(keep["id"], drop["id"])
             pid = conn.execute("""INSERT INTO dup_pairs(a,b,kind,score,why,status,created_at)
-                VALUES (?,?,'auto_price_revision',1,?,'open',?)
+                VALUES (?,?,?,1,?,'open',?)
                 ON CONFLICT(a,b) DO UPDATE SET kind=excluded.kind,score=excluded.score,why=excluded.why,status='open'
-                RETURNING id""", (a, b, why, now)).fetchone()[0]
+                RETURNING id""", (a, b, kind, why, now)).fetchone()[0]
             if not _merge_repeat(conn, pid, keep, drop, 0)["ok"]:
                 conn.rollback()
                 return 0
@@ -771,31 +820,40 @@ def _apply_price_revisions(conn: sqlite3.Connection, key, members, why: str, now
     return len(rows) - 1
 
 
-def scan_price_revisions(conn: sqlite3.Connection, *, apply: bool = False) -> dict:
+def scan_price_revisions(conn: sqlite3.Connection, *, apply: bool = False, since: int | None = None) -> dict:
     """Объединяет строгие версии по цене, а спорные совпадения помечает в очереди."""
-    checked, groups = _price_revision_groups(conn)
+    checked, groups, noted = _price_revision_groups(conn)
     now = int(time.time())
-    why = json.dumps(["Тот же контакт и характеристики", "В исходном тексте отличается только цена"], ensure_ascii=False)
     prepared = []
     merged = 0
+    recent = None
+    if since is not None:
+        recent = {row[0] for row in conn.execute("SELECT id FROM listings WHERE is_active=1 AND last_seen>=?", (since,))}
+        for a, b in conn.execute("SELECT a,b FROM dup_pairs WHERE returned_decision_at>=?", (since,)):
+            recent.update((a, b))
     if apply:
         db.flush(conn)
     for key, members in groups.items():
+        if recent is not None and all(lid not in recent for lid, _ in members):
+            continue
         latest = members[0]
         alternative = next((member for member in members if member[1] != latest[1]), None)
-        if alternative is None:
+        if len(members) < 2 or (alternative is None and key not in noted):
             continue
+        kind = "price_revision" if alternative is not None else "text"
+        signal = "В исходном тексте отличается только цена" if alternative else "Текст совпал без пометки об изменении цены"
+        why = json.dumps(["Тот же контакт и характеристики", signal], ensure_ascii=False)
         if apply and (count := _apply_price_revisions(conn, key, members, why, now)):
             merged += count
             continue
         # Одного сравнения на версию достаточно: все участники совпали по одному строгому ключу.
         for member in members[1:]:
-            other = latest if member[1] != latest[1] else alternative
+            other = alternative if alternative and member[1] == latest[1] else latest
             (a, price_a), (b, price_b) = sorted((member, other))
-            prepared.append((why, now, b, a, price_a, price_b))
+            prepared.append((kind, why, now, b, a, price_a, price_b))
     with conn:
         saved = conn.executemany("""INSERT INTO dup_pairs(a,b,kind,score,why,status,created_at)
-            SELECT a.id,b.id,'price_revision',1,?,'open',?
+            SELECT a.id,b.id,?,1,?,'open',?
             FROM listings a JOIN listings b ON b.id=?
             WHERE a.id=? AND a.is_active=1 AND b.is_active=1 AND a.price=? AND b.price=?
             ON CONFLICT(a,b) DO UPDATE SET kind=excluded.kind,score=excluded.score,why=excluded.why
@@ -803,7 +861,8 @@ def scan_price_revisions(conn: sqlite3.Connection, *, apply: bool = False) -> di
         report = {"checked": checked, "pairs": len(prepared), "marked": saved}
         if apply:
             report["merged"] = merged
-        db.set_state(conn, PRICE_REVISION_SCAN, json.dumps(report))
+        if since is None:
+            db.set_state(conn, PRICE_REVISION_SCAN, json.dumps(report))
     return report
 
 
@@ -966,7 +1025,7 @@ def _queue_data(conn: sqlite3.Connection) -> dict:
             "price_auto": price_auto,
             "ai_review": {"compared": compared, "agreed": agreed}, "ai_auto": auto_ai,
             "stats": stats(conn), "ai_enabled": bool(config.DEEPSEEK_API_KEY),
-            "ai_auto_merge": True, "ai_unconfirmed": counts.get(_UNCONFIRMED, 0)}
+            "ai_auto_merge": config.DUP_AI_AUTO, "ai_unconfirmed": counts.get(_UNCONFIRMED, 0)}
 
 
 def _pair_details(p, a, b):
@@ -999,7 +1058,7 @@ def pairs(conn: sqlite3.Connection, status: str = "open", limit: int = 30, offse
         scope += " AND a.is_active=1 AND b.is_active=1"
         if status == "price":
             scope += f" AND {_PRICE_PAIR_SCOPE}"
-        order = "MAX(a.first_seen, b.first_seen) DESC, p.score DESC, p.id"
+        order = "p.returned_decision_at DESC, MAX(a.first_seen, b.first_seen) DESC, p.score DESC, p.id"
         if skip:
             scope += f" AND p.id NOT IN ({','.join('?' for _ in skip)})"
             params.extend(skip)
@@ -1214,36 +1273,16 @@ def _current_ai_result(conn, pid, cards, signature, checked_since, *, refresh=Fa
     return {"ok": True, "stale": True}
 
 
-_PRICE_NOTICES = {"снижение цены", "цена снижена", "новая цена"}
-_PRICE_LINE_LABELS = {"", "цена", "стоимость", "новая цена"}
-
-
-@functools.lru_cache(maxsize=4096)
-def _review_price_key(text, deal, price):
-    text = rules.normalize_digits("\n".join(line for line in text.splitlines() if words(line) not in _PRICE_NOTICES))
-    span = rules.explicit_price_span(text, deal)
-    if not span or span[0] != price:
-        return None
-    _, start, end = span
-    before, after = text[:start], text[end:]
-    leading, _, label = before.rpartition("\n")
-    tail, _, following = after.partition("\n")
-    if words(label) in _PRICE_LINE_LABELS and not words(tail):
-        body = norm(f"{leading}\n{following}")
-        return ("line", body) if len(words(body).split()) >= 12 else None
-    return (norm(before), norm(after)) if len(words(f"{before} {after}").split()) >= 12 else None
-
-
 def _review_text_matches(a, b) -> bool:
     from .parser import strip_phones
 
     if offers.identity_conflict(a, b):
         return False
-    left, right = (offers.review_text_details(strip_phones(card["text"] or ""))[0] for card in (a, b))
+    left, right = (strip_price_notices(offers.review_text_details(strip_phones(card["text"] or ""))[0]) for card in (a, b))
     if a["price"] == b["price"] and (left_words := words(left)) and left_words == words(right):
         return True
-    left_key = _review_price_key(left, a["deal"], a["price"])
-    return left_key is not None and left_key == _review_price_key(right, b["deal"], b["price"])
+    left_key = price_revision_key(left, a["deal"], a["price"])
+    return left_key is not None and left_key == price_revision_key(right, b["deal"], b["price"])
 
 
 def _review_numbers(numbers) -> set[str]:
