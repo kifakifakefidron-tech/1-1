@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import functools
 import hashlib
-import json
 import re
 import sqlite3
 
@@ -186,9 +185,10 @@ def same_object(o: ParsedObject, row: sqlite3.Row) -> tuple[bool, str]:
     cx = _eq(o.complex, row["complex"])
     district = _eq(o.district, row["district"])
     settlement = _eq(o.settlement, row["settlement"])
-    from .phonegroups import canon_set
-    phones_row = canon_set(json.loads(row["phones"] or "[]"))
-    phones_new = canon_set(o.phones)
+    from .phonegroups import canon_set, listing_phones, primary_contact
+    phones_row = canon_set(listing_phones(row))
+    primary = primary_contact(o.phones) or primary_contact(o.phone_roles)
+    phones_new = canon_set([primary] if primary else o.phones)
     if phones_row != phones_new and phones_row.isdisjoint(phones_new):
         return False, "другой агент"
 
@@ -230,10 +230,11 @@ def find_match(conn: sqlite3.Connection, o: ParsedObject, frag_hash: str, now: i
            WHERE e.fragment_hash = ? AND l.source != 'feed' GROUP BY l.id ORDER BY MAX(e.ts) DESC""",
         (frag_hash,),
     )
-    phones = phonegroups.canon_set(o.phones)
+    primary = phonegroups.primary_contact(o.phones) or phonegroups.primary_contact(o.phone_roles)
+    phones = phonegroups.canon_set([primary] if primary else o.phones)
     reposts = {}
     for row in rows:
-        previous = phonegroups.canon_set(json.loads(row["phones"] or "[]"))
+        previous = phonegroups.canon_set(phonegroups.listing_phones(row))
         if row["type"] in TYPE_GROUPS.get(o.type or "", ()) and row["deal"] == o.deal and phones == previous:
             original = offers.merged_listing(conn, row)
             reposts.setdefault(original["id"], row)

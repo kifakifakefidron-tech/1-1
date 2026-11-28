@@ -8,7 +8,7 @@ import logging
 import json
 import time
 
-from . import agent, applet, config, db, feed, geocode, hooks, ingest, llm, mailer, notify, region, wappi
+from . import agent, applet, config, db, feed, geocode, hooks, ingest, llm, mailer, notify, phonegroups, region, wappi
 
 log = logging.getLogger("worker")
 
@@ -64,6 +64,12 @@ def tick(conn) -> dict:
     catalog = applet.maybe_sync(conn)
     if catalog:
         stats["appletv"] = catalog
+    try:
+        if primary_contacts := phonegroups.backfill_listing_contacts(conn):
+            stats["primary_contact_listings"] = primary_contacts
+    except Exception:  # noqa: BLE001
+        conn.rollback()
+        log.exception("не удалось применить основной номер к существующим объявлениям")
     if not db.get_state(conn, "recovered_llm_import_errors"):
         recovered = ingest.requeue_failed_llm_import(conn)
         db.set_state(conn, "recovered_llm_import_errors", "1")

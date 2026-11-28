@@ -702,9 +702,10 @@ def connect(path: str | None = None) -> sqlite3.Connection:
         Path(p).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(p, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    from . import geo, p0fix  # noqa: PLC0415
+    from . import geo, p0fix, phonegroups  # noqa: PLC0415
     conn.create_function("cxkey", 1, geo.complex_key, deterministic=True)
     conn.create_function("pending_price_gap", 4, p0fix.pending_price_gap, deterministic=True)
+    conn.create_function("listing_contact_phones", 2, phonegroups.listing_phones_json, deterministic=True)
     # Таблицы и обновления базы проверяем один раз на процесс, а не на каждое соединение
     # (у сайта десятки потоков — раньше каждый новый поток прогонял всю схему и брал базу на запись)
     with _ready_lock:

@@ -58,7 +58,7 @@ _AI_LEASE_SECONDS = 180
 
 _FLATLIKE = ("flat", "new", "room", "commercial")
 _COLS = ("id, type, deal, rooms, room_kind, floor, floors, area, land, complex, street, house, district, settlement, "
-         "price, price_doubt, price_m2, phones, fragment, description, title, photos, first_seen, last_seen, seen_count, is_active, "
+         "price, price_doubt, price_m2, phones, phone_roles, fragment, description, title, photos, first_seen, last_seen, seen_count, is_active, "
          "hidden_reason, source")
 
 
@@ -163,15 +163,6 @@ def _candidate_keys(row):
     return out
 
 
-def _phones(raw) -> set[str]:
-    """Номера карточки; номера одного агента (phonegroups) — одним номером."""
-    from .phonegroups import canon_set
-    try:
-        return canon_set(json.loads(raw or "[]"))
-    except (TypeError, ValueError):
-        return set()
-
-
 def _text_phones(frag: str | None) -> frozenset:
     from .phonegroups import canon_set
     from .rules import find_phones
@@ -228,7 +219,7 @@ def classify(a, b, info: dict | None = None) -> tuple[str, float, list[str]] | N
         return "text", 1.0, ["тот же текст, поменялась только цена", f"цена: {_mln(a['price'])} и {_mln(b['price'])}"]
     if not same_place:
         return None
-    agent = bool(_phones(a["phones"]) & _phones(b["phones"]))
+    agent = bool(offers.contact_keys(a) & offers.contact_keys(b))
     same_num = bool(set(json.loads(a["phones"] or "[]")) & set(json.loads(b["phones"] or "[]")))
     why = (["тот же агент (номер)"] if same_num else ["тот же агент (номера одного агента)"]) if agent else []
     eq = lambda k: a[k] is not None and b[k] is not None and a[k] == b[k]  # noqa: E731
@@ -505,7 +496,7 @@ def _decide(conn: sqlite3.Connection, pid: int, verdict: str, user_id: int, keep
     elif verdict in ("repeat", "market", "diff") or (verdict in ("linked", _UNCONFIRMED) and not user_id):
         if verdict in offers.LINK_STATUSES:
             from . import phonegroups
-            rows = conn.execute(f"""SELECT l.id, l.phones, l.ext_id, l.owner_user_id, l.deal, l.photos, l.seen_count
+            rows = conn.execute(f"""SELECT l.id, l.phones, l.phone_roles, l.ext_id, l.owner_user_id, l.deal, l.photos, l.seen_count
                 FROM dup_pairs p JOIN listings l ON l.id IN (p.a,p.b)
                 WHERE p.id=? AND p.status='open' {_ACTIVE_PAIR}""", (pid,)).fetchall()
             if len(rows) != 2:
@@ -806,7 +797,7 @@ def _price_revision_groups(conn: sqlite3.Connection):
     groups = defaultdict(list)
     noted = set()
     checked = 0
-    rows = conn.execute("""SELECT id, type, deal, phones, owner_user_id, fragment, price, rooms, room_kind,
+    rows = conn.execute("""SELECT id, type, deal, phones, phone_roles, owner_user_id, fragment, price, rooms, room_kind,
         area, land, floor, floors, street, house, complex, settlement
         FROM listings WHERE is_active=1 AND COALESCE(price_doubt,0)=0 AND price>0 AND fragment IS NOT NULL
         ORDER BY first_seen DESC, id DESC""")
@@ -985,6 +976,8 @@ def stats(conn: sqlite3.Connection, covered: str = "[]") -> list[dict]:
 
 
 def _card(conn: sqlite3.Connection, lid: int, *, include_history: bool = True) -> dict | None:
+    from . import parser, phonegroups
+
     r = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
     if r is None:
         return None
@@ -998,7 +991,6 @@ def _card(conn: sqlite3.Connection, lid: int, *, include_history: bool = True) -
     # Для каталога берём текст объявления, служебный фрагмент нужен для географии.
     from .rules import find_phones
     literal_phones = list(dict.fromkeys(p[2] for p in find_phones(text)))
-    text_ph = literal_phones
     try:
         roles = json.loads(r["phone_roles"] or "{}") if "phone_roles" in r.keys() else {}
     except (TypeError, ValueError):
@@ -1014,15 +1006,23 @@ def _card(conn: sqlite3.Connection, lid: int, *, include_history: bool = True) -
         ph = rules.contact_phone(raw)
         if ph and ph not in sender:
             sender.append(ph)
+    card_ph = phonegroups.listing_phones(r)
+    if primary := phonegroups.primary_contact(card_ph + literal_phones + sender):
+        declared = phonegroups.primary_contact(literal_phones)
+        literal_phones = [primary] if declared else []
+        sender = [primary] if phonegroups.primary_contact(sender) else []
+        text_role = phonegroups.primary_contact(p for p, role in roles.items() if role == "text")
+        sender_role = phonegroups.primary_contact(p for p, role in roles.items() if role == "sender")
+        roles = ({primary: "text"} if declared or text_role else
+                 {primary: "sender"} if sender_role or sender else {})
+        card_ph = [primary]
+        text = parser.strip_phones(text)
+    text_ph = literal_phones
     only_history_sender = sender[0] if len(sender) == 1 else None
     sender += [ph for ph, role in roles.items() if role == "sender" and ph not in sender]
     # 10.11 (Артём: «иногда номера вообще никакие не показываются»): номер мог быть не в куске текста объекта, а в общей
     # шапке/подвале «портянки» (разбор всё равно привязал его к объекту — колонка phones), а сообщение — уже удалено
     # по сроку KEEP_DAYS или пришло из Telegram/MAX без номера отправителя. Тогда берём номера карточки.
-    try:
-        card_ph = [p for p in json.loads(r["phones"] or "[]") if p]
-    except (TypeError, ValueError):
-        card_ph = []
     inherited_phones = ([phone for phone in card_ph if roles.get(phone) == "text"]
                         if r["source"] == "chat" and not literal_phones else [])
     sender_only_contacts = (r["source"] == "chat" and bool(card_ph) and not text_ph
@@ -1044,6 +1044,8 @@ def _card(conn: sqlite3.Connection, lid: int, *, include_history: bool = True) -
                             ORDER BY e.ts DESC LIMIT 1""", (lid,)).fetchone()
         if w:
             who = (w[0] or "").strip() or None
+            if primary:
+                who = parser.guard_phones(who) or None
     if not text_ph and not sender and r["source"] == "feed":
         from . import config
         if config.FEED_PHONE:
@@ -1056,11 +1058,12 @@ def _card(conn: sqlite3.Connection, lid: int, *, include_history: bool = True) -
             "literal_phones": literal_phones, "inherited_phones": inherited_phones,
             **{key: r[key] for key in ("source", "ext_id", "article", "owner_user_id", "price_doubt", "price_fixed",
                                        "owner_edited_at", "admin_fixed", "multi_units", "sold_at", "video_file",
-                                       "kinescope_url", "phone_roles")},
+                                       "kinescope_url")},
+            "phone_roles": json.dumps(roles) if primary else r["phone_roles"],
             "price_m2": r["price_m2"], "rooms": r["rooms"], "room_kind": r["room_kind"], "area": r["area"],
             "land": r["land"], "floor": r["floor"], "floors": r["floors"], "complex": r["complex"],
             "district": r["district"], "street": r["street"], "house": r["house"], "settlement": r["settlement"],
-            "phones": json.loads(r["phones"] or "[]"), "photos": json.loads(r["photos"] or "[]")[:8],
+            "phones": card_ph, "photos": json.loads(r["photos"] or "[]")[:8],
             "text": text, "first_seen": r["first_seen"], "last_seen": r["last_seen"], "version_ts": version_ts,
             "seen_count": r["seen_count"], "is_active": r["is_active"], "hidden_reason": r["hidden_reason"],
             "favorites": used["favorites"], "clients": used["client_items"], "picks": used["collection_items"],
@@ -2478,11 +2481,12 @@ if __name__ == "__main__":
         cli.exit(int(bool(args.audit and report["model_errors"])))
     c = _retry_database(db.get, wait_for_db=True) if backlog or args.recheck_unconfirmed or recent_hours or args.exact_repeats else db.get()
     if args.exact_repeats:
-        from . import ingest
+        from . import ingest, phonegroups
 
+        primary = _retry_database(lambda: phonegroups.backfill_listing_contacts(c), wait_for_db=True)
         hidden = _retry_database(lambda: ingest.hide_contactless_chat_listings(c), wait_for_db=True)
         result = resolve_exact_repeats(c, limit=args.limit or -1, budget_s=None)
-        print(json.dumps({**result, "contactless_hidden": hidden}, ensure_ascii=False, indent=2))
+        print(json.dumps({**result, "primary_contact_listings": primary, "contactless_hidden": hidden}, ensure_ascii=False, indent=2))
     elif args.recheck_recent is not None:
         print(json.dumps(recheck_recent(c, args.recheck_recent, apply=True, limit=args.limit), ensure_ascii=False, indent=2))
     elif args.recheck_unconfirmed:

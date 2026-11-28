@@ -19,7 +19,7 @@ LINK_TYPES = str(LINK_STATUSES)
 MERGED_REPEAT = "dup_repeat"
 REVIEW_AREA_TOLERANCE_M2 = 2
 MATCH_FIELDS = ("id, type, deal, rooms, room_kind, area, land, floor, floors, complex, street, house, "
-                "settlement, price, price_doubt, phones, title, last_seen")
+                "settlement, price, price_doubt, phones, phone_roles, title, last_seen")
 
 
 def _tokens(raw: str) -> list[str]:
@@ -55,7 +55,7 @@ def transferred_photos(conn) -> dict[int, set[str]]:
 
 
 def contact_keys(row) -> set[str]:
-    return phonegroups.canon_set(_tokens(row["phones"]))
+    return phonegroups.canon_set(phonegroups.listing_phones(row))
 
 
 def property_type(value):
@@ -282,7 +282,7 @@ def agent_key(row):
     from . import applet
     slava, artem = applet.numbers()
     ext = row["ext_id"] or ""
-    phones = {rules.normalize_phone(p) or p for p in _tokens(row["phones"])}
+    phones = {rules.normalize_phone(p) or p for p in phonegroups.listing_phones(row)}
     if ext.startswith(applet.STAYL) or (artem and phones == {artem}):
         return ("stayl",)
     if ext.startswith(applet.PREFIX) or (phones and slava and phones <= set(slava)):
@@ -428,7 +428,8 @@ def _build_groups(conn: sqlite3.Connection):
         return lid
 
     rows = {r["id"]: r for r in conn.execute(f"""SELECT l.id, l.source, l.type, l.deal, l.settlement, l.street, l.house,
-        l.complex, l.rooms, l.room_kind, l.floor, l.floors, l.area, l.land, l.photos, l.phones, l.price, l.price_doubt, l.last_seen,
+        l.complex, l.rooms, l.room_kind, l.floor, l.floors, l.area, l.land, l.photos, l.phones, l.phone_roles,
+        l.price, l.price_doubt, l.last_seen,
         l.ext_id, l.owner_user_id, l.district, l.repair, l.price_m2, l.first_seen, l.catalog_migrated, l.fragment, l.description,
         l.id IN (SELECT keep_id FROM dup_pairs WHERE status='repeat' AND drop_id IS NOT NULL) AS kept,
         CASE WHEN l.source = 'own' THEN (SELECT MAX(e.ts) FROM listing_edits e

@@ -24,7 +24,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import (accounts, agent, autolearn, callcheck, bankrates, brain, buyers, clients, dashboard, config, db, districtmap, geo, geocode, hooks, ingest, learning, mailer, notices, parser,
-               dupreview, listing_video, market, notify, p0fix, payments, picks, planner, region, reqexport, search, settings, stats, tg, wappi, widgets, worklog)
+               dupreview, listing_video, market, notify, p0fix, payments, phonegroups, picks, planner, region, reqexport, search, settings, stats, tg, wappi, widgets, worklog)
 from .branding import partner_text
 from .rules import TYPE_LABELS
 
@@ -735,8 +735,8 @@ def api_listing(request: Request, body: dict | None = None):
             if d.get("fragment"):
                 d["fragment"] = parser.mask_names(d["fragment"])
     if access and phones:   # кто прислал объявление в чат, если это другой номер (не тот, что в тексте)
-        roles = json.loads(row["phone_roles"] or "{}")
-        d["sender_phone"] = next((p for p, role in roles.items() if role == "sender" and p not in d["phones"]), None)
+        roles = {} if phonegroups.primary_contact(phones) else json.loads(row["phone_roles"] or "{}")
+        d["sender_phone"] = next((p for p, role in roles.items() if role == "sender" and p not in phones), None)
     # текст объявления старее цены (цена обновилась позже текста) — честно говорим об этом в карточке
     # акт 14.10, Б2: в тексте другая цена — плашка всегда (не только когда цена обновилась позже текста)
     if not retired and not d.get("appletv") and not row["price_fixed"]:
@@ -782,8 +782,8 @@ def api_listing(request: Request, body: dict | None = None):
 
 
 def _raw_phones(conn, lid: int) -> list[str]:
-    row = conn.execute("SELECT phones FROM listings WHERE id = ?", (lid,)).fetchone()
-    return json.loads(row["phones"] or "[]") if row else []
+    row = conn.execute("SELECT phones,phone_roles FROM listings WHERE id = ?", (lid,)).fetchone()
+    return phonegroups.listing_phones(row) if row else []
 
 
 def api_facets(request: Request, body: dict | None = None):
@@ -2651,20 +2651,23 @@ def _fix_item(conn, lid: int, *, price_only: bool = False) -> dict | None:
     if r is None:
         return None
     text_price = p0fix.pending_price_gap(r["price"], r["description"], r["deal"], r["price_gap_reviewed"]) if price_only else None
-    text = (r["fragment"] or r["description"] or "")[:2000]
+    text = r["fragment"] or r["description"] or ""
     if price_only and r["description"]:
         if text_price is not None:
             text = r["description"]
         elif r["source"] != "chat":
-            text = r["description"][:2000]
+            text = r["description"]
+    phones = phonegroups.listing_phones(r)
+    if phonegroups.primary_contact(phones):
+        text = parser.strip_phones(text)
     photos = json.loads(r["photos"] or "[]")
     S = _fix_safe
     item = {k: r[k] for k in ("id", "title", "price", "deal", "type", "rooms", "area", "floor", "floors", "complex",
                              "district", "street", "house", "settlement", "lat", "lon", "geo_status", "admin_fixed",
                              "source", "room_kind", "repair", "price_doubt")} | {
-        "title": partner_text(r["title"]), "text": partner_text(text),
+        "title": partner_text(r["title"]), "text": partner_text(text[:2000]),
         "photo": photos[0] if photos else None, "photos": photos[:12], "land": r["land"],
-        "phones": json.loads(r["phones"] or "[]"),
+        "phones": phones,
         "extra_districts": json.loads(r["extra_districts"] or "[]"),
     }
     if price_only:
@@ -2994,9 +2997,11 @@ def api_admin_phones(request: Request, body: dict | None = None):
     if q.get("phone"):
         from . import rules as _rules
         phone = _rules.normalize_phone(q["phone"]) or q["phone"]
+        phone = phonegroups.primary_contact((phone,)) or phone
         rows = conn.execute("""SELECT l.id, l.title, l.price, l.deal, l.district, l.complex, l.street, l.house, l.is_active,
                                       l.hidden_reason, l.first_seen, l.last_seen, l.seen_count, l.source, l.photos
-                               FROM listings l, json_each(l.phones) j WHERE j.value = ? ORDER BY l.is_active DESC, l.last_seen DESC""",
+                               FROM listings l, json_each(listing_contact_phones(l.phones,l.phone_roles)) j
+                               WHERE j.value = ? ORDER BY l.is_active DESC, l.last_seen DESC""",
                             (phone,)).fetchall()
         items = []
         for r in rows:
@@ -3006,13 +3011,19 @@ def api_admin_phones(request: Request, body: dict | None = None):
             items.append(d)
         reqs = conn.execute("""SELECT b.id, b.text, b.last_seen, b.is_active FROM buyer_requests b, json_each(b.phones) j
                                WHERE j.value = ? ORDER BY b.last_seen DESC LIMIT 50""", (phone,)).fetchall()
-        msgs = conn.execute("SELECT COUNT(*) FROM messages WHERE sender LIKE ?", (f"%{phone[-10:]}%",)).fetchone()[0]
+        senders = phonegroups.contact_numbers(phone)
+        sender_filter = " OR ".join("sender LIKE ?" for _ in senders)
+        msgs = conn.execute(f"SELECT COUNT(*) FROM messages WHERE {sender_filter}",
+                            tuple(f"%{number[-10:]}%" for number in senders)).fetchone()[0]
         wiped = bool(conn.execute("SELECT 1 FROM banned WHERE kind = 'phone_wipe' AND key = ?", (phone,)).fetchone())
         return JSONResponse({"phone": phone, "banned": phone in banned, "wiped": wiped, "listings": items,
                              "requests": [dict(r) for r in reqs], "messages": msgs})
     digits = re.sub(r"\D", "", q.get("q", ""))[-10:]
+    if primary := phonegroups.primary_contact((digits,)):
+        digits = primary[-10:]
     rows = conn.execute(f"""SELECT j.value AS phone, COUNT(*) AS n, SUM(l.is_active) AS active, MAX(l.last_seen) AS last_seen
-                            FROM listings l, json_each(l.phones) j {"WHERE j.value LIKE ?" if digits else ""}
+                            FROM listings l, json_each(listing_contact_phones(l.phones,l.phone_roles)) j
+                            {"WHERE j.value LIKE ?" if digits else ""}
                             GROUP BY j.value ORDER BY active DESC, n DESC LIMIT 300""",
                          ([f"%{digits}%"] if digits else [])).fetchall()
     return JSONResponse({"items": [{**dict(r), "banned": r["phone"] in banned} for r in rows]})
@@ -3026,8 +3037,10 @@ def api_admin_banned(request: Request, body: dict | None = None):
     rows = db.get().execute("""SELECT l.id, l.title, l.price, l.deal, l.district, l.complex, MAX(b.ts) AS ts, COUNT(b.key) AS keys
                                FROM banned b JOIN listings l ON l.id = b.listing_id GROUP BY l.id ORDER BY ts DESC LIMIT 500""").fetchall()
     phones = db.get().execute("""SELECT b.key AS phone, b.ts,
-                                     (SELECT COUNT(*) FROM listings l, json_each(l.phones) j
-                                      WHERE j.value = b.key AND l.hidden_reason = 'phone') AS listings
+                                     (SELECT COUNT(*) FROM listings l WHERE l.hidden_reason = 'phone' AND (
+                                       EXISTS (SELECT 1 FROM json_each(l.phones) j WHERE j.value = b.key)
+                                       OR EXISTS (SELECT 1 FROM json_each(listing_contact_phones(l.phones,l.phone_roles)) j
+                                                  WHERE j.value = b.key))) AS listings
                                   FROM banned b WHERE b.kind = 'phone' ORDER BY b.ts DESC""").fetchall()
     return JSONResponse({"items": [dict(r) for r in rows], "phones": [dict(r) for r in phones]})
 

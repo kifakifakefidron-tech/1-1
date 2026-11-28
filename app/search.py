@@ -11,7 +11,7 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 
-from . import config, geo
+from . import config, geo, phonegroups
 from .branding import partner_text
 from .rules import TYPE_LABELS
 from .textnorm import norm, words
@@ -586,10 +586,11 @@ def row_to_item(r: sqlite3.Row, with_contacts: bool) -> dict:
     if th != d["photos"][:20]:
         d["thumbs"] = th
     d["extra_districts"] = json.loads(r["extra_districts"] or "[]")
-    phones = json.loads(r["phones"] or "[]")
+    phones = phonegroups.listing_phones(r)
     if with_contacts:
         d["phones"] = phones
-        d["fragment"] = partner_text(r["fragment"])
+        fragment = r["fragment"]
+        d["fragment"] = partner_text(guard_phones(fragment) if phonegroups.primary_contact(phones) else fragment)
     else:
         d["phones_masked"] = [mask_phone(p) for p in phones]
     return d
@@ -809,6 +810,10 @@ def listing_detail(conn: sqlite3.Connection, listing_id: int, with_contacts: boo
     history = [{"ts": e["ts"], "price": e["price"], "match": e["match"],
                 "chat": partner_text(e["chat_name"]), "sender": partner_text(e["sender_name"]),
                 "source": e["source"]} for e in ev]
+    if history and phonegroups.primary_contact(phonegroups.listing_phones(r)):
+        from .parser import guard_phones
+        for event in history:
+            event["sender"] = guard_phones(event["sender"]) or None
     d["history"] = history
     d["history_total"] = conn.execute("SELECT COUNT(*) FROM listing_events WHERE listing_id = ?", (listing_id,)).fetchone()[0]         if is_admin else None
     d["price_history"] = [{"ts": h[0], "price": h[1]} for h in conn.execute("""WITH RECURSIVE versions(id) AS (

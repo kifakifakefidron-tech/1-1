@@ -87,6 +87,60 @@ def test_wappi_does_not_use_account_ids_as_contact_phones():
     assert wappi._sender_phone({"from": 9000000001, "senderPhone": "79000000002"}, "max") == "79000000002"
 
 
+def test_primary_contact_backfills_advertised_phone_and_sender_history(conn):
+    main = "+79385151639"
+    foreign = "+79000000009"
+    listed = listing(conn, "8 (952) 840-45-28")
+    text_only, sender_only, event_only, unchanged = (listing(conn, foreign) for _ in range(4))
+    conn.execute("UPDATE listings SET fragment=? WHERE id=?",
+                 ("Описание квартиры. Телефон 8 (902) 406-44-17\nДругой номер +7 900 000-00-09", text_only))
+    for lid, sender in ((sender_only, "79186305681:3@s.whatsapp.net"), (unchanged, "79186305681@lid")):
+        mid = ingest.add_message(conn, source="wa", profile_id="test", msg_id=str(lid),
+                                 text="Объявление", sender=sender, ts=12)
+        conn.execute("INSERT INTO listing_events(listing_id,message_id,ts) VALUES (?,?,12)", (lid, mid))
+    conn.execute("INSERT INTO listing_events(listing_id,phones,ts) VALUES (?,?,8)",
+                 (event_only, json.dumps(["+79528404528"])))
+
+    assert phonegroups.backfill_listing_contacts(conn) == 4
+    assert phonegroups.backfill_listing_contacts(conn) == 0
+    for lid in (listed, text_only, sender_only, event_only):
+        public = search.listing_detail(conn, lid, True)
+        assert public["phones"] == [main]
+        assert not rules.extract_phones(public["fragment"])
+        comparison = dupreview._card(conn, lid)
+        assert comparison["raw_phones"] == comparison["phones"] == [main]
+        assert not rules.extract_phones(comparison["text"])
+        assert comparison["sender_phones"] == (["+7 938 515-16-39"] if lid == sender_only else [])
+        raw = conn.execute("SELECT phones,phone_roles FROM listings WHERE id=?", (lid,)).fetchone()
+        assert json.loads(conn.execute("SELECT listing_contact_phones(?,?)", tuple(raw)).fetchone()[0]) == [main]
+    assert search.listing_detail(conn, unchanged, True)["phones"] == [foreign]
+    assert json.loads(conn.execute("SELECT phones FROM listings WHERE id=?", (sender_only,)).fetchone()[0]) == [foreign]
+
+
+def test_primary_contact_applies_to_new_messages_and_fast_reposts(conn):
+    main = "+79385151639"
+    body = ("Продаётся 2-комнатная квартира 58 м², этаж 7/16.\n"
+            "ул. Домбайская 59, ремонт.\nЦена 7 500 000 рублей.")
+
+    def post(i, text, sender):
+        mid = ingest.add_message(conn, source="wa", profile_id="test", msg_id=str(i), text=text,
+                                 sender=sender, ts=i)
+        return ingest.process_message(conn, mid, use_llm=False)
+
+    listed = post(1, body + "\nТелефон 8 (952) 840-45-28", None)["results"][0]["listing_id"]
+    duplicate = post(2, body + "\nТелефон +7 902 406-44-17", "+79186305681")
+    assert duplicate["results"][0]["listing_id"] == listed
+    assert search.listing_detail(conn, listed, True)["phones"] == [main]
+
+    repost_text = body.replace("Домбайская 59", "Домбайская 62") + "\nТелефон +7 900 000-00-09"
+    other = post(3, repost_text, "+79000000009")["results"][0]["listing_id"]
+    assert other != listed
+    assert search.listing_detail(conn, other, True)["phones"] == ["+79000000009"]
+    assert post(4, repost_text, "79186305681@s.whatsapp.net") == {"status": "repost", "listings": [other]}
+    assert search.listing_detail(conn, other, True)["phones"] == [main]
+    assert dupreview._shared_review_phone([dupreview._card(conn, lid) for lid in (listed, other)])
+
+
 def test_ambiguous_price_keeps_both_existing_prices(conn):
     a, b = listing(conn), listing(conn)
     stem = ("Краснодар улица Домбайская двухкомнатная квартира 54 м² этаж 16 "
