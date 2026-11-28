@@ -334,13 +334,64 @@ def _price_m2(price, area) -> int | None:
     return None
 
 
+def _stored_contacts(raw) -> set[str]:
+    try:
+        values = json.loads(raw or "[]")
+    except (TypeError, ValueError):
+        return set()
+    if not isinstance(values, (list, dict)):
+        return set()
+    return {phone for value in values if (phone := rules.contact_phone(value))}
+
+
+def hide_contactless_chat_listings(conn: sqlite3.Connection) -> int:
+    """Скрывает опубликованные объявления из чатов без номера в карточке, тексте и истории."""
+    hidden = 0
+    with conn:
+        if not conn.in_transaction:
+            conn.execute("BEGIN IMMEDIATE")
+        rows = conn.execute("""SELECT id, phones, phone_roles, fragment, description FROM listings
+                                WHERE source='chat' AND is_active=1""").fetchall()
+        for row in rows:
+            if (_stored_contacts(row["phones"]) or _stored_contacts(row["phone_roles"])
+                    or rules.find_phones(row["fragment"]) or rules.find_phones(row["description"])):
+                continue
+            events = conn.execute("""SELECT DISTINCT e.phones,m.sender FROM listing_events e
+                LEFT JOIN messages m ON m.id=e.message_id WHERE e.listing_id=?""", (row["id"],))
+            if any(_stored_contacts(phones) or rules.contact_phone(sender) for phones, sender in events):
+                continue
+            hidden += conn.execute("""UPDATE listings SET is_active=0,hidden_reason=COALESCE(NULLIF(hidden_reason,''),'no_contact')
+                                      WHERE id=?""", (row["id"],)).rowcount
+        if hidden:
+            conn.execute("""INSERT INTO state(key,value) VALUES ('cache_ver',?)
+                            ON CONFLICT(key) DO UPDATE SET value=excluded.value""", (str(time.time()),))
+    return hidden
+
+
 def save_object(conn: sqlite3.Connection, o: parser.ParsedObject, message_id: int | None, ts: int) -> tuple[int, str]:
     """Создаёт новый объект или обновляет найденный дубль. Возвращает (id, как сопоставили)."""
     from . import applet, offers
-    if message_id is not None and (managed := applet.active_numbers(conn)):
+    managed = applet.active_numbers(conn) if message_id is not None else set()
+    if managed:
         if applet.only_catalog_phones(o.phones, managed):
             return 0, "appletv"
         o.phones, o.phone_roles = applet.exclude_catalog_contacts(o.phones, o.phone_roles, managed)
+    o.phones = list(dict.fromkeys(phone for value in o.phones if (phone := rules.contact_phone(value))))
+    if not o.phones:
+        o.phones = [phone for phone in rules.extract_phones(o.fragment) if phone not in managed]
+        for phone in o.phones:
+            o.phone_roles.setdefault(phone, "text")
+    if not o.phones:
+        contact = next((phone for raw in o.phone_roles if (phone := rules.contact_phone(raw))), None)
+        if not contact and message_id is not None:
+            message = conn.execute("SELECT sender FROM messages WHERE id=?", (message_id,)).fetchone()
+            sender = rules.contact_phone(message["sender"]) if message else None
+            contact = sender if sender not in managed else None
+            if contact:
+                o.phone_roles.setdefault(contact, "sender")
+        if not contact:
+            return 0, "no_contact"
+        o.phones = [contact]
     # Правки админа (ЖК/район) — до поиска дублей: объявление совпадёт с уже исправленной карточкой
     osmaddr.apply(conn, o)      # опечатка в улице («Командоская») — до правил и дублей: одна улица, а не две
     from . import placehints
@@ -652,16 +703,17 @@ def add_message(conn: sqlite3.Connection, *, source: str, text: str, ts: int | N
 
 def process_message(conn: sqlite3.Connection, message_id: int, use_llm: bool | None = None) -> dict:
     m = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
-    if m is not None and m["status"] == "new" and (conn.execute(
+    if m is None:
+        return {"status": "missing"}
+    sender = rules.contact_phone(m["sender"])
+    if m["status"] == "new" and (conn.execute(
             "SELECT 1 FROM banned WHERE kind = 'hash' AND key = ?", (m["text_hash"],)).fetchone()
-            or (m["sender"] and rules.normalize_phone(str(m["sender"]).split("@")[0]) in banned_phones(conn))):
+            or (sender and sender in banned_phones(conn))):
         conn.execute("UPDATE messages SET status = 'skipped', kind = 'banned' WHERE id = ?", (m["id"],))
         conn.commit()
         return {"status": "banned"}
-    if m is None:
-        return {"status": "missing"}
     from . import applet
-    if applet.drops_chat(m["text"], m["sender"], applet.active_numbers(conn)):
+    if applet.drops_chat(m["text"], sender, applet.active_numbers(conn)):
         conn.execute("UPDATE messages SET status='skipped', kind='appletv', objects=0 WHERE id=?", (m["id"],))
         conn.commit()
         return {"status": "appletv"}
@@ -673,19 +725,23 @@ def process_message(conn: sqlite3.Connection, message_id: int, use_llm: bool | N
         (m["text_hash"], m["id"]),
     ).fetchone()
     if prev is not None and prev["sender"] != m["sender"]:
-        sender, previous = (rules.normalize_phone(str(raw or "").split("@")[0])
-                            for raw in (m["sender"], prev["sender"]))
+        previous = rules.contact_phone(prev["sender"])
         if sender and previous:
             from . import phonegroups
             phonegroups.refresh(conn)
             if phonegroups.canon(sender) != phonegroups.canon(previous) and not rules.find_phones(m["text"]):
                 prev = None
     listing_ids = []
+    if prev is not None and prev["kind"] == "listing" and not (sender or rules.find_phones(m["text"])):
+        conn.execute("UPDATE messages SET status='done',kind='listing',objects=? WHERE id=?", (prev["objects"], m["id"]))
+        conn.commit()
+        return {"status": "done", "kind": "listing", "results": [{"listing_id": 0, "match": "no_contact"}]}
     if prev is not None:
         # только объекты, которые ещё есть в базе (удалённые по сроку — пропали вместе с карточкой)
         listing_ids = [r["listing_id"] for r in conn.execute(
             """SELECT DISTINCT e.listing_id FROM listing_events e JOIN listings l ON l.id = e.listing_id
-               WHERE e.message_id = ? AND COALESCE(l.hidden_reason, '') != 'appletv_chat'""", (prev["id"],))]
+               WHERE e.message_id = ? AND COALESCE(l.hidden_reason, '') NOT IN ('appletv_chat','no_contact')""",
+            (prev["id"],))]
         # 24.10j: текст уже разбирали, но его объект(ы) удалили по сроку — разбираем заново, а не теряем объявление
         # (удалённое админом сюда не доходит: его текст в banned и отсекается выше)
         if not listing_ids and (prev["objects"] or 0) > 0 and prev["kind"] != "request":
@@ -715,7 +771,7 @@ def process_message(conn: sqlite3.Connection, message_id: int, use_llm: bool | N
             from .pricefix import model_hints
             hints = model_hints(conn, m["text"])
         options = {"price_hints": hints} if hints else {}
-        kind, objects = parser.parse(m["text"], sender_phone=m["sender"], use_llm=use_llm, **options)
+        kind, objects = parser.parse(m["text"], sender_phone=sender, use_llm=use_llm, **options)
     except Exception as e:  # noqa: BLE001 — одно кривое сообщение не должно останавливать поток
         log.exception("Ошибка разбора сообщения %s", m["id"])
         conn.execute("UPDATE messages SET status='error', error=? WHERE id=?", (str(e)[:500], m["id"]))

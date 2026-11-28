@@ -55,7 +55,8 @@ def _house_eq(a: str | None, b: str | None) -> bool | None:
 
 _PRICE_WORDS = {"млн", "тыс", "т", "р", "руб", "рублей", "тр", "миллиона", "миллионов", "миллион", "тысяч"}
 _PRICE_BEFORE = {"цена", "цены", "стоимость", "за"}
-_PRICE_NOTICES = {"снижение цены", "цена снижена", "новая цена"}
+_PRICE_NOTICES = {"снижение цены", "цена снижена", "новая цена", "повышение цены", "цена повышена",
+                  "изменение цены", "цена изменена"}
 _PRICE_LINE_LABELS = {"", "цена", "стоимость", "новая цена"}
 _GROUPED_NUMBER = re.compile(r"(?<!\d)\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?!\d)")
 
@@ -145,6 +146,22 @@ def price_revision_time(conn: sqlite3.Connection, row: sqlite3.Row) -> int:
     ts = conn.execute("""SELECT MIN(ts) FROM listing_events WHERE listing_id=? AND fragment_hash=? AND price=?""",
                       (row["id"], fragment_hash(row["fragment"] or ""), row["price"])).fetchone()[0]
     return ts if ts is not None else (row["description_ts"] or row["first_seen"])
+
+
+def latest_version_send(conn: sqlite3.Connection, row: sqlite3.Row) -> int:
+    """Последняя отправка текста с текущей ценой, включая дословные пересылки."""
+    text_hash = fragment_hash(row["fragment"] or row["description"] or "")
+    ts = conn.execute("""WITH version AS (
+        SELECT e.ts,m.text_hash FROM listing_events e LEFT JOIN messages m ON m.id=e.message_id
+        WHERE e.listing_id=? AND e.fragment_hash=? AND e.price=?
+    )
+    SELECT MAX(ts) FROM (
+        SELECT ts FROM version
+        UNION ALL
+        SELECT e.ts FROM listing_events e JOIN messages m ON m.id=e.message_id
+        WHERE e.listing_id=? AND e.match='repost' AND m.text_hash IN (SELECT text_hash FROM version)
+    )""", (row["id"], text_hash, row["price"], row["id"])).fetchone()[0]
+    return ts if ts is not None else (row["last_seen"] or row["description_ts"] or row["first_seen"] or 0)
 
 
 def is_price_revision(fragment: str, price: int | None, row: sqlite3.Row) -> bool:

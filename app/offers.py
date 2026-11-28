@@ -314,20 +314,25 @@ def representatives(group, hidden: set[int]) -> dict:
     return {lid: by_agent[key] for lid, key in aliases.items()}
 
 
-def _repeat_ids(decisions):
+def _connected_ids(edges):
     parents = {}
+    members = set()
 
     def root(lid):
         while lid in parents:
             lid = parents[lid]
         return lid
 
-    for (a, b), status in decisions.items():
-        if status == "repeat":
-            left, right = sorted((root(a), root(b)))
-            if left != right:
-                parents[right] = left
-    return {lid: root(lid) for pair, status in decisions.items() if status == "repeat" for lid in pair}
+    for a, b in edges:
+        members.update((a, b))
+        left, right = sorted((root(a), root(b)))
+        if left != right:
+            parents[right] = left
+    return {lid: root(lid) for lid in members}
+
+
+def _repeat_ids(decisions):
+    return _connected_ids(pair for pair, status in decisions.items() if status == "repeat")
 
 
 def hidden_ids(conn: sqlite3.Connection, user_id: int | None) -> set[int]:
@@ -407,12 +412,13 @@ def first_publication(rows, archived: dict) -> tuple[int, int, int]:
 def _build_groups(conn: sqlite3.Connection):
     """Автоматические группы требуют попарного совпадения. Для подтверждённых пар допустима связь через общее предложение."""
     stored = conn.execute(f"""
-        SELECT a, b, status, CASE WHEN user_id IS NULL OR user_id=0 THEN
+        SELECT a, b, status, user_id, CASE WHEN user_id IS NULL OR user_id=0 THEN
             CASE WHEN json_valid(ai) THEN json_extract(ai,'$.applied') END END AS ai_applied
         FROM dup_pairs WHERE (status IN {LINK_TYPES} OR status IN ('diff','split'))
         AND NOT (status = 'market' AND kind = 'offer_photo' AND COALESCE(user_id,0)=0
                  AND COALESCE(CASE WHEN json_valid(ai) THEN json_extract(ai,'$.applied') END,0)=0)""").fetchall()
-    decisions = {(a, b): status for a, b, status, _ in stored}
+    decisions = {(a, b): status for a, b, status, _, _ in stored}
+    manual_links = {(a, b) for a, b, status, user_id, _ in stored if status == "market" and (user_id or 0) > 0}
     aliases = dict(conn.execute("SELECT id, merged_into FROM listings WHERE hidden_reason=? AND merged_into IS NOT NULL",
                                 (MERGED_REPEAT,)))
 
@@ -432,7 +438,7 @@ def _build_groups(conn: sqlite3.Connection):
              AND CASE WHEN json_valid(l.photos) THEN json_array_length(l.photos) >= 1 ELSE 0 END)
             OR l.id IN (SELECT a FROM dup_pairs WHERE status IN {LINK_TYPES}
                         UNION SELECT b FROM dup_pairs WHERE status IN {LINK_TYPES}))""")}
-    for a, b, status, ai_applied in stored:
+    for a, b, status, _, ai_applied in stored:
         if status in ("market", "linked") and ai_applied and a in rows and b in rows and identity_conflict(rows[a], rows[b]):
             decisions[a, b] = "diff"
     repeats = _repeat_ids(decisions)
@@ -440,11 +446,14 @@ def _build_groups(conn: sqlite3.Connection):
         # Прямой вердикт по двум оставшимся карточкам важнее любой связи их прежних версий.
         for (a, b), status in sorted(decisions.items(), key=lambda item: item[1] not in ("diff", "split")):
             pair = tuple(sorted((active_id(a), active_id(b))))
-            if pair[0] != pair[1]:
-                decisions.setdefault(pair, status)
+            if pair[0] != pair[1] and pair not in decisions:
+                decisions[pair] = status
+                if (a, b) in manual_links:
+                    manual_links.add(pair)
     approved = sorted(((a, b) for (a, b), status in decisions.items() if status in LINK_STATUSES
                        and a in rows and b in rows and rows[a]["deal"] == rows[b]["deal"]),
-                      key=lambda pair: (decisions[pair] == "linked", decisions[pair] != "repeat", pair))
+                      key=lambda pair: (decisions[pair] == "linked", decisions[pair] != "repeat", pair not in manual_links, pair))
+    confirmed_roots = _connected_ids(pair for pair in approved if pair in manual_links)
     pairs = set(approved)
     buckets = defaultdict(list)
     photo_addresses = defaultdict(set)
@@ -482,6 +491,8 @@ def _build_groups(conn: sqlite3.Connection):
             return True
         if not confirmed or pair in decisions or identity_conflict(rows[a], rows[b]):
             return False
+        if a in confirmed_roots and confirmed_roots[a] == confirmed_roots.get(b):
+            return True
         if same_unit_details(rows[a], rows[b]):
             return True
         families = tuple(sorted((family(a), family(b))))
@@ -502,7 +513,7 @@ def _build_groups(conn: sqlite3.Connection):
                 manual_groups.add(group)
     auto = {(a, b) for a, b in pairs.difference(approved) if a in linked and linked[a] == linked.get(b)
             and contact_keys(rows[a]).isdisjoint(contact_keys(rows[b]))}
-    return rows, set(linked.values()), auto, repeats
+    return rows, set(linked.values()), auto, repeats, confirmed_roots
 
 
 def photo_matches(conn: sqlite3.Connection) -> set[tuple[int, int]]:
@@ -511,7 +522,7 @@ def photo_matches(conn: sqlite3.Connection) -> set[tuple[int, int]]:
 
 
 def groups(conn: sqlite3.Connection, hide_user: int | None = None) -> dict:
-    rows, groups, _, repeats = _build_groups(conn)
+    rows, groups, _, repeats, _ = _build_groups(conn)
     hidden = hidden_ids(conn, hide_user)
     result = {}
     for ids in groups:
@@ -521,6 +532,12 @@ def groups(conn: sqlite3.Connection, hide_user: int | None = None) -> dict:
         group = tuple(sorted(active, key=lambda r: (not is_site(r), not r["confirmed_at"], -r["last_seen"], -r["id"])))
         result.update(dict.fromkeys((row["id"] for row in group), group))
     return result
+
+
+def confirmed_group_ids(conn: sqlite3.Connection) -> dict[int, tuple[int, int]]:
+    """Общая группа и цепочка ручных связей для уже подтверждённых предложений."""
+    _, groups, _, _, confirmed_roots = _build_groups(conn)
+    return {lid: (members[0], confirmed_roots[lid]) for members in groups for lid in members if lid in confirmed_roots}
 
 
 def for_listing(conn: sqlite3.Connection, row: sqlite3.Row, hide_user: int | None = None):

@@ -1,7 +1,7 @@
 import json
 from contextlib import closing
 
-from app import accounts, config, db, dedupe, dupreview, ingest, llm, offers, parser, phonegroups, picks, repeat_refs, rules, search
+from app import accounts, config, db, dedupe, dupreview, ingest, llm, offers, parser, phonegroups, picks, repeat_refs, rules, search, wappi
 
 
 def listing(conn, phone="+79000000001"):
@@ -25,6 +25,44 @@ def test_multilisting_contacts_belong_to_their_own_blocks():
     assert [(item.price, item.phones) for item in objects] == [(7500000, ["+79000000001"]), (5100000, [])]
     _, objects = parser.parse(text + "\n\nКонтакты для всех объектов: +7 900 000-00-02", use_llm=False)
     assert objects[1].phones == ["+79000000002"]
+
+
+def test_chat_ingestion_requires_a_number_and_recovers_when_sender_is_readable(conn):
+    text = ("Продаётся 2-комнатная квартира 58 м², этаж 7/16.\n"
+            "ул. Домбайская 59, ремонт.\nЦена 7 500 000 рублей.")
+
+    def post(i, sender=None, body=text):
+        mid = ingest.add_message(conn, source="wa", profile_id="test", chat_id="sale", msg_id=str(i),
+                                 sender=sender, text=body, ts=i)
+        return ingest.process_message(conn, mid, use_llm=False)
+
+    assert post(1)["results"] == [{"listing_id": 0, "match": "no_contact"}]
+    assert post(8, "79000000001@lid")["results"] == [{"listing_id": 0, "match": "no_contact"}]
+    assert conn.execute("SELECT COUNT(*) FROM listings").fetchone()[0] == 0
+    lid = post(2, "79000000001:9@s.whatsapp.net")["results"][0]["listing_id"]
+    assert lid > 0
+    assert post(3)["results"] == [{"listing_id": 0, "match": "no_contact"}]
+    assert conn.execute("SELECT last_seen FROM listings").fetchone()[0] == 2
+    assert post(4, body=text.replace("Домбайская 59", "Домбайская 62") + "\nТелефон +7 900 000-00-02")["results"][0]["listing_id"] > 0
+
+    invalid = listing(conn)
+    retained = listing(conn)
+    conn.execute("UPDATE listings SET phones='[]' WHERE id IN (?,?)", (invalid, retained))
+    message = ingest.add_message(conn, source="tg", profile_id="test", chat_id="sale", msg_id="legacy",
+                                 sender="+7 900 000-00-03", text="Предыдущий пост", ts=5)
+    conn.execute("INSERT INTO listing_events(listing_id,message_id,ts) VALUES (?,?,5)", (retained, message))
+    assert ingest.hide_contactless_chat_listings(conn) == 1
+    assert conn.execute("SELECT is_active,hidden_reason FROM listings WHERE id=?", (invalid,)).fetchone()[:] == (0, "no_contact")
+    assert conn.execute("SELECT is_active FROM listings WHERE id=?", (retained,)).fetchone()[0] == 1
+
+
+def test_wappi_does_not_use_account_ids_as_contact_phones():
+    assert wappi._sender_phone({"from": "79000000001@lid", "author": "79000000002:9@s.whatsapp.net"}) == "79000000002"
+    assert wappi._sender_phone({"from": "79000000001@g.us"}) is None
+    assert wappi._sender_phone({"from": "79000000001@lid"}) is None
+    assert wappi._sender_phone({"sender": 9000000001}, "tg") is None
+    assert wappi._sender_phone({"sender": {"id": 9000000001, "phone_number": "8 (900) 000-00-02"}}, "tg") == "79000000002"
+    assert wappi._sender_phone({"from": 9000000001, "senderPhone": "79000000002"}, "max") == "79000000002"
 
 
 def test_ambiguous_price_keeps_both_existing_prices(conn):
@@ -1072,6 +1110,112 @@ def test_advertised_number_can_match_sender_on_either_card(conn, monkeypatch):
     assert len(calls) == 2
 
 
+def _exact_review_send(conn, lid, text, ts, *, sender, source="wa", price=None, repost=False):
+    message = ingest.add_message(conn, source=source, profile_id="exact-review", chat_id="sale",
+                                 msg_id=f"{lid}-{ts}", sender=sender, text=text, ts=ts)
+    conn.execute("""INSERT INTO listing_events(listing_id,message_id,ts,price,fragment_hash,match)
+        VALUES (?,?,?,?,?,?)""", (lid, message, ts, price, None if repost else dedupe.fragment_hash(text),
+                                 "repost" if repost else "new"))
+
+
+def test_exact_auto_review_matches_chat_senders_in_any_order_without_deepseek(conn, monkeypatch):
+    monkeypatch.setattr(config, "DUP_AI_AUTO", False)
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "")
+    keep, drop = listing(conn, "+79000000003"), listing(conn, "+79000000004")
+    text = ("● Уральская 71 к2 ЖК Галактика\n▸ 3 к.кв. 20/25 МК\nПлощадь: 95/50/20м\n"
+            "Цена: 20 500 000₽\nРемонт под ключ. Вся мебель и техника")
+    conn.execute("""UPDATE listings SET complex='Галактика',street='Уральская',house='71к2',
+        rooms=3,area=95,floor=20,floors=25,price=20500000,fragment=? WHERE id IN (?,?)""", (text, keep, drop))
+    conn.execute("""UPDATE listings SET last_seen=50,phone_roles=? WHERE id=?""",
+                 (json.dumps({"+79000000003": "text"}), keep))
+    conn.execute("UPDATE listings SET street=NULL,house=NULL,first_seen=20,last_seen=25,phones='[]' WHERE id=?", (drop,))
+    _exact_review_send(conn, keep, text, 10, sender="79000000001:14@s.whatsapp.net", price=20500000)
+    _exact_review_send(conn, keep, text, 50, sender="79000000002@c.us", price=20500000)
+    _exact_review_send(conn, drop, text, 20, source="max", sender="8 (900) 000-00-02", price=20500000)
+    _exact_review_send(conn, drop, text, 25, source="max", sender="+7 900 000 00 01", price=20500000)
+    pid = pair(conn, keep, drop, kind="text")
+    uid = accounts.upsert_email_user(conn, "exact-repeat@example.test")["id"]
+    conn.execute("INSERT INTO favorites(user_id,listing_id,created) VALUES (?,?,?)", (uid, drop, 12))
+
+    assert dupreview.resolve_exact_repeats(conn)["merged"] == 1
+    decision = conn.execute("SELECT status,keep_id,drop_id FROM dup_pairs WHERE id=?", (pid,)).fetchone()
+    assert tuple(decision) == ("repeat", keep, drop)
+    assert [tuple(row) for row in conn.execute("SELECT id,price FROM listings WHERE is_active=1")] == [(keep, 20500000)]
+    assert conn.execute("SELECT listing_id FROM favorites").fetchone()[0] == keep
+    assert {row[0] for row in conn.execute("SELECT listing_id FROM listing_events")} == {keep}
+    assert dupreview.resolve_exact_repeats(conn)["merged"] == 0
+
+
+def test_exact_auto_price_cross_checks_advertised_contacts_and_uses_latest_version_send(conn):
+    for latest_price, note in ((6600000, "Снижение цены"), (7100000, "Повышение цены")):
+        keep, drop = listing(conn, "+79000000003"), listing(conn, "+79000000004")
+        body = (f"Губернский, ул. Домбайская 59. Квартира №{keep}, две комнаты, 54 м², 16 этаж.\n"
+                "Окна во двор, ремонт, остаётся вся мебель, документы готовы к сделке.\n")
+        price_text = f"{latest_price:,}".replace(",", " ")
+        latest_text = f"{note}\nЦена: {price_text} ₽\n{body}"
+        earlier_text = body + "Цена: 6 800 000 ₽"
+        if latest_price < 6800000:
+            earlier_text += "\nТел. 8 (900) 000-00-02"
+            latest_sender, earlier_sender = "79000000002", "79000000004"
+        else:
+            latest_text += "\nТел. 8 (900) 000-00-02"
+            latest_sender, earlier_sender = "79000000003", "79000000002"
+        conn.execute("UPDATE listings SET fragment=?,price=?,first_seen=10,last_seen=45 WHERE id=?",
+                     (latest_text, latest_price, keep))
+        conn.execute("UPDATE listings SET fragment=?,first_seen=20,last_seen=80 WHERE id=?", (earlier_text, drop))
+        _exact_review_send(conn, keep, latest_text, 10, sender=f"{latest_sender}:11@s.whatsapp.net", price=latest_price)
+        _exact_review_send(conn, keep, latest_text, 45, sender=f"{latest_sender}@c.us", repost=True)
+        _exact_review_send(conn, drop, earlier_text, 20, sender=f"{earlier_sender}@c.us", price=6800000)
+        _exact_review_send(conn, drop, body + "Цена: 7 200 000 ₽", 80, sender=f"{earlier_sender}@c.us", price=7200000)
+        pid = pair(conn, keep, drop, kind="price_revision")
+
+        assert dupreview.resolve_exact_repeats(conn)["merged"] == 1
+        assert tuple(conn.execute("SELECT status,keep_id FROM dup_pairs WHERE id=?", (pid,)).fetchone()) == ("repeat", keep)
+        decision = conn.execute("SELECT price,fragment FROM listings WHERE id=? AND is_active=1", (keep,)).fetchone()
+        assert tuple(decision) == (latest_price, latest_text)
+
+
+def test_exact_auto_review_discovers_cosmetic_reposts_with_missing_parsed_address(conn):
+    first, fresh = listing(conn, "+79000000001"), listing(conn, "+79000000002")
+    pasted = ("ЖК Самолет 5. Ивана Беличенко 97\nСтудия. 20 м2. 9 этаж\n"
+              "Дизайнерский ремонт. Мебель и техника\n💰 Цена : 3.900🍇\n📱 Виктор : 8(900)000-00-01")
+    cleaned = ("ЖК Самолет 5\nул. Ивана Беличенко, 97\nСтудия · 20 м² · 9 эт.\n"
+               "Хорошее предложение\nДизайнерский ремонт · Мебель и техника\n💰 3 900 000 ₽")
+    conn.execute("""UPDATE listings SET rooms=0,room_kind='studio',area=20,floor=9,
+        street=NULL,house=NULL,price=3900000 WHERE id IN (?,?)""", (first, fresh))
+    conn.execute("UPDATE listings SET fragment=?,first_seen=10,last_seen=10 WHERE id=?", (pasted, first))
+    conn.execute("UPDATE listings SET fragment=?,first_seen=20,last_seen=20,street='Ивана Беличенко',house='97' WHERE id=?",
+                 (cleaned, fresh))
+    _exact_review_send(conn, fresh, cleaned, 20, source="max", sender="+7 900 000 00 01", price=3900000)
+
+    assert dupreview.scan(conn)["queued"] == 1
+    assert dupreview.resolve_exact_repeats(conn)["merged"] == 1
+    row = conn.execute("SELECT id,fragment,price FROM listings WHERE is_active=1").fetchone()
+    assert tuple(row) == (fresh, cleaned, 3900000)
+
+
+def test_exact_auto_review_respects_distinct_units_changed_terms_and_manual_decisions(conn):
+    body = ("ул. Домбайская 59, две комнаты, 54 м², 16 этаж, окна выходят во двор.\n"
+            "Современный ремонт, мебель и техника, готовые документы.\nЦена: 6 800 000 ₽")
+    for house, (left, right, right_phone, manual) in enumerate((
+            (body + "\nКвартира №35", body + "\nКвартира №36", "+79000000001", False),
+            (body, body.replace("окна выходят во двор", "окна выходят на дорогу"), "+79000000001", False),
+            (body, body, "+79000000002", False),
+            (body, body, "+79000000001", True),
+    ), 130):
+        a, b = listing(conn), listing(conn, right_phone)
+        conn.executemany("UPDATE listings SET house=?,fragment=? WHERE id=?",
+                         [(str(house), left.replace("59", str(house)), a), (str(house), right.replace("59", str(house)), b)])
+        pid = pair(conn, a, b, kind="text")
+        if manual:
+            assert dupreview.decide(conn, pid, "diff", user_id=1)["ok"]
+
+        assert dupreview.resolve_exact_repeats(conn)["merged"] == 0
+        expected = "diff" if manual else "open"
+        assert conn.execute("SELECT status FROM dup_pairs WHERE id=?", (pid,)).fetchone()[0] == expected
+        assert conn.execute("SELECT SUM(is_active) FROM listings WHERE id IN (?,?)", (a, b)).fetchone()[0] == 2
+
+
 def test_backlog_reuses_saved_review_for_a_newly_recognized_contact(conn, monkeypatch):
     monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "test")
 
@@ -1184,21 +1328,24 @@ def test_rejected_pairs_leave_the_other_candidates_for_review(conn):
     assert dupreview.decide(conn, p3, "diff", 1)["stale"]
 
 
-def test_shared_link_with_missing_details_goes_to_an_independent_pair(conn):
-    a, b, c = [listing(conn, f"+7900000000{i}") for i in range(1, 4)]
-    conn.execute("UPDATE listings SET floor=NULL WHERE id=?", (c,))
-    p1 = pair(conn, a, b)
-    p2 = pair(conn, a, c)
-    before = list(map(tuple, conn.execute("SELECT * FROM listings")))
-    assert dupreview.decide(conn, p1, "market", 1)["ok"]
-    assert dupreview.decide(conn, p2, "market", 1)["ok"]
-    assert set(offers.groups(conn)) == {a, b}
-    peer = dupreview.pairs(conn, limit=1)["pairs"][0]
-    assert {peer["a"]["id"], peer["b"]["id"]} == {b, c}
-    assert peer["kind"] == "offer_peer"
-    assert dupreview.decide(conn, peer["id"], "market", 1)["ok"]
-    assert set(offers.groups(conn)) == {a, b, c}
-    assert list(map(tuple, conn.execute("SELECT * FROM listings"))) == before
+def test_confirmed_links_group_three_offers_without_a_third_decision(conn):
+    for existing_peer in (False, True):
+        a, b, c = [listing(conn, f"+7900000000{i}") for i in range(1, 4)]
+        conn.execute("UPDATE listings SET floor=NULL WHERE id=?", (c,))
+        p1 = pair(conn, a, b)
+        p2 = pair(conn, a, c)
+        if existing_peer:
+            pair(conn, b, c, kind="offer_peer")
+        before = list(map(tuple, conn.execute("SELECT * FROM listings")))
+
+        assert dupreview.decide(conn, p1, "market", 1)["ok"]
+        assert dupreview.decide(conn, p2, "market", 1)["ok"]
+        assert {offer["id"] for offer in offers.groups(conn)[a]} == {a, b, c}
+        assert not dupreview.pairs(conn)["pairs"]
+        assert dupreview.open_count(conn) == 0
+        peer = conn.execute("SELECT status,user_id,decided_at FROM dup_pairs WHERE a=? AND b=?", (b, c)).fetchone()
+        assert peer is None or (existing_peer and tuple(peer) == ("open", None, None))
+        assert list(map(tuple, conn.execute("SELECT * FROM listings"))) == before
 
 
 def test_historical_merge_can_still_be_split(conn):

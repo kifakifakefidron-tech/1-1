@@ -21,7 +21,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
-from . import agent, config, db, ingest, media, region
+from . import agent, config, db, ingest, media, region, rules
 
 log = logging.getLogger(__name__)
 
@@ -117,10 +117,19 @@ def _text(m: dict) -> str:
     return media.caption(m)   # фото с подписью: текст объявления — в подписи (у WhatsApp — body.caption)
 
 
-def _sender_phone(m: dict) -> str | None:
-    raw = str(m.get("from") or m.get("sender") or m.get("author") or "")
-    digits = "".join(ch for ch in raw.split("@")[0] if ch.isdigit())
-    return digits if 10 <= len(digits) <= 12 else None
+def _sender_phone(m: dict, source: str = "wa") -> str | None:
+    for key in ("sender_phone", "senderPhone", "from_phone", "phone"):
+        if phone := rules.contact_phone(str(m.get(key) or "")):
+            return phone[1:]
+    for key in ("sender", "author", "from"):
+        value = m.get(key)
+        if isinstance(value, dict):
+            value = value.get("phone") or value.get("phone_number")
+        elif source != "wa" and not str(value or "").strip().startswith("+"):
+            continue   # Telegram и MAX могут передавать числовой ID вместо телефона
+        if phone := rules.contact_phone(str(value or "")):
+            return phone[1:]
+    return None
 
 
 def _since(cursor: int) -> str:
@@ -151,14 +160,15 @@ def _store(conn: sqlite3.Connection, source: str, profile_id: str, m: dict,
                  or region.chat_name(conn, source, cid))
     if region.is_excluded(conn, source, cid, chat_name):   # чат другого города или отключён в админке
         return False, ts
+    sender = _sender_phone(m, source)
     if is_photo:   # фото из альбома объявления — привяжем к объекту (app/media.py)
-        media.remember(conn, source, profile_id, cid, _sender_phone(m), str(m.get("id") or ""), ts)
+        media.remember(conn, source, profile_id, cid, sender, str(m.get("id") or ""), ts)
     if len(text) < 30:
         return False, ts
     mid = ingest.add_message(
         conn, source=source, text=text, ts=ts or int(time.time()), profile_id=profile_id,
         chat_id=cid, chat_name=chat_name,
-        msg_id=str(m.get("id") or ""), sender=_sender_phone(m), sender_name=m.get("senderName"),
+        msg_id=str(m.get("id") or ""), sender=sender, sender_name=m.get("senderName"),
     )
     return bool(mid), ts
 

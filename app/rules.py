@@ -487,6 +487,18 @@ def normalize_phone(raw: str) -> str | None:
     return None
 
 
+def contact_phone(raw: str | None) -> str | None:
+    """Читаемый номер, в том числе в телефонном адресе WhatsApp."""
+    if not isinstance(raw, str):
+        return None
+    address, _, domain = raw.strip().partition("@")
+    if domain:
+        if domain.lower() not in ("c.us", "s.whatsapp.net"):
+            return None
+        address = address.split(":", 1)[0]
+    return normalize_phone(address) if re.fullmatch(r"[+\d\s().\-]+", address) else None
+
+
 def extract_phones(text: str) -> list[str]:
     out: list[str] = []
     for _, _, p in find_phones(text):

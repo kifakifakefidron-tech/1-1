@@ -184,6 +184,9 @@ def tick(conn) -> dict:
         stats["geo_cleanup"] = gc.get("listings", 0)
     from . import dupreview
     try:
+        if not db.get_state(conn, "contactless_chat_v1"):
+            stats["contactless_hidden"] = ingest.hide_contactless_chat_listings(conn)
+            db.set_state(conn, "contactless_chat_v1", "1")
         dr = dupreview.run(conn)
         if dr.get("queued") or dr.get("gone"):
             stats["dups"] = dr
@@ -206,11 +209,14 @@ def tick(conn) -> dict:
         conn.rollback()
         log.exception("перепроверка похожих предложений не прошла")
     try:
+        exact = dupreview.resolve_exact_repeats(conn)
+        if exact["merged"]:
+            stats["exact_repeats"] = exact
         if config.DUP_AI_AUTO and (ai_duplicates := dupreview.auto_review(conn)):
             stats["dup_ai"] = ai_duplicates
     except Exception:  # noqa: BLE001
         conn.rollback()
-        log.exception("авторазбор повторов через DeepSeek не прошёл")
+        log.exception("авторазбор повторов не прошёл")
     lap("повторы")
     from . import cxnorm
     cx = cxnorm.maybe_run(conn)   # один раз (ТЗ v2, P1.7): одно название на один ЖК, отчёт — в админке
