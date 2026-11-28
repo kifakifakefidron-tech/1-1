@@ -243,7 +243,8 @@ def detail(conn: sqlite3.Connection, user_id: int, cid: int) -> dict:
     for r in conn.execute("""SELECT i.status, i.note, i.ts, i.pick_id, i.sent_at, i.opened_at, i.reaction, i.reaction_text,
                                     COALESCE(i.updated, i.ts) AS updated,
                                     l.id, l.title, l.price, l.deal, l.complex, l.district, l.street, l.house, l.photos, l.is_active
-                             FROM client_items i JOIN listings l ON l.id = i.listing_id WHERE i.client_id = ?
+                             FROM client_items i JOIN listings l ON l.id = i.listing_id
+                             WHERE i.client_id = ? AND l.hidden_reason IS NOT 'no_contact'
                              ORDER BY COALESCE(i.updated, i.ts) DESC""", (cid,)):
         photos = json.loads(r["photos"] or "[]")
         items.append({k: r[k] for k in ("id", "title", "price", "deal", "complex", "district", "street", "house", "is_active",

@@ -351,7 +351,7 @@ def hide_contactless_chat_listings(conn: sqlite3.Connection) -> int:
         if not conn.in_transaction:
             conn.execute("BEGIN IMMEDIATE")
         rows = conn.execute("""SELECT id, phones, phone_roles, fragment, description FROM listings
-                                WHERE source='chat' AND is_active=1""").fetchall()
+                                WHERE source='chat' AND merged_into IS NULL AND hidden_reason IS NOT 'no_contact'""").fetchall()
         for row in rows:
             if (_stored_contacts(row["phones"]) or _stored_contacts(row["phone_roles"])
                     or rules.find_phones(row["fragment"]) or rules.find_phones(row["description"])):
@@ -360,7 +360,7 @@ def hide_contactless_chat_listings(conn: sqlite3.Connection) -> int:
                 LEFT JOIN messages m ON m.id=e.message_id WHERE e.listing_id=?""", (row["id"],))
             if any(_stored_contacts(phones) or rules.contact_phone(sender) for phones, sender in events):
                 continue
-            hidden += conn.execute("""UPDATE listings SET is_active=0,hidden_reason=COALESCE(NULLIF(hidden_reason,''),'no_contact')
+            hidden += conn.execute("""UPDATE listings SET is_active=0,hidden_reason='no_contact'
                                       WHERE id=?""", (row["id"],)).rowcount
         if hidden:
             conn.execute("""INSERT INTO state(key,value) VALUES ('cache_ver',?)

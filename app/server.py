@@ -295,7 +295,7 @@ def index(request: Request, body: dict | None = None):
             resp.set_cookie("ref", ref, max_age=30 * 86400, httponly=True, samesite="lax")
         return resp
     # Ссылка на объект («Поделиться»): превью в WhatsApp/Telegram — название, цена, место, фото. Без телефонов.
-    r = db.get().execute("SELECT * FROM listings WHERE id = ?", (oid,)).fetchone()
+    r = db.get().execute("SELECT * FROM listings WHERE id = ? AND hidden_reason IS NOT 'no_contact'", (oid,)).fetchone()
     if r is not None:
         place = " · ".join(x for x in (f"ЖК {r['complex']}" if r["complex"] else None, r["district"],
                                        f"ул. {r['street']}" if r["street"] else None) if x)
@@ -621,7 +621,8 @@ def api_hidden(request: Request, body: dict | None = None):
         return JSONResponse({"ok": True})
     rows = conn.execute(f"""SELECT l.*, h.reason AS h_reason, h.ts AS h_ts, {search.VERIFIED} AS verified
                             FROM hidden_listings h JOIN listings l ON l.id = h.listing_id
-                            WHERE h.user_id = ? ORDER BY h.ts DESC LIMIT 500""", (user["id"],)).fetchall()
+                            WHERE h.user_id = ? AND l.hidden_reason IS NOT 'no_contact'
+                            ORDER BY h.ts DESC LIMIT 500""", (user["id"],)).fetchall()
     return JSONResponse({"items": [{**search.row_to_item(r, False), "reason": r["h_reason"], "hidden_at": r["h_ts"]} for r in rows]})
 
 
@@ -1125,7 +1126,7 @@ def api_favorites(request: Request, body: dict | None = None):
         FROM listings l
         LEFT JOIN favorites f ON f.listing_id = l.id AND f.user_id = ?
         LEFT JOIN notes n ON l.id = n.listing_id AND n.user_id = ? AND ?
-        WHERE f.user_id IS NOT NULL OR n.status IS NOT NULL
+        WHERE (f.user_id IS NOT NULL OR n.status IS NOT NULL) AND l.hidden_reason IS NOT 'no_contact'
         ORDER BY crm_ts DESC""", (user["id"], user["id"], access)).fetchall()
     items = []
     pairs: dict[int, list] = {}
@@ -2646,7 +2647,7 @@ _fix_err = threading.local()   # ошибки подсказок текущег�
 
 
 def _fix_item(conn, lid: int, *, price_only: bool = False) -> dict | None:
-    r = conn.execute("SELECT * FROM listings WHERE id = ?", (lid,)).fetchone()
+    r = conn.execute("SELECT * FROM listings WHERE id = ? AND hidden_reason IS NOT 'no_contact'", (lid,)).fetchone()
     if r is None:
         return None
     text_price = p0fix.pending_price_gap(r["price"], r["description"], r["deal"], r["price_gap_reviewed"]) if price_only else None
@@ -3240,7 +3241,8 @@ def api_client_action(request: Request, body: dict | None = None):
         return JSONResponse({**res, "published": buyers.published(conn, user["id"], cid)})
     if what == "hidden":   # «Не подходит» — список, чтобы вернуть
         rows = conn.execute("""SELECT l.* , 0 AS verified FROM client_hidden h JOIN listings l ON l.id = h.listing_id
-                               JOIN clients c ON c.id = h.client_id WHERE h.client_id = ? AND c.user_id = ?
+                               JOIN clients c ON c.id = h.client_id
+                               WHERE h.client_id = ? AND c.user_id = ? AND l.hidden_reason IS NOT 'no_contact'
                                ORDER BY h.ts DESC LIMIT 200""", (cid, user["id"])).fetchall()
         return JSONResponse({"items": [search.row_to_item(r, False) for r in rows]})
     if what in ("hide", "unhide"):

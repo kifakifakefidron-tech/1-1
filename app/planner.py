@@ -86,7 +86,7 @@ def favorites(conn: sqlite3.Connection, user_id: int) -> list[dict]:
                                     l.phones, l.is_active, n.status
                              FROM listings l LEFT JOIN favorites f ON f.listing_id = l.id AND f.user_id = ?
                              LEFT JOIN notes n ON n.listing_id = l.id AND n.user_id = ?
-                             WHERE f.user_id IS NOT NULL OR n.status IS NOT NULL
+                             WHERE (f.user_id IS NOT NULL OR n.status IS NOT NULL) AND l.hidden_reason IS NOT 'no_contact'
                              ORDER BY COALESCE(n.ts, f.created) DESC LIMIT 300""", (user_id, user_id)):
         photos = json.loads(r["photos"] or "[]")
         out.append({"id": r["id"], "title": r["title"], "price": r["price"], "deal": r["deal"], "complex": r["complex"],

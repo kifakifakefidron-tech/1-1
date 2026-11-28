@@ -133,7 +133,8 @@ def recent(conn: sqlite3.Connection, user_id: int, limit: int = 8) -> list[dict]
     for r in conn.execute("""SELECT l.id, l.title, l.complex, l.district, l.settlement, l.street, l.house, l.price, l.price_m2,
                                     l.deal, l.photos, l.is_active, l.price_doubt, l.first_seen, l.last_seen, v.ts
                              FROM recent_views v JOIN listings l ON l.id = v.listing_id
-                             WHERE v.user_id = ? ORDER BY v.ts DESC LIMIT ?""", (user_id, limit)):
+                             WHERE v.user_id = ? AND l.hidden_reason IS NOT 'no_contact'
+                             ORDER BY v.ts DESC LIMIT ?""", (user_id, limit)):
         ph = json.loads(r["photos"] or "[]")
         out.append({k: r[k] for k in ("id", "title", "complex", "district", "settlement", "street", "house", "price", "price_m2",
                                       "deal", "is_active", "first_seen", "last_seen", "ts")}

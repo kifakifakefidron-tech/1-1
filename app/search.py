@@ -792,7 +792,8 @@ def facets(conn: sqlite3.Connection, qr: Query, now: int) -> dict:
 
 def listing_detail(conn: sqlite3.Connection, listing_id: int, with_contacts: bool,
                    is_admin: bool = False) -> dict | None:
-    r = conn.execute(f"SELECT l.*, {VERIFIED} AS verified FROM listings l WHERE l.id = ?", (listing_id,)).fetchone()
+    r = conn.execute(f"""SELECT l.*, {VERIFIED} AS verified FROM listings l
+                         WHERE l.id = ? AND l.hidden_reason IS NOT 'no_contact'""", (listing_id,)).fetchone()
     if r is None:
         return None
     d = row_to_item(r, with_contacts)

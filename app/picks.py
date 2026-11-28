@@ -55,7 +55,8 @@ def mine(conn: sqlite3.Connection, user_id: int) -> list[dict]:
                       l.description AS orig, l.type, l.rooms, l.area, l.land, l.floor, l.floors, l.complex, l.district,
                       l.street, l.house, l.lat, l.lon, i.map_lat, i.map_lon, i.map_off
                FROM collection_items i JOIN listings l ON l.id = i.listing_id
-               WHERE i.collection_id = ? ORDER BY i.pos, i.added""", (r["id"],))]
+               WHERE i.collection_id = ? AND l.hidden_reason IS NOT 'no_contact'
+               ORDER BY i.pos, i.added""", (r["id"],))]
         pairs = {x["listing_id"]: dict(x) for x in conn.execute(
             "SELECT listing_id, status, reaction, reaction_text FROM client_items WHERE client_id = ?", (r["client_id"],))} \
             if r["client_id"] else {}
@@ -555,7 +556,8 @@ def public(conn: sqlite3.Connection, token: str, count_view: bool = True, device
         (c["id"], device or "-"))} if device else {}
     for r in conn.execute("""SELECT l.*, i.note AS item_note, i.text AS item_text, i.price AS my_price, i.hide_price, i.photos AS my_photos,
                                     i.photo_order, i.map_lat, i.map_lon, i.map_off FROM collection_items i JOIN listings l ON l.id = i.listing_id
-                             WHERE i.collection_id = ? ORDER BY i.pos, i.added""", (c["id"],)):
+                             WHERE i.collection_id = ? AND l.hidden_reason IS NOT 'no_contact'
+                             ORDER BY i.pos, i.added""", (c["id"],)):
         no_license = _no_license(conn, r["phones"])
         items.append({
             "id": r["id"], "title": partner_text(r["title"]), "type": r["type"], "deal": r["deal"],

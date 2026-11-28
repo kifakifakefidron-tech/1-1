@@ -967,8 +967,11 @@ def open_count(conn: sqlite3.Connection, covered: str | None = None) -> int:
 
 def stats(conn: sqlite3.Connection, covered: str = "[]") -> list[dict]:
     """Количество решений и открытых пар по каждой причине проверки."""
-    rows = conn.execute("""SELECT kind,status,COUNT(*) FROM dup_pairs WHERE id NOT IN
-                          (SELECT value FROM json_each(?)) GROUP BY kind,status""", (covered,)).fetchall()
+    rows = conn.execute("""SELECT p.kind,p.status,COUNT(*) FROM dup_pairs p WHERE p.id NOT IN
+                          (SELECT value FROM json_each(?)) AND (p.status <> 'open' OR (
+                            EXISTS (SELECT 1 FROM listings WHERE id=p.a AND is_active=1)
+                            AND EXISTS (SELECT 1 FROM listings WHERE id=p.b AND is_active=1)
+                          )) GROUP BY p.kind,p.status""", (covered,)).fetchall()
     statuses = ("same", "diff", "split", _UNCONFIRMED, "auto", "open", *offers.LINK_STATUSES)
     by: dict[str, dict] = {k: dict.fromkeys(statuses, 0) for k in KINDS}
     for kind, st, n in rows:

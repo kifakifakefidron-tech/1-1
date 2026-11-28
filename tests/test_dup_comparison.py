@@ -46,14 +46,36 @@ def test_chat_ingestion_requires_a_number_and_recovers_when_sender_is_readable(c
     assert post(4, body=text.replace("Домбайская 59", "Домбайская 62") + "\nТелефон +7 900 000-00-02")["results"][0]["listing_id"] > 0
 
     invalid = listing(conn)
+    archived = listing(conn)
     retained = listing(conn)
-    conn.execute("UPDATE listings SET phones='[]' WHERE id IN (?,?)", (invalid, retained))
+    conn.execute("UPDATE listings SET phones='[]' WHERE id IN (?,?,?)", (invalid, archived, retained))
+    conn.execute("UPDATE listings SET is_active=0 WHERE id=?", (archived,))
     message = ingest.add_message(conn, source="tg", profile_id="test", chat_id="sale", msg_id="legacy",
                                  sender="+7 900 000-00-03", text="Предыдущий пост", ts=5)
     conn.execute("INSERT INTO listing_events(listing_id,message_id,ts) VALUES (?,?,5)", (retained, message))
-    assert ingest.hide_contactless_chat_listings(conn) == 1
+    assert ingest.hide_contactless_chat_listings(conn) == 2
     assert conn.execute("SELECT is_active,hidden_reason FROM listings WHERE id=?", (invalid,)).fetchone()[:] == (0, "no_contact")
+    assert search.listing_detail(conn, invalid, False) is None
+    assert search.listing_detail(conn, archived, False) is None
     assert conn.execute("SELECT is_active FROM listings WHERE id=?", (retained,)).fetchone()[0] == 1
+
+
+def test_contactless_listings_stay_out_of_saved_views_and_open_review(conn):
+    invalid, valid = listing(conn), listing(conn)
+    pair(conn, invalid, valid)
+    conn.execute("UPDATE listings SET phones='[]' WHERE id=?", (invalid,))
+    conn.execute("INSERT INTO users(id,created) VALUES (1,1)")
+    cid = conn.execute("""INSERT INTO collections(user_id,token,title,created,updated)
+                           VALUES (1,'contact-test','Подборка',1,1)""").lastrowid
+    conn.executemany("INSERT INTO collection_items(collection_id,listing_id,added) VALUES (?,?,1)",
+                     [(cid, invalid), (cid, valid)])
+
+    assert ingest.hide_contactless_chat_listings(conn) == 1
+    assert dupreview.open_count(conn) == 0
+    assert not any(row["open"] for row in dupreview.stats(conn))
+    assert [item["id"] for item in picks.public(conn, "contact-test", count_view=False)["items"]] == [valid]
+    assert [item["listing_id"] for item in picks.mine(conn, 1)[0]["items"]] == [valid]
+    assert conn.execute("SELECT COUNT(*) FROM collection_items").fetchone()[0] == 2
 
 
 def test_wappi_does_not_use_account_ids_as_contact_phones():

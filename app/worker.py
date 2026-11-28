@@ -184,9 +184,9 @@ def tick(conn) -> dict:
         stats["geo_cleanup"] = gc.get("listings", 0)
     from . import dupreview
     try:
-        if not db.get_state(conn, "contactless_chat_v1"):
+        if not db.get_state(conn, "contactless_chat_v2"):
             stats["contactless_hidden"] = ingest.hide_contactless_chat_listings(conn)
-            db.set_state(conn, "contactless_chat_v1", "1")
+            db.set_state(conn, "contactless_chat_v2", "1")
         dr = dupreview.run(conn)
         if dr.get("queued") or dr.get("gone"):
             stats["dups"] = dr
